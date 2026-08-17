@@ -187,6 +187,35 @@ describe("ProviderSkillDiscovery", () => {
     }).pipe(Effect.provide(makeLayer([instance])));
   });
 
+  it.effect("evicts the oldest key once the cache bound is exceeded", () => {
+    const probedCwds: string[] = [];
+    const instance = makeInstance({
+      instanceId: "grok",
+      discoverSkills: (cwd) =>
+        Effect.sync(() => {
+          probedCwds.push(cwd);
+          return [PROJECT_SKILL];
+        }),
+    });
+    return Effect.gen(function* () {
+      const discovery = yield* ProviderSkillDiscovery;
+      const instanceId = ProviderInstanceId.make("grok");
+
+      // Fill one entry past the 64-entry bound, evicting the first key.
+      for (let index = 0; index <= 64; index += 1) {
+        yield* discovery.listSkills({ instanceId, cwd: `/repo-${index}` });
+      }
+      const probesBefore = probedCwds.length;
+
+      // The evicted key is cold again: this request waits on a fresh probe
+      // rather than answering from cache.
+      const refetched = yield* discovery.listSkills({ instanceId, cwd: "/repo-0" });
+      expect(refetched.skills).toEqual([PROJECT_SKILL]);
+      expect(probedCwds.length).toBeGreaterThan(probesBefore);
+      expect(probedCwds.at(-1)).toBe("/repo-0");
+    }).pipe(Effect.provide(makeLayer([instance])));
+  });
+
   it.effect("coalesces concurrent cold requests onto one probe", () => {
     const state = { probes: 0, release: undefined as Deferred.Deferred<void> | undefined };
     const instance = makeInstance({
