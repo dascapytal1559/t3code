@@ -486,7 +486,7 @@ function UsageCoverageNotice(props: {
       ))}
       {stale.map((environment) => (
         <Text key={environment.environmentId} className="text-sm text-foreground-muted">
-          {environment.label} runs an older server version and is excluded from totals.
+          {environment.label} runs an incompatible server version and is excluded from totals.
         </Text>
       ))}
       {duplicateSources.length > 0 ? (

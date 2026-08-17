@@ -500,7 +500,7 @@ function UsageCoverageNotice({
       ))}
       {stale.map((environment) => (
         <span key={environment.label}>
-          {environment.label} runs an older server version and is excluded from totals.
+          {environment.label} runs an incompatible server version and is excluded from totals.
         </span>
       ))}
       {duplicateSources.length > 0 ? (

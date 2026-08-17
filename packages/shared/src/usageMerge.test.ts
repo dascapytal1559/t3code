@@ -1,4 +1,5 @@
 import {
+  COMPATIBLE_USAGE_CONTRACT_VERSIONS,
   USAGE_CONTRACT_VERSION,
   type EnvironmentId,
   type UsageBucket,
@@ -86,7 +87,7 @@ describe("mergeUsage", () => {
           summary([bucket()], [{ provider: "claude", hostId: "linux", homePath: "/b/.claude" }]),
         ),
       ],
-      USAGE_CONTRACT_VERSION,
+      [USAGE_CONTRACT_VERSION],
     );
 
     expect(merged.costUsd).toBe(20);
@@ -102,7 +103,7 @@ describe("mergeUsage", () => {
         environment("env-a", summary([bucket()], [shared])),
         environment("env-b", summary([bucket()], [shared])),
       ],
-      USAGE_CONTRACT_VERSION,
+      [USAGE_CONTRACT_VERSION],
     );
 
     expect(merged.costUsd).toBe(10);
@@ -129,7 +130,7 @@ describe("mergeUsage", () => {
           ),
         ),
       ],
-      USAGE_CONTRACT_VERSION,
+      [USAGE_CONTRACT_VERSION],
     );
 
     // env-b's claude bucket is dropped, its codex bucket survives.
@@ -140,7 +141,7 @@ describe("mergeUsage", () => {
     ]);
   });
 
-  it("excludes an environment reporting an older contract version", () => {
+  it("excludes an environment reporting an incompatible contract version", () => {
     const merged = mergeUsage(
       [
         environment(
@@ -152,11 +153,57 @@ describe("mergeUsage", () => {
           summary(
             [bucket()],
             [{ provider: "claude", hostId: "linux", homePath: "/b" }],
-            USAGE_CONTRACT_VERSION - 1,
+            USAGE_CONTRACT_VERSION + 1,
           ),
         ),
       ],
-      USAGE_CONTRACT_VERSION,
+      [USAGE_CONTRACT_VERSION],
+    );
+
+    expect(merged.costUsd).toBe(10);
+    expect(merged.staleEnvironments).toEqual(["env-b"]);
+  });
+
+  it("merges a v3 summary into a daily window", () => {
+    // v3 → v4 only added optional hourly fields; a fleet member on an older
+    // server must still count toward daily totals.
+    const merged = mergeUsage(
+      [
+        environment(
+          "env-a",
+          summary([bucket()], [{ provider: "claude", hostId: "mac", homePath: "/a" }]),
+        ),
+        environment(
+          "env-b",
+          summary([bucket()], [{ provider: "claude", hostId: "linux", homePath: "/b" }], 3),
+        ),
+      ],
+      COMPATIBLE_USAGE_CONTRACT_VERSIONS.day,
+    );
+
+    expect(merged.costUsd).toBe(20);
+    expect(merged.staleEnvironments).toHaveLength(0);
+    expect(merged.contributingEnvironments).toEqual(["env-a", "env-b"]);
+  });
+
+  it("excludes a v3 summary from an hourly window", () => {
+    // A v3 server ignores the hourly request fields and answers with whole-day
+    // buckets, which would overcount a rolling 24-hour view.
+    const merged = mergeUsage(
+      [
+        environment(
+          "env-a",
+          summary(
+            [bucket({ hourStart: "2026-08-07T09:37:00.000Z" })],
+            [{ provider: "claude", hostId: "mac", homePath: "/a" }],
+          ),
+        ),
+        environment(
+          "env-b",
+          summary([bucket()], [{ provider: "claude", hostId: "linux", homePath: "/b" }], 3),
+        ),
+      ],
+      COMPATIBLE_USAGE_CONTRACT_VERSIONS.hour,
     );
 
     expect(merged.costUsd).toBe(10);
@@ -180,7 +227,7 @@ describe("mergeUsage", () => {
           ),
         ),
       ],
-      USAGE_CONTRACT_VERSION,
+      [USAGE_CONTRACT_VERSION],
     );
 
     expect(merged.providers[0]?.provider).toBe("claude");
@@ -198,7 +245,7 @@ describe("mergeUsage", () => {
         environment("env-a", summary([bucket()], [{ ...shape, volumeId: "16777220:1234" }])),
         environment("env-b", summary([bucket()], [{ ...shape, volumeId: "16777221:9999" }])),
       ],
-      USAGE_CONTRACT_VERSION,
+      [USAGE_CONTRACT_VERSION],
     );
 
     expect(merged.costUsd).toBe(20);
@@ -217,7 +264,7 @@ describe("mergeUsage", () => {
         environment("env-a", summary([bucket()], [same])),
         environment("env-b", summary([bucket()], [same])),
       ],
-      USAGE_CONTRACT_VERSION,
+      [USAGE_CONTRACT_VERSION],
     );
 
     expect(merged.costUsd).toBe(10);
@@ -244,14 +291,14 @@ describe("mergeUsage", () => {
           ),
         ),
       ],
-      USAGE_CONTRACT_VERSION,
+      [USAGE_CONTRACT_VERSION],
     );
 
     expect(merged.sessions).toBe(1);
   });
 
   it("returns empty totals with no environments", () => {
-    const merged = mergeUsage([], USAGE_CONTRACT_VERSION);
+    const merged = mergeUsage([], [USAGE_CONTRACT_VERSION]);
     expect(merged.costUsd).toBe(0);
     expect(merged.daily).toHaveLength(0);
     expect(merged.hourly).toHaveLength(0);
@@ -271,7 +318,7 @@ describe("mergeUsage", () => {
           ),
         ),
       ],
-      USAGE_CONTRACT_VERSION,
+      [USAGE_CONTRACT_VERSION],
     );
 
     expect(merged.hourly.map((hour) => [hour.hourStart, hour.costUsd])).toEqual([

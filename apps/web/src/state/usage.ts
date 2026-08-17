@@ -8,7 +8,7 @@
  */
 import { useAtomValue } from "@effect/atom-react";
 import {
-  USAGE_CONTRACT_VERSION,
+  COMPATIBLE_USAGE_CONTRACT_VERSIONS,
   type EnvironmentId,
   type UsageSummary,
   type UsageSummaryInput,
@@ -118,8 +118,8 @@ export function useUsage(input: UsageSummaryInput): UsageView {
             },
           ],
     );
-    return mergeUsage(answered, USAGE_CONTRACT_VERSION);
-  }, [environments]);
+    return mergeUsage(answered, COMPATIBLE_USAGE_CONTRACT_VERSIONS[input.resolution ?? "day"]);
+  }, [environments, input.resolution]);
 
   const answeredCount = environments.filter((environment) => environment.summary !== null).length;
   const stillReporting = environments.filter(

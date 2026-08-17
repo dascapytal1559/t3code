@@ -8,3 +8,7 @@ cost shown here.
 Use **Past 24h** for an hourly chart covering the exact rolling 24-hour period. The **7 days**,
 **30 days**, and **90 days** ranges use daily resolution. Cost and token toggles update both the
 headline and chart, and refreshing rescans every connected environment.
+
+Environments running an older server still count toward the daily ranges. Only the hourly
+**Past 24h** view needs a current server; environments that cannot answer it are listed as excluded
+so the totals stay honest.

@@ -43,6 +43,23 @@ export const UsageResolution = Schema.Literals(["day", "hour"]);
 export type UsageResolution = typeof UsageResolution.Type;
 
 /**
+ * Contract versions a client on {@link USAGE_CONTRACT_VERSION} can still
+ * merge, per window resolution.
+ *
+ * v3 → v4 only added optional hourly fields, so a v3 summary is still correct
+ * for daily windows and fleets need not upgrade in lockstep to keep aggregate
+ * totals. v3 stays excluded from hourly windows: a v3 server ignores the
+ * hourly request fields and answers with whole-day buckets, which would
+ * overcount a rolling 24-hour view. Versions newer than the client are never
+ * accepted, since the client cannot know what changed. Revisit this table on
+ * every version bump.
+ */
+export const COMPATIBLE_USAGE_CONTRACT_VERSIONS: Record<UsageResolution, readonly number[]> = {
+  day: [3, USAGE_CONTRACT_VERSION],
+  hour: [USAGE_CONTRACT_VERSION],
+};
+
+/**
  * Why a bucket's cost is what it is.
  *
  * - `providerReported` - the transcript carried an explicit cost figure.

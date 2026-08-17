@@ -192,20 +192,22 @@ const EMPTY_MERGED: MergedUsage = {
 /**
  * Merges every connected environment's summary.
  *
- * `expectedContractVersion` guards against an environment running older server
- * code: rather than blocking the page, its data is excluded and its id is
- * reported so the UI can say coverage is partial.
+ * `compatibleContractVersions` guards against an environment whose server
+ * cannot answer the requested window correctly (see
+ * `COMPATIBLE_USAGE_CONTRACT_VERSIONS` in contracts): rather than blocking the
+ * page, its data is excluded and its id is reported so the UI can say coverage
+ * is partial.
  */
 export function mergeUsage(
   environments: readonly EnvironmentUsage[],
-  expectedContractVersion: number,
+  compatibleContractVersions: readonly number[],
 ): MergedUsage {
   if (environments.length === 0) return EMPTY_MERGED;
 
   const current: EnvironmentUsage[] = [];
   const staleEnvironments: EnvironmentId[] = [];
   for (const environment of environments) {
-    if (environment.summary.contractVersion === expectedContractVersion) {
+    if (compatibleContractVersions.includes(environment.summary.contractVersion)) {
       current.push(environment);
     } else {
       staleEnvironments.push(environment.environmentId);
