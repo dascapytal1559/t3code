@@ -13,7 +13,9 @@ the composer or paste them into a message.
 ## Commands and skills
 
 Type `/` to open the command menu. Type `$` to find and add a skill. Skill rows show their source,
-such as System, Personal, Project, or App.
+such as System, Personal, Project, or App. The list reflects what the selected agent would load in
+the thread's workspace, so different projects can expose different skills; threads without a
+workspace directory show personal skills only.
 
 By default, the `/` menu includes skills. To keep this menu command-only, turn off **Show skills in
 slash menu** in **Settings → General**. Skill results use the `/skill:Skill Name` label and add the
