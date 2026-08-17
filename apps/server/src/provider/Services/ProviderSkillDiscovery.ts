@@ -42,11 +42,7 @@ export class ProviderSkillDiscovery extends Context.Service<
   ProviderSkillDiscoveryShape
 >()("t3/provider/Services/ProviderSkillDiscovery") {}
 
-export const ProviderSkillDiscoveryLive: Layer.Layer<
-  ProviderSkillDiscovery,
-  never,
-  ProviderInstanceRegistry | FileSystem.FileSystem
-> = Layer.effect(
+export const ProviderSkillDiscoveryLive = Layer.effect(
   ProviderSkillDiscovery,
   Effect.gen(function* () {
     const registry = yield* ProviderInstanceRegistry;
@@ -67,25 +63,14 @@ export const ProviderSkillDiscoveryLive: Layer.Layer<
       }
     };
 
-    /**
-     * Run one probe for `key`, coalescing with any probe already in
-     * flight. A failed probe keeps the last good inventory rather than
-     * replacing it with an empty list.
-     */
-    const revalidate = (
+    const runProbe = (
       key: string,
+      deferred: Deferred.Deferred<ReadonlyArray<ServerProviderSkill>>,
       discover: (cwd: string) => Effect.Effect<ReadonlyArray<ServerProviderSkill>>,
       cwd: string,
-    ): Effect.Effect<ReadonlyArray<ServerProviderSkill>> =>
+    ) =>
       Effect.gen(function* () {
-        const existing = inflight.get(key);
-        if (existing) {
-          return yield* Deferred.await(existing);
-        }
-        const deferred = yield* Deferred.make<ReadonlyArray<ServerProviderSkill>>();
-        inflight.set(key, deferred);
         const exit = yield* Effect.exit(discover(cwd));
-        inflight.delete(key);
         if (Exit.isSuccess(exit)) {
           rememberSkills(key, exit.value);
         } else {
@@ -93,9 +78,44 @@ export const ProviderSkillDiscoveryLive: Layer.Layer<
             key,
           });
         }
-        const skills = Exit.isSuccess(exit) ? exit.value : (cache.get(key) ?? []);
-        yield* Deferred.succeed(deferred, skills);
-        return skills;
+        yield* Deferred.succeed(
+          deferred,
+          Exit.isSuccess(exit) ? exit.value : (cache.get(key) ?? []),
+        );
+      }).pipe(
+        // Cleanup on ANY exit, interruption included: drop the inflight
+        // entry and unblock waiters with the last good inventory. A
+        // completed deferred ignores the second succeed.
+        Effect.onExit(() =>
+          Effect.gen(function* () {
+            inflight.delete(key);
+            yield* Deferred.succeed(deferred, cache.get(key) ?? []);
+          }),
+        ),
+      );
+
+    /**
+     * Ensure one probe is in flight for `key` and return its deferred.
+     * The probe runs detached in the service scope so an interrupted
+     * request (picker closed, client gone) can never orphan the inflight
+     * entry and wedge the key.
+     */
+    const ensureProbe = (
+      key: string,
+      discover: (cwd: string) => Effect.Effect<ReadonlyArray<ServerProviderSkill>>,
+      cwd: string,
+    ): Effect.Effect<Deferred.Deferred<ReadonlyArray<ServerProviderSkill>>> =>
+      Effect.gen(function* () {
+        const deferred = yield* Deferred.make<ReadonlyArray<ServerProviderSkill>>();
+        // No yield points between the check and the set: the first fiber
+        // to reach here wins the key, later ones join its deferred.
+        const existing = inflight.get(key);
+        if (existing) {
+          return existing;
+        }
+        inflight.set(key, deferred);
+        yield* runProbe(key, deferred, discover, cwd).pipe(Effect.forkIn(revalidateScope));
+        return deferred;
       });
 
     const listSkills = (
@@ -118,18 +138,13 @@ export const ProviderSkillDiscoveryLive: Layer.Layer<
           .pipe(Effect.orElseSucceed(() => workspaceCwd));
         const key = `${input.instanceId}${KEY_SEPARATOR}${cwd}`;
         const cached = cache.get(key);
+        const deferred = yield* ensureProbe(key, discover, cwd);
         if (cached !== undefined) {
-          if (!inflight.has(key)) {
-            yield* revalidate(key, discover, cwd).pipe(
-              Effect.asVoid,
-              Effect.forkIn(revalidateScope),
-            );
-          }
           return { skills: cached };
         }
-        return { skills: yield* revalidate(key, discover, cwd) };
+        return { skills: yield* Deferred.await(deferred) };
       });
 
     return { listSkills } satisfies ProviderSkillDiscoveryShape;
   }),
-) as Layer.Layer<ProviderSkillDiscovery, never, ProviderInstanceRegistry | FileSystem.FileSystem>;
+);

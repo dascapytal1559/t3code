@@ -9,6 +9,7 @@ import type {
   RuntimeMode,
   ScopedThreadRef,
   ServerProvider,
+  ServerProviderSkill,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -1125,18 +1126,34 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   });
   // Contextual skills for the `$` picker: what this instance would load
   // in the thread's workspace, not the snapshot's server-global list.
-  // Fetched only while the `$` trigger is active — inserted chips carry
-  // their own captured metadata, so nothing needs the list afterwards.
-  // Until the first response lands the snapshot baseline fills in.
+  // Fetched only while the `$` trigger is active; the last inventory is
+  // retained afterwards so inserted `$name` chips keep their labels and
+  // descriptions once the trigger closes and the query goes idle. Until
+  // the first response lands the snapshot baseline fills in.
   const isSkillTrigger = composerTriggerKind === "skill";
   const providerContextSkills = useProviderContextSkills({
     environmentId,
     instanceId: isSkillTrigger && !noProviderAvailable ? selectedInstanceId : null,
     cwd: gitCwd,
   });
+  const retainedContextSkillsRef = useRef<{
+    key: string;
+    skills: ReadonlyArray<ServerProviderSkill>;
+  } | null>(null);
+  const contextSkillsKey = `${selectedInstanceId} ${gitCwd ?? ""}`;
+  if (providerContextSkills.skills !== null) {
+    retainedContextSkillsRef.current = {
+      key: contextSkillsKey,
+      skills: providerContextSkills.skills,
+    };
+  }
+  const retainedContextSkills =
+    retainedContextSkillsRef.current?.key === contextSkillsKey
+      ? retainedContextSkillsRef.current.skills
+      : null;
   const composerSkills = useMemo(
-    () => providerContextSkills.skills ?? selectedProviderStatus?.skills ?? [],
-    [providerContextSkills.skills, selectedProviderStatus],
+    () => retainedContextSkills ?? selectedProviderStatus?.skills ?? [],
+    [retainedContextSkills, selectedProviderStatus],
   );
 
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {

@@ -120,6 +120,18 @@ A point-in-time view of state. The word is used in multiple layers, including or
 
 The per-driver list of current model slugs that decides which models land in the model picker's legacy section. Bundled at `apps/server/src/provider/model-manifest.json` and refreshed at runtime from the same file on `main`, so classification updates ship as commits instead of releases. See the [provider architecture][16] model manifest section.
 
+#### Skill discovery
+
+The contextual skill inventory behind the composer's `$` picker. Each driver may expose
+`discoverSkills(cwd)` on its `ProviderInstance` (Claude, Codex, and Grok do; Cursor and
+OpenCode do not), and `ProviderSkillDiscovery` serves `server.listProviderSkills` requests
+keyed by `(instanceId, realpath(cwd))` stale-while-revalidate: cached inventories answer
+immediately while one detached probe refreshes the key, cold requests coalesce onto that
+probe, and failed probes keep the last good inventory. The provider snapshot's flat `skills`
+field remains the user-scope baseline, used for directoryless threads, providers without
+discovery, and clients that have not adopted the request — the mobile composer deliberately
+stays on it until it adopts the additive contract.
+
 ### Checkpointing
 
 Checkpointing captures workspace state over time so the app can diff turns and restore earlier points. The main pieces are [CheckpointStore.ts][19], [CheckpointDiffQuery.ts][20], and [CheckpointReactor.ts][6].
