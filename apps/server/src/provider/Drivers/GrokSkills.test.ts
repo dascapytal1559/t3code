@@ -34,9 +34,11 @@ describe("parseGrokInspectSkills", () => {
     const skills = parseGrokInspectSkills(inspectReport);
     expect(skills).toEqual([
       {
+        // Not user-invocable in Grok's own slash menu, so hidden from the
+        // `$` picker as well.
         name: "canvas",
         path: "/home/user/.grok/bundled/skills/canvas/SKILL.md",
-        enabled: true,
+        enabled: false,
         scope: "bundled",
       },
       {
