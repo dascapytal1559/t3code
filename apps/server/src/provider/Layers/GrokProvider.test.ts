@@ -117,4 +117,46 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
       expect(snapshot.message).toContain("ACP startup failed");
     }),
   );
+
+  it.effect("surfaces skills from `grok inspect --json` even when ACP startup fails", () =>
+    Effect.gen(function* () {
+      const snapshot = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-grok-skills-" });
+          const grokPath = path.join(dir, "grok");
+          yield* fs.writeFileString(
+            grokPath,
+            [
+              "#!/bin/sh",
+              'if [ "$1" = "--version" ]; then printf "grok-cli 0.0.99\\n"; exit 0; fi',
+              'if [ "$1" = "inspect" ] && [ "$2" = "--json" ]; then',
+              `  printf '%s' '{"skills":[{"name":"commit","description":"Commit helper.","source":{"type":"user","path":"/home/user/.grok/skills/commit/SKILL.md"},"userInvocable":true}]}'`,
+              "  exit 0",
+              "fi",
+              "exit 1",
+              "",
+            ].join("\n"),
+          );
+          yield* fs.chmod(grokPath, 0o755);
+
+          return yield* checkGrokProviderStatus(
+            decodeGrokSettings({ enabled: true, binaryPath: grokPath }),
+          );
+        }),
+      );
+
+      expect(snapshot.installed).toBe(true);
+      expect(snapshot.skills).toEqual([
+        {
+          name: "commit",
+          path: "/home/user/.grok/skills/commit/SKILL.md",
+          enabled: true,
+          scope: "user",
+          description: "Commit helper.",
+        },
+      ]);
+    }),
+  );
 });
