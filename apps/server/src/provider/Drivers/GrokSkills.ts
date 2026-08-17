@@ -61,10 +61,12 @@ export function parseGrokInspectSkills(stdout: string): ReadonlyArray<ServerProv
 
     const scope = typeof source?.type === "string" ? source.type.trim() : "";
     const description = typeof record.description === "string" ? record.description.trim() : "";
+    // `userInvocable: false` hides a skill from Grok's own slash menu; the
+    // `$` picker is the same user-invocation surface, so treat it as disabled.
     parsedSkills.push({
       name,
       path,
-      enabled: record.disabled !== true,
+      enabled: record.disabled !== true && record.userInvocable !== false,
       ...(scope ? { scope } : {}),
       ...(description ? { description } : {}),
     });
