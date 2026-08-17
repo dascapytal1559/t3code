@@ -9,5 +9,6 @@ the composer's `$` picker.
 
 This means the picker matches Grok's own discovery exactly: personal skills, project skills,
 bundled skills, plugin skills, and any extra directories or overrides from your Grok
-configuration all appear, with Grok's own de-duplication applied. If a skill shows up in
-`grok inspect`, it shows up in T3 Code.
+configuration all appear, with Grok's own de-duplication applied. Skills you have disabled in
+your Grok configuration, or that are not user-invocable, stay out of the picker — the same way
+Grok hides them from its own slash menu.
