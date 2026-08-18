@@ -71,12 +71,12 @@ export const GlassOpacity = Schema.Int.check(
 );
 export type GlassOpacity = typeof GlassOpacity.Type;
 export const DEFAULT_GLASS_OPACITY: GlassOpacity = 80;
-export const MIN_CHAT_TEXT_CONTRAST = 0;
+export const MIN_CHAT_TEXT_CONTRAST = 80;
 export const MAX_CHAT_TEXT_CONTRAST = 100;
 /**
- * How far chat body text is lifted from its dimmed default toward full
- * contrast. 0 keeps the classic `foreground/80` tone; 100 renders full
- * foreground in light mode and pure white in dark mode.
+ * Strength of chat body text, matching the historical tone at its minimum:
+ * 80 is the classic `foreground/80`, and 100 renders full foreground in
+ * light mode and pure white in dark mode.
  */
 export const ChatTextContrast = Schema.Int.check(
   Schema.isBetween({
@@ -85,7 +85,7 @@ export const ChatTextContrast = Schema.Int.check(
   }),
 );
 export type ChatTextContrast = typeof ChatTextContrast.Type;
-export const DEFAULT_CHAT_TEXT_CONTRAST: ChatTextContrast = 0;
+export const DEFAULT_CHAT_TEXT_CONTRAST: ChatTextContrast = 80;
 /**
  * Font size preferences, in CSS pixels. The ranges are deliberately narrow:
  * the interface size scales every rem-based dimension in the app, so the
