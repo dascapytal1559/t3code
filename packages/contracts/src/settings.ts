@@ -71,6 +71,21 @@ export const GlassOpacity = Schema.Int.check(
 );
 export type GlassOpacity = typeof GlassOpacity.Type;
 export const DEFAULT_GLASS_OPACITY: GlassOpacity = 80;
+export const MIN_CHAT_TEXT_CONTRAST = 0;
+export const MAX_CHAT_TEXT_CONTRAST = 100;
+/**
+ * How far chat body text is lifted from its dimmed default toward full
+ * contrast. 0 keeps the classic `foreground/80` tone; 100 renders full
+ * foreground in light mode and pure white in dark mode.
+ */
+export const ChatTextContrast = Schema.Int.check(
+  Schema.isBetween({
+    minimum: MIN_CHAT_TEXT_CONTRAST,
+    maximum: MAX_CHAT_TEXT_CONTRAST,
+  }),
+);
+export type ChatTextContrast = typeof ChatTextContrast.Type;
+export const DEFAULT_CHAT_TEXT_CONTRAST: ChatTextContrast = 0;
 /**
  * Font size preferences, in CSS pixels. The ranges are deliberately narrow:
  * the interface size scales every rem-based dimension in the app, so the
@@ -161,6 +176,9 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   glassOpacity: GlassOpacity.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_GLASS_OPACITY)),
+  ),
+  chatTextContrast: ChatTextContrast.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_CHAT_TEXT_CONTRAST)),
   ),
   fontSizeInterface: InterfaceFontSize.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_INTERFACE_FONT_SIZE)),
@@ -804,6 +822,7 @@ export const ClientSettingsPatch = Schema.Struct({
   diffIgnoreWhitespace: Schema.optionalKey(Schema.Boolean),
   environmentIdentificationMode: Schema.optionalKey(EnvironmentIdentificationMode),
   glassOpacity: Schema.optionalKey(GlassOpacity),
+  chatTextContrast: Schema.optionalKey(ChatTextContrast),
   fontSizeInterface: Schema.optionalKey(InterfaceFontSize),
   fontSizePrompt: Schema.optionalKey(PromptFontSize),
   fontSizeCode: Schema.optionalKey(CodeFontSize),

@@ -131,6 +131,7 @@ function RootRouteView() {
       <AnchoredToastProvider>
         <DocumentTitleSync />
         <GlassAppearanceSync />
+        <ChatTextContrastSync />
         <FontAppearanceSync />
         {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
         <RelayClientInstallDialog />
@@ -156,6 +157,16 @@ function GlassAppearanceSync() {
   useEffect(() => {
     document.documentElement.style.setProperty("--glass-opacity", `${glassOpacity}%`);
   }, [glassOpacity]);
+
+  return null;
+}
+
+function ChatTextContrastSync() {
+  const chatTextContrast = useClientSettings((settings) => settings.chatTextContrast);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty("--chat-text-contrast", `${chatTextContrast}%`);
+  }, [chatTextContrast]);
 
   return null;
 }
