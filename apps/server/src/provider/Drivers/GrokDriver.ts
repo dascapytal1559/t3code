@@ -13,7 +13,6 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { makeGrokTextGeneration } from "../../textGeneration/GrokTextGeneration.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeGrokAdapter } from "../Layers/GrokAdapter.ts";
-import { discoverGrokSkills } from "./GrokSkills.ts";
 import {
   buildInitialGrokProviderSnapshot,
   checkGrokProviderStatus,
@@ -160,10 +159,6 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv> = {
         snapshot,
         adapter,
         textGeneration,
-        discoverSkills: (workspaceCwd) =>
-          discoverGrokSkills(effectiveConfig, workspaceCwd, processEnv).pipe(
-            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-          ),
       } satisfies ProviderInstance;
     }),
 };

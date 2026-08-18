@@ -36,12 +36,7 @@ import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeCodexAdapter } from "../Layers/CodexAdapter.ts";
-import {
-  checkCodexProviderStatus,
-  discoverCodexSkills,
-  makePendingCodexProvider,
-} from "../Layers/CodexProvider.ts";
-import { resolveCodexLaunchArgs } from "../Layers/codexLaunchArgs.ts";
+import { checkCodexProviderStatus, makePendingCodexProvider } from "../Layers/CodexProvider.ts";
 import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import type { ProviderDriver, ProviderInstance } from "../ProviderDriver.ts";
@@ -213,14 +208,6 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         snapshot,
         adapter,
         textGeneration,
-        discoverSkills: (workspaceCwd) =>
-          discoverCodexSkills({
-            binaryPath: effectiveConfig.binaryPath,
-            homePath: effectiveConfig.homePath,
-            launchArgs: resolveCodexLaunchArgs(effectiveConfig.launchArgs, processEnv),
-            cwd: workspaceCwd,
-            environment: processEnv,
-          }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner)),
       } satisfies ProviderInstance;
     }),
 };

@@ -319,22 +319,14 @@ export function buildCodexInitializeParams(): CodexSchema.V1InitializeParams {
   };
 }
 
-interface CodexAppServerConnectInput {
+const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(function* (input: {
   readonly binaryPath: string;
   readonly homePath?: string;
   readonly launchArgs?: string;
   readonly cwd: string;
+  readonly customModels?: ReadonlyArray<string>;
   readonly environment?: NodeJS.ProcessEnv;
-}
-
-/**
- * Spawn `codex app-server` in `cwd`, run the initialize handshake, and
- * hand back the connected client. Requires a `Scope` — the subprocess and
- * client live until the caller's scope closes.
- */
-const connectCodexAppServerClient = Effect.fn("connectCodexAppServerClient")(function* (
-  input: CodexAppServerConnectInput,
-) {
+}) {
   // `~` is not shell-expanded when env vars are set via `child_process.spawn`,
   // so `CODEX_HOME=~/.codex_work` would reach codex verbatim and trip
   // "CODEX_HOME points to '~/.codex_work', but that path does not exist".
@@ -388,45 +380,6 @@ const connectCodexAppServerClient = Effect.fn("connectCodexAppServerClient")(fun
     },
   });
   yield* client.notify("initialized", undefined);
-
-  return { client, initialize };
-});
-
-/**
- * Contextual skill inventory for the `$` picker: what a Codex session
- * launched in `cwd` would load, straight from the app-server's
- * `skills/list`. Best-effort — any failure or timeout yields `[]`.
- */
-// Same budget as the auth probe: both pay one app-server spawn + handshake.
-const CODEX_SKILLS_PROBE_TIMEOUT_MS = AUTH_PROBE_TIMEOUT_MS;
-
-export const discoverCodexSkills = Effect.fn("discoverCodexSkills")(function* (
-  input: CodexAppServerConnectInput,
-): Effect.fn.Return<
-  ReadonlyArray<ServerProviderSkill>,
-  never,
-  ChildProcessSpawner.ChildProcessSpawner
-> {
-  return yield* Effect.gen(function* () {
-    const { client } = yield* connectCodexAppServerClient(input);
-    const skillsResponse = yield* client.request("skills/list", {
-      cwds: [input.cwd],
-    });
-    return parseCodexSkillsListResponse(skillsResponse, input.cwd);
-  }).pipe(
-    Effect.scoped,
-    Effect.timeoutOption(Duration.millis(CODEX_SKILLS_PROBE_TIMEOUT_MS)),
-    Effect.map(Option.getOrElse((): ReadonlyArray<ServerProviderSkill> => [])),
-    Effect.orElseSucceed((): ReadonlyArray<ServerProviderSkill> => []),
-  );
-});
-
-const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(function* (
-  input: CodexAppServerConnectInput & {
-    readonly customModels?: ReadonlyArray<string>;
-  },
-) {
-  const { client, initialize } = yield* connectCodexAppServerClient(input);
 
   // Extract the version string after the first '/' in userAgent, up to the next space or the end
   const versionMatch = initialize.userAgent.match(/\/([^\s]+)/);

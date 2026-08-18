@@ -25,7 +25,6 @@ import type {
   ProviderDriverKind,
   ProviderInstanceEnvironment,
   ProviderInstanceId,
-  ServerProviderSkill,
 } from "@t3tools/contracts";
 import type * as Effect from "effect/Effect";
 import type * as Schema from "effect/Schema";
@@ -72,14 +71,6 @@ export interface ProviderInstance {
   readonly snapshot: ServerProviderShape;
   readonly adapter: ProviderAdapterShape<ProviderAdapterError>;
   readonly textGeneration: TextGeneration.TextGeneration["Service"];
-  /**
-   * Contextual skill discovery for the composer's `$` picker: the skills
-   * this instance would load for a workspace directory. Never fails —
-   * implementations degrade to an empty list. Omitted by drivers whose
-   * CLI has no per-directory skill inventory (Cursor, OpenCode); callers
-   * fall back to the snapshot's baseline `skills`.
-   */
-  readonly discoverSkills?: (cwd: string) => Effect.Effect<ReadonlyArray<ServerProviderSkill>>;
 }
 
 export interface ProviderContinuationIdentity {
