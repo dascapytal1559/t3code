@@ -9,6 +9,7 @@ import type {
   RuntimeMode,
   ScopedThreadRef,
   ServerProvider,
+  ServerProviderSkill,
   ThreadId,
 } from "@t3tools/contracts";
 import {
@@ -76,6 +77,7 @@ import {
   removeInlineTerminalContextPlaceholder,
 } from "../../lib/terminalContext";
 import { useComposerPathSearch } from "../../lib/composerPathSearchState";
+import { useProviderContextSkills } from "../../state/queries";
 import { type ElementContextDraft } from "../../lib/elementContext";
 import { ComposerPendingElementContexts } from "./ComposerPendingElementContexts";
 import { ComposerPendingReviewComments } from "./ComposerPendingReviewComments";
@@ -1031,6 +1033,37 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     cwd: isPathTrigger ? gitCwd : null,
     query: isPathTrigger ? pathTriggerQuery : null,
   });
+  // Contextual skills for the `$` picker: what this instance would load
+  // in the thread's workspace, not the snapshot's server-global list.
+  // Fetched only while the `$` trigger is active; the last inventory is
+  // retained afterwards so inserted `$name` chips keep their labels and
+  // descriptions once the trigger closes and the query goes idle. Until
+  // the first response lands the snapshot baseline fills in.
+  const isSkillTrigger = composerTriggerKind === "skill";
+  const providerContextSkills = useProviderContextSkills({
+    environmentId,
+    instanceId: isSkillTrigger && !noProviderAvailable ? selectedInstanceId : null,
+    cwd: gitCwd,
+  });
+  const retainedContextSkillsRef = useRef<{
+    key: string;
+    skills: ReadonlyArray<ServerProviderSkill>;
+  } | null>(null);
+  const contextSkillsKey = `${selectedInstanceId} ${gitCwd ?? ""}`;
+  if (providerContextSkills.skills !== null) {
+    retainedContextSkillsRef.current = {
+      key: contextSkillsKey,
+      skills: providerContextSkills.skills,
+    };
+  }
+  const retainedContextSkills =
+    retainedContextSkillsRef.current?.key === contextSkillsKey
+      ? retainedContextSkillsRef.current.skills
+      : null;
+  const composerSkills = useMemo(
+    () => retainedContextSkills ?? selectedProviderStatus?.skills ?? [],
+    [retainedContextSkills, selectedProviderStatus],
+  );
 
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
@@ -1090,22 +1123,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return searchSlashCommandItems(slashCommandItems, query);
     }
     if (composerTrigger.kind === "skill") {
-      return searchProviderSkills(selectedProviderStatus?.skills ?? [], composerTrigger.query).map(
-        (skill) => ({
-          id: `skill:${selectedProvider}:${skill.name}`,
-          type: "skill" as const,
-          provider: selectedProvider,
-          skill,
-          label: formatProviderSkillDisplayName(skill),
-          description:
-            skill.shortDescription ??
-            skill.description ??
-            (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
-        }),
-      );
+      return searchProviderSkills(composerSkills, composerTrigger.query).map((skill) => ({
+        id: `skill:${selectedProvider}:${skill.name}`,
+        type: "skill" as const,
+        provider: selectedProvider,
+        skill,
+        label: formatProviderSkillDisplayName(skill),
+        description:
+          skill.shortDescription ??
+          skill.description ??
+          (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
+      }));
     }
     return [];
   }, [
+    composerSkills,
     composerTrigger,
     planModeUiEnabled,
     selectedProvider,
@@ -1175,7 +1207,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   ]);
 
   const isComposerMenuLoading =
-    composerTriggerKind === "path" && pathTriggerQuery.length > 0 && workspaceEntries.isPending;
+    (composerTriggerKind === "path" && pathTriggerQuery.length > 0 && workspaceEntries.isPending) ||
+    (composerTriggerKind === "skill" &&
+      composerSkills.length === 0 &&
+      providerContextSkills.isPending);
   const composerMenuEmptyState = useMemo(() => {
     if (composerTriggerKind === "skill") {
       return "No skills found. Try / to browse provider commands.";
@@ -3057,7 +3092,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     ? composerTerminalContexts
                     : []
                 }
-                skills={selectedProviderStatus?.skills ?? []}
+                skills={composerSkills}
                 {...(showMobilePendingAnswerActions ? { className: "max-sm:pb-11" } : {})}
                 onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
                 onChange={onPromptChange}
