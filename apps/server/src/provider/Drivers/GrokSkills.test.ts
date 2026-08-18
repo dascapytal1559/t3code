@@ -3,6 +3,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
+import * as Result from "effect/Result";
 
 import { discoverGrokSkills, parseGrokInspectSkills } from "./GrokSkills.ts";
 
@@ -162,23 +163,31 @@ it.layer(NodeServices.layer)("discoverGrokSkills", (it) => {
     ),
   );
 
-  it.effect("returns an empty list when the probe exits non-zero", () =>
+  it.effect("fails with a probe error when the probe exits non-zero", () =>
     Effect.scoped(
       Effect.gen(function* () {
         const grokPath = yield* writeFakeGrok(["#!/bin/sh", "exit 3", ""].join("\n"));
-        const skills = yield* discoverGrokSkills({ binaryPath: grokPath }, undefined);
-        expect(skills).toEqual([]);
+        const result = yield* Effect.result(
+          discoverGrokSkills({ binaryPath: grokPath }, undefined),
+        );
+        expect(Result.isFailure(result)).toBe(true);
+        if (Result.isFailure(result)) {
+          expect(result.failure._tag).toBe("ProviderSkillProbeError");
+          expect(result.failure.detail).toContain("exited with code 3");
+        }
       }),
     ),
   );
 
-  it.effect("returns an empty list when the binary is missing", () =>
+  it.effect("fails with a probe error when the binary is missing", () =>
     Effect.gen(function* () {
-      const skills = yield* discoverGrokSkills(
-        { binaryPath: "/definitely/not/installed/grok-binary" },
-        undefined,
+      const result = yield* Effect.result(
+        discoverGrokSkills({ binaryPath: "/definitely/not/installed/grok-binary" }, undefined),
       );
-      expect(skills).toEqual([]);
+      expect(Result.isFailure(result)).toBe(true);
+      if (Result.isFailure(result)) {
+        expect(result.failure._tag).toBe("ProviderSkillProbeError");
+      }
     }),
   );
 });

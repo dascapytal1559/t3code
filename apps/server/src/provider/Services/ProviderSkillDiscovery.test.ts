@@ -13,11 +13,15 @@ import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
 
+import { ProviderSkillProbeError } from "../Errors.ts";
 import { makeManualOnlyProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
 import type { ProviderInstance } from "../ProviderDriver.ts";
 import type * as TextGeneration from "../../textGeneration/TextGeneration.ts";
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
-import { ProviderSkillDiscovery, ProviderSkillDiscoveryLive } from "./ProviderSkillDiscovery.ts";
+import {
+  layer as providerSkillDiscoveryLayer,
+  ProviderSkillDiscovery,
+} from "./ProviderSkillDiscovery.ts";
 
 const DRIVER_KIND = ProviderDriverKind.make("grok");
 
@@ -64,7 +68,7 @@ const makeInstance = (input: {
 const makeLayer = (instances: ReadonlyArray<ProviderInstance>) =>
   Layer.mergeAll(
     Layer.provide(
-      ProviderSkillDiscoveryLive,
+      providerSkillDiscoveryLayer,
       Layer.mergeAll(
         Layer.succeed(ProviderInstanceRegistry.ProviderInstanceRegistry, {
           getInstance: (instanceId) =>
@@ -182,6 +186,44 @@ describe("ProviderSkillDiscovery", () => {
       yield* Deferred.await(state.secondProbeDone);
 
       // The dead probe must not have evicted the last good inventory.
+      const afterFailure = yield* discovery.listSkills({ instanceId, cwd: "/repo" });
+      expect(afterFailure.skills).toEqual([PROJECT_SKILL]);
+    }).pipe(Effect.provide(makeLayer([instance])));
+  });
+
+  it.effect("keeps the last good inventory when a probe fails with a typed error", () => {
+    const state = { probes: 0, secondProbeDone: undefined as Deferred.Deferred<void> | undefined };
+    const instance = makeInstance({
+      instanceId: "grok",
+      discoverSkills: () =>
+        Effect.suspend(() => {
+          state.probes += 1;
+          if (state.probes === 1 || !state.secondProbeDone) {
+            return Effect.succeed([PROJECT_SKILL]);
+          }
+          // A timed-out or spawn-failed probe fails; it must not evict the
+          // cached inventory the way a success-with-empty would.
+          return Deferred.succeed(state.secondProbeDone, undefined).pipe(
+            Effect.flatMap(() =>
+              Effect.fail(
+                new ProviderSkillProbeError({ provider: "grok", detail: "probe timed out" }),
+              ),
+            ),
+          );
+        }),
+    });
+    return Effect.gen(function* () {
+      state.secondProbeDone = yield* Deferred.make<void>();
+      const discovery = yield* ProviderSkillDiscovery;
+      const instanceId = ProviderInstanceId.make("grok");
+
+      const cold = yield* discovery.listSkills({ instanceId, cwd: "/repo" });
+      expect(cold.skills).toEqual([PROJECT_SKILL]);
+
+      const warm = yield* discovery.listSkills({ instanceId, cwd: "/repo" });
+      expect(warm.skills).toEqual([PROJECT_SKILL]);
+      yield* Deferred.await(state.secondProbeDone);
+
       const afterFailure = yield* discovery.listSkills({ instanceId, cwd: "/repo" });
       expect(afterFailure.skills).toEqual([PROJECT_SKILL]);
     }).pipe(Effect.provide(makeLayer([instance])));

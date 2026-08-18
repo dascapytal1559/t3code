@@ -43,7 +43,7 @@ import * as GitHubCli from "./sourceControl/GitHubCli.ts";
 import * as GitLabCli from "./sourceControl/GitLabCli.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import { ProviderInstanceRegistryHydrationLive } from "./provider/Layers/ProviderInstanceRegistryHydration.ts";
-import { ProviderSkillDiscoveryLive } from "./provider/Services/ProviderSkillDiscovery.ts";
+import * as ProviderSkillDiscovery from "./provider/Services/ProviderSkillDiscovery.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as McpHttpServer from "./mcp/McpHttpServer.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
@@ -389,7 +389,7 @@ const RuntimeCoreDependenciesLive = ReactorLayerLive.pipe(
   // (contextual `$`-picker inventories per (instance, cwd)) rides the
   // same entry, fed by the registry it resolves instances from.
   Layer.provideMerge(
-    ProviderSkillDiscoveryLive.pipe(Layer.provideMerge(ProviderInstanceRegistryHydrationLive)),
+    ProviderSkillDiscovery.layer.pipe(Layer.provideMerge(ProviderInstanceRegistryHydrationLive)),
   ),
   // Shared native/canonical NDJSON writers used by both the per-instance
   // drivers (native stream, written from inside each `<X>Adapter`) and
