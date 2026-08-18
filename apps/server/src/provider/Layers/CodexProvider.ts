@@ -32,6 +32,7 @@ import {
   buildServerProvider,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
+import { ProviderSkillProbeError } from "../Errors.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import packageJson from "../../../package.json" with { type: "json" };
 const isCodexAppServerSpawnError = Schema.is(CodexErrors.CodexAppServerSpawnError);
@@ -398,10 +399,10 @@ export const discoverCodexSkills = Effect.fn("discoverCodexSkills")(function* (
   input: CodexAppServerConnectInput,
 ): Effect.fn.Return<
   ReadonlyArray<ServerProviderSkill>,
-  never,
+  ProviderSkillProbeError,
   ChildProcessSpawner.ChildProcessSpawner
 > {
-  return yield* Effect.gen(function* () {
+  const result = yield* Effect.gen(function* () {
     const { client } = yield* connectCodexAppServerClient(input);
     const skillsResponse = yield* client.request("skills/list", {
       cwds: [input.cwd],
@@ -410,9 +411,22 @@ export const discoverCodexSkills = Effect.fn("discoverCodexSkills")(function* (
   }).pipe(
     Effect.scoped,
     Effect.timeoutOption(Duration.millis(CODEX_SKILLS_PROBE_TIMEOUT_MS)),
-    Effect.map(Option.getOrElse((): ReadonlyArray<ServerProviderSkill> => [])),
-    Effect.orElseSucceed((): ReadonlyArray<ServerProviderSkill> => []),
+    Effect.mapError(
+      (cause) =>
+        new ProviderSkillProbeError({
+          provider: "codex",
+          detail: cause.message ?? String(cause),
+          cause,
+        }),
+    ),
   );
+  if (Option.isNone(result)) {
+    return yield* new ProviderSkillProbeError({
+      provider: "codex",
+      detail: `skills/list probe timed out after ${CODEX_SKILLS_PROBE_TIMEOUT_MS}ms.`,
+    });
+  }
+  return result.value;
 });
 
 const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(function* (

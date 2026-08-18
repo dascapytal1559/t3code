@@ -18,6 +18,7 @@ import * as Option from "effect/Option";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 
+import { ProviderSkillProbeError } from "../Errors.ts";
 import { spawnAndCollect } from "../providerSnapshot.ts";
 
 const GROK_SKILLS_PROBE_TIMEOUT_MS = 5_000;
@@ -78,7 +79,9 @@ export function parseGrokInspectSkills(stdout: string): ReadonlyArray<ServerProv
 /**
  * Run `grok inspect --json` in the workspace so local and repo-scope skills
  * resolve the same way a live Grok session would, and return the reported
- * skill inventory.
+ * skill inventory. A probe that cannot produce a report (spawn error,
+ * timeout, non-zero exit) fails with `ProviderSkillProbeError` so callers
+ * can keep a previous inventory instead of accepting an empty one.
  */
 export const discoverGrokSkills = Effect.fn("discoverGrokSkills")(function* (
   grokSettings: Pick<GrokSettings, "binaryPath">,
@@ -86,15 +89,15 @@ export const discoverGrokSkills = Effect.fn("discoverGrokSkills")(function* (
   environment: NodeJS.ProcessEnv = process.env,
 ): Effect.fn.Return<
   ReadonlyArray<ServerProviderSkill>,
-  never,
+  ProviderSkillProbeError,
   ChildProcessSpawner.ChildProcessSpawner
 > {
   const command = grokSettings.binaryPath || "grok";
-  return yield* Effect.gen(function* () {
+  const result = yield* Effect.gen(function* () {
     const spawnCommand = yield* resolveSpawnCommand(command, ["inspect", "--json"], {
       env: environment,
     });
-    const result = yield* spawnAndCollect(
+    return yield* spawnAndCollect(
       command,
       ChildProcess.make(spawnCommand.command, spawnCommand.args, {
         env: environment,
@@ -102,10 +105,28 @@ export const discoverGrokSkills = Effect.fn("discoverGrokSkills")(function* (
         ...(cwd ? { cwd } : {}),
       }),
     );
-    return result.code === 0 ? parseGrokInspectSkills(result.stdout) : [];
   }).pipe(
     Effect.timeoutOption(GROK_SKILLS_PROBE_TIMEOUT_MS),
-    Effect.map(Option.getOrElse((): ReadonlyArray<ServerProviderSkill> => [])),
-    Effect.orElseSucceed((): ReadonlyArray<ServerProviderSkill> => []),
+    Effect.mapError(
+      (cause) =>
+        new ProviderSkillProbeError({
+          provider: "grok",
+          detail: cause.message ?? String(cause),
+          cause,
+        }),
+    ),
   );
+  if (Option.isNone(result)) {
+    return yield* new ProviderSkillProbeError({
+      provider: "grok",
+      detail: `grok inspect timed out after ${GROK_SKILLS_PROBE_TIMEOUT_MS}ms.`,
+    });
+  }
+  if (result.value.code !== 0) {
+    return yield* new ProviderSkillProbeError({
+      provider: "grok",
+      detail: `grok inspect exited with code ${result.value.code}.`,
+    });
+  }
+  return parseGrokInspectSkills(result.value.stdout);
 });

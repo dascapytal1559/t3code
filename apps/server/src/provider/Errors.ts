@@ -69,6 +69,24 @@ export class ProviderAdapterRequestError extends Schema.TaggedErrorClass<Provide
 }
 
 /**
+ * ProviderSkillProbeError - A contextual skill-discovery probe failed
+ * (spawn error, timeout, non-zero exit). Distinguished from a successful
+ * probe that found no skills, so cached inventories survive flaky probes.
+ */
+export class ProviderSkillProbeError extends Schema.TaggedErrorClass<ProviderSkillProbeError>()(
+  "ProviderSkillProbeError",
+  {
+    provider: Schema.String,
+    detail: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    return `Provider skill probe failed (${this.provider}): ${this.detail}`;
+  }
+}
+
+/**
  * ProviderAdapterProcessError - Provider process lifecycle failure.
  */
 export class ProviderAdapterProcessError extends Schema.TaggedErrorClass<ProviderAdapterProcessError>()(
