@@ -983,13 +983,6 @@ export function AppearanceSettingsPanel() {
     "--settings-slider-progress": `${glassOpacityRatio * 100}%`,
     "--settings-slider-fill-offset": `${0.5 - glassOpacityRatio}rem`,
   } as CSSProperties;
-  const chatTextContrastRatio =
-    (settings.chatTextContrast - MIN_CHAT_TEXT_CONTRAST) /
-    (MAX_CHAT_TEXT_CONTRAST - MIN_CHAT_TEXT_CONTRAST);
-  const chatTextContrastSliderStyle = {
-    "--settings-slider-progress": `${chatTextContrastRatio * 100}%`,
-    "--settings-slider-fill-offset": `${0.5 - chatTextContrastRatio}rem`,
-  } as CSSProperties;
 
   return (
     <SettingsPageContainer>
@@ -1051,52 +1044,6 @@ export function AppearanceSettingsPanel() {
                 style={glassOpacitySliderStyle}
                 type="range"
                 value={settings.glassOpacity}
-              />
-            </div>
-          }
-        />
-
-        <SettingsRow
-          {...searchableSetting("setting-chat-text-contrast")}
-          description="Lift agent reply text from its dimmed default toward full contrast. At 100% replies render pure white in dark mode."
-          resetAction={
-            settings.chatTextContrast !== DEFAULT_UNIFIED_SETTINGS.chatTextContrast ? (
-              <SettingResetButton
-                label="chat text contrast"
-                onClick={() =>
-                  updateSettings({ chatTextContrast: DEFAULT_UNIFIED_SETTINGS.chatTextContrast })
-                }
-              />
-            ) : null
-          }
-          control={
-            <div className="flex w-full items-center gap-3 sm:w-52">
-              <output
-                className="min-w-12 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs font-medium tabular-nums text-foreground"
-                htmlFor="chat-text-contrast"
-              >
-                {settings.chatTextContrast}%
-              </output>
-              <input
-                aria-label="Chat text contrast"
-                className="settings-slider min-w-0 flex-1"
-                id="chat-text-contrast"
-                max={MAX_CHAT_TEXT_CONTRAST}
-                min={MIN_CHAT_TEXT_CONTRAST}
-                onChange={(event) => {
-                  const chatTextContrast = Number(event.currentTarget.value);
-                  if (
-                    Number.isInteger(chatTextContrast) &&
-                    chatTextContrast >= MIN_CHAT_TEXT_CONTRAST &&
-                    chatTextContrast <= MAX_CHAT_TEXT_CONTRAST
-                  ) {
-                    updateSettings({ chatTextContrast });
-                  }
-                }}
-                step={5}
-                style={chatTextContrastSliderStyle}
-                type="range"
-                value={settings.chatTextContrast}
               />
             </div>
           }
@@ -1465,8 +1412,77 @@ function TypographySection() {
       }
     >
       {advanced ? <FontSettingsGroup /> : <SimpleFontRows />}
+      <ChatTextContrastRow />
       <WordWrapRow />
     </SettingsSection>
+  );
+}
+
+function ChatTextContrastRow() {
+  const settings = usePrimarySettings();
+  const updateSettings = useUpdatePrimarySettings();
+  const ratio =
+    (settings.chatTextContrast - MIN_CHAT_TEXT_CONTRAST) /
+    (MAX_CHAT_TEXT_CONTRAST - MIN_CHAT_TEXT_CONTRAST);
+  const sliderStyle = {
+    "--settings-slider-progress": `${ratio * 100}%`,
+    "--settings-slider-fill-offset": `${0.5 - ratio}rem`,
+  } as CSSProperties;
+  return (
+    <SettingsRow
+      {...searchableSetting("setting-chat-text-contrast")}
+      description="Strength of agent reply text. 80% is the classic dimmed tone; 100% renders pure white in dark mode."
+      resetAction={
+        settings.chatTextContrast !== DEFAULT_UNIFIED_SETTINGS.chatTextContrast ? (
+          <SettingResetButton
+            label="chat text contrast"
+            onClick={() =>
+              updateSettings({ chatTextContrast: DEFAULT_UNIFIED_SETTINGS.chatTextContrast })
+            }
+          />
+        ) : null
+      }
+      control={
+        <div className="flex w-full items-center gap-3 sm:w-52">
+          <output
+            className="min-w-12 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs font-medium tabular-nums text-foreground"
+            htmlFor="chat-text-contrast"
+          >
+            {settings.chatTextContrast}%
+          </output>
+          <input
+            aria-label="Chat text contrast"
+            className="settings-slider min-w-0 flex-1"
+            id="chat-text-contrast"
+            max={MAX_CHAT_TEXT_CONTRAST}
+            min={MIN_CHAT_TEXT_CONTRAST}
+            onChange={(event) => {
+              const chatTextContrast = Number(event.currentTarget.value);
+              if (
+                Number.isInteger(chatTextContrast) &&
+                chatTextContrast >= MIN_CHAT_TEXT_CONTRAST &&
+                chatTextContrast <= MAX_CHAT_TEXT_CONTRAST
+              ) {
+                updateSettings({ chatTextContrast });
+              }
+            }}
+            step={1}
+            style={sliderStyle}
+            type="range"
+            value={settings.chatTextContrast}
+          />
+        </div>
+      }
+    >
+      {/* Styled exactly like a chat reply and driven by the same CSS variable
+          the slider updates, so the sample tracks the drag live. */}
+      <div className="mt-1 mb-2 rounded-lg border border-border bg-background px-3 py-2">
+        <p className="text-sm leading-relaxed text-(--chat-markdown-foreground)">
+          Agent replies read in this tone. Adjust the slider until longer answers feel comfortable
+          to read — <strong>emphasis</strong> and body text brighten together.
+        </p>
+      </div>
+    </SettingsRow>
   );
 }
 

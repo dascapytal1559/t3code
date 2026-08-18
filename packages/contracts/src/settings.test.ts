@@ -50,16 +50,16 @@ describe("ClientSettings glass opacity", () => {
 });
 
 describe("ClientSettings chat text contrast", () => {
-  it("defaults to the dimmed chat text tone", () => {
-    expect(decodeClientSettings({}).chatTextContrast).toBe(0);
+  it("defaults to the classic dimmed chat text tone", () => {
+    expect(decodeClientSettings({}).chatTextContrast).toBe(80);
   });
 
-  it.each([-5, 101, 42.5])("rejects an invalid chat text contrast: %s", (value) => {
+  it.each([79, 101, 92.5])("rejects an invalid chat text contrast: %s", (value) => {
     expect(() => decodeClientSettings({ chatTextContrast: value })).toThrow();
     expect(() => decodeClientSettingsPatch({ chatTextContrast: value })).toThrow();
   });
 
-  it.each([0, 55, 100])("accepts a chat text contrast within the supported range: %s", (value) => {
+  it.each([80, 90, 100])("accepts a chat text contrast within the supported range: %s", (value) => {
     expect(decodeClientSettings({ chatTextContrast: value }).chatTextContrast).toBe(value);
     expect(decodeClientSettingsPatch({ chatTextContrast: value }).chatTextContrast).toBe(value);
   });
