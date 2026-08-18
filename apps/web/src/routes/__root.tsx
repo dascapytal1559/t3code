@@ -131,6 +131,7 @@ function RootRouteView() {
       <AnchoredToastProvider>
         <DocumentTitleSync />
         <GlassAppearanceSync />
+        <ChatTextContrastSync />
         <FontAppearanceSync />
         {primaryEnvironmentAuthenticated ? <AuthenticatedTracingBootstrap /> : null}
         <RelayClientInstallDialog />
@@ -156,6 +157,22 @@ function GlassAppearanceSync() {
   useEffect(() => {
     document.documentElement.style.setProperty("--glass-opacity", `${glassOpacity}%`);
   }, [glassOpacity]);
+
+  return null;
+}
+
+function ChatTextContrastSync() {
+  const chatTextContrast = useClientSettings((settings) => settings.chatTextContrast);
+
+  useEffect(() => {
+    // The setting reads as text strength (80 = classic foreground/80, 100 =
+    // full contrast); the CSS variable is the color-mix progress toward the
+    // full-contrast endpoint, so 80–100 maps onto 0–100%.
+    document.documentElement.style.setProperty(
+      "--chat-text-contrast",
+      `${(chatTextContrast - 80) * 5}%`,
+    );
+  }, [chatTextContrast]);
 
   return null;
 }
