@@ -1,4 +1,5 @@
 import { type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
+import { MAX_CHAT_TEXT_CONTRAST, MIN_CHAT_TEXT_CONTRAST } from "@t3tools/contracts/settings";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
@@ -165,13 +166,15 @@ function ChatTextContrastSync() {
   const chatTextContrast = useClientSettings((settings) => settings.chatTextContrast);
 
   useEffect(() => {
-    // The setting reads as text strength (80 = classic foreground/80, 100 =
-    // full contrast); the CSS variable is the color-mix progress toward the
-    // full-contrast endpoint, so 80–100 maps onto 0–100%.
-    document.documentElement.style.setProperty(
-      "--chat-text-contrast",
-      `${(chatTextContrast - 80) * 5}%`,
-    );
+    // The setting reads as text strength (the minimum is the classic
+    // foreground/80, the maximum full contrast); the CSS variable is the
+    // color-mix progress toward the full-contrast endpoint, so the setting's
+    // range maps onto 0–100%.
+    const progress =
+      ((chatTextContrast - MIN_CHAT_TEXT_CONTRAST) /
+        (MAX_CHAT_TEXT_CONTRAST - MIN_CHAT_TEXT_CONTRAST)) *
+      100;
+    document.documentElement.style.setProperty("--chat-text-contrast", `${progress}%`);
   }, [chatTextContrast]);
 
   return null;
