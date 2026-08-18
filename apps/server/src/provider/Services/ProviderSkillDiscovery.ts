@@ -24,6 +24,9 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
 
+import { causeErrorTag } from "@t3tools/shared/observability";
+
+import type { ProviderSkillProbeError } from "../Errors.ts";
 import { ProviderInstanceRegistry } from "./ProviderInstanceRegistry.ts";
 
 /** Bounds the cache across instances x workspaces; oldest entry evicted. */
@@ -42,109 +45,110 @@ export class ProviderSkillDiscovery extends Context.Service<
   ProviderSkillDiscoveryShape
 >()("t3/provider/Services/ProviderSkillDiscovery") {}
 
-export const ProviderSkillDiscoveryLive = Layer.effect(
-  ProviderSkillDiscovery,
-  Effect.gen(function* () {
-    const registry = yield* ProviderInstanceRegistry;
-    const fileSystem = yield* FileSystem.FileSystem;
-    const revalidateScope = yield* Scope.make("sequential");
-    yield* Effect.addFinalizer(() => Scope.close(revalidateScope, Exit.void));
+type SkillProbe = (
+  cwd: string,
+) => Effect.Effect<ReadonlyArray<ServerProviderSkill>, ProviderSkillProbeError>;
 
-    const cache = new Map<string, ReadonlyArray<ServerProviderSkill>>();
-    const inflight = new Map<string, Deferred.Deferred<ReadonlyArray<ServerProviderSkill>>>();
+export const make = Effect.gen(function* () {
+  const registry = yield* ProviderInstanceRegistry;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const revalidateScope = yield* Scope.make("sequential");
+  yield* Effect.addFinalizer(() => Scope.close(revalidateScope, Exit.void));
 
-    const rememberSkills = (key: string, skills: ReadonlyArray<ServerProviderSkill>) => {
-      cache.delete(key);
-      cache.set(key, skills);
-      while (cache.size > SKILL_CACHE_CAPACITY) {
-        const oldestKey = cache.keys().next().value;
-        if (oldestKey === undefined) break;
-        cache.delete(oldestKey);
+  const cache = new Map<string, ReadonlyArray<ServerProviderSkill>>();
+  const inflight = new Map<string, Deferred.Deferred<ReadonlyArray<ServerProviderSkill>>>();
+
+  const rememberSkills = (key: string, skills: ReadonlyArray<ServerProviderSkill>) => {
+    cache.delete(key);
+    cache.set(key, skills);
+    while (cache.size > SKILL_CACHE_CAPACITY) {
+      const oldestKey = cache.keys().next().value;
+      if (oldestKey === undefined) break;
+      cache.delete(oldestKey);
+    }
+  };
+
+  const runProbe = (
+    key: string,
+    deferred: Deferred.Deferred<ReadonlyArray<ServerProviderSkill>>,
+    discover: SkillProbe,
+    cwd: string,
+  ) =>
+    Effect.gen(function* () {
+      const exit = yield* Effect.exit(discover(cwd));
+      if (Exit.isSuccess(exit)) {
+        rememberSkills(key, exit.value);
+      } else {
+        yield* Effect.logWarning("Provider skill probe failed; keeping last inventory.", {
+          key,
+          errorTag: causeErrorTag(exit.cause),
+        });
       }
-    };
+      yield* Deferred.succeed(deferred, Exit.isSuccess(exit) ? exit.value : (cache.get(key) ?? []));
+    }).pipe(
+      // Cleanup on ANY exit, interruption included: drop the inflight
+      // entry and unblock waiters with the last good inventory. A
+      // completed deferred ignores the second succeed.
+      Effect.onExit(() =>
+        Effect.gen(function* () {
+          inflight.delete(key);
+          yield* Deferred.succeed(deferred, cache.get(key) ?? []);
+        }),
+      ),
+    );
 
-    const runProbe = (
-      key: string,
-      deferred: Deferred.Deferred<ReadonlyArray<ServerProviderSkill>>,
-      discover: (cwd: string) => Effect.Effect<ReadonlyArray<ServerProviderSkill>>,
-      cwd: string,
-    ) =>
-      Effect.gen(function* () {
-        const exit = yield* Effect.exit(discover(cwd));
-        if (Exit.isSuccess(exit)) {
-          rememberSkills(key, exit.value);
-        } else {
-          yield* Effect.logWarning("Provider skill probe failed; keeping last inventory.", {
-            key,
-          });
-        }
-        yield* Deferred.succeed(
-          deferred,
-          Exit.isSuccess(exit) ? exit.value : (cache.get(key) ?? []),
-        );
-      }).pipe(
-        // Cleanup on ANY exit, interruption included: drop the inflight
-        // entry and unblock waiters with the last good inventory. A
-        // completed deferred ignores the second succeed.
-        Effect.onExit(() =>
-          Effect.gen(function* () {
-            inflight.delete(key);
-            yield* Deferred.succeed(deferred, cache.get(key) ?? []);
-          }),
-        ),
-      );
+  /**
+   * Ensure one probe is in flight for `key` and return its deferred.
+   * The probe runs detached in the service scope so an interrupted
+   * request (picker closed, client gone) can never orphan the inflight
+   * entry and wedge the key.
+   */
+  const ensureProbe = (
+    key: string,
+    discover: SkillProbe,
+    cwd: string,
+  ): Effect.Effect<Deferred.Deferred<ReadonlyArray<ServerProviderSkill>>> =>
+    Effect.gen(function* () {
+      const deferred = yield* Deferred.make<ReadonlyArray<ServerProviderSkill>>();
+      // No yield points between the check and the set: the first fiber
+      // to reach here wins the key, later ones join its deferred.
+      const existing = inflight.get(key);
+      if (existing) {
+        return existing;
+      }
+      inflight.set(key, deferred);
+      yield* runProbe(key, deferred, discover, cwd).pipe(Effect.forkIn(revalidateScope));
+      return deferred;
+    });
 
-    /**
-     * Ensure one probe is in flight for `key` and return its deferred.
-     * The probe runs detached in the service scope so an interrupted
-     * request (picker closed, client gone) can never orphan the inflight
-     * entry and wedge the key.
-     */
-    const ensureProbe = (
-      key: string,
-      discover: (cwd: string) => Effect.Effect<ReadonlyArray<ServerProviderSkill>>,
-      cwd: string,
-    ): Effect.Effect<Deferred.Deferred<ReadonlyArray<ServerProviderSkill>>> =>
-      Effect.gen(function* () {
-        const deferred = yield* Deferred.make<ReadonlyArray<ServerProviderSkill>>();
-        // No yield points between the check and the set: the first fiber
-        // to reach here wins the key, later ones join its deferred.
-        const existing = inflight.get(key);
-        if (existing) {
-          return existing;
-        }
-        inflight.set(key, deferred);
-        yield* runProbe(key, deferred, discover, cwd).pipe(Effect.forkIn(revalidateScope));
-        return deferred;
-      });
+  const listSkills = (
+    input: ServerProviderSkillsInput,
+  ): Effect.Effect<ServerProviderSkillsResult> =>
+    Effect.gen(function* () {
+      const instance = yield* registry.getInstance(input.instanceId);
+      if (instance === undefined) {
+        return { skills: [] };
+      }
+      const discover = instance.discoverSkills;
+      const workspaceCwd = input.cwd;
+      if (workspaceCwd === null || discover === undefined) {
+        const snapshot = yield* instance.snapshot.getSnapshot;
+        return { skills: snapshot.skills };
+      }
 
-    const listSkills = (
-      input: ServerProviderSkillsInput,
-    ): Effect.Effect<ServerProviderSkillsResult> =>
-      Effect.gen(function* () {
-        const instance = yield* registry.getInstance(input.instanceId);
-        if (instance === undefined) {
-          return { skills: [] };
-        }
-        const discover = instance.discoverSkills;
-        const workspaceCwd = input.cwd;
-        if (workspaceCwd === null || discover === undefined) {
-          const snapshot = yield* instance.snapshot.getSnapshot;
-          return { skills: snapshot.skills };
-        }
+      const cwd = yield* fileSystem
+        .realPath(workspaceCwd)
+        .pipe(Effect.orElseSucceed(() => workspaceCwd));
+      const key = `${input.instanceId}${KEY_SEPARATOR}${cwd}`;
+      const cached = cache.get(key);
+      const deferred = yield* ensureProbe(key, discover, cwd);
+      if (cached !== undefined) {
+        return { skills: cached };
+      }
+      return { skills: yield* Deferred.await(deferred) };
+    });
 
-        const cwd = yield* fileSystem
-          .realPath(workspaceCwd)
-          .pipe(Effect.orElseSucceed(() => workspaceCwd));
-        const key = `${input.instanceId}${KEY_SEPARATOR}${cwd}`;
-        const cached = cache.get(key);
-        const deferred = yield* ensureProbe(key, discover, cwd);
-        if (cached !== undefined) {
-          return { skills: cached };
-        }
-        return { skills: yield* Deferred.await(deferred) };
-      });
+  return { listSkills } satisfies ProviderSkillDiscoveryShape;
+});
 
-    return { listSkills } satisfies ProviderSkillDiscoveryShape;
-  }),
-);
+export const layer = Layer.effect(ProviderSkillDiscovery, make);

@@ -3,6 +3,7 @@ import {
   type ModelCapabilities,
   type ServerProvider,
   type ServerProviderModel,
+  type ServerProviderSkill,
 } from "@t3tools/contracts";
 import type * as EffectAcpSchema from "effect-acp/schema";
 import { causeErrorTag } from "@t3tools/shared/observability";
@@ -255,7 +256,11 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
 
   const [skills, discoveryExit] = yield* Effect.all(
     [
-      discoverGrokSkills(grokSettings, cwd, environment),
+      // Best-effort for the snapshot baseline: a failed probe degrades to
+      // an empty list rather than degrading the provider status.
+      discoverGrokSkills(grokSettings, cwd, environment).pipe(
+        Effect.orElseSucceed((): ReadonlyArray<ServerProviderSkill> => []),
+      ),
       discoverGrokModelsViaAcp(grokSettings, environment).pipe(
         Effect.timeoutOption(GROK_ACP_MODEL_DISCOVERY_TIMEOUT_MS),
         Effect.exit,
