@@ -723,6 +723,15 @@ export function createServerEnvironmentAtoms<R, E>(
           Stream.mapAccum(Option.none<ServerLifecycleWelcomePayload>, projectServerWelcome),
         ),
     }),
+    // Contextual `$`-picker skills for (instance, cwd). The server serves
+    // these stale-while-revalidate, so a short client stale window only
+    // dedupes rapid picker re-opens.
+    providerSkills: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:provider-skills",
+      tag: WS_METHODS.serverListProviderSkills,
+      staleTimeMs: 5_000,
+      idleTtlMs: 5 * 60_000,
+    }),
     refreshProviders: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:refresh-providers",
       tag: WS_METHODS.serverRefreshProviders,

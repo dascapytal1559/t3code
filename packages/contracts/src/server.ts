@@ -97,6 +97,30 @@ export const ServerProviderSkill = Schema.Struct({
 export type ServerProviderSkill = typeof ServerProviderSkill.Type;
 
 /**
+ * Request the skills a provider instance would load for a workspace
+ * directory — the picker's data source. `cwd: null` asks for the
+ * user-scope inventory (directoryless threads). The `cwd` is
+ * client-supplied, matching the workspace file APIs.
+ */
+export const ServerProviderSkillsInput = Schema.Struct({
+  instanceId: ProviderInstanceId,
+  cwd: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type ServerProviderSkillsInput = typeof ServerProviderSkillsInput.Type;
+
+/**
+ * The provider's authoritative merged skill list for the requested
+ * directory. Served stale-while-revalidate: a cached inventory returns
+ * immediately while a fresh probe runs for the next request. An unknown
+ * instance or a provider without contextual discovery yields the
+ * instance's snapshot baseline instead of an error.
+ */
+export const ServerProviderSkillsResult = Schema.Struct({
+  skills: Schema.Array(ServerProviderSkill),
+});
+export type ServerProviderSkillsResult = typeof ServerProviderSkillsResult.Type;
+
+/**
  * Availability of a configured provider instance from the runtime's POV.
  *
  *  - `available` — the build ships this driver and an instance is wired
