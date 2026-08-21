@@ -325,6 +325,49 @@ it.effect("list includes the subtree of root-level directory symlinks", () =>
   ),
 );
 
+it.effect("list includes hidden root entries but excludes .git and .DS_Store", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const cwd = yield* Effect.acquireRelease(
+        Effect.promise(() => NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-search-index-"))),
+        (dir) => Effect.promise(() => NodeFSP.rm(dir, { recursive: true, force: true })),
+      );
+      yield* Effect.promise(async () => {
+        await NodeFSP.mkdir(NodePath.join(cwd, ".agents"));
+        await NodeFSP.writeFile(NodePath.join(cwd, ".agents", "skills.md"), "skills");
+        await NodeFSP.writeFile(NodePath.join(cwd, ".gitignore"), "node_modules\n");
+        await NodeFSP.writeFile(NodePath.join(cwd, ".DS_Store"), "junk");
+        await NodeFSP.mkdir(NodePath.join(cwd, ".git"));
+        await NodeFSP.writeFile(NodePath.join(cwd, ".git", "HEAD"), "ref");
+        await NodeFSP.writeFile(NodePath.join(cwd, "visible.txt"), "visible");
+        await NodeFSP.symlink(NodePath.join(cwd, "visible.txt"), NodePath.join(cwd, "linked-file"));
+      });
+
+      const finder = {
+        destroy: vi.fn(),
+        waitForIndexReady: vi.fn(async () => ({ ok: true as const, value: true })),
+        mixedSearch: vi.fn(() => ({
+          ok: true as const,
+          value: { items: [], scores: [], totalMatched: 0, totalFiles: 0 },
+        })),
+      } as unknown as FileFinder;
+      vi.spyOn(FileFinder, "create").mockReturnValueOnce({ ok: true, value: finder });
+
+      const searchIndex = yield* WorkspaceSearchIndex.make(cwd);
+      const result = yield* searchIndex.list();
+
+      expect(result.entries.map((entry) => entry.path)).toEqual([
+        ".agents",
+        ".agents/skills.md",
+        ".gitignore",
+        "linked-file",
+      ]);
+      expect(result.entries.find((entry) => entry.path === ".agents")?.kind).toBe("directory");
+      expect(result.entries.find((entry) => entry.path === "linked-file")?.kind).toBe("file");
+    }),
+  ),
+);
+
 it.effect("search matches files inside symlinked directory subtrees", () =>
   Effect.scoped(
     Effect.gen(function* () {

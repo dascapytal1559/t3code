@@ -303,11 +303,14 @@ function withDirectoryAncestors(entries: ReadonlyArray<ProjectEntry>): ProjectEn
 }
 
 /**
- * The native scanner does not descend into symlinked directories, so the file
- * explorer would render them as empty. Walk the subtree of every root-level
- * directory symlink and return its entries. Bounded by SYMLINK_WALK_MAX_ENTRIES
- * and cycle-safe via resolved real paths.
+ * The native scanner skips symlinked entries and hidden (dot) entries, so the
+ * file explorer would never render them. Enumerate root-level symlinks and
+ * dot-entries, walking the subtrees of directory ones — matching the VS Code
+ * explorer default of showing everything except `.git` and `.DS_Store`.
+ * Bounded by SYMLINK_WALK_MAX_ENTRIES and cycle-safe via resolved real paths.
  */
+const WALK_EXCLUDED_NAMES = new Set([".git", ".DS_Store"]);
+
 async function collectSymlinkSubtreeEntries(
   cwd: string,
   knownPaths: ReadonlySet<string>,
@@ -344,6 +347,7 @@ async function collectSymlinkSubtreeEntries(
 
     for (const dirent of dirents) {
       if (entries.length >= SYMLINK_WALK_MAX_ENTRIES) return;
+      if (WALK_EXCLUDED_NAMES.has(dirent.name)) continue;
       const childRelativePath = `${relativePath}/${dirent.name}`;
       const childAbsolutePath = NodePath.join(absolutePath, dirent.name);
       let kind: ProjectEntryKind | null = null;
@@ -374,11 +378,18 @@ async function collectSymlinkSubtreeEntries(
   }
 
   for (const dirent of rootDirents) {
-    if (!dirent.isSymbolicLink()) continue;
+    if (WALK_EXCLUDED_NAMES.has(dirent.name)) continue;
+    const isHidden = dirent.name.startsWith(".");
+    if (!dirent.isSymbolicLink() && !isHidden) continue;
     const absolutePath = NodePath.join(cwd, dirent.name);
+    let stat: NodeFS.Stats;
     try {
-      if (!(await NodeFSP.stat(absolutePath)).isDirectory()) continue;
+      stat = await NodeFSP.stat(absolutePath);
     } catch {
+      continue;
+    }
+    if (!stat.isDirectory()) {
+      addEntry(dirent.name, "file");
       continue;
     }
     if (!addEntry(dirent.name, "directory")) continue;
