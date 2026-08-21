@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off
 import {
   type DirItem,
   type DirSearchResult,
@@ -14,6 +15,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as LayerMap from "effect/LayerMap";
 import * as Schema from "effect/Schema";
+import * as NodeFSP from "node:fs/promises";
+import type * as NodeFS from "node:fs";
+import * as NodePath from "node:path";
 
 import type {
   ProjectEntry,
@@ -32,6 +36,7 @@ const WORKSPACE_INDEX_SCAN_TIMEOUT_MS = 15_000;
 const WORKSPACE_INDEX_IDLE_TTL = "15 minutes";
 const CONTENT_SEARCH_TIME_BUDGET_MS = 250;
 const CONTENT_SEARCH_MAX_MATCHES_PER_FILE = 100;
+const SYMLINK_WALK_MAX_ENTRIES = 5_000;
 
 export class WorkspaceSearchIndexCreateFailed extends Schema.TaggedErrorClass<WorkspaceSearchIndexCreateFailed>()(
   "WorkspaceSearchIndexCreateFailed",
@@ -297,6 +302,92 @@ function withDirectoryAncestors(entries: ReadonlyArray<ProjectEntry>): ProjectEn
   return [...entryByPath.values()];
 }
 
+/**
+ * The native scanner does not descend into symlinked directories, so the file
+ * explorer would render them as empty. Walk the subtree of every root-level
+ * directory symlink and return its entries. Bounded by SYMLINK_WALK_MAX_ENTRIES
+ * and cycle-safe via resolved real paths.
+ */
+async function collectSymlinkSubtreeEntries(
+  cwd: string,
+  knownPaths: ReadonlySet<string>,
+): Promise<ProjectEntry[]> {
+  const entries: ProjectEntry[] = [];
+  const known = new Set(knownPaths);
+  const visitedRealPaths = new Set<string>();
+
+  const addEntry = (path: string, kind: ProjectEntryKind): boolean => {
+    if (known.has(path) || entries.length >= SYMLINK_WALK_MAX_ENTRIES) {
+      return false;
+    }
+    known.add(path);
+    entries.push({ path, kind });
+    return true;
+  };
+
+  const walkDirectory = async (absolutePath: string, relativePath: string): Promise<void> => {
+    let realPath: string;
+    try {
+      realPath = await NodeFSP.realpath(absolutePath);
+    } catch {
+      return;
+    }
+    if (visitedRealPaths.has(realPath)) return;
+    visitedRealPaths.add(realPath);
+
+    let dirents: Array<NodeFS.Dirent>;
+    try {
+      dirents = await NodeFSP.readdir(absolutePath, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const dirent of dirents) {
+      if (entries.length >= SYMLINK_WALK_MAX_ENTRIES) return;
+      const childRelativePath = `${relativePath}/${dirent.name}`;
+      const childAbsolutePath = NodePath.join(absolutePath, dirent.name);
+      let kind: ProjectEntryKind | null = null;
+      if (dirent.isSymbolicLink()) {
+        try {
+          kind = (await NodeFSP.stat(childAbsolutePath)).isDirectory() ? "directory" : "file";
+        } catch {
+          continue;
+        }
+      } else if (dirent.isDirectory()) {
+        kind = "directory";
+      } else if (dirent.isFile()) {
+        kind = "file";
+      }
+      if (!kind) continue;
+      if (!addEntry(childRelativePath, kind)) continue;
+      if (kind === "directory") {
+        await walkDirectory(childAbsolutePath, childRelativePath);
+      }
+    }
+  };
+
+  let rootDirents: Array<NodeFS.Dirent>;
+  try {
+    rootDirents = await NodeFSP.readdir(cwd, { withFileTypes: true });
+  } catch {
+    return entries;
+  }
+
+  for (const dirent of rootDirents) {
+    if (!dirent.isSymbolicLink()) continue;
+    const absolutePath = NodePath.join(cwd, dirent.name);
+    try {
+      if (!(await NodeFSP.stat(absolutePath)).isDirectory()) continue;
+    } catch {
+      continue;
+    }
+    if (!addEntry(dirent.name, "directory")) continue;
+    await walkDirectory(absolutePath, dirent.name);
+  }
+
+  return entries;
+}
+
 const createFinder = Effect.fn("WorkspaceSearchIndex.createFinder")(function* (
   cwd: string,
   variant: WorkspaceSearchIndexVariant,
@@ -401,6 +492,29 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
     return result.value;
   });
 
+  const collectSymlinkEntries = Effect.fn("WorkspaceSearchIndex.collectSymlinkEntries")(
+    function* () {
+      return yield* Effect.tryPromise({
+        try: () => collectSymlinkSubtreeEntries(cwd, new Set()),
+        catch: (cause) =>
+          new WorkspaceSearchIndexSearchFailed({
+            cwd,
+            queryLength: 0,
+            pageSize: WORKSPACE_INDEX_PAGE_SIZE,
+            reason: "Failed to collect symlinked directory entries.",
+            cause,
+          }),
+      });
+    },
+  );
+  // The walk hits the filesystem, so cache it per index instance and rebuild
+  // only on refresh — the same cadence the native scanner uses.
+  let symlinkEntriesCache: ProjectEntry[] | null = null;
+  const getSymlinkEntries = Effect.fn("WorkspaceSearchIndex.getSymlinkEntries")(function* () {
+    symlinkEntriesCache ??= yield* collectSymlinkEntries();
+    return symlinkEntriesCache;
+  });
+
   const refresh: WorkspaceSearchIndex["Service"]["refresh"] = Effect.fn(
     "WorkspaceSearchIndex.refresh",
   )(function* () {
@@ -419,6 +533,7 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
         reason: result.error,
       });
     }
+    symlinkEntriesCache = null;
     yield* waitForIndexReady(
       cwd,
       finder,
@@ -437,8 +552,9 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
         finder.mixedSearch("", { pageSize: WORKSPACE_INDEX_PAGE_SIZE }),
       );
       const mapped = mapMixedSearchResult(result, WORKSPACE_INDEX_MAX_ENTRIES);
-      const sortedEntries = withDirectoryAncestors(mapped.entries).toSorted((left, right) =>
-        left.path.localeCompare(right.path),
+      const symlinkEntries = yield* getSymlinkEntries();
+      const sortedEntries = withDirectoryAncestors([...mapped.entries, ...symlinkEntries]).toSorted(
+        (left, right) => left.path.localeCompare(right.path),
       );
       const entries = sortedEntries.slice(0, WORKSPACE_INDEX_MAX_ENTRIES);
       return {
@@ -452,22 +568,48 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
     "WorkspaceSearchIndex.search",
   )(function* (query, limit, kind, imageOnly) {
     const pageSize = imageOnly ? WORKSPACE_INDEX_PAGE_SIZE : Math.max(1, limit + 1);
+    // The native scanner cannot see inside symlinked directories, so match
+    // cached symlink-subtree entries by substring and merge them in after the
+    // ranked native results.
+    const loweredQuery = query.toLowerCase();
+    const symlinkMatches = (yield* getSymlinkEntries()).filter(
+      (entry) =>
+        entry.path.toLowerCase().includes(loweredQuery) &&
+        (kind === undefined || entry.kind === kind) &&
+        (!imageOnly || entry.kind !== "file" || isWorkspaceImagePreviewPath(entry.path)),
+    );
+    const mergeSymlinkMatches = (
+      mapped: ProjectSearchEntriesResult,
+    ): ProjectSearchEntriesResult => {
+      const knownPaths = new Set(mapped.entries.map((entry) => entry.path));
+      const extras: ProjectEntry[] = [];
+      for (const entry of symlinkMatches) {
+        if (mapped.entries.length + extras.length >= limit) {
+          break;
+        }
+        if (!knownPaths.has(entry.path)) {
+          knownPaths.add(entry.path);
+          extras.push(entry);
+        }
+      }
+      return { entries: [...mapped.entries, ...extras], truncated: mapped.truncated };
+    };
     if (kind === "file" || imageOnly) {
       const result = yield* runSearch(query, pageSize, "fileSearch", () =>
         finder.fileSearch(query, { pageSize }),
       );
-      return mapFileSearchResult(result, limit, imageOnly);
+      return mergeSymlinkMatches(mapFileSearchResult(result, limit, imageOnly));
     }
     if (kind === "directory") {
       const result = yield* runSearch(query, pageSize, "directorySearch", () =>
         finder.directorySearch(query, { pageSize }),
       );
-      return mapDirectorySearchResult(result, limit);
+      return mergeSymlinkMatches(mapDirectorySearchResult(result, limit));
     }
     const result = yield* runSearch(query, pageSize, "mixedSearch", () =>
       finder.mixedSearch(query, { pageSize }),
     );
-    return mapMixedSearchResult(result, limit);
+    return mergeSymlinkMatches(mapMixedSearchResult(result, limit));
   });
 
   const searchContents: WorkspaceSearchIndex["Service"]["searchContents"] = Effect.fn(

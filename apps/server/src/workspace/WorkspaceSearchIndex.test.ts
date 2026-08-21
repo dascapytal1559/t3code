@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off
 import {
   FileFinder,
   type FileItem,
@@ -9,6 +10,9 @@ import { afterEach, expect, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as NodeFSP from "node:fs/promises";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 import { vi } from "vite-plus/test";
 
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
@@ -266,6 +270,106 @@ it.effect("keeps returned search diagnostics out of the cause chain", () =>
         reason: "native refresh rejected",
       });
       expect(refreshError.cause).toBeUndefined();
+    }),
+  ),
+);
+
+it.effect("list includes the subtree of root-level directory symlinks", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const cwd = yield* Effect.acquireRelease(
+        Effect.promise(() => NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-search-index-"))),
+        (dir) => Effect.promise(() => NodeFSP.rm(dir, { recursive: true, force: true })),
+      );
+      const target = NodePath.join(cwd, "real-lib");
+      const other = NodePath.join(cwd, "other-lib");
+      yield* Effect.promise(async () => {
+        await NodeFSP.mkdir(target);
+        await NodeFSP.writeFile(NodePath.join(target, "README.md"), "hello");
+        await NodeFSP.mkdir(NodePath.join(target, "nested"));
+        await NodeFSP.writeFile(NodePath.join(target, "nested", "deep.txt"), "deep");
+        await NodeFSP.mkdir(other);
+        await NodeFSP.writeFile(NodePath.join(other, "inner.txt"), "inner");
+        // A symlink inside the symlinked tree must be followed too.
+        await NodeFSP.symlink(other, NodePath.join(target, "alias"));
+        // A broken symlink must be skipped without failing the walk.
+        await NodeFSP.symlink(NodePath.join(cwd, "missing"), NodePath.join(target, "broken"));
+        await NodeFSP.symlink(target, NodePath.join(cwd, "linked"));
+      });
+
+      const finder = {
+        destroy: vi.fn(),
+        waitForIndexReady: vi.fn(async () => ({ ok: true as const, value: true })),
+        mixedSearch: vi.fn(() => ({
+          ok: true as const,
+          value: { items: [], scores: [], totalMatched: 0, totalFiles: 0 },
+        })),
+      } as unknown as FileFinder;
+      vi.spyOn(FileFinder, "create").mockReturnValueOnce({ ok: true, value: finder });
+
+      const searchIndex = yield* WorkspaceSearchIndex.make(cwd);
+      const result = yield* searchIndex.list();
+
+      expect(result.entries.map((entry) => entry.path)).toEqual([
+        "linked",
+        "linked/alias",
+        "linked/alias/inner.txt",
+        "linked/nested",
+        "linked/nested/deep.txt",
+        "linked/README.md",
+      ]);
+      expect(result.entries.find((entry) => entry.path === "linked")?.kind).toBe("directory");
+      expect(result.entries.find((entry) => entry.path === "linked/README.md")?.kind).toBe("file");
+      expect(result.truncated).toBe(false);
+    }),
+  ),
+);
+
+it.effect("search matches files inside symlinked directory subtrees", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const cwd = yield* Effect.acquireRelease(
+        Effect.promise(() => NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-search-index-"))),
+        (dir) => Effect.promise(() => NodeFSP.rm(dir, { recursive: true, force: true })),
+      );
+      const target = NodePath.join(cwd, "real-lib");
+      yield* Effect.promise(async () => {
+        await NodeFSP.mkdir(target);
+        await NodeFSP.writeFile(NodePath.join(target, "README.md"), "hello");
+        await NodeFSP.symlink(target, NodePath.join(cwd, "linked"));
+      });
+
+      const finder = {
+        destroy: vi.fn(),
+        waitForIndexReady: vi.fn(async () => ({ ok: true as const, value: true })),
+        mixedSearch: vi.fn(() => ({
+          ok: true as const,
+          value: { items: [], scores: [], totalMatched: 0, totalFiles: 0 },
+        })),
+        fileSearch: vi.fn(() => ({
+          ok: true as const,
+          value: { items: [], scores: [], totalMatched: 0, totalFiles: 0 },
+        })),
+        directorySearch: vi.fn(() => ({
+          ok: true as const,
+          value: { items: [], scores: [], totalMatched: 0 },
+        })),
+      } as unknown as FileFinder;
+      vi.spyOn(FileFinder, "create").mockReturnValueOnce({ ok: true, value: finder });
+
+      const searchIndex = yield* WorkspaceSearchIndex.make(cwd);
+
+      const mixed = yield* searchIndex.search("readme", 10);
+      expect(mixed.entries).toEqual([{ kind: "file", path: "linked/README.md" }]);
+
+      const files = yield* searchIndex.search("readme", 10, "file");
+      expect(files.entries).toEqual([{ kind: "file", path: "linked/README.md" }]);
+
+      const directories = yield* searchIndex.search("linked", 10, "directory");
+      expect(directories.entries).toEqual([{ kind: "directory", path: "linked" }]);
+
+      const misses = yield* searchIndex.search("nomatch", 10);
+      expect(misses.entries).toEqual([]);
     }),
   ),
 );
