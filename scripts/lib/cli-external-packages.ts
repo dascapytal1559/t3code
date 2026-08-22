@@ -30,6 +30,13 @@ export const CLI_RUNTIME_EXTERNAL_PREFIXES = [
   "ffi-rs",
   "@yuuang/",
   "@ff-labs/",
+  // Loads platform prebuilds (@parcel/watcher-darwin-arm64 etc.) relative to
+  // its own file at runtime. Its glob matching for the `ignore` option pulls
+  // in is-glob/picomatch/is-extglob, which must resolve beside it.
+  "@parcel/watcher",
+  "is-glob",
+  "is-extglob",
+  "picomatch",
   "@clerk/electron-passkeys",
   "@msgpackr-extract/",
   "msgpackr-extract",
