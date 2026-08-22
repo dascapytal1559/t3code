@@ -125,6 +125,7 @@ export function useProjectEntriesQuery(
   environmentId: EnvironmentId,
   cwd: string,
 ): ProjectQueryState<ProjectListEntriesResult> {
+  useProjectEntriesServerEvents(environmentId, cwd);
   const atom = getProjectEntriesQueryAtom(environmentId, cwd);
   const result = useAtomValue(atom);
   const refreshAtom = useAtomRefresh(atom);
@@ -135,6 +136,25 @@ export function useProjectEntriesQuery(
     isPending: result.waiting,
     refresh,
   };
+}
+
+const projectEntriesSyncAtom = Atom.family((key: string) => {
+  const separatorIndex = key.indexOf("\n");
+  const environmentId = key.slice(0, separatorIndex) as EnvironmentId;
+  const cwd = key.slice(separatorIndex + 1);
+  const listAtom = getProjectEntriesQueryAtom(environmentId, cwd);
+  const eventsAtom = projectEnvironment.entriesEvents({ environmentId, input: { cwd } });
+  return Atom.make((get) => {
+    // The watcher-driven server pushes one event per change burst; each one
+    // invalidates the entries query so the explorer matches the filesystem.
+    get.subscribe(eventsAtom, () => {
+      appAtomRegistry.refresh(listAtom);
+    });
+  }).pipe(Atom.setIdleTTL(60_000), Atom.withLabel(`project-entries-sync:${key}`));
+});
+
+function useProjectEntriesServerEvents(environmentId: EnvironmentId, cwd: string): void {
+  useAtomValue(projectEntriesSyncAtom(`${environmentId}\n${cwd}`));
 }
 
 /**

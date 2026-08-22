@@ -75,6 +75,11 @@ export const ProjectListEntriesInput = Schema.Struct({
 });
 export type ProjectListEntriesInput = typeof ProjectListEntriesInput.Type;
 
+export const ProjectEntriesChangedEvent = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+});
+export type ProjectEntriesChangedEvent = typeof ProjectEntriesChangedEvent.Type;
+
 export const ProjectListEntriesResult = Schema.Struct({
   entries: Schema.Array(ProjectEntry),
   truncated: Schema.Boolean,
