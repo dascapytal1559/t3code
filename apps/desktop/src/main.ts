@@ -9,6 +9,7 @@ import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeOS from "node:os";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
@@ -16,7 +17,10 @@ import * as Electron from "electron";
 
 import * as NetService from "@t3tools/shared/Net";
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { resolveRemoteT3CliPackageSpec } from "@t3tools/ssh/command";
+import {
+  parseRemoteT3CliPackageSpecOverride,
+  resolveRemoteT3CliPackageSpec,
+} from "@t3tools/ssh/command";
 import type { RemoteT3RunnerOptions } from "@t3tools/ssh/tunnel";
 import serverPackageJson from "../../server/package.json" with { type: "json" };
 
@@ -81,9 +85,16 @@ const desktopEnvironmentLayer = Layer.unwrap(
   }),
 );
 
+// Fork: when this file exists, its first non-empty non-comment line is used
+// verbatim as the npm package spec for SSH-launched remote servers — for
+// example the path of a fork-built t3 tarball already copied onto the remote
+// host. Read at every launch so a new spec applies on the next reconnect.
+const sshPackageSpecOverridePath = `${NodeOS.homedir()}/.t3/fork/ssh-t3-package-spec`;
+
 const resolveDesktopSshCliRunner = (
   environment: DesktopEnvironment.DesktopEnvironment["Service"],
   settings: DesktopAppSettings.DesktopSettings,
+  overrideSpec: string | null,
 ): RemoteT3RunnerOptions => {
   const devRemoteEntryPath = Option.getOrUndefined(environment.devRemoteT3ServerEntryPath);
   if (environment.isDevelopment && devRemoteEntryPath !== undefined) {
@@ -97,6 +108,7 @@ const resolveDesktopSshCliRunner = (
       appVersion: environment.appVersion,
       updateChannel: settings.updateChannel,
       isDevelopment: environment.isDevelopment,
+      overrideSpec,
     }),
     nodeEngineRange: serverPackageJson.engines.node,
   };
@@ -106,10 +118,16 @@ const desktopSshEnvironmentLayer = Layer.unwrap(
   Effect.gen(function* () {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const settings = yield* DesktopAppSettings.DesktopAppSettings;
+    const fileSystem = yield* FileSystem.FileSystem;
     return DesktopSshEnvironment.layer({
-      resolveCliRunner: settings.get.pipe(
-        Effect.map((currentSettings) => resolveDesktopSshCliRunner(environment, currentSettings)),
-      ),
+      resolveCliRunner: Effect.gen(function* () {
+        const currentSettings = yield* settings.get;
+        const overrideSpec = yield* fileSystem.readFileString(sshPackageSpecOverridePath).pipe(
+          Effect.map(parseRemoteT3CliPackageSpecOverride),
+          Effect.orElseSucceed((): string | null => null),
+        );
+        return resolveDesktopSshCliRunner(environment, currentSettings, overrideSpec);
+      }),
     });
   }),
 );

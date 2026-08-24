@@ -364,11 +364,34 @@ export const resolveSshTarget = Effect.fn("ssh/command.resolveSshTarget")(functi
   );
 });
 
+/**
+ * Fork: parses an operator-provided package-spec override file. The first
+ * non-empty line that is not a `#` comment is used verbatim as the npm
+ * package spec for the remote t3 runner (for example the path of a
+ * fork-built tarball already copied onto the remote host).
+ */
+export function parseRemoteT3CliPackageSpecOverride(contents: string): string | null {
+  for (const line of contents.split(/\r?\n/u)) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0 || trimmed.startsWith("#")) {
+      continue;
+    }
+    return trimmed;
+  }
+  return null;
+}
+
 export function resolveRemoteT3CliPackageSpec(input: {
   readonly appVersion: string;
   readonly updateChannel: DesktopUpdateChannel;
   readonly isDevelopment?: boolean;
+  readonly overrideSpec?: string | null;
 }): string {
+  const overrideSpec = input.overrideSpec?.trim();
+  if (overrideSpec) {
+    return overrideSpec;
+  }
+
   const appVersion = input.appVersion.trim();
   if (!input.isDevelopment && PUBLISHABLE_T3_VERSION_PATTERN.test(appVersion)) {
     return `t3@${appVersion}`;
