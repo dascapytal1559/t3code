@@ -26,8 +26,11 @@ import type {
   ProjectSearchContentsInput,
   ProjectSearchContentsResult,
   ProjectSearchEntriesResult,
+  VcsError,
 } from "@t3tools/contracts";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
+
+import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 
 const WORKSPACE_INDEX_MAX_ENTRIES = 25_000;
 const WORKSPACE_INDEX_PAGE_SIZE = WORKSPACE_INDEX_MAX_ENTRIES + 2;
@@ -37,6 +40,35 @@ const WORKSPACE_INDEX_IDLE_TTL = "15 minutes";
 const CONTENT_SEARCH_TIME_BUDGET_MS = 250;
 const CONTENT_SEARCH_MAX_MATCHES_PER_FILE = 100;
 const SYMLINK_WALK_MAX_ENTRIES = 5_000;
+
+type SupplementalPathFilter = (
+  cwd: string,
+  relativePaths: ReadonlyArray<string>,
+) => Effect.Effect<ReadonlyArray<string>, VcsError>;
+
+export const WorkspaceSupplementalPathFilter = Context.Reference<SupplementalPathFilter>(
+  "t3/workspace/WorkspaceSupplementalPathFilter",
+  {
+    defaultValue: () => (_cwd, relativePaths) => Effect.succeed(relativePaths),
+  },
+);
+
+export const supplementalPathFilterLayer = Layer.effect(
+  WorkspaceSupplementalPathFilter,
+  Effect.gen(function* () {
+    const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
+    return (cwd, relativePaths) =>
+      registry
+        .detect({ cwd })
+        .pipe(
+          Effect.flatMap((handle) =>
+            handle === null
+              ? Effect.succeed(relativePaths)
+              : handle.driver.filterIgnoredPaths(cwd, relativePaths),
+          ),
+        );
+  }),
+);
 
 export class WorkspaceSearchIndexCreateFailed extends Schema.TaggedErrorClass<WorkspaceSearchIndexCreateFailed>()(
   "WorkspaceSearchIndexCreateFailed",
@@ -318,6 +350,22 @@ async function collectSymlinkSubtreeEntries(
   const entries: ProjectEntry[] = [];
   const known = new Set(knownPaths);
   const visitedRealPaths = new Set<string>();
+  let realCwd: string;
+  try {
+    realCwd = await NodeFSP.realpath(cwd);
+  } catch {
+    return entries;
+  }
+
+  const isInsideWorkspace = (realPath: string): boolean => {
+    const relativePath = NodePath.relative(realCwd, realPath);
+    return (
+      relativePath === "" ||
+      (relativePath !== ".." &&
+        !relativePath.startsWith(`..${NodePath.sep}`) &&
+        !NodePath.isAbsolute(relativePath))
+    );
+  };
 
   const addEntry = (path: string, kind: ProjectEntryKind): boolean => {
     if (known.has(path) || entries.length >= SYMLINK_WALK_MAX_ENTRIES) {
@@ -335,6 +383,7 @@ async function collectSymlinkSubtreeEntries(
     } catch {
       return;
     }
+    if (!isInsideWorkspace(realPath)) return;
     if (visitedRealPaths.has(realPath)) return;
     visitedRealPaths.add(realPath);
 
@@ -353,6 +402,8 @@ async function collectSymlinkSubtreeEntries(
       let kind: ProjectEntryKind | null = null;
       if (dirent.isSymbolicLink()) {
         try {
+          const realChildPath = await NodeFSP.realpath(childAbsolutePath);
+          if (!isInsideWorkspace(realChildPath)) continue;
           kind = (await NodeFSP.stat(childAbsolutePath)).isDirectory() ? "directory" : "file";
         } catch {
           continue;
@@ -384,6 +435,10 @@ async function collectSymlinkSubtreeEntries(
     const absolutePath = NodePath.join(cwd, dirent.name);
     let stat: NodeFS.Stats;
     try {
+      if (dirent.isSymbolicLink()) {
+        const realPath = await NodeFSP.realpath(absolutePath);
+        if (!isInsideWorkspace(realPath)) continue;
+      }
       stat = await NodeFSP.stat(absolutePath);
     } catch {
       continue;
@@ -458,6 +513,7 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
   cwd: string,
   variant: WorkspaceSearchIndexVariant = "paths",
 ) {
+  const filterSupplementalPaths = yield* WorkspaceSupplementalPathFilter;
   const finder = yield* Effect.acquireRelease(createFinder(cwd, variant), (finder) =>
     Effect.try({
       try: () => finder.destroy(),
@@ -505,7 +561,7 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
 
   const collectSymlinkEntries = Effect.fn("WorkspaceSearchIndex.collectSymlinkEntries")(
     function* () {
-      return yield* Effect.tryPromise({
+      const entries = yield* Effect.tryPromise({
         try: () => collectSymlinkSubtreeEntries(cwd, new Set()),
         catch: (cause) =>
           new WorkspaceSearchIndexSearchFailed({
@@ -516,6 +572,23 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
             cause,
           }),
       });
+      const includedPaths = yield* filterSupplementalPaths(
+        cwd,
+        entries.map((entry) => entry.path),
+      ).pipe(
+        Effect.mapError(
+          (cause) =>
+            new WorkspaceSearchIndexSearchFailed({
+              cwd,
+              queryLength: 0,
+              pageSize: WORKSPACE_INDEX_PAGE_SIZE,
+              reason: "Failed to filter ignored supplemental workspace entries.",
+              cause,
+            }),
+        ),
+      );
+      const includedPathSet = new Set(includedPaths);
+      return entries.filter((entry) => includedPathSet.has(entry.path));
     },
   );
   // The walk hits the filesystem, so cache it per index instance and rebuild

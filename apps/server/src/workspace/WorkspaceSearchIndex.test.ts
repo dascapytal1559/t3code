@@ -368,6 +368,45 @@ it.effect("list includes hidden root entries but excludes .git and .DS_Store", (
   ),
 );
 
+it.effect("list excludes symlinks that resolve outside the workspace", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const directories = yield* Effect.acquireRelease(
+        Effect.promise(async () => ({
+          cwd: await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-search-index-workspace-")),
+          outside: await NodeFSP.mkdtemp(
+            NodePath.join(NodeOS.tmpdir(), "t3-search-index-outside-"),
+          ),
+        })),
+        ({ cwd, outside }) =>
+          Effect.promise(() =>
+            Promise.all([
+              NodeFSP.rm(cwd, { recursive: true, force: true }),
+              NodeFSP.rm(outside, { recursive: true, force: true }),
+            ]).then(() => undefined),
+          ),
+      );
+      yield* Effect.promise(async () => {
+        await NodeFSP.writeFile(NodePath.join(directories.outside, "secret.txt"), "secret");
+        await NodeFSP.symlink(directories.outside, NodePath.join(directories.cwd, "outside"));
+      });
+
+      const finder = {
+        destroy: vi.fn(),
+        waitForIndexReady: vi.fn(async () => ({ ok: true as const, value: true })),
+        mixedSearch: vi.fn(() => ({
+          ok: true as const,
+          value: { items: [], scores: [], totalMatched: 0, totalFiles: 0 },
+        })),
+      } as unknown as FileFinder;
+      vi.spyOn(FileFinder, "create").mockReturnValueOnce({ ok: true, value: finder });
+
+      const searchIndex = yield* WorkspaceSearchIndex.make(directories.cwd);
+      expect((yield* searchIndex.list()).entries).toEqual([]);
+    }),
+  ),
+);
+
 it.effect("search matches files inside symlinked directory subtrees", () =>
   Effect.scoped(
     Effect.gen(function* () {

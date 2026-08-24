@@ -1124,23 +1124,25 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     cwd: isPathTrigger ? gitCwd : null,
     query: isPathTrigger ? pathTriggerQuery : null,
   });
-  // Contextual skills for the `$` picker: what this instance would load
-  // in the thread's workspace, not the snapshot's server-global list.
-  // Fetched only while the `$` trigger is active; the last inventory is
+  // Contextual skills for the `$` and `/` menus: what this instance would
+  // load in the thread's workspace, not the snapshot's server-global list.
+  // Fetched only while a skill-bearing menu is active; the last inventory is
   // retained afterwards so inserted `$name` chips keep their labels and
   // descriptions once the trigger closes and the query goes idle. Until
   // the first response lands the snapshot baseline fills in.
-  const isSkillTrigger = composerTriggerKind === "skill";
+  const needsContextualSkills =
+    composerTriggerKind === "skill" ||
+    (composerTriggerKind === "slash-command" && settings.showSkillsInSlashMenu);
   const providerContextSkills = useProviderContextSkills({
     environmentId,
-    instanceId: isSkillTrigger && !noProviderAvailable ? selectedInstanceId : null,
+    instanceId: needsContextualSkills && !noProviderAvailable ? selectedInstanceId : null,
     cwd: gitCwd,
   });
   const retainedContextSkillsRef = useRef<{
     key: string;
     skills: ReadonlyArray<ServerProviderSkill>;
   } | null>(null);
-  const contextSkillsKey = `${selectedInstanceId} ${gitCwd ?? ""}`;
+  const contextSkillsKey = `${selectedInstanceId}\u0000${gitCwd ?? ""}`;
   if (providerContextSkills.skills !== null) {
     retainedContextSkillsRef.current = {
       key: contextSkillsKey,
@@ -1197,7 +1199,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           : []),
       ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
       const slashMenuSkills = getProviderSkillsForSlashMenu(
-        selectedProviderStatus?.skills ?? [],
+        composerSkills,
         settings.showSkillsInSlashMenu,
       );
       const providerSlashCommandItems = getProviderSlashCommandsForSlashMenu(
@@ -2225,7 +2227,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         // unique image into the overflow list for nothing.
         const existingDedupKeys = new Set(
           composerImagesRef.current.map(
-            (image) => `${image.mimeType} ${image.sizeBytes} ${image.name}`,
+            (image) => `${image.mimeType}\u0000${image.sizeBytes}\u0000${image.name}`,
           ),
         );
         const capacity = Math.max(
@@ -2236,7 +2238,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           (attachment) =>
             !existingIds.has(attachment.id) &&
             !existingDedupKeys.has(
-              `${attachment.mimeType} ${attachment.sizeBytes} ${attachment.name}`,
+              `${attachment.mimeType}\u0000${attachment.sizeBytes}\u0000${attachment.name}`,
             ),
         );
         // Anything past the attachment limit cannot be restored. The entry is
@@ -2328,7 +2330,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     // the composer has been cleared the user can type something genuinely
     // new (or switch threads) while encoding continues, and that deserves its
     // own entry.
-    const snapshotKey = `${String(composerDraftTarget)} ${prompt} ${images
+    const snapshotKey = `${String(composerDraftTarget)}\u0000${prompt}\u0000${images
       .map((image) => image.id)
       .join(",")}`;
     if (stashInFlightRef.current.has(snapshotKey)) return;

@@ -5,6 +5,7 @@ import type {
   OrchestrationThreadShell,
   ProviderInteractionMode,
   RuntimeMode,
+  ServerProviderSkill,
   ServerConfig as T3ServerConfig,
 } from "@t3tools/contracts";
 import {
@@ -66,6 +67,7 @@ import {
 } from "@t3tools/shared/searchRanking";
 import { resolveProviderOptionDescriptors } from "../../lib/providerOptions";
 import { useComposerPathSearch } from "../../state/use-composer-path-search";
+import { useProviderContextSkills } from "../../state/queries";
 import { ComposerCommandPopover, type ComposerCommandItem } from "./ComposerCommandPopover";
 import { matchesSlashSkillQuery } from "./composerSlashSkillSearch";
 import {
@@ -383,6 +385,34 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     }
     return detectComposerTrigger(props.draftMessage, composerSelection.end);
   }, [composerSelection, props.draftMessage]);
+  const needsContextualSkills =
+    composerTrigger?.kind === "skill" || composerTrigger?.kind === "slash-command";
+  const providerContextSkills = useProviderContextSkills({
+    environmentId: props.environmentId,
+    instanceId: needsContextualSkills ? props.selectedThread.modelSelection.instanceId : null,
+    cwd: props.projectCwd,
+  });
+  const contextSkillsKey = JSON.stringify([
+    props.selectedThread.modelSelection.instanceId,
+    props.projectCwd,
+  ]);
+  const retainedContextSkillsRef = useRef<{
+    readonly key: string;
+    readonly skills: ReadonlyArray<ServerProviderSkill>;
+  } | null>(null);
+  if (providerContextSkills.skills !== null) {
+    retainedContextSkillsRef.current = {
+      key: contextSkillsKey,
+      skills: providerContextSkills.skills,
+    };
+  }
+  const composerSkills =
+    providerContextSkills.skills ??
+    (retainedContextSkillsRef.current?.key === contextSkillsKey
+      ? retainedContextSkillsRef.current.skills
+      : null) ??
+    selectedProviderStatus?.skills ??
+    [];
   const pathSearch = useComposerPathSearch({
     environmentId: props.environmentId,
     cwd: composerTrigger?.kind === "path" ? props.projectCwd : null,
@@ -431,7 +461,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
         });
       }
 
-      const skillItems = (selectedProviderStatus?.skills ?? [])
+      const skillItems = composerSkills
         .filter((skill) => matchesSlashSkillQuery(skill, q))
         .map((skill) => ({
           id: `skill:${skill.name}`,
@@ -445,7 +475,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     }
 
     if (composerTrigger.kind === "skill") {
-      const enabledSkills = (selectedProviderStatus?.skills ?? []).filter((s) => s.enabled);
+      const enabledSkills = composerSkills.filter((s) => s.enabled);
       const normalizedQuery = normalizeSearchQuery(composerTrigger.query, {
         trimLeadingPattern: /^\$+/,
       });
@@ -542,7 +572,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
     }
 
     return [];
-  }, [composerTrigger, pathSearch.entries, selectedProviderStatus]);
+  }, [composerSkills, composerTrigger, pathSearch.entries, selectedProviderStatus]);
 
   // ── Handle command selection ──────────────────────────────
   const { onChangeDraftMessage, onUpdateInteractionMode, draftMessage, onSendMessage } = props;
@@ -797,7 +827,7 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
               ref={inputRef}
               multiline
               value={props.draftMessage}
-              skills={selectedProviderStatus?.skills ?? []}
+              skills={composerSkills}
               selection={composerSelection}
               onChangeText={props.onChangeDraftMessage}
               onSelectionChange={handleSelectionChange}

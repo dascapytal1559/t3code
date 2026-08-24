@@ -61,20 +61,22 @@ export const make = Effect.gen(function* () {
   const subscriptions = new Map<string, Promise<AsyncSubscription>>();
   const consumers = new Set<string>();
 
+  const resolveRealCwd = (inputCwd: string) =>
+    Effect.tryPromise(() => NodeFSP.realpath(inputCwd)).pipe(
+      Effect.map((realCwd): string | null => realCwd),
+      Effect.orElseSucceed(() => null),
+    );
+
   const ensureWatching = Effect.fn("WorkspaceWatcher.ensureWatching")(function* (inputCwd: string) {
-    let realCwd: string;
-    try {
-      realCwd = yield* Effect.promise(() => NodeFSP.realpath(inputCwd));
-    } catch {
-      return;
-    }
+    const realCwd = yield* resolveRealCwd(inputCwd);
+    if (realCwd === null) return;
     let startPromise = subscriptions.get(realCwd);
     if (!startPromise) {
       startPromise = ParcelWatcher.subscribe(
         realCwd,
         (error) => {
           if (error) return;
-          void Effect.runPromise(PubSub.publish(rawEvents, { realCwd })).catch(() => {});
+          PubSub.publishUnsafe(rawEvents, { realCwd });
         },
         { ignore: WATCHER_IGNORE },
       ).then(
@@ -120,15 +122,13 @@ export const make = Effect.gen(function* () {
 
   const streamChanges: WorkspaceWatcher["Service"]["streamChanges"] = (inputCwd) =>
     Stream.unwrap(
-      Effect.gen(function* () {
-        let realCwd: string;
-        try {
-          realCwd = yield* Effect.promise(() => NodeFSP.realpath(inputCwd));
-        } catch {
-          return Stream.empty as Stream.Stream<WorkspaceChangedEvent>;
-        }
-        return Stream.fromPubSub(changes).pipe(Stream.filter((event) => event.cwd === realCwd));
-      }),
+      resolveRealCwd(inputCwd).pipe(
+        Effect.map((realCwd) =>
+          realCwd === null
+            ? (Stream.empty as Stream.Stream<WorkspaceChangedEvent>)
+            : Stream.fromPubSub(changes).pipe(Stream.filter((event) => event.cwd === realCwd)),
+        ),
+      ),
     );
 
   yield* Effect.addFinalizer(() =>

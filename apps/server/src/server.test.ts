@@ -138,6 +138,7 @@ import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
+import * as WorkspaceSearchIndex from "./workspace/WorkspaceSearchIndex.ts";
 import * as WorkspaceWatcher from "./workspace/WorkspaceWatcher.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsDriver from "./vcs/VcsDriver.ts";
@@ -572,6 +573,11 @@ const buildAppUnderTest = (options?: {
     });
     const workspaceEntriesLayer = WorkspaceEntries.layer.pipe(
       Layer.provide(WorkspacePaths.layer),
+      Layer.provide(
+        WorkspaceSearchIndex.supplementalPathFilterLayer.pipe(
+          Layer.provide(vcsDriverRegistryLayer),
+        ),
+      ),
       Layer.provideMerge(vcsDriverRegistryLayer),
     );
     const workspaceAndProjectServicesLayer = Layer.mergeAll(
