@@ -356,6 +356,11 @@ export function resolveInlineCodeFileLinkMeta(
       ? trimmed
       : trimmed.replaceAll("\\", "/");
 
+  // `~` in prose often refers to another machine's home (agents working over
+  // ssh), and expanding it against this thread's home fabricates a path that
+  // may exist nowhere. Leave the span as plain, unlinked code.
+  if (candidate.startsWith("~/")) return null;
+
   const hasPosition = POSITION_SUFFIX_PATTERN.test(candidate);
   if (!hasPosition && !PATH_SEPARATOR_PATTERN.test(candidate)) return null;
 
