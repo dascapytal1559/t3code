@@ -368,7 +368,7 @@ it.effect("list includes hidden root entries but excludes .git and .DS_Store", (
   ),
 );
 
-it.effect("list excludes symlinks that resolve outside the workspace", () =>
+it.effect("list follows symlinks that resolve outside the workspace", () =>
   Effect.scoped(
     Effect.gen(function* () {
       const directories = yield* Effect.acquireRelease(
@@ -387,7 +387,7 @@ it.effect("list excludes symlinks that resolve outside the workspace", () =>
           ),
       );
       yield* Effect.promise(async () => {
-        await NodeFSP.writeFile(NodePath.join(directories.outside, "secret.txt"), "secret");
+        await NodeFSP.writeFile(NodePath.join(directories.outside, "notes.txt"), "notes");
         await NodeFSP.symlink(directories.outside, NodePath.join(directories.cwd, "outside"));
       });
 
@@ -402,7 +402,10 @@ it.effect("list excludes symlinks that resolve outside the workspace", () =>
       vi.spyOn(FileFinder, "create").mockReturnValueOnce({ ok: true, value: finder });
 
       const searchIndex = yield* WorkspaceSearchIndex.make(directories.cwd);
-      expect((yield* searchIndex.list()).entries).toEqual([]);
+      expect((yield* searchIndex.list()).entries).toEqual([
+        { path: "outside", kind: "directory" },
+        { path: "outside/notes.txt", kind: "file" },
+      ]);
     }),
   ),
 );

@@ -350,22 +350,6 @@ async function collectSymlinkSubtreeEntries(
   const entries: ProjectEntry[] = [];
   const known = new Set(knownPaths);
   const visitedRealPaths = new Set<string>();
-  let realCwd: string;
-  try {
-    realCwd = await NodeFSP.realpath(cwd);
-  } catch {
-    return entries;
-  }
-
-  const isInsideWorkspace = (realPath: string): boolean => {
-    const relativePath = NodePath.relative(realCwd, realPath);
-    return (
-      relativePath === "" ||
-      (relativePath !== ".." &&
-        !relativePath.startsWith(`..${NodePath.sep}`) &&
-        !NodePath.isAbsolute(relativePath))
-    );
-  };
 
   const addEntry = (path: string, kind: ProjectEntryKind): boolean => {
     if (known.has(path) || entries.length >= SYMLINK_WALK_MAX_ENTRIES) {
@@ -383,7 +367,6 @@ async function collectSymlinkSubtreeEntries(
     } catch {
       return;
     }
-    if (!isInsideWorkspace(realPath)) return;
     if (visitedRealPaths.has(realPath)) return;
     visitedRealPaths.add(realPath);
 
@@ -402,8 +385,6 @@ async function collectSymlinkSubtreeEntries(
       let kind: ProjectEntryKind | null = null;
       if (dirent.isSymbolicLink()) {
         try {
-          const realChildPath = await NodeFSP.realpath(childAbsolutePath);
-          if (!isInsideWorkspace(realChildPath)) continue;
           kind = (await NodeFSP.stat(childAbsolutePath)).isDirectory() ? "directory" : "file";
         } catch {
           continue;
@@ -435,10 +416,6 @@ async function collectSymlinkSubtreeEntries(
     const absolutePath = NodePath.join(cwd, dirent.name);
     let stat: NodeFS.Stats;
     try {
-      if (dirent.isSymbolicLink()) {
-        const realPath = await NodeFSP.realpath(absolutePath);
-        if (!isInsideWorkspace(realPath)) continue;
-      }
       stat = await NodeFSP.stat(absolutePath);
     } catch {
       continue;
