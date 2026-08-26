@@ -48,6 +48,11 @@ export class WorkspaceWatcher extends Context.Service<
   WorkspaceWatcher,
   {
     readonly streamChanges: (cwd: string) => Stream.Stream<WorkspaceChangedEvent>;
+    /**
+     * Emits a change event to current subscribers after an out-of-band index
+     * refresh, such as a client's manual rescan. No-op without subscribers.
+     */
+    readonly notifyChanged: (cwd: string) => Effect.Effect<void>;
   }
 >()("t3/workspace/WorkspaceWatcher") {}
 
@@ -304,6 +309,20 @@ export const make = Effect.gen(function* () {
       ),
     );
 
+  const notifyChanged: WorkspaceWatcher["Service"]["notifyChanged"] = Effect.fn(
+    "WorkspaceWatcher.notifyChanged",
+  )(function* (inputCwd: string) {
+    const realCwd = yield* resolveRealCwd(inputCwd);
+    if (realCwd === null) return;
+    yield* stateLock.withPermits(1)(
+      Effect.suspend(() => {
+        const state = states.get(realCwd);
+        if (state === undefined || state.closed) return Effect.void;
+        return PubSub.publish(state.changes, { cwd: realCwd }).pipe(Effect.asVoid);
+      }),
+    );
+  });
+
   yield* Effect.addFinalizer(() =>
     stateLock.withPermits(1)(
       Effect.gen(function* () {
@@ -314,7 +333,7 @@ export const make = Effect.gen(function* () {
     ),
   );
 
-  return WorkspaceWatcher.of({ streamChanges });
+  return WorkspaceWatcher.of({ notifyChanged, streamChanges });
 });
 
 /**

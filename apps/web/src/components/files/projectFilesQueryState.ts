@@ -7,9 +7,10 @@ import type {
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { useAtomCommand } from "~/state/use-atom-command";
 import { projectEnvironment } from "~/state/projects";
 import { useProjectPathSearch } from "~/state/queries";
 import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
@@ -129,11 +130,22 @@ export function useProjectEntriesQuery(
   const atom = getProjectEntriesQueryAtom(environmentId, cwd);
   const result = useAtomValue(atom);
   const refreshAtom = useAtomRefresh(atom);
-  const refresh = useCallback(() => refreshAtom(), [refreshAtom]);
+  const rescan = useAtomCommand(projectEnvironment.refreshEntries);
+  const [isRescanning, setIsRescanning] = useState(false);
+  // Manual refresh forces a server-side rescan before refetching: the watcher
+  // can miss changes (unwatchable filesystems, failed subscriptions), and
+  // re-reading the index alone would return the same stale entries.
+  const refresh = useCallback(() => {
+    setIsRescanning(true);
+    void rescan({ environmentId, input: { cwd } }).then(() => {
+      setIsRescanning(false);
+      refreshAtom();
+    });
+  }, [cwd, environmentId, refreshAtom, rescan]);
   return {
     data: Option.getOrNull(AsyncResult.value(result)),
     error: errorMessage(result),
-    isPending: result.waiting,
+    isPending: result.waiting || isRescanning,
     refresh,
   };
 }

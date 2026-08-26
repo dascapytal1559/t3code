@@ -140,6 +140,69 @@ it.live("watches external directory symlink targets exposed by the workspace", (
   }),
 );
 
+it.live("notifyChanged emits a synthetic change event to active subscribers", () =>
+  Effect.gen(function* () {
+    const refreshCalls = yield* Ref.make<Array<string>>([]);
+    const refreshed = yield* Deferred.make<void>();
+    const outcome = yield* Effect.gen(function* () {
+      const cwd = yield* makeTempDir;
+      const realCwd = yield* Effect.promise(() => NodeFSP.realpath(cwd));
+      const watcher = yield* WorkspaceWatcher.WorkspaceWatcher;
+      const armed = yield* Ref.make(false);
+      const established = yield* Deferred.make<void>();
+      const synthetic = yield* Deferred.make<WorkspaceWatcher.WorkspaceChangedEvent>();
+      yield* watcher.streamChanges(cwd).pipe(
+        Stream.runForEach((event) =>
+          Effect.gen(function* () {
+            yield* Deferred.succeed(established, undefined);
+            if (yield* Ref.get(armed)) yield* Deferred.succeed(synthetic, event);
+          }),
+        ),
+        Effect.forkScoped,
+      );
+      yield* Effect.promise(() => NodeFSP.writeFile(NodePath.join(cwd, "seed.txt"), "x")).pipe(
+        Effect.delay(Duration.millis(50)),
+      );
+      yield* Deferred.await(established);
+      // Let straggler watcher events drain before arming, so the event
+      // observed below can only come from notifyChanged.
+      yield* Effect.sleep(Duration.millis(400));
+      yield* Ref.set(armed, true);
+      yield* watcher.notifyChanged(cwd);
+      const event = yield* Deferred.await(synthetic);
+      return { realCwd, event };
+    }).pipe(
+      Effect.timeoutOrElse({
+        duration: Duration.seconds(10),
+        orElse: () => Effect.die(new Error("no synthetic change event within 10s")),
+      }),
+      Effect.provide(
+        WorkspaceWatcher.layer.pipe(Layer.provide(stubEntriesLayer(refreshCalls, refreshed))),
+      ),
+    );
+
+    expect(outcome.event.cwd).toBe(outcome.realCwd);
+  }),
+);
+
+it.live("notifyChanged without subscribers is a no-op", () =>
+  Effect.gen(function* () {
+    const refreshCalls = yield* Ref.make<Array<string>>([]);
+    const refreshed = yield* Deferred.make<void>();
+    yield* Effect.gen(function* () {
+      const cwd = yield* makeTempDir;
+      const watcher = yield* WorkspaceWatcher.WorkspaceWatcher;
+      yield* watcher.notifyChanged(cwd);
+    }).pipe(
+      Effect.provide(
+        WorkspaceWatcher.layer.pipe(Layer.provide(stubEntriesLayer(refreshCalls, refreshed))),
+      ),
+    );
+
+    expect((yield* Ref.get(refreshCalls)).length).toBe(0);
+  }),
+);
+
 it.live("stops refreshing after the last stream subscriber releases", () =>
   Effect.gen(function* () {
     const refreshCalls = yield* Ref.make<Array<string>>([]);

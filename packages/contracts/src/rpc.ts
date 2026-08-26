@@ -215,6 +215,7 @@ export const WS_METHODS = {
   projectsAdd: "projects.add",
   projectsRemove: "projects.remove",
   projectsListEntries: "projects.listEntries",
+  projectsRefreshEntries: "projects.refreshEntries",
   projectsSubscribeEntries: "projects.subscribeEntries",
   projectsReadFile: "projects.readFile",
   projectsSearchContents: "projects.searchContents",
@@ -665,6 +666,11 @@ export const WsProjectsListEntriesRpc = Rpc.make(WS_METHODS.projectsListEntries,
   error: Schema.Union([ProjectListEntriesError, EnvironmentAuthorizationError]),
 });
 
+export const WsProjectsRefreshEntriesRpc = Rpc.make(WS_METHODS.projectsRefreshEntries, {
+  payload: ProjectListEntriesInput,
+  error: EnvironmentAuthorizationError,
+});
+
 export const WsSubscribeProjectEntriesRpc = Rpc.make(WS_METHODS.projectsSubscribeEntries, {
   payload: ProjectListEntriesInput,
   success: ProjectEntriesChangedEvent,
@@ -1082,6 +1088,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSourceControlPublishRepositoryRpc,
   WsProjectsListEntriesRpc,
   WsProjectsReadFileRpc,
+  WsProjectsRefreshEntriesRpc,
   WsProjectsSearchContentsRpc,
   WsProjectsSearchEntriesRpc,
   WsProjectsWriteFileRpc,

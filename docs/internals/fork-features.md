@@ -54,6 +54,12 @@ symlinks, the fork also watches discovered external symlink targets. It does not
 blanket-ignore `node_modules`, because those entries can be visible in the
 explorer when the project's VCS rules allow them.
 
+Because the watcher can miss changes (unwatchable filesystems, failed
+subscriptions), a manual explorer refresh — the web refresh button and mobile
+pull-to-refresh — calls `projects.refreshEntries`, which rescans the workspace
+index from disk and then emits a change event so every subscribed client
+refetches, instead of merely re-reading the possibly stale index.
+
 Implementation: `apps/server/src/workspace/WorkspaceWatcher.ts`, with client
 query invalidation in the web and mobile `state/queries.ts` modules.
 

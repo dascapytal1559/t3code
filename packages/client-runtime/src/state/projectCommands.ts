@@ -67,6 +67,12 @@ export function createProjectEnvironmentAtoms<R, E>(
       staleTimeMs: 30_000,
       idleTtlMs: 5 * 60_000,
     }),
+    // Forces a server-side filesystem rescan; the watcher then notifies entry
+    // subscribers, so callers refetch listEntries after this settles.
+    refreshEntries: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:refresh-entries",
+      tag: WS_METHODS.projectsRefreshEntries,
+    }),
     entriesEvents: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:projects:subscribe-entries",
       tag: WS_METHODS.projectsSubscribeEntries,

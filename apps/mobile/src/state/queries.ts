@@ -24,6 +24,7 @@ import { appAtomRegistry } from "./atom-registry";
 import { orchestrationEnvironment } from "./orchestration";
 import { projectEnvironment } from "./projects";
 import { useEnvironmentQuery } from "./query";
+import { useAtomCommand } from "./use-atom-command";
 import { serverEnvironment } from "./server";
 import { useEnvironmentThread } from "./threads";
 import { vcsEnvironment } from "./vcs";
@@ -347,7 +348,7 @@ export function useProjectEntriesQuery(
   const target = enabled && environmentId !== null && cwd !== null ? { environmentId, cwd } : null;
   const key = target === null ? null : JSON.stringify([target.environmentId, target.cwd]);
   useAtomValue(key === null ? EMPTY_PROJECT_PATH_SEARCH_SYNC_ATOM : projectEntriesSyncAtom(key));
-  return useEnvironmentQuery<ProjectListEntriesResult, unknown>(
+  const query = useEnvironmentQuery<ProjectListEntriesResult, unknown>(
     target === null
       ? null
       : projectEnvironment.listEntries({
@@ -355,6 +356,24 @@ export function useProjectEntriesQuery(
           input: { cwd: target.cwd },
         }),
   );
+  const rescan = useAtomCommand(projectEnvironment.refreshEntries);
+  const [isRescanning, setIsRescanning] = useState(false);
+  const queryRefresh = query.refresh;
+  // Manual refresh (pull-to-refresh) forces a server-side rescan before
+  // refetching: the watcher can miss changes, and re-reading the index alone
+  // would return the same stale entries.
+  const refresh = useCallback(() => {
+    if (environmentId === null || cwd === null || !enabled) {
+      queryRefresh();
+      return;
+    }
+    setIsRescanning(true);
+    void rescan({ environmentId, input: { cwd } }).then(() => {
+      setIsRescanning(false);
+      queryRefresh();
+    });
+  }, [cwd, enabled, environmentId, queryRefresh, rescan]);
+  return { ...query, isPending: query.isPending || isRescanning, refresh };
 }
 
 export function useProviderContextSkills(target: {

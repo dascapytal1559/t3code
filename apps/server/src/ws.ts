@@ -1963,6 +1963,17 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "workspace" },
           ),
+        // Manual rescan for when the watcher missed changes (unwatchable
+        // filesystems, failed subscriptions): refresh the index from disk,
+        // then notify entry subscribers so every client refetches.
+        [WS_METHODS.projectsRefreshEntries]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.projectsRefreshEntries,
+            workspaceEntries
+              .refresh(input.cwd)
+              .pipe(Effect.andThen(workspaceWatcher.notifyChanged(input.cwd))),
+            { "rpc.aggregate": "workspace" },
+          ),
         [WS_METHODS.projectsSubscribeEntries]: (input) =>
           observeRpcStream(
             WS_METHODS.projectsSubscribeEntries,
