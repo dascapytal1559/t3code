@@ -338,10 +338,11 @@ function withDirectoryAncestors(entries: ReadonlyArray<ProjectEntry>): ProjectEn
  * The native scanner skips symlinked entries and hidden (dot) entries, so the
  * file explorer would never render them. Enumerate root-level symlinks and
  * dot-entries, walking the subtrees of directory ones — matching the VS Code
- * explorer default of showing everything except `.git` and `.DS_Store`.
+ * explorer default of showing hidden entries while preserving the native
+ * index's exclusions for `.git`, `.DS_Store`, and `.convex`.
  * Bounded by SYMLINK_WALK_MAX_ENTRIES and cycle-safe via resolved real paths.
  */
-const WALK_EXCLUDED_NAMES = new Set([".git", ".DS_Store"]);
+const WALK_EXCLUDED_NAMES = new Set([".git", ".DS_Store", ".convex"]);
 
 async function collectSymlinkSubtreeEntries(
   cwd: string,
@@ -644,16 +645,22 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
     ): ProjectSearchEntriesResult => {
       const knownPaths = new Set(mapped.entries.map((entry) => entry.path));
       const extras: ProjectEntry[] = [];
+      let supplementalTruncated = false;
       for (const entry of symlinkMatches) {
+        if (knownPaths.has(entry.path)) {
+          continue;
+        }
         if (mapped.entries.length + extras.length >= limit) {
+          supplementalTruncated = true;
           break;
         }
-        if (!knownPaths.has(entry.path)) {
-          knownPaths.add(entry.path);
-          extras.push(entry);
-        }
+        knownPaths.add(entry.path);
+        extras.push(entry);
       }
-      return { entries: [...mapped.entries, ...extras], truncated: mapped.truncated };
+      return {
+        entries: [...mapped.entries, ...extras],
+        truncated: mapped.truncated || supplementalTruncated,
+      };
     };
     if (kind === "file" || imageOnly) {
       const result = yield* runSearch(query, pageSize, "fileSearch", () =>

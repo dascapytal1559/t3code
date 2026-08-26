@@ -110,6 +110,7 @@ const resolveDesktopSshCliRunner = (
       isDevelopment: environment.isDevelopment,
       overrideSpec,
     }),
+    preferPackageSpec: overrideSpec !== null && overrideSpec.trim().length > 0,
     nodeEngineRange: serverPackageJson.engines.node,
   };
 };

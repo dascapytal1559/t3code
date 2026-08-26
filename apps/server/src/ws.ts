@@ -1917,8 +1917,7 @@ const makeWsRpcLayer = (
         [WS_METHODS.projectsSearchEntries]: (input) =>
           observeRpcEffect(
             WS_METHODS.projectsSearchEntries,
-            workspaceWatcher.ensureWatching(input.cwd).pipe(
-              Effect.andThen(workspaceEntries.search(input)),
+            workspaceEntries.search(input).pipe(
               Effect.mapError(
                 (cause) =>
                   new ProjectSearchEntriesError({
@@ -1935,8 +1934,7 @@ const makeWsRpcLayer = (
         [WS_METHODS.projectsSearchContents]: (input) =>
           observeRpcEffect(
             WS_METHODS.projectsSearchContents,
-            workspaceWatcher.ensureWatching(input.cwd).pipe(
-              Effect.andThen(workspaceEntries.searchContents(input)),
+            workspaceEntries.searchContents(input).pipe(
               Effect.mapError(
                 (cause) =>
                   new ProjectSearchContentsError({
@@ -1953,8 +1951,7 @@ const makeWsRpcLayer = (
         [WS_METHODS.projectsListEntries]: (input) =>
           observeRpcEffect(
             WS_METHODS.projectsListEntries,
-            workspaceWatcher.ensureWatching(input.cwd).pipe(
-              Effect.andThen(workspaceEntries.list(input)),
+            workspaceEntries.list(input).pipe(
               Effect.mapError(
                 (cause) =>
                   new ProjectListEntriesError({

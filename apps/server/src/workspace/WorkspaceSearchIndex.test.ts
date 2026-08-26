@@ -453,6 +453,10 @@ it.effect("search matches files inside symlinked directory subtrees", () =>
       const directories = yield* searchIndex.search("linked", 10, "directory");
       expect(directories.entries).toEqual([{ kind: "directory", path: "linked" }]);
 
+      const limited = yield* searchIndex.search("linked", 1);
+      expect(limited.entries).toHaveLength(1);
+      expect(limited.truncated).toBe(true);
+
       const misses = yield* searchIndex.search("nomatch", 10);
       expect(misses.entries).toEqual([]);
     }),
