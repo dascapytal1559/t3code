@@ -84,6 +84,28 @@ unchanged.
 
 Implementation: `apps/web/src/markdown-links.ts`.
 
+## Desktop runs a swappable server payload
+
+When `~/.t3/fork/desktop-server-root` exists on the desktop machine, its first
+non-empty, non-comment line names a directory that replaces the bundled server
+tree in packaged builds. The directory must contain `apps/server/dist/bin.mjs`
+(with `dist/client` inside) and a `node_modules` resolvable from its root —
+the same shape as the app.asar server root. Because the web client is served
+by the backend, one payload swap updates both server and frontend; only
+desktop shell changes (Electron main process, natives, packaging) still need a
+DMG rebuild. The file is read once at launch, `~/` expands to the home
+directory, and a missing or invalid target falls back to the bundled tree, so
+a stale pointer can never brick the app. Development launches ignore the file.
+
+The payload is staged from the same npm tarball the remote hosts install
+(`deploy/stage-server-payload.sh` in the wrapper repository extracts it and
+runs `npm install`), so local and remote deploys share one artifact. Whether
+the override took effect is observable in the backend child process's argv,
+which contains the resolved entry path.
+
+Implementation: `apps/desktop/src/main.ts` and
+`apps/desktop/src/app/DesktopEnvironment.ts`.
+
 ## SSH launch runs the fork server
 
 When `~/.t3/fork/ssh-t3-package-spec` exists on the desktop machine, its first

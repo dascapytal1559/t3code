@@ -68,6 +68,31 @@ import * as DesktopWslBackend from "./wsl/DesktopWslBackend.ts";
 import * as DesktopWslEnvironment from "./wsl/DesktopWslEnvironment.ts";
 import * as DesktopWslServerTree from "./wsl/DesktopWslServerTree.ts";
 
+// Fork: when this file exists and its first non-empty non-comment line names a
+// directory containing apps/server/dist/bin.mjs (plus the node_modules it
+// resolves against), packaged builds load the backend — and the web client it
+// serves — from that directory instead of the copy baked into app.asar,
+// making server/web deploys a JS payload swap with no DMG rebuild. Read once
+// at launch; a missing or invalid target falls back to the bundled tree.
+const desktopServerRootOverridePath = `${NodeOS.homedir()}/.t3/fork/desktop-server-root`;
+
+const readDesktopServerRootOverride = Effect.gen(function* () {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const contents = yield* fileSystem
+    .readFileString(desktopServerRootOverridePath)
+    .pipe(Effect.orElseSucceed(() => ""));
+  const line = contents
+    .split("\n")
+    .map((value) => value.trim())
+    .find((value) => value.length > 0 && !value.startsWith("#"));
+  if (line === undefined) return null;
+  const root = line.startsWith("~/") ? `${NodeOS.homedir()}/${line.slice(2)}` : line;
+  const hasEntry = yield* fileSystem
+    .exists(`${root}/apps/server/dist/bin.mjs`)
+    .pipe(Effect.orElseSucceed(() => false));
+  return hasEntry ? root : null;
+});
+
 const desktopEnvironmentLayer = Layer.unwrap(
   Effect.gen(function* () {
     const metadata = yield* Effect.service(ElectronApp.ElectronApp).pipe(
@@ -75,11 +100,13 @@ const desktopEnvironmentLayer = Layer.unwrap(
     );
     const platform = yield* HostProcessPlatform;
     const processArch = yield* HostProcessArchitecture;
+    const serverRootOverride = yield* readDesktopServerRootOverride;
     return DesktopEnvironment.layer({
       dirname: __dirname,
       homeDirectory: NodeOS.homedir(),
       platform,
       processArch,
+      ...(serverRootOverride !== null ? { serverRootOverride } : {}),
       ...metadata,
     });
   }),
