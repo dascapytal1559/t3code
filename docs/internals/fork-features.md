@@ -34,7 +34,18 @@ search and obey the project's VCS ignores. The walk is capped at 5,000 entries
 and rebuilt when the workspace index refreshes. Search reports truncation when
 unique supplemental results exceed the requested limit.
 
-Implementation: `apps/server/src/workspace/WorkspaceSearchIndex.ts`.
+Entries that are themselves symbolic links carry an optional `symlink` flag on
+the `ProjectEntry` contract (omitted for regular entries; `kind` still reflects
+the resolved target). The file explorer renders a small muted ↗ badge on those
+rows — web/desktop through the tree's row-decoration hook, mobile next to the
+row name. Descendants reached through a link are not flagged, and on web a
+symlinked directory absorbed into a flattened single-child segment shows no
+badge.
+
+Implementation: `apps/server/src/workspace/WorkspaceSearchIndex.ts`,
+`packages/contracts/src/project.ts`,
+`apps/web/src/components/files/FileBrowserPanel.tsx`, and
+`apps/mobile/src/features/files/FileTreeBrowser.tsx`.
 
 ## Hidden-root visibility
 

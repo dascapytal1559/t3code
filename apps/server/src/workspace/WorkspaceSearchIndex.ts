@@ -352,12 +352,12 @@ async function collectSymlinkSubtreeEntries(
   const known = new Set(knownPaths);
   const visitedRealPaths = new Set<string>();
 
-  const addEntry = (path: string, kind: ProjectEntryKind): boolean => {
+  const addEntry = (path: string, kind: ProjectEntryKind, symlink: boolean): boolean => {
     if (known.has(path) || entries.length >= SYMLINK_WALK_MAX_ENTRIES) {
       return false;
     }
     known.add(path);
-    entries.push({ path, kind });
+    entries.push(symlink ? { path, kind, symlink } : { path, kind });
     return true;
   };
 
@@ -396,7 +396,7 @@ async function collectSymlinkSubtreeEntries(
         kind = "file";
       }
       if (!kind) continue;
-      if (!addEntry(childRelativePath, kind)) continue;
+      if (!addEntry(childRelativePath, kind, dirent.isSymbolicLink())) continue;
       if (kind === "directory") {
         await walkDirectory(childAbsolutePath, childRelativePath);
       }
@@ -422,10 +422,10 @@ async function collectSymlinkSubtreeEntries(
       continue;
     }
     if (!stat.isDirectory()) {
-      addEntry(dirent.name, "file");
+      addEntry(dirent.name, "file", dirent.isSymbolicLink());
       continue;
     }
-    if (!addEntry(dirent.name, "directory")) continue;
+    if (!addEntry(dirent.name, "directory", dirent.isSymbolicLink())) continue;
     await walkDirectory(absolutePath, dirent.name);
   }
 

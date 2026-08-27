@@ -28,6 +28,10 @@ export type ProjectSearchEntriesInput = typeof ProjectSearchEntriesInput.Type;
 export const ProjectEntry = Schema.Struct({
   path: TrimmedNonEmptyString,
   kind: ProjectEntryKind,
+  // Present (true) only for entries that are themselves symbolic links; kind
+  // reflects the resolved target. Omitted for regular entries to keep the
+  // wire payload small.
+  symlink: Schema.optional(Schema.Boolean),
 });
 export type ProjectEntry = typeof ProjectEntry.Type;
 

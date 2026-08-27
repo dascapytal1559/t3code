@@ -31,6 +31,9 @@ const T3_FILE_ICON_SPRITE = `
     <rect x="2.5" y="7.955" width="27" height="16.091" fill="none" stroke="#b48a5a" />
     <path fill="#b48a5a" d="M5.909 20.636v-9.272h2.727l2.728 3.409 2.727-3.409h2.727v9.272h-2.727v-5.318l-2.727 3.409-2.728-3.409v5.318H5.91Zm17.046 0-4.091-4.5h2.727v-4.772h2.727v4.772h2.727l-4.09 4.5Z" />
   </symbol>
+  <symbol id="t3-file-icon-symlink" viewBox="0 0 16 16">
+    <path fill="currentColor" d="M6 3.25a.75.75 0 0 0 0 1.5h4.19L3.72 11.22a.75.75 0 1 0 1.06 1.06l6.47-6.47v4.19a.75.75 0 0 0 1.5 0V4a.75.75 0 0 0-.75-.75Z" />
+  </symbol>
   <symbol id="t3-file-icon-pnpm" viewBox="0 0 32 32">
     <path fill="#f9ad00" d="M30 10.75h-8.749V2H30Zm-9.626 0h-8.75V2h8.75Zm-9.625 0H2V2h8.749ZM30 20.375h-8.749v-8.75H30Z" />
     <path fill="currentColor" d="M20.374 20.375h-8.75v-8.75h8.75Zm0 9.625h-8.75v-8.75h8.75ZM30 30h-8.749v-8.75H30Zm-19.251 0H2v-8.75h8.749Z" />

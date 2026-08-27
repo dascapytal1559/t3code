@@ -320,6 +320,12 @@ it.effect("list includes the subtree of root-level directory symlinks", () =>
       ]);
       expect(result.entries.find((entry) => entry.path === "linked")?.kind).toBe("directory");
       expect(result.entries.find((entry) => entry.path === "linked/README.md")?.kind).toBe("file");
+      // Only the entries that are themselves links carry the symlink flag.
+      expect(result.entries.find((entry) => entry.path === "linked")?.symlink).toBe(true);
+      expect(result.entries.find((entry) => entry.path === "linked/alias")?.symlink).toBe(true);
+      expect(result.entries.find((entry) => entry.path === "linked/README.md")?.symlink).toBe(
+        undefined,
+      );
       expect(result.truncated).toBe(false);
     }),
   ),
@@ -364,6 +370,8 @@ it.effect("list includes hidden root entries but excludes .git and .DS_Store", (
       ]);
       expect(result.entries.find((entry) => entry.path === ".agents")?.kind).toBe("directory");
       expect(result.entries.find((entry) => entry.path === "linked-file")?.kind).toBe("file");
+      expect(result.entries.find((entry) => entry.path === "linked-file")?.symlink).toBe(true);
+      expect(result.entries.find((entry) => entry.path === ".agents")?.symlink).toBe(undefined);
     }),
   ),
 );
@@ -403,7 +411,7 @@ it.effect("list follows symlinks that resolve outside the workspace", () =>
 
       const searchIndex = yield* WorkspaceSearchIndex.make(directories.cwd);
       expect((yield* searchIndex.list()).entries).toEqual([
-        { path: "outside", kind: "directory" },
+        { path: "outside", kind: "directory", symlink: true },
         { path: "outside/notes.txt", kind: "file" },
       ]);
     }),
@@ -451,7 +459,7 @@ it.effect("search matches files inside symlinked directory subtrees", () =>
       expect(files.entries).toEqual([{ kind: "file", path: "linked/README.md" }]);
 
       const directories = yield* searchIndex.search("linked", 10, "directory");
-      expect(directories.entries).toEqual([{ kind: "directory", path: "linked" }]);
+      expect(directories.entries).toEqual([{ kind: "directory", path: "linked", symlink: true }]);
 
       const limited = yield* searchIndex.search("linked", 1);
       expect(limited.entries).toHaveLength(1);

@@ -101,6 +101,16 @@ describe("mobile file tree helpers", () => {
     }
   });
 
+  it("carries the symlink flag onto the linked entry's node only", () => {
+    const tree = buildFileTree([
+      { kind: "directory", path: "linked", symlink: true },
+      { kind: "file", path: "linked/inner.txt" },
+    ] satisfies ReadonlyArray<ProjectEntry>);
+
+    expect(tree[0]?.symlink).toBe(true);
+    expect(tree[0]?.children[0]?.symlink).toBe(false);
+  });
+
   it("expands top-level directories by default", () => {
     const tree = buildFileTree(entries);
 

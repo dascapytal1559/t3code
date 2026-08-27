@@ -97,6 +97,9 @@ const FileTreeRow = memo(function FileTreeRow(props: {
       >
         {node.name}
       </Text>
+      {node.symlink ? (
+        <SymbolView name="arrow.up.right" size={10} tintColor={props.iconColor} type="monochrome" />
+      ) : null}
       {node.kind === "directory" ? (
         <Text className="text-2xs font-t3-medium text-foreground-tertiary">
           {node.children.length}

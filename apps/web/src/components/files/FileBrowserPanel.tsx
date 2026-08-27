@@ -44,6 +44,7 @@ const TREE_UNSAFE_CSS = `
     --trees-font-size-override: 12px;
   }
   button[data-type='item'] { border-radius: 5px; }
+  div[data-item-section='decoration'] { opacity: 0.55; }
 `;
 
 function treePath(entry: ProjectEntry): string {
@@ -117,6 +118,11 @@ export default function FileBrowserPanel({
     [entries],
   );
   const entryKindsRef = useRef<ReadonlyMap<string, ProjectEntry["kind"]>>(entryKinds);
+  const symlinkTreePaths = useMemo(
+    () => new Set(entries.filter((entry) => entry.symlink).map(treePath)),
+    [entries],
+  );
+  const symlinkTreePathsRef = useRef<ReadonlySet<string>>(symlinkTreePaths);
   const treePaths = useMemo(() => entries.map(treePath), [entries]);
   const previousTreePathsRef = useRef<readonly string[]>([]);
   const syncingSelectionRef = useRef(false);
@@ -245,6 +251,15 @@ export default function FileBrowserPanel({
       }
     },
     paths: [],
+    // Rows are registered in treePath form (directories keep their trailing
+    // slash), so the decoration lookup uses item.path as-is.
+    renderRowDecoration: ({ item }) =>
+      symlinkTreePathsRef.current.has(item.path)
+        ? {
+            icon: { name: "t3-file-icon-symlink", viewBox: "0 0 16 16", width: 11, height: 11 },
+            title: "Symbolic link",
+          }
+        : null,
     search: false,
     unsafeCSS: TREE_UNSAFE_CSS,
   });
@@ -264,9 +279,10 @@ export default function FileBrowserPanel({
   useEffect(() => {
     if (previousTreePathsRef.current === treePaths) return;
     entryKindsRef.current = entryKinds;
+    symlinkTreePathsRef.current = symlinkTreePaths;
     previousTreePathsRef.current = treePaths;
     model.resetPaths(treePaths);
-  }, [entryKinds, model, treePaths]);
+  }, [entryKinds, model, symlinkTreePaths, treePaths]);
 
   useEffect(() => {
     if (!selectedPath) {
