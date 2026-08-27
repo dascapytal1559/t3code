@@ -452,6 +452,24 @@ function isInterruptedResult(result: SDKResultMessage): boolean {
   );
 }
 
+/**
+ * Auth failures latch the CLI for its whole process lifetime: once its OAuth
+ * refresh fails (typically because another Claude process rotated the shared
+ * credentials first), every later turn short-circuits to "Not logged in" —
+ * even after the credentials on disk or in the keychain are valid again. Only
+ * a respawn re-reads them, so results matching this must recycle the runtime.
+ */
+const CLAUDE_AUTH_ERROR_PATTERN =
+  /not logged in|please run \/login|failed to authenticate|oauth[^.]*(?:expired|revoked)|invalid (?:api key|bearer token)/i;
+
+function isClaudeAuthErrorResult(result: SDKResultMessage): boolean {
+  if (!result.is_error) {
+    return false;
+  }
+  const text = result.subtype === "success" ? result.result : resultErrorsText(result);
+  return CLAUDE_AUTH_ERROR_PATTERN.test(text);
+}
+
 function asRuntimeItemId(value: string): RuntimeItemId {
   return RuntimeItemId.make(value);
 }
@@ -3030,7 +3048,41 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       yield* emitRuntimeError(context, errorMessage ?? "Claude turn failed.");
     }
 
+    const authError = isClaudeAuthErrorResult(message);
+    if (authError) {
+      // Emitted before completeTurn so the warning still carries the turnId.
+      yield* emitRuntimeWarning(
+        context,
+        "Claude lost authentication and its runtime was restarted. Send the message again; if it still fails, run `claude /login`.",
+      );
+    }
+
     yield* completeTurn(context, status, errorMessage, message);
+
+    // An auth-latched runtime would strand this thread on "Not logged in"
+    // forever while new threads work, so it must not survive the turn. This
+    // handler runs on the stream fiber, where stopSessionInternal would
+    // interrupt itself — closing the query instead ends the stream and lets
+    // the normal exit path run the full teardown (session.exited included).
+    // The next turn respawns the CLI, which reads the current credentials and
+    // resumes from the persisted cursor.
+    if (authError) {
+      yield* Effect.logWarning("claude.session.auth-error-restart", {
+        threadId: context.session.threadId,
+        subtype: message.subtype,
+        ...(errorMessage ? { errorMessage } : {}),
+      });
+      yield* Effect.try({
+        try: () => context.query.close(),
+        catch: (cause) =>
+          new ProviderAdapterProcessError({
+            provider: PROVIDER,
+            threadId: context.session.threadId,
+            detail: "Failed to close Claude runtime after an authentication error.",
+            cause,
+          }),
+      });
+    }
   });
 
   /**

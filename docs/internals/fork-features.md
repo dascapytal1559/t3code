@@ -99,6 +99,21 @@ host, and `deploy/swap-fork-app.sh` replaces the stock-named desktop app.
 Implementation: `packages/ssh/src/command.ts`, `packages/ssh/src/tunnel.ts`, and
 `apps/desktop/src/main.ts`.
 
+## Claude session recovery after latched auth errors
+
+The Claude CLI latches into a logged-out state for its whole process lifetime
+when its OAuth refresh fails (typically because a concurrent Claude process
+rotated the shared credentials first): every later turn short-circuits to
+"Not logged in · Please run /login" even after credentials are valid again.
+Upstream keeps that process alive across turns, stranding the one thread while
+new threads work. The fork detects auth-error results, posts a runtime warning
+to the thread, and closes the runtime so the normal teardown path emits
+`session.exited`; the next message respawns the CLI, which reads the current
+credentials and resumes from the persisted cursor.
+
+Implementation: `apps/server/src/provider/Layers/ClaudeAdapter.ts`
+(`isClaudeAuthErrorResult`, `handleResultMessage`).
+
 ## Sync status
 
 Last synced on 2026-08-26 against upstream `b0a0281269`. The pre-sync fork is

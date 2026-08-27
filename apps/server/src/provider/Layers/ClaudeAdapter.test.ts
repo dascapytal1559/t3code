@@ -2190,6 +2190,80 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("recycles the session when a result reports a latched auth error", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const runtimeEvents: Array<ProviderRuntimeEvent> = [];
+
+      const runtimeEventsFiber = yield* Stream.runForEach(adapter.streamEvents, (event) =>
+        Effect.sync(() => {
+          runtimeEvents.push(event);
+        }),
+      ).pipe(Effect.forkChild);
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      const turn = yield* adapter.sendTurn({
+        threadId: THREAD_ID,
+        input: "hello",
+        attachments: [],
+      });
+
+      // The CLI's logged-out latch: subtype "success" with is_error and the
+      // login banner as the result text, exactly as emitted in the field.
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: true,
+        result: "Not logged in · Please run /login",
+        num_turns: 1,
+        session_id: "sdk-session-1",
+        uuid: "result-auth-1",
+      } as unknown as SDKMessage);
+
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+      yield* Effect.yieldNow;
+      runtimeEventsFiber.interruptUnsafe();
+      assert.deepEqual(
+        runtimeEvents.map((event) => event.type),
+        [
+          "session.started",
+          "session.configured",
+          "session.state.changed",
+          "turn.started",
+          "thread.started",
+          "runtime.warning",
+          "turn.completed",
+          "session.exited",
+        ],
+      );
+
+      const warning = runtimeEvents[5];
+      assert.equal(warning?.type, "runtime.warning");
+      if (warning?.type === "runtime.warning") {
+        assert.equal(String(warning.turnId), String(turn.turnId));
+      }
+
+      const turnCompleted = runtimeEvents[6];
+      assert.equal(turnCompleted?.type, "turn.completed");
+      if (turnCompleted?.type === "turn.completed") {
+        assert.equal(String(turnCompleted.turnId), String(turn.turnId));
+      }
+
+      assert.equal(yield* adapter.hasSession(THREAD_ID), false);
+      assert.isAbove(harness.query.closeCalls, 0);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("keeps Claude stream failure events structural", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
