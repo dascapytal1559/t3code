@@ -7,6 +7,8 @@ for (const stream of [process.stdout, process.stderr]) {
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+// @effect-diagnostics-next-line nodeBuiltinImport:off - the fork server-root override must be read synchronously pre-ready (see readDesktopServerRootOverride).
+import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -76,21 +78,24 @@ import * as DesktopWslServerTree from "./wsl/DesktopWslServerTree.ts";
 // at launch; a missing or invalid target falls back to the bundled tree.
 const desktopServerRootOverridePath = `${NodeOS.homedir()}/.t3/fork/desktop-server-root`;
 
-const readDesktopServerRootOverride = Effect.gen(function* () {
-  const fileSystem = yield* FileSystem.FileSystem;
-  const contents = yield* fileSystem
-    .readFileString(desktopServerRootOverridePath)
-    .pipe(Effect.orElseSucceed(() => ""));
+// Read synchronously: this runs while the DesktopEnvironment layer builds,
+// upstream of the Clerk bridge, which must be created before Electron's
+// "ready" event fires (it calls protocol.registerSchemesAsPrivileged).
+// Async I/O here would yield to the event loop and let "ready" win the race.
+const readDesktopServerRootOverride = Effect.sync((): string | null => {
+  let contents: string;
+  try {
+    contents = NodeFS.readFileSync(desktopServerRootOverridePath, "utf8");
+  } catch {
+    return null;
+  }
   const line = contents
     .split("\n")
     .map((value) => value.trim())
     .find((value) => value.length > 0 && !value.startsWith("#"));
   if (line === undefined) return null;
   const root = line.startsWith("~/") ? `${NodeOS.homedir()}/${line.slice(2)}` : line;
-  const hasEntry = yield* fileSystem
-    .exists(`${root}/apps/server/dist/bin.mjs`)
-    .pipe(Effect.orElseSucceed(() => false));
-  return hasEntry ? root : null;
+  return NodeFS.existsSync(`${root}/apps/server/dist/bin.mjs`) ? root : null;
 });
 
 const desktopEnvironmentLayer = Layer.unwrap(
