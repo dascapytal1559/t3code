@@ -80,7 +80,8 @@ explorer VS Code-style instead: a new `projects.listDirectory` RPC returns one
 directory's direct children from a plain `readdir` (no search-index dependency,
 no entry cap), and both the web tree and the mobile tree fetch a directory the
 first time it is expanded. The tree opens fully collapsed (the VS Code
-default), so only the root listing is fetched up front. Listings obey the same visibility rules as before —
+default), so only the root listing is fetched up front. Listings obey the
+same visibility rules as before —
 `.git`/`.DS_Store`/`.convex` stay hidden, VCS-ignored paths are filtered via
 the supplemental path filter (failing open if the ignore probe breaks), and
 symlinks resolve to their target kind with broken links skipped. Ignore rules
