@@ -47,7 +47,7 @@ const TREE_UNSAFE_CSS = `
   /* The tree right-aligns the decoration lane (flex: 1, justify flex-end);
      pin it to hug the row name instead so the symlink arrow reads as part
      of the label. */
-  div[data-item-section='decoration'] { opacity: 0.55; flex: 0 0 auto; justify-content: flex-start; transform: translateY(2px); }
+  div[data-item-section='decoration'] { opacity: 0.55; flex: 0 0 auto; justify-content: flex-start; transform: translateY(1px); }
 `;
 
 function treePath(entry: ProjectEntry): string {
