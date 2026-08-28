@@ -383,11 +383,16 @@ export const make = Effect.gen(function* () {
     });
 
     // Parity with the search index, which never surfaces VCS-ignored paths.
-    // A failing ignore probe degrades to showing everything rather than
-    // failing the listing — the explorer must keep working in broken repos.
-    const includedPaths = yield* filterSupplementalPaths(
-      normalizedCwd,
-      entries.map((entry) => entry.path),
+    // Ignore rules are evaluated from the listed directory itself so the
+    // repository that owns it governs (a nested repo's contents follow its
+    // own rules, not the outer workspace's), and a failing ignore probe
+    // degrades to showing everything rather than failing the listing — the
+    // explorer must keep working in broken repos.
+    const childName = (entry: ProjectEntry) =>
+      target.relativePath ? entry.path.slice(target.relativePath.length + 1) : entry.path;
+    const includedNames = yield* filterSupplementalPaths(
+      target.absolutePath,
+      entries.map(childName),
     ).pipe(
       Effect.tapError((cause) =>
         Effect.logWarning("Failed to filter ignored paths for directory listing", {
@@ -396,10 +401,30 @@ export const make = Effect.gen(function* () {
           cause,
         }),
       ),
-      Effect.orElseSucceed(() => entries.map((entry) => entry.path)),
+      Effect.orElseSucceed(() => entries.map(childName)),
     );
-    const includedPathSet = new Set(includedPaths);
-    return { entries: entries.filter((entry) => includedPathSet.has(entry.path)) };
+    const includedNameSet = new Set(includedNames);
+    const included: ProjectEntry[] = [];
+    for (const entry of entries) {
+      const name = childName(entry);
+      if (includedNameSet.has(name)) {
+        included.push(entry);
+        continue;
+      }
+      // A directory that is itself a repository root is a sub-project, not
+      // ignorable junk — outer repos routinely gitignore nested repos and
+      // symlinked checkouts purely as bookkeeping, and hiding them would
+      // hide the very tree the user opened the workspace to browse.
+      if (entry.kind !== "directory") continue;
+      const isRepositoryRoot = yield* Effect.promise(() =>
+        NodeFSP.stat(NodePath.join(target.absolutePath, name, ".git")).then(
+          () => true,
+          () => false,
+        ),
+      );
+      if (isRepositoryRoot) included.push(entry);
+    }
+    return { entries: included };
   });
 
   return WorkspaceEntries.of({ browse, list, listDirectory, refresh, search, searchContents });

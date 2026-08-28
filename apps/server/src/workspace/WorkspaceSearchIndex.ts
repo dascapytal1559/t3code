@@ -550,20 +550,22 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
             cause,
           }),
       });
+      // A failing ignore probe degrades to showing every walked entry
+      // instead of failing the search: git check-ignore rejects pathspecs
+      // beyond a symbolic link (exit 128), which would otherwise break
+      // listing and search for any workspace with a symlinked repo at the
+      // root.
       const includedPaths = yield* filterSupplementalPaths(
         cwd,
         entries.map((entry) => entry.path),
       ).pipe(
-        Effect.mapError(
-          (cause) =>
-            new WorkspaceSearchIndexSearchFailed({
-              cwd,
-              queryLength: 0,
-              pageSize: WORKSPACE_INDEX_PAGE_SIZE,
-              reason: "Failed to filter ignored supplemental workspace entries.",
-              cause,
-            }),
+        Effect.tapError((cause) =>
+          Effect.logWarning("Failed to filter ignored supplemental workspace entries", {
+            cwd,
+            cause,
+          }),
         ),
+        Effect.orElseSucceed(() => entries.map((entry) => entry.path)),
       );
       const includedPathSet = new Set(includedPaths);
       return entries.filter((entry) => includedPathSet.has(entry.path));

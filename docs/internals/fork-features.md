@@ -82,7 +82,14 @@ no entry cap), and both the web tree and the mobile tree fetch a directory the
 first time it is expanded. Listings obey the same visibility rules as before —
 `.git`/`.DS_Store`/`.convex` stay hidden, VCS-ignored paths are filtered via
 the supplemental path filter (failing open if the ignore probe breaks), and
-symlinks resolve to their target kind with broken links skipped.
+symlinks resolve to their target kind with broken links skipped. Ignore rules
+are evaluated from the listed directory itself, so a nested repo's contents
+follow its own rules rather than the outer workspace's, and a directory that
+is itself a repository root is never hidden — outer repos routinely gitignore
+nested repos and symlinked checkouts as bookkeeping, and those are exactly the
+trees the user opened the workspace to browse. The symlink walk behind the
+legacy listing and search fails open the same way when `git check-ignore`
+rejects pathspecs beyond a symbolic link.
 
 Watcher events and manual refresh refetch every loaded directory and diff the
 results into the tree, so expansion and selection state survive. Because the

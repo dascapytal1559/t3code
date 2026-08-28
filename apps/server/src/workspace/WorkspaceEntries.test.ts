@@ -13,6 +13,7 @@ import { vi } from "vite-plus/test";
 import * as ServerConfig from "../config.ts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { VcsProcessExitError } from "@t3tools/contracts";
+import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
@@ -142,6 +143,21 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         Layer.provide(WorkspacePaths.layer),
       );
 
+    // Same fresh-layer trick, but with the production git-backed ignore
+    // filter, for tests that exercise real gitignore semantics.
+    const realFilterEntriesLayer = Layer.effect(
+      WorkspaceEntries.WorkspaceEntries,
+      WorkspaceEntries.make,
+    ).pipe(
+      Layer.provide(WorkspaceSearchIndex.WorkspaceSearchIndexMap.layer),
+      Layer.provide(
+        WorkspaceSearchIndex.supplementalPathFilterLayer.pipe(
+          Layer.provide(VcsDriverRegistry.layer),
+        ),
+      ),
+      Layer.provide(WorkspacePaths.layer),
+    );
+
     it.effect("lists only direct children of the workspace root", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTempDir();
@@ -244,6 +260,62 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
       }),
     );
 
+    it.effect("keeps gitignored nested repositories visible, listed by their own rules", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir({ prefix: "t3code-workspace-nested-repo-", git: true });
+        yield* writeTextFile(cwd, ".gitignore", "nested/\njunk/\n");
+        yield* writeTextFile(cwd, "junk/build.log");
+        yield* writeTextFile(cwd, "nested/keep.ts");
+        yield* writeTextFile(cwd, "nested/.gitignore", "dist/\n");
+        yield* writeTextFile(cwd, "nested/dist/out.js");
+        const path = yield* Path.Path;
+        yield* git(path.join(cwd, "nested"), ["init"]);
+
+        const root = yield* listDirectory({ cwd, path: "" }).pipe(
+          Effect.provide(realFilterEntriesLayer),
+        );
+        const rootPaths = root.entries.map((entry) => entry.path);
+        // The nested repo survives the outer gitignore; the plain ignored
+        // directory stays hidden.
+        expect(rootPaths).toContain("nested");
+        expect(rootPaths).not.toContain("junk");
+
+        const nested = yield* listDirectory({ cwd, path: "nested" }).pipe(
+          Effect.provide(realFilterEntriesLayer),
+        );
+        const nestedPaths = nested.entries.map((entry) => entry.path);
+        // The nested repo's own ignore rules govern its contents, not the
+        // outer repo's "nested/" rule that would hide everything.
+        expect(nestedPaths).toContain("nested/keep.ts");
+        expect(nestedPaths).toContain("nested/.gitignore");
+        expect(nestedPaths).not.toContain("nested/dist");
+      }),
+    );
+
+    it.effect("keeps gitignored symlinked repositories visible and browsable", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const target = yield* makeTempDir({ prefix: "t3code-workspace-link-target-", git: true });
+        yield* writeTextFile(target, "inner.ts");
+        const cwd = yield* makeTempDir({ prefix: "t3code-workspace-link-wrapper-", git: true });
+        yield* writeTextFile(cwd, ".gitignore", "linked\n");
+        yield* Effect.promise(() => NodeFSP.symlink(target, path.join(cwd, "linked")));
+
+        const root = yield* listDirectory({ cwd, path: "" }).pipe(
+          Effect.provide(realFilterEntriesLayer),
+        );
+        expect(root.entries).toEqual([
+          { path: ".gitignore", kind: "file" },
+          { path: "linked", kind: "directory", symlink: true },
+        ]);
+
+        const linked = yield* listDirectory({ cwd, path: "linked" }).pipe(
+          Effect.provide(realFilterEntriesLayer),
+        );
+        expect(linked.entries.map((entry) => entry.path)).toContain("linked/inner.ts");
+      }),
+    );
+
     it.effect("keeps the listing when the supplemental path filter fails", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTempDir();
@@ -266,6 +338,37 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         );
 
         expect(result.entries).toEqual([{ path: "keep.ts", kind: "file" }]);
+      }),
+    );
+
+    // Same degradation for the search index's symlink walk: git check-ignore
+    // rejects pathspecs beyond a symbolic link (exit 128), and that must not
+    // take the whole search down with it.
+    it.effect("search keeps working when the supplemental path filter fails", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const target = yield* makeTempDir({ prefix: "t3code-workspace-searchlink-target-" });
+        yield* writeTextFile(target, "inner.ts");
+        const cwd = yield* makeTempDir({ prefix: "t3code-workspace-searchlink-" });
+        yield* writeTextFile(cwd, "keep.ts");
+        yield* Effect.promise(() => NodeFSP.symlink(target, path.join(cwd, "linked")));
+
+        const failingFilterLayer = entriesLayerWithFilter(() =>
+          Effect.fail(
+            new VcsProcessExitError({
+              operation: "test",
+              command: "git",
+              cwd,
+              exitCode: 128,
+              detail: "fatal: pathspec 'linked/inner.ts' is beyond a symbolic link",
+            }),
+          ),
+        );
+        const result = yield* searchWorkspaceEntries({ cwd, query: "inner", limit: 100 }).pipe(
+          Effect.provide(failingFilterLayer),
+        );
+
+        expect(result.entries.map((entry) => entry.path)).toContain("linked/inner.ts");
       }),
     );
   });
