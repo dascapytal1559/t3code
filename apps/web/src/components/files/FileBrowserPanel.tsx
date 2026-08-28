@@ -44,7 +44,10 @@ const TREE_UNSAFE_CSS = `
     --trees-font-size-override: 12px;
   }
   button[data-type='item'] { border-radius: 5px; }
-  div[data-item-section='decoration'] { opacity: 0.55; }
+  /* The tree right-aligns the decoration lane (flex: 1, justify flex-end);
+     pin it to hug the row name instead so the symlink arrow reads as part
+     of the label. */
+  div[data-item-section='decoration'] { opacity: 0.55; flex: 0 0 auto; justify-content: flex-start; }
 `;
 
 function treePath(entry: ProjectEntry): string {

@@ -86,20 +86,27 @@ const FileTreeRow = memo(function FileTreeRow(props: {
         <View className="w-3" />
       )}
       <PierreEntryIcon path={node.path} kind={node.kind} size={17} />
-      <Text
-        className={cn(
-          "min-w-0 flex-1 text-sm leading-normal",
-          props.selected
-            ? "font-t3-bold text-foreground"
-            : "font-t3-medium text-foreground-secondary",
-        )}
-        numberOfLines={1}
-      >
-        {node.name}
-      </Text>
-      {node.symlink ? (
-        <SymbolView name="arrow.up.right" size={10} tintColor={props.iconColor} type="monochrome" />
-      ) : null}
+      <View className="min-w-0 flex-1 flex-row items-center gap-1.5">
+        <Text
+          className={cn(
+            "min-w-0 shrink text-sm leading-normal",
+            props.selected
+              ? "font-t3-bold text-foreground"
+              : "font-t3-medium text-foreground-secondary",
+          )}
+          numberOfLines={1}
+        >
+          {node.name}
+        </Text>
+        {node.symlink ? (
+          <SymbolView
+            name="arrow.up.right"
+            size={10}
+            tintColor={props.iconColor}
+            type="monochrome"
+          />
+        ) : null}
+      </View>
       {node.kind === "directory" ? (
         <Text className="text-2xs font-t3-medium text-foreground-tertiary">
           {node.children.length}
