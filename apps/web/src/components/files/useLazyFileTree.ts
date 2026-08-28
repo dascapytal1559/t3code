@@ -258,8 +258,8 @@ export function useLazyFileTree(options: {
       store.rootLoaded = true;
       applyDirListing(store, model, "", entries);
       model.resetPaths(entries.map(treePath));
-      // resetPaths applied initialExpansion to the fresh root level, so the
-      // expanded top-level directories load their children immediately.
+      // The tree opens collapsed (VS Code default), so this scan only loads
+      // directories a reveal already expanded during the root fetch.
       scanExpandedDirsRef.current();
     });
     const unsubscribe = model.subscribe(() => scanExpandedDirsRef.current());

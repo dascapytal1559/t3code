@@ -1,13 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { ProjectEntry } from "@t3tools/contracts";
 
-import {
-  buildFileTree,
-  countFileNodes,
-  defaultExpandedTreePaths,
-  firstFilePath,
-  flattenFileTree,
-} from "./fileTree";
+import { buildFileTree, countFileNodes, firstFilePath, flattenFileTree } from "./fileTree";
 
 const entries = [
   { kind: "file", path: "README.md" },
@@ -109,11 +103,5 @@ describe("mobile file tree helpers", () => {
 
     expect(tree[0]?.symlink).toBe(true);
     expect(tree[0]?.children[0]?.symlink).toBe(false);
-  });
-
-  it("expands top-level directories by default", () => {
-    const tree = buildFileTree(entries);
-
-    expect([...defaultExpandedTreePaths(tree)]).toEqual(["src"]);
   });
 });

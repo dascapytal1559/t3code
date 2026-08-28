@@ -241,7 +241,9 @@ export default function FileBrowserPanel({
     density: "compact",
     fileTreeSearchMode: "hide-non-matches",
     flattenEmptyDirectories: true,
-    initialExpansion: 1,
+    // VS Code default: the tree opens fully collapsed, so the lazy loader
+    // fetches nothing beyond the root listing until a folder is expanded.
+    initialExpansion: "closed",
     icons: T3_PIERRE_ICONS,
     onSelectionChange: (selectedPaths) => {
       // The drag controller's selection cache must track every change,

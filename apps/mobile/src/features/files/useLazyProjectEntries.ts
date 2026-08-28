@@ -189,12 +189,9 @@ export function useLazyProjectEntries(input: {
         return;
       }
       store.rootLoaded = true;
+      // The tree opens collapsed (VS Code default); expanding a row fetches
+      // its listing through ensureDirLoaded.
       applyDirListing(store, "", entries);
-      // The tree opens with every top-level directory expanded, so those
-      // listings load along with the root.
-      for (const entry of entries) {
-        if (entry.kind === "directory") void loadDir(entry.path);
-      }
     });
     return () => {
       store.generation = -1;

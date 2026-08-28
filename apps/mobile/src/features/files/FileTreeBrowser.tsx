@@ -12,7 +12,6 @@ import { IOS_NAV_BAR_HEIGHT } from "../../lib/layoutMetrics";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import {
   buildFileTree,
-  defaultExpandedTreePaths,
   flattenFileTree,
   type FileTreeNode,
   type VisibleFileTreeNode,
@@ -153,7 +152,6 @@ export function FileTreeBrowser(props: {
       ? pendingSelection.path
       : controlledSelectedPath;
   const tree = useMemo(() => cachedFileTree(props.entries), [props.entries]);
-  const defaultExpanded = useMemo(() => defaultExpandedTreePaths(tree), [tree]);
   const visibleNodes = useMemo(
     () =>
       flattenFileTree({
@@ -163,15 +161,6 @@ export function FileTreeBrowser(props: {
       }),
     [expandedPaths, props.searchQuery, tree],
   );
-
-  useEffect(() => {
-    setExpandedPaths((current) => {
-      if (current.size > 0 || defaultExpanded.size === 0) {
-        return current;
-      }
-      return new Set(defaultExpanded);
-    });
-  }, [defaultExpanded]);
 
   const { onExpandDirectory, onRevealPath } = props;
   useEffect(() => {
