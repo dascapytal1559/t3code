@@ -12,6 +12,7 @@ import {
   type ThreadId,
   TurnId,
 } from "@t3tools/contracts";
+import { rewriteComposerSkillTokensAsSlashCommands } from "@t3tools/shared/composerInlineTokens";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -956,7 +957,10 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                   mapAcpToAdapterError(PROVIDER, input.threadId, "session/set_model", cause),
               });
 
-              const text = input.input?.trim();
+              const trimmedInput = input.input?.trim();
+              const text = trimmedInput
+                ? rewriteComposerSkillTokensAsSlashCommands(trimmedInput)
+                : trimmedInput;
               const imagePromptParts = yield* Effect.forEach(
                 input.attachments ?? [],
                 (attachment) =>

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { collectComposerInlineTokens } from "./composerInlineTokens.ts";
+import {
+  collectComposerInlineTokens,
+  rewriteComposerSkillTokensAsSlashCommands,
+} from "./composerInlineTokens.ts";
 
 describe("collectComposerInlineTokens", () => {
   it("collects file links, mentions, and skills with source ranges", () => {
@@ -149,5 +152,36 @@ describe("collectComposerInlineTokens", () => {
     const started = performance.now();
     expect(collectComposerInlineTokens(" [[".repeat(40_000))).toEqual([]);
     expect(performance.now() - started).toBeLessThan(1_000);
+  });
+});
+
+describe("rewriteComposerSkillTokensAsSlashCommands", () => {
+  it("rewrites composer $skill tokens to slash commands", () => {
+    expect(rewriteComposerSkillTokensAsSlashCommands("$matts-wayfinder plan the work")).toBe(
+      "/matts-wayfinder plan the work",
+    );
+    expect(rewriteComposerSkillTokensAsSlashCommands("$review")).toBe("/review");
+    expect(rewriteComposerSkillTokensAsSlashCommands("please $review this")).toBe(
+      "please /review this",
+    );
+    expect(rewriteComposerSkillTokensAsSlashCommands("$plugin:skill run")).toBe(
+      "/plugin:skill run",
+    );
+  });
+
+  it("rewrites every skill token in the prompt", () => {
+    expect(rewriteComposerSkillTokensAsSlashCommands("$grill $domain-modeling next")).toBe(
+      "/grill /domain-modeling next",
+    );
+  });
+
+  it("leaves non-skill dollar text and slash commands alone", () => {
+    expect(rewriteComposerSkillTokensAsSlashCommands("/compact keep recent errors")).toBe(
+      "/compact keep recent errors",
+    );
+    expect(rewriteComposerSkillTokensAsSlashCommands("costs $100 today")).toBe("costs $100 today");
+    expect(rewriteComposerSkillTokensAsSlashCommands("Investigate this failure")).toBe(
+      "Investigate this failure",
+    );
   });
 });

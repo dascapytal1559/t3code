@@ -50,6 +50,7 @@ import {
   TurnId,
   type UserInputQuestion,
 } from "@t3tools/contracts";
+import { rewriteComposerSkillTokensAsSlashCommands } from "@t3tools/shared/composerInlineTokens";
 import {
   applyClaudePromptEffortPrefix,
   getModelSelectionBooleanOptionValue,
@@ -1277,7 +1278,8 @@ function buildPromptText(
   const caps = getClaudeModelCapabilities(claudeModel);
 
   const promptEffort = resolvePromptInjectedEffort(caps, rawEffort);
-  return applyClaudePromptEffortPrefix(input.input?.trim() ?? "", promptEffort);
+  const dispatched = rewriteComposerSkillTokensAsSlashCommands(input.input?.trim() ?? "");
+  return applyClaudePromptEffortPrefix(dispatched, promptEffort);
 }
 
 function buildUserMessage(input: {

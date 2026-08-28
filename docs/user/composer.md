@@ -12,7 +12,8 @@ the composer or paste them into a message.
 
 ## Commands and skills
 
-Type `/` to open the command menu. Type `$` to find and add a skill. Skill rows show their source,
+Type `/` to open the command menu. Type `$` to find and add a skill. Picking a skill invokes it for
+the selected agent — it is not just a mention. Skill rows show their source,
 such as System, Personal, Project, or App. The list reflects what the selected agent would load in
 the thread's workspace, so different projects can expose different skills; threads without a
 workspace directory show personal skills only.

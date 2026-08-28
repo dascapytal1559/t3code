@@ -13,6 +13,22 @@ provider's inventory.
 
 Implementation: `apps/server/src/provider/Drivers/GrokSkills.ts`.
 
+## Composer `$` skill invocation
+
+The composer `$` picker is a user-invocation surface, the same role as a provider
+slash menu. Codex already treats `$name` as an explicit skill invoke. Claude and
+Grok dispatch skills by sending `/name` in the prompt, so the fork rewrites
+composer `$name` tokens to `/name` on those providers' wire paths. Skills the
+model is not allowed to trigger on its own (Claude/Grok `disable-model-invocation`)
+therefore still run when the user picked them. The stored message keeps the `$`
+token. Claude ultrathink does not wrap a leading `$skill` pick, because that
+prefix would turn the invoke into prose before the rewrite.
+
+Implementation: `packages/shared/src/composerInlineTokens.ts`,
+`packages/shared/src/model.ts`,
+`apps/server/src/provider/Layers/ClaudeAdapter.ts`, and
+`apps/server/src/provider/Layers/GrokAdapter.ts`.
+
 ## Workspace-aware skills
 
 Skill inventories are resolved per project. The server queries the selected
