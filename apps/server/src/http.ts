@@ -64,6 +64,15 @@ export function assetResponseHeaders(filePath: string): Record<string, string> {
   };
 }
 
+// Vite content-hashes everything under assets/, so those responses are
+// immutable; everything else (index.html, the SPA fallback, root files like
+// the favicon) must revalidate on every load — with no Cache-Control,
+// Chromium's heuristic cache can keep serving a replaced frontend for up to
+// an hour after the server build is swapped.
+export function staticResponseCacheControl(relativePath: string): string {
+  return /^assets[/\\]/.test(relativePath) ? "public, max-age=31536000, immutable" : "no-cache";
+}
+
 export const httpCompressionLayer = HttpRouter.middleware(HttpMiddleware.compression(), {
   global: true,
 });
@@ -356,6 +365,7 @@ export const staticAndDevRouteLayer = HttpRouter.add(
       return HttpServerResponse.uint8Array(indexData, {
         status: 200,
         contentType: "text/html; charset=utf-8",
+        headers: { "Cache-Control": staticResponseCacheControl("index.html") },
       });
     }
 
@@ -368,6 +378,7 @@ export const staticAndDevRouteLayer = HttpRouter.add(
     return HttpServerResponse.uint8Array(data, {
       status: 200,
       contentType,
+      headers: { "Cache-Control": staticResponseCacheControl(staticRelativePath) },
     });
   }),
 );

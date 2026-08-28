@@ -74,6 +74,22 @@ refetches, instead of merely re-reading the possibly stale index.
 Implementation: `apps/server/src/workspace/WorkspaceWatcher.ts`, with client
 query invalidation in the web and mobile `state/queries.ts` modules.
 
+## Deterministic web-client cache headers
+
+Upstream serves the bundled web client with no `Cache-Control`, leaving
+Chromium's heuristic cache to decide freshness — after a deploy, clients
+could serve the previous frontend for up to an hour depending on file ages
+(the "hit Cmd+R after relaunch" ritual). The static route now marks
+content-hashed `assets/*` responses `public, max-age=31536000, immutable`
+and everything else (`index.html`, the SPA fallback, root files)
+`no-cache`, so every load revalidates the entry point and a swapped build
+is picked up on the next reload, deterministically. Applies to all
+surfaces the server serves: the desktop renderer (whose `t3code://app`
+protocol proxies these headers through), local browsers, and remote
+clients.
+
+Implementation: `apps/server/src/http.ts` (`staticResponseCacheControl`).
+
 ## Tilde paths stay plain in chat
 
 Inline-code mentions beginning with `~/` stay plain code rather than being
