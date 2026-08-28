@@ -19,8 +19,11 @@ import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
 
+import { useServerConfigs } from "~/state/entities";
+
 import { createFileTreeDragMentionController } from "./fileTreeDragMention";
 import { useProjectEntriesQuery } from "./projectFilesQueryState";
+import { useLazyFileTree } from "./useLazyFileTree";
 
 interface FileBrowserPanelProps {
   environmentId: EnvironmentId;
@@ -114,7 +117,12 @@ export default function FileBrowserPanel({
 }: FileBrowserPanelProps) {
   const { resolvedTheme } = useTheme();
   const composerRef = useComposerHandleContext();
-  const entriesQuery = useProjectEntriesQuery(environmentId, cwd);
+  const serverConfigs = useServerConfigs();
+  // Older servers lack projects.listDirectory; they keep the capped
+  // whole-tree listing until updated.
+  const lazyMode =
+    serverConfigs.get(environmentId)?.environment.capabilities.workspaceDirectoryListing === true;
+  const entriesQuery = useProjectEntriesQuery(environmentId, cwd, !lazyMode);
   const entries = entriesQuery.data?.entries ?? [];
   const entryKinds = useMemo(
     () => new Map(entries.map((entry) => [entry.path, entry.kind] as const)),
@@ -267,6 +275,15 @@ export default function FileBrowserPanel({
     unsafeCSS: TREE_UNSAFE_CSS,
   });
   const search = useFileTreeSearch(model);
+  const lazyTree = useLazyFileTree({
+    model,
+    environmentId,
+    cwd,
+    enabled: lazyMode,
+    searchValue: search.value,
+    entryKindsRef,
+    symlinkTreePathsRef,
+  });
   const handleSearchValueChange = (value: string) => {
     if (value.trim().length === 0) {
       search.close();
@@ -275,17 +292,27 @@ export default function FileBrowserPanel({
     search.setValue(value);
   };
   const handleRefresh = () => {
-    entriesQuery.refresh();
+    if (lazyMode) {
+      lazyTree.refresh();
+    } else {
+      entriesQuery.refresh();
+    }
     onRefreshSelectedFile?.();
   };
+  const filesPending = lazyMode ? lazyTree.isPending : entriesQuery.isPending;
+  const filesError = lazyMode ? lazyTree.error : entriesQuery.error;
+  const showFilesError = lazyMode
+    ? lazyTree.error !== null
+    : entriesQuery.error !== null && entriesQuery.data === null;
 
   useEffect(() => {
+    if (lazyMode) return;
     if (previousTreePathsRef.current === treePaths) return;
     entryKindsRef.current = entryKinds;
     symlinkTreePathsRef.current = symlinkTreePaths;
     previousTreePathsRef.current = treePaths;
     model.resetPaths(treePaths);
-  }, [entryKinds, model, symlinkTreePaths, treePaths]);
+  }, [entryKinds, lazyMode, model, symlinkTreePaths, treePaths]);
 
   useEffect(() => {
     if (!selectedPath) {
@@ -302,47 +329,71 @@ export default function FileBrowserPanel({
     ) {
       return;
     }
-    if (entryKinds.get(selectedPath) !== "file") return;
-    const selectedItem = model.getItem(selectedPath);
-    if (!selectedItem) return;
 
-    // A selection that originated inside the tree (clicking a row, possibly
-    // in an active tree search) is already visible; re-revealing it would
-    // close the search and clobber the user's context. Only sync external
-    // opens (file picker, content search, chat links).
-    const selectedInTree = model
-      .getSelectedPaths()
-      .some((path) => path.replace(/\/$/, "") === selectedPath);
-    if (selectedInTree && treeSelectionPathRef.current === selectedPath) {
+    let cancelled = false;
+    const reveal = () => {
+      if (cancelled) return;
+      if (entryKindsRef.current.get(selectedPath) !== "file") return;
+      const selectedItem = model.getItem(selectedPath);
+      if (!selectedItem) return;
+
+      // A selection that originated inside the tree (clicking a row, possibly
+      // in an active tree search) is already visible; re-revealing it would
+      // close the search and clobber the user's context. Only sync external
+      // opens (file picker, content search, chat links).
+      const selectedInTree = model
+        .getSelectedPaths()
+        .some((path) => path.replace(/\/$/, "") === selectedPath);
+      if (selectedInTree && treeSelectionPathRef.current === selectedPath) {
+        treeSelectionPathRef.current = null;
+        handledRevealRef.current = revealRequest;
+        return;
+      }
       treeSelectionPathRef.current = null;
       handledRevealRef.current = revealRequest;
-      return;
-    }
-    treeSelectionPathRef.current = null;
-    handledRevealRef.current = revealRequest;
 
-    syncingSelectionRef.current = true;
-    model.closeSearch();
-    for (const path of model.getSelectedPaths()) {
-      model.getItem(path)?.deselect();
-    }
+      syncingSelectionRef.current = true;
+      model.closeSearch();
+      for (const path of model.getSelectedPaths()) {
+        model.getItem(path)?.deselect();
+      }
 
-    // Directory rows are registered with a trailing slash (see treePath), so
-    // ancestor lookups must use the same form to expand them.
-    const segments = selectedPath.split("/");
-    let ancestorPath = "";
-    for (const segment of segments.slice(0, -1)) {
-      ancestorPath = ancestorPath ? `${ancestorPath}/${segment}` : segment;
-      const item = model.getItem(`${ancestorPath}/`) ?? model.getItem(ancestorPath);
-      if (item && "expand" in item) item.expand();
-    }
+      // Directory rows are registered with a trailing slash (see treePath), so
+      // ancestor lookups must use the same form to expand them.
+      const segments = selectedPath.split("/");
+      let ancestorPath = "";
+      for (const segment of segments.slice(0, -1)) {
+        ancestorPath = ancestorPath ? `${ancestorPath}/${segment}` : segment;
+        const item = model.getItem(`${ancestorPath}/`) ?? model.getItem(ancestorPath);
+        if (item && "expand" in item) item.expand();
+      }
 
-    selectedItem.select();
-    model.scrollToPath(selectedPath, { focus: true, offset: "center" });
-    queueMicrotask(() => {
-      syncingSelectionRef.current = false;
-    });
-  }, [entryKinds, model, selectedPath, selectedPathRevealId, treePaths]);
+      selectedItem.select();
+      model.scrollToPath(selectedPath, { focus: true, offset: "center" });
+      queueMicrotask(() => {
+        syncingSelectionRef.current = false;
+      });
+    };
+
+    if (lazyMode) {
+      // The file may sit in a directory the lazy tree never expanded; load
+      // its ancestors first, then run the same reveal as the legacy path.
+      void lazyTree.ensurePathLoaded(selectedPath).then((loaded) => {
+        if (loaded) {
+          reveal();
+        } else if (!cancelled) {
+          // Give up on paths the workspace no longer contains; a new reveal
+          // id retries after refresh.
+          handledRevealRef.current = revealRequest;
+        }
+      });
+    } else {
+      reveal();
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [entryKinds, lazyMode, lazyTree, model, selectedPath, selectedPathRevealId, treePaths]);
 
   // Tag tree drags with the composer mention payload. The row is read from
   // the composed event path (the tree's shadow root is open), so this does
@@ -379,7 +430,7 @@ export default function FileBrowserPanel({
         className="flex h-10 min-h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-2 in-data-[preview-panel-mode=inline]:mb-3 in-data-[preview-panel-mode=inline]:h-7 in-data-[preview-panel-mode=inline]:min-h-7 in-data-[preview-panel-mode=inline]:border-b-transparent"
         data-surface-subheader
       >
-        <RefreshFilesButton isPending={entriesQuery.isPending} onRefresh={handleRefresh} />
+        <RefreshFilesButton isPending={filesPending} onRefresh={handleRefresh} />
         <FileSearchField
           name="project-files-search"
           ariaLabel={`Search ${projectName} files`}
@@ -388,8 +439,8 @@ export default function FileBrowserPanel({
           onClose={search.close}
         />
       </div>
-      {entriesQuery.error && entriesQuery.data === null ? (
-        <div className="p-4 text-xs leading-relaxed text-destructive">{entriesQuery.error}</div>
+      {showFilesError ? (
+        <div className="p-4 text-xs leading-relaxed text-destructive">{filesError}</div>
       ) : (
         <FileTree
           model={model}

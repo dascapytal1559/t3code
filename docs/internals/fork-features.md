@@ -55,6 +55,34 @@ exclusion remain hidden, as do paths ignored by the active VCS.
 
 Implementation: `apps/server/src/workspace/WorkspaceSearchIndex.ts`.
 
+## Lazy per-directory file explorer
+
+Upstream's explorer fetches the whole workspace as one flat listing through
+`projects.listEntries`, silently capped at 25,000 entries (directories count),
+so large repos lose everything past the alphabetical cutoff. The fork loads the
+explorer VS Code-style instead: a new `projects.listDirectory` RPC returns one
+directory's direct children from a plain `readdir` (no search-index dependency,
+no entry cap), and both the web tree and the mobile tree fetch a directory the
+first time it is expanded. Listings obey the same visibility rules as before —
+`.git`/`.DS_Store`/`.convex` stay hidden, VCS-ignored paths are filtered via
+the supplemental path filter (failing open if the ignore probe breaks), and
+symlinks resolve to their target kind with broken links skipped.
+
+Watcher events and manual refresh refetch every loaded directory and diff the
+results into the tree, so expansion and selection state survive. Because the
+in-tree search only sees loaded rows, a bounded server path search (limit 200)
+merges its matches — with synthesized ancestor directories — into the tree
+while a search query is active.
+
+Version skew: the server advertises the `workspaceDirectoryListing` capability;
+clients fall back to the legacy capped `listEntries` flow against servers that
+lack it. `projects.listEntries` itself is unchanged for old clients.
+
+Implementation: `apps/server/src/workspace/WorkspaceEntries.ts`,
+`packages/contracts/src/project.ts`,
+`apps/web/src/components/files/useLazyFileTree.ts`, and
+`apps/mobile/src/features/files/useLazyProjectEntries.ts`.
+
 ## Live filesystem updates
 
 While a client subscribes to workspace changes, the server watches the active

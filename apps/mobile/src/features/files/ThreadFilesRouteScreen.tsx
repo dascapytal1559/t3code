@@ -24,6 +24,7 @@ import { useThreadSelection } from "../../state/use-thread-selection";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import { useEnvironmentQuery } from "../../state/query";
 import { projectEnvironment } from "../../state/projects";
+import { useEnvironmentServerConfig } from "../../state/entities";
 import { useProjectEntriesQuery } from "../../state/queries";
 import {
   useAdaptiveWorkspaceLayout,
@@ -40,6 +41,7 @@ import { useAppearancePreferences } from "../settings/appearance/AppearancePrefe
 import { ThreadRouteScreen } from "../threads/ThreadRouteScreen";
 import { FileMarkdownPreview } from "./FileMarkdownPreview";
 import { FileTreeBrowser } from "./FileTreeBrowser";
+import { useLazyProjectEntries } from "./useLazyProjectEntries";
 import { preloadWorkspaceFileContents } from "./preload-workspace-file";
 import { SourceFileSurface } from "./SourceFileSurface";
 import { ThreadFileNavigatorPane } from "./thread-file-navigator-pane";
@@ -252,8 +254,21 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
     props.route.params,
   );
   const revealedInspectorRef = useRef(false);
-  const entriesQuery = useProjectEntriesQuery(environmentId, cwd, !fileInspector.supported);
+  const treeEnabled = !fileInspector.supported;
+  // Older servers lack projects.listDirectory; they keep the capped
+  // whole-tree listing until updated.
+  const lazyMode =
+    useEnvironmentServerConfig(environmentId)?.environment.capabilities
+      .workspaceDirectoryListing === true;
+  const entriesQuery = useProjectEntriesQuery(environmentId, cwd, treeEnabled && !lazyMode);
   const entriesData = entriesQuery.data as ProjectListEntriesResult | null;
+  const lazyEntries = useLazyProjectEntries({
+    environmentId,
+    cwd,
+    enabled: treeEnabled && lazyMode,
+    searchQuery,
+  });
+  const refreshFiles = lazyMode ? lazyEntries.refresh : entriesQuery.refresh;
   const handleReturnToThread = useCallback(() => {
     if (navigation.canGoBack()) {
       navigation.goBack();
@@ -402,7 +417,7 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
               {
                 accessibilityLabel: "Refresh files",
                 icon: "arrow.clockwise",
-                onPress: entriesQuery.refresh,
+                onPress: refreshFiles,
               },
             ]}
           />
@@ -443,13 +458,20 @@ export function ThreadFilesTreeScreen(props: ThreadFilesRouteScreenProps) {
         </>
       )}
       <FileTreeBrowser
-        entries={entriesData?.entries ?? []}
-        error={entriesQuery.error}
-        isPending={entriesQuery.isPending}
+        entries={lazyMode ? lazyEntries.entries : (entriesData?.entries ?? [])}
+        error={lazyMode ? lazyEntries.error : entriesQuery.error}
+        isPending={lazyMode ? lazyEntries.isPending : entriesQuery.isPending}
         searchQuery={searchQuery}
         selectedPath={null}
+        {...(lazyMode
+          ? {
+              loadedDirPaths: lazyEntries.loadedDirPaths,
+              onExpandDirectory: lazyEntries.ensureDirLoaded,
+              onRevealPath: lazyEntries.ensurePathLoaded,
+            }
+          : {})}
         onPreviewFile={handlePreviewFile}
-        onRefresh={entriesQuery.refresh}
+        onRefresh={refreshFiles}
         onSelectFile={handleSelectFile}
       />
       <FilesToolbarBottomFade />

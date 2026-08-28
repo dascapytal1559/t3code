@@ -71,6 +71,10 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   threadTitleRegeneration: Schema.optionalKey(Schema.Boolean),
   /** Server persists a pull request reference on thread.meta.update. */
   threadPullRequestLinking: Schema.optionalKey(Schema.Boolean),
+  /** Server understands projects.listDirectory (per-directory explorer
+      listing). Absent on older servers, so clients fall back to the capped
+      projects.listEntries whole-tree listing instead of probing. */
+  workspaceDirectoryListing: Schema.optionalKey(Schema.Boolean),
   /** The update path clients should offer for this server. Absent on
       servers that must be relaunched manually (dev checkouts, Windows
       foreground runs, pre-update servers). */

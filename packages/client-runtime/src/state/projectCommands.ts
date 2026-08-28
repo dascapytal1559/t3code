@@ -67,6 +67,14 @@ export function createProjectEnvironmentAtoms<R, E>(
       staleTimeMs: 30_000,
       idleTtlMs: 5 * 60_000,
     }),
+    // One explorer directory per atom (VS Code-style lazy tree). The watcher
+    // invalidates these through the same entriesEvents stream as listEntries.
+    listDirectory: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:projects:list-directory",
+      tag: WS_METHODS.projectsListDirectory,
+      staleTimeMs: 30_000,
+      idleTtlMs: 5 * 60_000,
+    }),
     // Forces a server-side filesystem rescan; the watcher then notifies entry
     // subscribers, so callers refetch listEntries after this settles.
     refreshEntries: createEnvironmentRpcCommand(runtime, {

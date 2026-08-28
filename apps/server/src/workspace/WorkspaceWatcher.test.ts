@@ -34,6 +34,7 @@ function stubEntriesLayer(
       WorkspaceEntries.WorkspaceEntries.of({
         browse: () => Effect.die("not used"),
         list: () => Effect.die("not used"),
+        listDirectory: () => Effect.die("not used"),
         search: () => Effect.die("not used"),
         searchContents: () => Effect.die("not used"),
         refresh: (cwd) =>

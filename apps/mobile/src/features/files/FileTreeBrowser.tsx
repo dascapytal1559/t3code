@@ -46,6 +46,7 @@ const FileTreeRow = memo(function FileTreeRow(props: {
   readonly item: VisibleFileTreeNode;
   readonly selected: boolean;
   readonly expanded: boolean;
+  readonly showChildCount: boolean;
   readonly iconColor: string;
   readonly onPressDirectory: (path: string) => void;
   readonly onPreviewFile?: (path: string) => void;
@@ -107,7 +108,7 @@ const FileTreeRow = memo(function FileTreeRow(props: {
           />
         ) : null}
       </View>
-      {node.kind === "directory" ? (
+      {node.kind === "directory" && props.showChildCount ? (
         <Text className="text-2xs font-t3-medium text-foreground-tertiary">
           {node.children.length}
         </Text>
@@ -122,6 +123,12 @@ export function FileTreeBrowser(props: {
   readonly isPending: boolean;
   readonly searchQuery: string;
   readonly selectedPath: string | null;
+  /** Lazy mode: directories with loaded children. Omit to treat every directory as loaded. */
+  readonly loadedDirPaths?: ReadonlySet<string>;
+  /** Lazy mode: fetches a directory's children when its row expands. */
+  readonly onExpandDirectory?: (path: string) => void;
+  /** Lazy mode: loads a revealed file's ancestor directories. */
+  readonly onRevealPath?: (path: string) => void;
   readonly onPreviewFile?: (path: string) => void;
   readonly onRefresh: () => void;
   readonly onSelectFile: (path: string) => void;
@@ -166,10 +173,12 @@ export function FileTreeBrowser(props: {
     });
   }, [defaultExpanded]);
 
+  const { onExpandDirectory, onRevealPath } = props;
   useEffect(() => {
     if (!controlledSelectedPath) {
       return;
     }
+    onRevealPath?.(controlledSelectedPath);
     setExpandedPaths((current) => {
       const ancestors = ancestorPaths(controlledSelectedPath);
       if (ancestors.every((ancestor) => current.has(ancestor))) {
@@ -181,7 +190,7 @@ export function FileTreeBrowser(props: {
       }
       return next;
     });
-  }, [controlledSelectedPath]);
+  }, [controlledSelectedPath, onRevealPath]);
 
   useEffect(
     () => () => {
@@ -192,17 +201,23 @@ export function FileTreeBrowser(props: {
     [],
   );
 
-  const toggleDirectory = useCallback((path: string) => {
-    setExpandedPaths((current) => {
-      const next = new Set(current);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
-      return next;
-    });
-  }, []);
+  const toggleDirectory = useCallback(
+    (path: string) => {
+      setExpandedPaths((current) => {
+        const next = new Set(current);
+        if (next.has(path)) {
+          next.delete(path);
+        } else {
+          next.add(path);
+        }
+        return next;
+      });
+      // Loading an already-loaded directory is a no-op, so this can fire for
+      // collapses too instead of reading expansion state inside the updater.
+      onExpandDirectory?.(path);
+    },
+    [onExpandDirectory],
+  );
   const handleSelectFile = useCallback(
     (path: string) => {
       if (pendingSelectionTimeoutRef.current !== null) {
@@ -220,19 +235,29 @@ export function FileTreeBrowser(props: {
     },
     [onSelectFile],
   );
+  const { loadedDirPaths } = props;
   const renderItem = useCallback(
     ({ item }: { readonly item: VisibleFileTreeNode }) => (
       <FileTreeRow
         item={item}
         selected={item.node.kind === "file" && item.node.path === selectedPath}
         expanded={expandedPaths.has(item.node.path)}
+        showChildCount={loadedDirPaths === undefined || loadedDirPaths.has(item.node.path)}
         iconColor={iconColor}
         onPressDirectory={toggleDirectory}
         onPreviewFile={onPreviewFile}
         onPressFile={handleSelectFile}
       />
     ),
-    [expandedPaths, handleSelectFile, iconColor, onPreviewFile, selectedPath, toggleDirectory],
+    [
+      expandedPaths,
+      handleSelectFile,
+      iconColor,
+      loadedDirPaths,
+      onPreviewFile,
+      selectedPath,
+      toggleDirectory,
+    ],
   );
 
   if (props.error && props.entries.length === 0) {

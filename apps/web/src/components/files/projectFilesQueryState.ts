@@ -19,6 +19,12 @@ const EMPTY_PROJECT_FILE_PATH = "";
 const EMPTY_PROJECT_FILE_QUERY_ATOM = Atom.make(
   AsyncResult.initial<ProjectReadFileResult, never>(false),
 ).pipe(Atom.withLabel("project-file-query:empty"));
+const EMPTY_PROJECT_ENTRIES_QUERY_ATOM = Atom.make(
+  AsyncResult.initial<ProjectListEntriesResult, never>(false),
+).pipe(Atom.withLabel("project-entries-query:empty"));
+const EMPTY_PROJECT_ENTRIES_SYNC_ATOM = Atom.make(() => {}).pipe(
+  Atom.withLabel("project-entries-sync:empty"),
+);
 function optimisticFileAtom(environmentId: EnvironmentId, cwd: string, relativePath: string) {
   return projectEnvironment.optimisticFile({ environmentId, cwd, relativePath });
 }
@@ -125,9 +131,12 @@ function errorMessage<A>(result: AsyncResult.AsyncResult<A, unknown>): string | 
 export function useProjectEntriesQuery(
   environmentId: EnvironmentId,
   cwd: string,
+  enabled = true,
 ): ProjectQueryState<ProjectListEntriesResult> {
-  useProjectEntriesServerEvents(environmentId, cwd);
-  const atom = getProjectEntriesQueryAtom(environmentId, cwd);
+  useProjectEntriesServerEvents(environmentId, cwd, enabled);
+  const atom = enabled
+    ? getProjectEntriesQueryAtom(environmentId, cwd)
+    : EMPTY_PROJECT_ENTRIES_QUERY_ATOM;
   const result = useAtomValue(atom);
   const refreshAtom = useAtomRefresh(atom);
   const rescan = useAtomCommand(projectEnvironment.refreshEntries);
@@ -165,8 +174,14 @@ const projectEntriesSyncAtom = Atom.family((key: string) => {
   }).pipe(Atom.setIdleTTL(60_000), Atom.withLabel(`project-entries-sync:${key}`));
 });
 
-function useProjectEntriesServerEvents(environmentId: EnvironmentId, cwd: string): void {
-  useAtomValue(projectEntriesSyncAtom(`${environmentId}\n${cwd}`));
+function useProjectEntriesServerEvents(
+  environmentId: EnvironmentId,
+  cwd: string,
+  enabled: boolean,
+): void {
+  useAtomValue(
+    enabled ? projectEntriesSyncAtom(`${environmentId}\n${cwd}`) : EMPTY_PROJECT_ENTRIES_SYNC_ATOM,
+  );
 }
 
 /**

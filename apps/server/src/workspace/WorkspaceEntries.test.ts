@@ -12,9 +12,11 @@ import { vi } from "vite-plus/test";
 
 import * as ServerConfig from "../config.ts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { VcsProcessExitError } from "@t3tools/contracts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
+import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
@@ -119,6 +121,151 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         );
         expect(result.entries.some((entry) => entry.path.startsWith("node_modules"))).toBe(false);
         expect(result.truncated).toBe(false);
+      }),
+    );
+  });
+
+  describe("listDirectory", () => {
+    const listDirectory = (input: { cwd: string; path: string }) =>
+      Effect.gen(function* () {
+        const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+        return yield* workspaceEntries.listDirectory(input);
+      });
+
+    // The exported WorkspaceEntries.layer is memoized by the shared test
+    // layer, so overriding the supplemental path filter needs a fresh
+    // Layer.effect node built around the same make.
+    const entriesLayerWithFilter = (filter: WorkspaceSearchIndex.SupplementalPathFilter) =>
+      Layer.effect(WorkspaceEntries.WorkspaceEntries, WorkspaceEntries.make).pipe(
+        Layer.provide(WorkspaceSearchIndex.WorkspaceSearchIndexMap.layer),
+        Layer.provide(Layer.succeed(WorkspaceSearchIndex.WorkspaceSupplementalPathFilter, filter)),
+        Layer.provide(WorkspacePaths.layer),
+      );
+
+    it.effect("lists only direct children of the workspace root", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir();
+        yield* writeTextFile(cwd, "src/components/Composer.tsx");
+        yield* writeTextFile(cwd, "README.md");
+        yield* writeTextFile(cwd, ".env.local");
+
+        const result = yield* listDirectory({ cwd, path: "" });
+
+        expect(result.entries).toEqual([
+          { path: ".env.local", kind: "file" },
+          { path: "README.md", kind: "file" },
+          { path: "src", kind: "directory" },
+        ]);
+      }),
+    );
+
+    it.effect("lists a subdirectory with workspace-relative paths", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir();
+        yield* writeTextFile(cwd, "src/components/Composer.tsx");
+        yield* writeTextFile(cwd, "src/index.ts");
+
+        const result = yield* listDirectory({ cwd, path: "src" });
+
+        expect(result.entries).toEqual([
+          { path: "src/components", kind: "directory" },
+          { path: "src/index.ts", kind: "file" },
+        ]);
+      }),
+    );
+
+    it.effect("excludes the always-hidden entry names", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir();
+        yield* writeTextFile(cwd, ".git/config");
+        yield* writeTextFile(cwd, ".DS_Store");
+        yield* writeTextFile(cwd, ".convex/data.json");
+        yield* writeTextFile(cwd, "keep.ts");
+
+        const result = yield* listDirectory({ cwd, path: "" });
+
+        expect(result.entries).toEqual([{ path: "keep.ts", kind: "file" }]);
+      }),
+    );
+
+    it.effect("resolves symlink kinds and skips broken symlinks", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir();
+        yield* writeTextFile(cwd, "target-dir/inner.ts");
+        yield* writeTextFile(cwd, "target.ts");
+        yield* Effect.promise(() =>
+          NodeFSP.symlink(path.join(cwd, "target-dir"), path.join(cwd, "linked-dir")),
+        );
+        yield* Effect.promise(() =>
+          NodeFSP.symlink(path.join(cwd, "target.ts"), path.join(cwd, "linked.ts")),
+        );
+        yield* Effect.promise(() =>
+          NodeFSP.symlink(path.join(cwd, "missing.ts"), path.join(cwd, "broken.ts")),
+        );
+
+        const result = yield* listDirectory({ cwd, path: "" });
+
+        expect(result.entries).toEqual([
+          { path: "linked-dir", kind: "directory", symlink: true },
+          { path: "linked.ts", kind: "file", symlink: true },
+          { path: "target-dir", kind: "directory" },
+          { path: "target.ts", kind: "file" },
+        ]);
+
+        const linked = yield* listDirectory({ cwd, path: "linked-dir" });
+        expect(linked.entries).toEqual([{ path: "linked-dir/inner.ts", kind: "file" }]);
+      }),
+    );
+
+    it.effect("rejects paths that escape the workspace root", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir();
+        const result = yield* listDirectory({ cwd, path: "../outside" }).pipe(Effect.flip);
+        expect(result._tag).toBe("WorkspacePathOutsideRootError");
+      }),
+    );
+
+    it.effect("hides entries dropped by the supplemental path filter", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir();
+        yield* writeTextFile(cwd, "keep.ts");
+        yield* writeTextFile(cwd, "ignored.txt");
+
+        const result = yield* listDirectory({ cwd, path: "" }).pipe(
+          Effect.provide(
+            entriesLayerWithFilter((_cwd, relativePaths) =>
+              Effect.succeed(relativePaths.filter((entryPath) => entryPath !== "ignored.txt")),
+            ),
+          ),
+        );
+
+        expect(result.entries).toEqual([{ path: "keep.ts", kind: "file" }]);
+      }),
+    );
+
+    it.effect("keeps the listing when the supplemental path filter fails", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir();
+        yield* writeTextFile(cwd, "keep.ts");
+
+        const result = yield* listDirectory({ cwd, path: "" }).pipe(
+          Effect.provide(
+            entriesLayerWithFilter(() =>
+              Effect.fail(
+                new VcsProcessExitError({
+                  operation: "test",
+                  command: "git",
+                  cwd,
+                  exitCode: 128,
+                  detail: "boom",
+                }),
+              ),
+            ),
+          ),
+        );
+
+        expect(result.entries).toEqual([{ path: "keep.ts", kind: "file" }]);
       }),
     );
   });

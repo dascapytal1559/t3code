@@ -41,7 +41,7 @@ const CONTENT_SEARCH_TIME_BUDGET_MS = 250;
 const CONTENT_SEARCH_MAX_MATCHES_PER_FILE = 100;
 const SYMLINK_WALK_MAX_ENTRIES = 5_000;
 
-type SupplementalPathFilter = (
+export type SupplementalPathFilter = (
   cwd: string,
   relativePaths: ReadonlyArray<string>,
 ) => Effect.Effect<ReadonlyArray<string>, VcsError>;
@@ -342,7 +342,7 @@ function withDirectoryAncestors(entries: ReadonlyArray<ProjectEntry>): ProjectEn
  * index's exclusions for `.git`, `.DS_Store`, and `.convex`.
  * Bounded by SYMLINK_WALK_MAX_ENTRIES and cycle-safe via resolved real paths.
  */
-const WALK_EXCLUDED_NAMES = new Set([".git", ".DS_Store", ".convex"]);
+export const WALK_EXCLUDED_NAMES: ReadonlySet<string> = new Set([".git", ".DS_Store", ".convex"]);
 
 async function collectSymlinkSubtreeEntries(
   cwd: string,

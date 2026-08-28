@@ -4964,6 +4964,38 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest), TestClock.withLive),
   );
 
+  it.effect("routes websocket rpc projects.listDirectory one level at a time", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const workspaceDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-ws-list-directory-" });
+      yield* fs.makeDirectory(path.join(workspaceDir, "src", "components"), { recursive: true });
+      yield* fs.writeFileString(path.join(workspaceDir, "src", "index.ts"), "export {};\n");
+      yield* fs.writeFileString(path.join(workspaceDir, "README.md"), "readme\n");
+
+      yield* buildAppUnderTest();
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const response = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          Effect.all({
+            root: client[WS_METHODS.projectsListDirectory]({ cwd: workspaceDir, path: "" }),
+            src: client[WS_METHODS.projectsListDirectory]({ cwd: workspaceDir, path: "src" }),
+          }),
+        ),
+      );
+
+      assert.deepEqual(response.root.entries, [
+        { path: "README.md", kind: "file" },
+        { path: "src", kind: "directory" },
+      ]);
+      assert.deepEqual(response.src.entries, [
+        { path: "src/components", kind: "directory" },
+        { path: "src/index.ts", kind: "file" },
+      ]);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest), TestClock.withLive),
+  );
+
   it.effect("routes websocket rpc projects.searchEntries excludes gitignored files", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

@@ -78,6 +78,7 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.sourceControlCloneRepository]: AuthOrchestrationOperateScope,
   [WS_METHODS.sourceControlPublishRepository]: AuthOrchestrationOperateScope,
   [WS_METHODS.projectsListEntries]: AuthOrchestrationReadScope,
+  [WS_METHODS.projectsListDirectory]: AuthOrchestrationReadScope,
   // Rescanning the workspace index is part of reading it, like pullRequestsInvalidate.
   [WS_METHODS.projectsRefreshEntries]: AuthOrchestrationReadScope,
   [WS_METHODS.projectsSubscribeEntries]: AuthOrchestrationReadScope,

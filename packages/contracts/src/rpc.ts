@@ -113,6 +113,9 @@ import {
 } from "./relayClient.ts";
 import {
   ProjectEntriesChangedEvent,
+  ProjectListDirectoryError,
+  ProjectListDirectoryInput,
+  ProjectListDirectoryResult,
   ProjectListEntriesError,
   ProjectListEntriesInput,
   ProjectListEntriesResult,
@@ -215,6 +218,7 @@ export const WS_METHODS = {
   projectsAdd: "projects.add",
   projectsRemove: "projects.remove",
   projectsListEntries: "projects.listEntries",
+  projectsListDirectory: "projects.listDirectory",
   projectsRefreshEntries: "projects.refreshEntries",
   projectsSubscribeEntries: "projects.subscribeEntries",
   projectsReadFile: "projects.readFile",
@@ -666,6 +670,12 @@ export const WsProjectsListEntriesRpc = Rpc.make(WS_METHODS.projectsListEntries,
   error: Schema.Union([ProjectListEntriesError, EnvironmentAuthorizationError]),
 });
 
+export const WsProjectsListDirectoryRpc = Rpc.make(WS_METHODS.projectsListDirectory, {
+  payload: ProjectListDirectoryInput,
+  success: ProjectListDirectoryResult,
+  error: Schema.Union([ProjectListDirectoryError, EnvironmentAuthorizationError]),
+});
+
 export const WsProjectsRefreshEntriesRpc = Rpc.make(WS_METHODS.projectsRefreshEntries, {
   payload: ProjectListEntriesInput,
   error: EnvironmentAuthorizationError,
@@ -1087,6 +1097,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,
   WsProjectsListEntriesRpc,
+  WsProjectsListDirectoryRpc,
   WsProjectsReadFileRpc,
   WsProjectsRefreshEntriesRpc,
   WsProjectsSearchContentsRpc,
