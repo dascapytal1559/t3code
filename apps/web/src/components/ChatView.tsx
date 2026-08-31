@@ -5268,7 +5268,7 @@ function ChatViewContent(props: ChatViewProps) {
   ]);
 
   const onRevertToTurnCount = useCallback(
-    async (turnCount: number) => {
+    async (turnCount: number, restorePrompt?: string) => {
       const localApi = readLocalApi();
       if (!localApi || !activeThread || isRevertingCheckpoint) return;
 
@@ -5287,8 +5287,13 @@ function ChatViewContent(props: ChatViewProps) {
         [
           `Revert this thread to checkpoint ${turnCount}?`,
           "This will discard newer messages and turn diffs in this thread.",
+          restorePrompt !== undefined
+            ? "Your prompt will be returned to the composer so you can edit and resend it."
+            : null,
           "This action cannot be undone.",
-        ].join("\n"),
+        ]
+          .filter((line) => line !== null)
+          .join("\n"),
         { variant: "destructive" },
       );
       if (!confirmed) {
@@ -5310,10 +5315,29 @@ function ChatViewContent(props: ChatViewProps) {
           activeThread.id,
           error instanceof Error ? error.message : "Failed to revert thread state.",
         );
+      } else if (
+        result._tag !== "Failure" &&
+        restorePrompt !== undefined &&
+        restorePrompt.length > 0
+      ) {
+        // The revert discarded the target prompt from the thread; hand its text
+        // back to the composer for revision — unless the user already has an
+        // unsent draft there, which wins over the recalled prompt.
+        const draft = useComposerDraftStore.getState().getComposerDraft(composerDraftTarget);
+        if (!composerDraftHasUserContent(draft)) {
+          setComposerDraftPrompt(composerDraftTarget, restorePrompt);
+          composerRef.current?.resetCursorState({
+            cursor: collapseExpandedComposerCursor(restorePrompt, restorePrompt.length),
+            prompt: restorePrompt,
+            detectTrigger: true,
+          });
+        }
       }
       setIsRevertingCheckpoint(false);
     },
     [
+      composerDraftTarget,
+      setComposerDraftPrompt,
       activeThread,
       activeEnvironmentUnavailable,
       activeEnvironmentUnavailableLabel,
@@ -6651,12 +6675,21 @@ function ChatViewContent(props: ChatViewProps) {
   revertTurnCountRef.current = revertTurnCountByUserMessageId;
   const onRevertToTurnCountRef = useRef(onRevertToTurnCount);
   onRevertToTurnCountRef.current = onRevertToTurnCount;
+  const timelineEntriesRef = useRef(timelineEntries);
+  timelineEntriesRef.current = timelineEntries;
   const onRevertUserMessage = useCallback((messageId: MessageId) => {
     const targetTurnCount = revertTurnCountRef.current.get(messageId);
     if (typeof targetTurnCount !== "number") {
       return;
     }
-    void onRevertToTurnCountRef.current(targetTurnCount);
+    const revertedEntry = timelineEntriesRef.current.find(
+      (entry) => entry.kind === "message" && entry.message.id === messageId,
+    );
+    const restorePrompt =
+      revertedEntry?.kind === "message" && revertedEntry.message.role === "user"
+        ? revertedEntry.message.text
+        : undefined;
+    void onRevertToTurnCountRef.current(targetTurnCount, restorePrompt);
   }, []);
 
   // Empty state: no active thread

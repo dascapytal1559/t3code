@@ -205,6 +205,25 @@ credentials and resumes from the persisted cursor.
 Implementation: `apps/server/src/provider/Layers/ClaudeAdapter.ts`
 (`isClaudeAuthErrorResult`, `handleResultMessage`).
 
+## Checkpoint revert returns the prompt to the composer
+
+Upstream's "Revert to this message" discards the target prompt outright, and a
+client-side retention bug made it linger in the timeline as a ghost: user
+prompts are stored with a null `turnId`, the client reducer kept all
+turn-less messages after `thread.reverted` while the server projector capped
+them at the reverted turn count, so the displayed prompt no longer existed in
+the server read model or the provider's rolled-back context. The fork aligns
+the client reducer with the server's retention (turn-less user/assistant
+messages rescued oldest-first, capped at the reverted turn count) and, on the
+web client, places the reverted prompt's text back into the composer after a
+successful revert for edit-and-resend — matching the rewind UX of the Codex
+and Claude desktop apps. An unsent composer draft is never overwritten, and
+the confirm dialog states that the prompt will be returned.
+
+Implementation: `packages/client-runtime/src/state/threadReducer.ts`
+(`retainMessagesAfterRevert`) and `apps/web/src/components/ChatView.tsx`
+(`onRevertToTurnCount`, `onRevertUserMessage`).
+
 ## Sync status
 
 Last synced on 2026-08-26 against upstream `b0a0281269`. The pre-sync fork is
