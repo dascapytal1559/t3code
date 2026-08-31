@@ -1010,6 +1010,94 @@ describe("applyThreadDetailEvent", () => {
         expect(result.thread.messages.map((message) => message.id)).toEqual(["msg-1", "msg-2"]);
       }
     });
+
+    it("drops the reverted prompt on a paginated window with high turn counts", () => {
+      // thread.messages holds only a window of a long thread, so whole-thread
+      // turn counts exceed the window's message count. The reverted prompt
+      // must still be dropped: it postdates the last retained checkpoint.
+      const threadWithData: OrchestrationThread = {
+        ...baseThread,
+        messages: [
+          {
+            id: MessageId.make("msg-old"),
+            role: "user",
+            text: "Prompt for turn 6",
+            turnId: null,
+            streaming: false,
+            createdAt: "2026-04-01T01:00:00.000Z",
+            updatedAt: "2026-04-01T01:00:00.000Z",
+          },
+          {
+            id: MessageId.make("msg-resp"),
+            role: "assistant",
+            text: "Response 6",
+            turnId: TurnId.make("turn-6"),
+            streaming: false,
+            createdAt: "2026-04-01T02:00:00.000Z",
+            updatedAt: "2026-04-01T02:00:00.000Z",
+          },
+          {
+            id: MessageId.make("msg-ghost"),
+            role: "user",
+            text: "Reverted prompt",
+            turnId: null,
+            streaming: false,
+            createdAt: "2026-04-01T03:00:00.000Z",
+            updatedAt: "2026-04-01T03:00:00.000Z",
+          },
+          {
+            id: MessageId.make("msg-resp-7"),
+            role: "assistant",
+            text: "Response 7",
+            turnId: TurnId.make("turn-7"),
+            streaming: false,
+            createdAt: "2026-04-01T04:00:00.000Z",
+            updatedAt: "2026-04-01T04:00:00.000Z",
+          },
+        ],
+        checkpoints: [
+          {
+            turnId: TurnId.make("turn-6"),
+            checkpointTurnCount: 6,
+            checkpointRef: CheckpointRef.make("ref-6"),
+            status: "ready",
+            files: [],
+            assistantMessageId: MessageId.make("msg-resp"),
+            completedAt: "2026-04-01T02:00:00.000Z",
+          },
+          {
+            turnId: TurnId.make("turn-7"),
+            checkpointTurnCount: 7,
+            checkpointRef: CheckpointRef.make("ref-7"),
+            status: "ready",
+            files: [],
+            assistantMessageId: MessageId.make("msg-resp-7"),
+            completedAt: "2026-04-01T04:00:00.000Z",
+          },
+        ],
+      };
+
+      const result = applyThreadDetailEvent(threadWithData, {
+        ...baseEventFields,
+        sequence: 14,
+        occurredAt: "2026-04-01T05:00:00.000Z",
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.reverted",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          turnCount: 6,
+        },
+      });
+
+      expect(result.kind).toBe("updated");
+      if (result.kind === "updated") {
+        expect(result.thread.messages.map((message) => message.id)).toEqual([
+          "msg-old",
+          "msg-resp",
+        ]);
+      }
+    });
   });
 
   describe("no-op events", () => {

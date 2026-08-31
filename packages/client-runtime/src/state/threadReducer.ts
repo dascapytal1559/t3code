@@ -528,7 +528,7 @@ export function applyThreadDetailEvent(
       const messages = retainMessagesAfterRevert(
         thread.messages,
         retainedTurnIds,
-        event.payload.turnCount,
+        checkpoints.at(-1)?.completedAt ?? null,
       );
       const proposedPlans = pipe(
         thread.proposedPlans,
@@ -661,48 +661,21 @@ function rebindCheckpointAssistantMessage(
 function retainMessagesAfterRevert(
   messages: ReadonlyArray<OrchestrationMessage>,
   retainedTurnIds: ReadonlySet<string>,
-  turnCount: number,
+  lastRetainedCheckpointAt: string | null,
 ): OrchestrationMessage[] {
-  // Mirrors the server projector's retainThreadMessagesAfterRevert: keep
-  // system messages and messages bound to a retained turn, then rescue
-  // turn-less user/assistant messages (user prompts are stored with a null
-  // turnId) oldest-first, capped at the reverted turn count. Without the cap
-  // the reverted prompt survives here as a ghost the server already dropped.
-  const retainedMessageIds = new Set<string>();
-  for (const message of messages) {
+  // Keep system messages and messages bound to a retained turn. Turn-less
+  // messages (user prompts are stored with a null turnId) survive only when
+  // they predate the last retained checkpoint: anything newer sits past the
+  // revert cut and would render as a ghost the server already dropped. A
+  // count-based rescue cannot work here — thread.messages is a paginated
+  // window, so whole-thread turn counts overshoot it.
+  return Arr.filter(messages, (message) => {
     if (message.role === "system") {
-      retainedMessageIds.add(message.id);
-      continue;
+      return true;
     }
-    if (message.turnId !== null && retainedTurnIds.has(message.turnId)) {
-      retainedMessageIds.add(message.id);
+    if (message.turnId !== null) {
+      return retainedTurnIds.has(message.turnId);
     }
-  }
-
-  for (const role of ["user", "assistant"] as const) {
-    const retainedCount = messages.filter(
-      (message) => message.role === role && retainedMessageIds.has(message.id),
-    ).length;
-    const missingCount = Math.max(0, turnCount - retainedCount);
-    if (missingCount === 0) {
-      continue;
-    }
-    const fallbackMessages = messages
-      .filter(
-        (message) =>
-          message.role === role &&
-          !retainedMessageIds.has(message.id) &&
-          (message.turnId === null || retainedTurnIds.has(message.turnId)),
-      )
-      .toSorted(
-        (left, right) =>
-          left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id),
-      )
-      .slice(0, missingCount);
-    for (const message of fallbackMessages) {
-      retainedMessageIds.add(message.id);
-    }
-  }
-
-  return Arr.filter(messages, (message) => retainedMessageIds.has(message.id));
+    return lastRetainedCheckpointAt !== null && message.createdAt <= lastRetainedCheckpointAt;
+  });
 }

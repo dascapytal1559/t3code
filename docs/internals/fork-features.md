@@ -212,17 +212,28 @@ client-side retention bug made it linger in the timeline as a ghost: user
 prompts are stored with a null `turnId`, the client reducer kept all
 turn-less messages after `thread.reverted` while the server projector capped
 them at the reverted turn count, so the displayed prompt no longer existed in
-the server read model or the provider's rolled-back context. The fork aligns
-the client reducer with the server's retention (turn-less user/assistant
-messages rescued oldest-first, capped at the reverted turn count) and, on the
-web client, places the reverted prompt's text back into the composer after a
-successful revert for edit-and-resend — matching the rewind UX of the Codex
-and Claude desktop apps. An unsent composer draft is never overwritten, and
-the confirm dialog states that the prompt will be returned.
+the server read model or the provider's rolled-back context. Worse, the ghost
+was durable: the client persists thread snapshots (IndexedDB on web/desktop)
+and resumes subscriptions with `afterSequence`, so a cached ghost was never
+corrected by a fresh snapshot — it survived app restarts indefinitely.
+
+The fork fixes retention in the shared client reducer: turn-less messages
+(user prompts carry a null `turnId`) are kept only when they predate the last
+retained checkpoint's `completedAt`; anything newer sits past the revert cut.
+A count-based rescue is deliberately avoided because `thread.messages` is a
+paginated window while turn counts are whole-thread. The thread snapshot
+cache schema version is bumped (web v4, mobile v4) so caches written before
+the fix are discarded once and refetched. On the web client, the reverted
+prompt's text is placed back into the composer after a successful revert for
+edit-and-resend — matching the rewind UX of the Codex and Claude desktop
+apps. An unsent composer draft is never overwritten, and the confirm dialog
+states that the prompt will be returned.
 
 Implementation: `packages/client-runtime/src/state/threadReducer.ts`
-(`retainMessagesAfterRevert`) and `apps/web/src/components/ChatView.tsx`
-(`onRevertToTurnCount`, `onRevertUserMessage`).
+(`retainMessagesAfterRevert`), `apps/web/src/components/ChatView.tsx`
+(`onRevertToTurnCount`, `onRevertUserMessage`),
+`apps/web/src/connection/storage.ts`, and
+`apps/mobile/src/connection/environment-cache-store.ts`.
 
 ## Sync status
 
