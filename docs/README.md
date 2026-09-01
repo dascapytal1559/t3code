@@ -24,7 +24,7 @@ Mobile app: [apps/mobile/README.md](../apps/mobile/README.md)
 ## Working on T3 Code
 
 Everything below is for maintainers. Upstream setup lives in the
-[upstream README](../UPSTREAM_README.md), the [root README](../README.md)
+[upstream README](../README_UPSTREAM.md), the [root README](../README.md)
 records this fork's feature delta, policy lives in
 [CONTRIBUTING.md](../CONTRIBUTING.md), and agent rules live in
 [AGENTS.md](../AGENTS.md).

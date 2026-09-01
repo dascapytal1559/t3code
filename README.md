@@ -1,7 +1,7 @@
 # T3 Code fork
 
 This repository tracks the behavior this fork adds on top of
-[upstream T3 Code](./UPSTREAM_README.md). The fork uses the stock
+[upstream T3 Code](./README_UPSTREAM.md). The fork uses the stock
 **T3 Code (Alpha)** desktop identity; the differences below are product
 behavior, not parallel-app branding.
 
