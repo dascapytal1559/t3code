@@ -143,8 +143,6 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         Layer.provide(WorkspacePaths.layer),
       );
 
-    // Same fresh-layer trick, but with the production git-backed ignore
-    // filter, for tests that exercise real gitignore semantics.
     const realFilterEntriesLayer = Layer.effect(
       WorkspaceEntries.WorkspaceEntries,
       WorkspaceEntries.make,
@@ -242,102 +240,28 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
       }),
     );
 
-    it.effect("hides entries dropped by the supplemental path filter", () =>
+    it.effect("includes gitignored files and directories", () =>
       Effect.gen(function* () {
-        const cwd = yield* makeTempDir();
+        const cwd = yield* makeTempDir({ prefix: "t3code-workspace-show-ignored-", git: true });
+        yield* writeTextFile(cwd, ".gitignore", "ignored.txt\nignored-dir/\n");
         yield* writeTextFile(cwd, "keep.ts");
         yield* writeTextFile(cwd, "ignored.txt");
-
-        const result = yield* listDirectory({ cwd, path: "" }).pipe(
-          Effect.provide(
-            entriesLayerWithFilter((_cwd, relativePaths) =>
-              Effect.succeed(relativePaths.filter((entryPath) => entryPath !== "ignored.txt")),
-            ),
-          ),
-        );
-
-        expect(result.entries).toEqual([{ path: "keep.ts", kind: "file" }]);
-      }),
-    );
-
-    it.effect("keeps gitignored nested repositories visible, listed by their own rules", () =>
-      Effect.gen(function* () {
-        const cwd = yield* makeTempDir({ prefix: "t3code-workspace-nested-repo-", git: true });
-        yield* writeTextFile(cwd, ".gitignore", "nested/\njunk/\n");
-        yield* writeTextFile(cwd, "junk/build.log");
-        yield* writeTextFile(cwd, "nested/keep.ts");
-        yield* writeTextFile(cwd, "nested/.gitignore", "dist/\n");
-        yield* writeTextFile(cwd, "nested/dist/out.js");
-        const path = yield* Path.Path;
-        yield* git(path.join(cwd, "nested"), ["init"]);
-
-        const root = yield* listDirectory({ cwd, path: "" }).pipe(
-          Effect.provide(realFilterEntriesLayer),
-        );
-        const rootPaths = root.entries.map((entry) => entry.path);
-        // The nested repo survives the outer gitignore; the plain ignored
-        // directory stays hidden.
-        expect(rootPaths).toContain("nested");
-        expect(rootPaths).not.toContain("junk");
-
-        const nested = yield* listDirectory({ cwd, path: "nested" }).pipe(
-          Effect.provide(realFilterEntriesLayer),
-        );
-        const nestedPaths = nested.entries.map((entry) => entry.path);
-        // The nested repo's own ignore rules govern its contents, not the
-        // outer repo's "nested/" rule that would hide everything.
-        expect(nestedPaths).toContain("nested/keep.ts");
-        expect(nestedPaths).toContain("nested/.gitignore");
-        expect(nestedPaths).not.toContain("nested/dist");
-      }),
-    );
-
-    it.effect("keeps gitignored symlinked repositories visible and browsable", () =>
-      Effect.gen(function* () {
-        const path = yield* Path.Path;
-        const target = yield* makeTempDir({ prefix: "t3code-workspace-link-target-", git: true });
-        yield* writeTextFile(target, "inner.ts");
-        const cwd = yield* makeTempDir({ prefix: "t3code-workspace-link-wrapper-", git: true });
-        yield* writeTextFile(cwd, ".gitignore", "linked\n");
-        yield* Effect.promise(() => NodeFSP.symlink(target, path.join(cwd, "linked")));
+        yield* writeTextFile(cwd, "ignored-dir/nested.txt");
 
         const root = yield* listDirectory({ cwd, path: "" }).pipe(
           Effect.provide(realFilterEntriesLayer),
         );
         expect(root.entries).toEqual([
           { path: ".gitignore", kind: "file" },
-          { path: "linked", kind: "directory", symlink: true },
+          { path: "ignored-dir", kind: "directory" },
+          { path: "ignored.txt", kind: "file" },
+          { path: "keep.ts", kind: "file" },
         ]);
 
-        const linked = yield* listDirectory({ cwd, path: "linked" }).pipe(
+        const nested = yield* listDirectory({ cwd, path: "ignored-dir" }).pipe(
           Effect.provide(realFilterEntriesLayer),
         );
-        expect(linked.entries.map((entry) => entry.path)).toContain("linked/inner.ts");
-      }),
-    );
-
-    it.effect("keeps the listing when the supplemental path filter fails", () =>
-      Effect.gen(function* () {
-        const cwd = yield* makeTempDir();
-        yield* writeTextFile(cwd, "keep.ts");
-
-        const result = yield* listDirectory({ cwd, path: "" }).pipe(
-          Effect.provide(
-            entriesLayerWithFilter(() =>
-              Effect.fail(
-                new VcsProcessExitError({
-                  operation: "test",
-                  command: "git",
-                  cwd,
-                  exitCode: 128,
-                  detail: "boom",
-                }),
-              ),
-            ),
-          ),
-        );
-
-        expect(result.entries).toEqual([{ path: "keep.ts", kind: "file" }]);
+        expect(nested.entries).toEqual([{ path: "ignored-dir/nested.txt", kind: "file" }]);
       }),
     );
 
