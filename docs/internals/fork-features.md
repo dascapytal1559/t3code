@@ -5,13 +5,18 @@ T3 Code. Update it when a feature's behavior changes, not merely when syncing.
 The fork now uses the stock **T3 Code (Alpha)** desktop identity; the differences
 below are product behavior, not parallel-app branding.
 
-## Grok skill discovery
+## Grok skill discovery (retired 2026-09-01)
 
-Upstream's Grok provider publishes no skills. The fork asks the Grok CLI via
-`grok inspect --json` and surfaces its user-invocable skills like any other
-provider's inventory.
-
-Implementation: `apps/server/src/provider/Drivers/GrokSkills.ts`.
+Upstream now ships the same design the fork pioneered (#8358): the Grok CLI is
+asked via `grok inspect --json` and its skills join the provider inventory. The
+2026-09-01 sync adopted upstream's implementation and dropped the fork's. Two
+fork niceties did not survive: upstream's probe degrades a spawn failure or
+timeout to an empty list instead of failing with a typed
+`ProviderSkillProbeError`, so Grok inventories lose keep-last-good across probe
+timeouts (Codex still has it), and the inspect report's `disabled: true` flag
+is no longer honored (only `userInvocable: false` hides a skill). If that
+proves inadequate, the fork variant is recoverable from history
+(`93cfb8f4d`, `2846ebea4`, `15b609c81`).
 
 ## Composer `$` skill invocation
 
@@ -38,7 +43,12 @@ different repo-local or nested skill sets therefore see their own inventory in
 the `$` and `/` menus.
 
 Implementation: provider skill drivers under
-`apps/server/src/provider/Drivers/` and their provider layers.
+`apps/server/src/provider/Drivers/` and their provider layers. On mobile the
+cwd-scoped catalog is consumed by the shared composer menu hook
+(`apps/mobile/src/features/threads/use-composer-command-menu.ts` via
+`apps/mobile/src/state/use-provider-context-skills.ts`), which retains the
+last good answer so a probe refresh cannot blank an open picker; both thread
+composers and the new-task draft screen share it.
 
 ## Symlink-aware explorer and search
 
@@ -97,6 +107,15 @@ results into the tree, so expansion and selection state survive. Because the
 in-tree search only sees loaded rows, a bounded server path search (limit 200)
 merges its matches — with synthesized ancestor directories — into the tree
 while a search query is active.
+
+Upstream's expand/collapse-all control (#8889) is adapted to lazy loading: in
+lazy mode it toggles only the workspace root's direct child directories — one
+bounded listing fetch per directory instead of a cascade through the whole
+workspace — while legacy servers keep upstream's full-tree toggle. Collapsing
+leaves nested expansion state intact, so re-expanding a folder restores the
+subtree the user had open. Upstream's workspace-mutation refresh (#8803) is
+disabled in lazy mode because the filesystem watcher already converges the
+tree after agent edits.
 
 Version skew: the server advertises the `workspaceDirectoryListing` capability;
 clients fall back to the legacy capped `listEntries` flow against servers that
@@ -236,7 +255,9 @@ Implementation: `packages/client-runtime/src/state/threadReducer.ts`
 
 ## Sync status
 
-Last synced on 2026-08-26 against upstream `b0a0281269`. The pre-sync fork is
-preserved at `backup/upstream-test-drive-pre-sync-20260826` (`1a1658c21`). At
-that point, upstream `main` did not contain the fork behaviors above, so none is
-retired solely by this sync.
+Last synced on 2026-09-01 against upstream `c78ae50a5` (v0.0.35 → v0.0.38
+nightlies). The pre-sync fork is preserved at
+`backup/upstream-test-drive-pre-sync-20260901` (`fb5e3edd5`). This sync retired
+Grok skill discovery (upstream shipped its own, see above) and adapted the
+expand/collapse-all control to the lazy explorer. The previous sync point is
+preserved at `backup/upstream-test-drive-pre-sync-20260826` (`1a1658c21`).
