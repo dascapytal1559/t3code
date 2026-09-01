@@ -26,6 +26,11 @@ export interface MakeDesktopEnvironmentInput {
   readonly isPackaged: boolean;
   readonly resourcesPath: string;
   readonly runningUnderArm64Translation: boolean;
+  // Fork: a pre-validated directory containing apps/server/dist/bin.mjs (plus
+  // its node_modules) that replaces the bundled server tree in packaged
+  // builds, so server and web-client deploys skip the DMG rebuild. Resolved
+  // and validated in main.ts; ignored in development.
+  readonly serverRootOverride?: string;
 }
 
 export class DesktopEnvironment extends Context.Service<
@@ -163,10 +168,14 @@ const make = Effect.fn("desktop.environment.make")(function* (
   });
   const rootDir = path.resolve(input.dirname, "../../..");
   const appRoot = input.isPackaged ? input.appPath : rootDir;
-  const serverRoot =
+  const bundledServerRoot =
     input.isPackaged && input.platform === "win32"
       ? path.join(input.resourcesPath, "server.asar")
       : appRoot;
+  const serverRoot =
+    input.isPackaged && input.serverRootOverride !== undefined
+      ? input.serverRootOverride
+      : bundledServerRoot;
   const branding = resolveDesktopAppBranding({
     isDevelopment,
     appVersion: input.appVersion,

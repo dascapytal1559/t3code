@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -12,6 +13,10 @@ import * as Schema from "effect/Schema";
 import type {
   FilesystemBrowseInput,
   FilesystemBrowseResult,
+  ProjectEntry,
+  ProjectEntryKind,
+  ProjectListDirectoryInput,
+  ProjectListDirectoryResult,
   ProjectListEntriesInput,
   ProjectListEntriesResult,
   ProjectSearchContentsInput,
@@ -73,6 +78,30 @@ export const WorkspaceEntriesBrowseError = Schema.Union([
 ]);
 export type WorkspaceEntriesBrowseError = typeof WorkspaceEntriesBrowseError.Type;
 
+export class WorkspaceEntriesListDirectoryReadError extends Schema.TaggedErrorClass<WorkspaceEntriesListDirectoryReadError>()(
+  "WorkspaceEntriesListDirectoryReadError",
+  {
+    cwd: Schema.String,
+    path: Schema.String,
+    resolvedPath: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Failed to read workspace directory '${this.path}' in '${this.cwd}'.`;
+  }
+}
+
+export const WorkspaceEntriesListDirectoryError = Schema.Union([
+  WorkspacePaths.WorkspaceRootNotExistsError,
+  WorkspacePaths.WorkspaceRootCreateFailedError,
+  WorkspacePaths.WorkspaceRootStatFailedError,
+  WorkspacePaths.WorkspaceRootNotDirectoryError,
+  WorkspacePaths.WorkspacePathOutsideRootError,
+  WorkspaceEntriesListDirectoryReadError,
+]);
+export type WorkspaceEntriesListDirectoryError = typeof WorkspaceEntriesListDirectoryError.Type;
+
 export const WorkspaceEntriesError = Schema.Union([
   WorkspacePaths.WorkspaceRootNotExistsError,
   WorkspacePaths.WorkspaceRootCreateFailedError,
@@ -93,6 +122,9 @@ export class WorkspaceEntries extends Context.Service<
     readonly list: (
       input: ProjectListEntriesInput,
     ) => Effect.Effect<ProjectListEntriesResult, WorkspaceEntriesError>;
+    readonly listDirectory: (
+      input: ProjectListDirectoryInput,
+    ) => Effect.Effect<ProjectListDirectoryResult, WorkspaceEntriesListDirectoryError>;
     readonly search: (
       input: ProjectSearchEntriesInput,
     ) => Effect.Effect<ProjectSearchEntriesResult, WorkspaceEntriesError>;
@@ -102,6 +134,44 @@ export class WorkspaceEntries extends Context.Service<
     readonly refresh: (cwd: string) => Effect.Effect<void>;
   }
 >()("t3/workspace/WorkspaceEntries") {}
+
+/**
+ * One-level readdir for the lazy explorer. Symlinks resolve to their target
+ * kind (broken ones are skipped) and non-file/non-directory entries (sockets,
+ * FIFOs) are dropped — the same shape the supplemental symlink walk in
+ * WorkspaceSearchIndex produces.
+ */
+async function readDirectoryChildren(
+  absoluteDirPath: string,
+  relativeDirPath: string,
+): Promise<ProjectEntry[]> {
+  const dirents = await NodeFSP.readdir(absoluteDirPath, { withFileTypes: true });
+  const entries: ProjectEntry[] = [];
+  for (const dirent of dirents) {
+    if (WorkspaceSearchIndex.WALK_EXCLUDED_NAMES.has(dirent.name)) continue;
+    const entryPath = relativeDirPath ? `${relativeDirPath}/${dirent.name}` : dirent.name;
+    let kind: ProjectEntryKind;
+    if (dirent.isSymbolicLink()) {
+      try {
+        const stat = await NodeFSP.stat(NodePath.join(absoluteDirPath, dirent.name));
+        kind = stat.isDirectory() ? "directory" : "file";
+      } catch {
+        continue;
+      }
+      entries.push({ path: entryPath, kind, symlink: true });
+      continue;
+    }
+    if (dirent.isDirectory()) {
+      kind = "directory";
+    } else if (dirent.isFile()) {
+      kind = "file";
+    } else {
+      continue;
+    }
+    entries.push({ path: entryPath, kind });
+  }
+  return entries.sort((left, right) => left.path.localeCompare(right.path));
+}
 
 function expandHomePath(input: string, path: Path.Path): string {
   if (input === "~") {
@@ -142,6 +212,7 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   const workspaceSearchIndexes = yield* WorkspaceSearchIndex.WorkspaceSearchIndexMap;
+  const filterSupplementalPaths = yield* WorkspaceSearchIndex.WorkspaceSupplementalPathFilter;
 
   const normalizeWorkspaceRoot = Effect.fn("WorkspaceEntries.normalizeWorkspaceRoot")(function* (
     cwd: string,
@@ -288,7 +359,53 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  return WorkspaceEntries.of({ browse, list, refresh, search, searchContents });
+  const listDirectory: WorkspaceEntries["Service"]["listDirectory"] = Effect.fn(
+    "WorkspaceEntries.listDirectory",
+  )(function* (input) {
+    const normalizedCwd = yield* workspacePaths.normalizeWorkspaceRoot(input.cwd);
+    const target =
+      input.path === ""
+        ? { absolutePath: normalizedCwd, relativePath: "" }
+        : yield* workspacePaths.resolveRelativePathWithinRoot({
+            workspaceRoot: normalizedCwd,
+            relativePath: input.path,
+          });
+
+    const entries = yield* Effect.tryPromise({
+      try: () => readDirectoryChildren(target.absolutePath, target.relativePath),
+      catch: (cause) =>
+        new WorkspaceEntriesListDirectoryReadError({
+          cwd: input.cwd,
+          path: input.path,
+          resolvedPath: target.absolutePath,
+          cause,
+        }),
+    });
+
+    const childName = (entry: ProjectEntry) =>
+      target.relativePath ? entry.path.slice(target.relativePath.length + 1) : entry.path;
+    const unignoredNames = yield* filterSupplementalPaths(
+      target.absolutePath,
+      entries.map(childName),
+    ).pipe(
+      Effect.tapError((cause) =>
+        Effect.logWarning("Failed to decorate ignored paths for directory listing", {
+          cwd: input.cwd,
+          path: input.path,
+          cause,
+        }),
+      ),
+      Effect.orElseSucceed(() => entries.map(childName)),
+    );
+    const unignoredNameSet = new Set(unignoredNames);
+    return {
+      entries: entries.map((entry) =>
+        unignoredNameSet.has(childName(entry)) ? entry : { ...entry, ignored: true },
+      ),
+    };
+  });
+
+  return WorkspaceEntries.of({ browse, list, listDirectory, refresh, search, searchContents });
 });
 
 export const layer = Layer.effect(WorkspaceEntries, make).pipe(

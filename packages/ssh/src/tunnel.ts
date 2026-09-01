@@ -60,6 +60,8 @@ const REMOTE_REUSE_READY_TIMEOUT_MS = 2_000;
 
 export interface RemoteT3RunnerOptions {
   readonly packageSpec?: string;
+  /** Skip a globally installed `t3` and execute `packageSpec` explicitly. */
+  readonly preferPackageSpec?: boolean;
   readonly nodeScriptPath?: string | null;
   readonly nodeEngineRange?: string | null;
 }
@@ -416,15 +418,13 @@ set -eu
 @@T3_NODE_ENV_SCRIPT@@
 ensure_remote_node_path || true
 T3_NODE_SCRIPT_PATH=@@T3_NODE_SCRIPT_PATH@@
+T3_PREFER_PACKAGE_SPEC=@@T3_PREFER_PACKAGE_SPEC@@
 if [ -n "$T3_NODE_SCRIPT_PATH" ]; then
   if ! command -v node >/dev/null 2>&1; then
     printf 'Remote host is missing node on PATH. Install Node or configure a supported version manager for non-interactive shells.\\n' >&2
     exit 1
   fi
   exec node "$T3_NODE_SCRIPT_PATH" "$@"
-fi
-if command -v t3 >/dev/null 2>&1; then
-  exec t3 "$@"
 fi
 # npm extracts a package before it runs the native builds of its dependencies,
 # so a failed build (t3 depends on node-pty, which needs a C toolchain) leaves
@@ -440,16 +440,25 @@ require_installed_t3_cli() {
   printf 'Remote host installed %s but npm produced no t3 executable, which usually means a native dependency (node-pty) failed to build. Install a C toolchain on the remote host (Debian/Ubuntu: build-essential, Fedora/RHEL: gcc-c++ make, macOS: xcode-select --install) and try again.\\n' @@T3_PACKAGE_SPEC@@ >&2
   return 1
 }
-if command -v npx >/dev/null 2>&1; then
-  require_installed_t3_cli npx --yes --package @@T3_PACKAGE_SPEC@@ || exit 1
-  exec npx --yes @@T3_PACKAGE_SPEC@@ "$@"
+run_package_spec() {
+  if command -v npx >/dev/null 2>&1; then
+    require_installed_t3_cli npx --yes --package @@T3_PACKAGE_SPEC@@ || exit 1
+    exec npx --yes --package @@T3_PACKAGE_SPEC@@ -- t3 "$@"
+  fi
+  if command -v npm >/dev/null 2>&1; then
+    require_installed_t3_cli npm exec --yes --package @@T3_PACKAGE_SPEC@@ || exit 1
+    exec npm exec --yes --package @@T3_PACKAGE_SPEC@@ -- t3 "$@"
+  fi
+  printf 'Remote host is missing the t3 CLI and could not install @@T3_PACKAGE_SPEC@@ because node/npm/npx are unavailable on PATH. Install Node or configure a supported version manager for non-interactive shells.\\n' >&2
+  exit 1
+}
+if [ "$T3_PREFER_PACKAGE_SPEC" = "1" ]; then
+  run_package_spec "$@"
 fi
-if command -v npm >/dev/null 2>&1; then
-  require_installed_t3_cli npm exec --yes --package @@T3_PACKAGE_SPEC@@ || exit 1
-  exec npm exec --yes @@T3_PACKAGE_SPEC@@ -- "$@"
+if command -v t3 >/dev/null 2>&1; then
+  exec t3 "$@"
 fi
-printf 'Remote host is missing the t3 CLI and could not install @@T3_PACKAGE_SPEC@@ because node/npm/npx are unavailable on PATH. Install Node or configure a supported version manager for non-interactive shells.\\n' >&2
-exit 1
+run_package_spec "$@"
 `;
 
 export const REMOTE_LAUNCH_SCRIPT = `set -eu
@@ -653,10 +662,12 @@ fi
 
 export function buildRemoteT3RunnerScript(input?: RemoteT3RunnerOptions): string {
   const packageSpec = shellSingleQuote(input?.packageSpec?.trim() || "t3@latest");
+  const preferPackageSpec = input?.preferPackageSpec === true ? "1" : "0";
   const nodeScriptPath = input?.nodeScriptPath?.trim() || "";
   return stripTrailingNewlines(
     applyScriptPlaceholders(REMOTE_RUNNER_SCRIPT, {
       T3_PACKAGE_SPEC: packageSpec,
+      T3_PREFER_PACKAGE_SPEC: preferPackageSpec,
       T3_NODE_SCRIPT_PATH: shellSingleQuote(nodeScriptPath),
       T3_NODE_ENV_SCRIPT: buildRemoteNodeEnvScript(input),
     }),
@@ -724,7 +735,7 @@ export const launchOrReuseRemoteServer = Effect.fn("ssh/tunnel.launchOrReuseRemo
       stateKey: remoteStateKey(target),
     });
     const result = yield* runSshCommand(target, {
-      remoteCommandArgs: ["sh", "-s", "--", remoteStateKey(target)],
+      remoteCommandArgs: ["sh", "-l", "-s", "--", remoteStateKey(target)],
       stdin: buildRemoteLaunchScript(runner),
       timeoutMs: REMOTE_LAUNCH_TIMEOUT_MS,
       ...(input?.authSecret === undefined ? {} : { authSecret: input.authSecret }),

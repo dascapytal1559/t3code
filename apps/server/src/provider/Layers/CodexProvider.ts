@@ -32,6 +32,7 @@ import {
   buildServerProvider,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
+import { ProviderSkillProbeError } from "../Errors.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
 import packageJson from "../../../package.json" with { type: "json" };
 const isCodexAppServerSpawnError = Schema.is(CodexErrors.CodexAppServerSpawnError);
@@ -62,11 +63,6 @@ const REASONING_EFFORT_LABELS: Readonly<Record<string, string>> = {
 };
 
 const DEFAULT_SERVICE_TIER_ID = "default";
-const CURRENT_CODEX_MODELS = new Set(["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]);
-
-export function isLegacyCodexModel(model: string): boolean {
-  return !CURRENT_CODEX_MODELS.has(model);
-}
 
 function reasoningEffortLabel(reasoningEffort: string): string {
   return REASONING_EFFORT_LABELS[reasoningEffort] ?? reasoningEffort;
@@ -91,13 +87,18 @@ function codexAccountAuthLabel(account: CodexSchema.V2GetAccountResponse["accoun
       return "ChatGPT Pro 5x Subscription";
     case "team":
       return "ChatGPT Team Subscription";
+    case "self_serve_business_prolite":
     case "self_serve_business_usage_based":
     case "business":
       return "ChatGPT Business Subscription";
+    case "ent26":
+    case "enterprise_cbp_automation":
     case "enterprise_cbp_usage_based":
     case "enterprise":
       return "ChatGPT Enterprise Subscription";
     case "edu":
+    case "edu_plus":
+    case "edu_pro":
       return "ChatGPT Edu Subscription";
     case "unknown":
       return "ChatGPT Subscription";
@@ -195,7 +196,6 @@ function parseCodexModelListResponse(
     name: toDisplayName(model),
     isCustom: false,
     ...(model.isDefault ? { isDefault: true } : {}),
-    ...(isLegacyCodexModel(model.model) ? { isLegacy: true } : {}),
     capabilities: mapCodexModelCapabilities(model),
   }));
 }
@@ -319,14 +319,22 @@ export function buildCodexInitializeParams(): CodexSchema.V1InitializeParams {
   };
 }
 
-const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(function* (input: {
+interface CodexAppServerConnectInput {
   readonly binaryPath: string;
   readonly homePath?: string;
   readonly launchArgs?: string;
   readonly cwd: string;
-  readonly customModels?: ReadonlyArray<string>;
   readonly environment?: NodeJS.ProcessEnv;
-}) {
+}
+
+/**
+ * Spawn `codex app-server` in `cwd`, run the initialize handshake, and
+ * hand back the connected client. Requires a `Scope` — the subprocess and
+ * client live until the caller's scope closes.
+ */
+const connectCodexAppServerClient = Effect.fn("connectCodexAppServerClient")(function* (
+  input: CodexAppServerConnectInput,
+) {
   // `~` is not shell-expanded when env vars are set via `child_process.spawn`,
   // so `CODEX_HOME=~/.codex_work` would reach codex verbatim and trip
   // "CODEX_HOME points to '~/.codex_work', but that path does not exist".
@@ -380,6 +388,58 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
     },
   });
   yield* client.notify("initialized", undefined);
+
+  return { client, initialize };
+});
+
+/**
+ * Contextual skill inventory for the `$` picker: what a Codex session
+ * launched in `cwd` would load, straight from the app-server's
+ * `skills/list`. Best-effort — any failure or timeout yields `[]`.
+ */
+// Same budget as the auth probe: both pay one app-server spawn + handshake.
+const CODEX_SKILLS_PROBE_TIMEOUT_MS = AUTH_PROBE_TIMEOUT_MS;
+
+export const discoverCodexSkills = Effect.fn("discoverCodexSkills")(function* (
+  input: CodexAppServerConnectInput,
+): Effect.fn.Return<
+  ReadonlyArray<ServerProviderSkill>,
+  ProviderSkillProbeError,
+  ChildProcessSpawner.ChildProcessSpawner
+> {
+  const result = yield* Effect.gen(function* () {
+    const { client } = yield* connectCodexAppServerClient(input);
+    const skillsResponse = yield* client.request("skills/list", {
+      cwds: [input.cwd],
+    });
+    return parseCodexSkillsListResponse(skillsResponse, input.cwd);
+  }).pipe(
+    Effect.scoped,
+    Effect.timeoutOption(Duration.millis(CODEX_SKILLS_PROBE_TIMEOUT_MS)),
+    Effect.mapError(
+      (cause) =>
+        new ProviderSkillProbeError({
+          provider: "codex",
+          detail: cause.message ?? String(cause),
+          cause,
+        }),
+    ),
+  );
+  if (Option.isNone(result)) {
+    return yield* new ProviderSkillProbeError({
+      provider: "codex",
+      detail: `skills/list probe timed out after ${CODEX_SKILLS_PROBE_TIMEOUT_MS}ms.`,
+    });
+  }
+  return result.value;
+});
+
+const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(function* (
+  input: CodexAppServerConnectInput & {
+    readonly customModels?: ReadonlyArray<string>;
+  },
+) {
+  const { client, initialize } = yield* connectCodexAppServerClient(input);
 
   // Extract the version string after the first '/' in userAgent, up to the next space or the end
   const versionMatch = initialize.userAgent.match(/\/([^\s]+)/);
@@ -570,7 +630,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
         auth: { status: "unknown" },
         message: installed
           ? `Codex app-server provider probe failed: ${error.message}.`
-          : "Codex CLI (`codex`) is not installed or not on PATH.",
+          : "Codex CLI (`codex`) was not found on PATH.",
       },
     });
   }
@@ -601,6 +661,13 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     checkedAt,
     models: snapshot.models,
     skills: snapshot.skills,
+    slashCommands: [
+      {
+        name: "feedback",
+        description: "Send this thread and Codex logs to OpenAI",
+        input: { hint: "Describe the issue (optional)" },
+      },
+    ],
     probe: {
       installed: true,
       version: snapshot.version ?? null,

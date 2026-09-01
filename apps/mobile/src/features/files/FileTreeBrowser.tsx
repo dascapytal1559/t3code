@@ -7,12 +7,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/AppText";
 import { PierreEntryIcon } from "../../components/PierreEntryIcon";
 import { cn } from "../../lib/cn";
-import { useThemeColor } from "../../lib/useThemeColor";
 import { IOS_NAV_BAR_HEIGHT } from "../../lib/layoutMetrics";
 import { NATIVE_LIQUID_GLASS_SUPPORTED } from "../../native/native-glass";
 import {
   buildFileTree,
-  defaultExpandedTreePaths,
   flattenFileTree,
   type FileTreeNode,
   type VisibleFileTreeNode,
@@ -46,7 +44,7 @@ const FileTreeRow = memo(function FileTreeRow(props: {
   readonly item: VisibleFileTreeNode;
   readonly selected: boolean;
   readonly expanded: boolean;
-  readonly iconColor: string;
+  readonly showChildCount: boolean;
   readonly onPressDirectory: (path: string) => void;
   readonly onPreviewFile?: (path: string) => void;
   readonly onPressFile: (path: string) => void;
@@ -79,25 +77,40 @@ const FileTreeRow = memo(function FileTreeRow(props: {
         <SymbolView
           name={props.expanded ? "chevron.down" : "chevron.right"}
           size={12}
-          tintColor={props.iconColor}
+          tintColorClassName="accent-icon-muted"
           type="monochrome"
         />
       ) : (
         <View className="w-3" />
       )}
-      <PierreEntryIcon path={node.path} kind={node.kind} size={17} />
-      <Text
-        className={cn(
-          "min-w-0 flex-1 text-sm leading-normal",
-          props.selected
-            ? "font-t3-bold text-foreground"
-            : "font-t3-medium text-foreground-secondary",
-        )}
-        numberOfLines={1}
-      >
-        {node.name}
-      </Text>
-      {node.kind === "directory" ? (
+      <View className={cn(node.ignored && "opacity-50")}>
+        <PierreEntryIcon path={node.path} kind={node.kind} size={17} />
+      </View>
+      <View className="min-w-0 flex-1 flex-row items-center gap-1.5">
+        <Text
+          className={cn(
+            "min-w-0 shrink text-sm leading-normal",
+            props.selected ? "font-t3-bold" : "font-t3-medium",
+            node.ignored
+              ? "text-foreground-tertiary"
+              : props.selected
+                ? "text-foreground"
+                : "text-foreground-secondary",
+          )}
+          numberOfLines={1}
+        >
+          {node.name}
+        </Text>
+        {node.symlink ? (
+          <SymbolView
+            name="arrow.up.right"
+            size={10}
+            tintColorClassName="accent-icon-muted"
+            type="monochrome"
+          />
+        ) : null}
+      </View>
+      {node.kind === "directory" && props.showChildCount ? (
         <Text className="text-2xs font-t3-medium text-foreground-tertiary">
           {node.children.length}
         </Text>
@@ -112,6 +125,12 @@ export function FileTreeBrowser(props: {
   readonly isPending: boolean;
   readonly searchQuery: string;
   readonly selectedPath: string | null;
+  /** Lazy mode: directories with loaded children. Omit to treat every directory as loaded. */
+  readonly loadedDirPaths?: ReadonlySet<string>;
+  /** Lazy mode: fetches a directory's children when its row expands. */
+  readonly onExpandDirectory?: (path: string) => void;
+  /** Lazy mode: loads a revealed file's ancestor directories. */
+  readonly onRevealPath?: (path: string) => void;
   readonly onPreviewFile?: (path: string) => void;
   readonly onRefresh: () => void;
   readonly onSelectFile: (path: string) => void;
@@ -125,7 +144,6 @@ export function FileTreeBrowser(props: {
   // Native transparent-header height ≈ safe-area top + nav bar (~44). Matches the
   // observed adjustedContentInset bottom (~102) seen in the native trace.
   const headerInset = NATIVE_LIQUID_GLASS_SUPPORTED ? insets.top + IOS_NAV_BAR_HEIGHT : 0;
-  const iconColor = String(useThemeColor("--color-icon-muted"));
   const { onPreviewFile, onSelectFile, selectedPath: controlledSelectedPath } = props;
   const controlledSelectedPathRef = useRef(controlledSelectedPath);
   const pendingSelectionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -136,7 +154,6 @@ export function FileTreeBrowser(props: {
       ? pendingSelection.path
       : controlledSelectedPath;
   const tree = useMemo(() => cachedFileTree(props.entries), [props.entries]);
-  const defaultExpanded = useMemo(() => defaultExpandedTreePaths(tree), [tree]);
   const visibleNodes = useMemo(
     () =>
       flattenFileTree({
@@ -147,19 +164,12 @@ export function FileTreeBrowser(props: {
     [expandedPaths, props.searchQuery, tree],
   );
 
-  useEffect(() => {
-    setExpandedPaths((current) => {
-      if (current.size > 0 || defaultExpanded.size === 0) {
-        return current;
-      }
-      return new Set(defaultExpanded);
-    });
-  }, [defaultExpanded]);
-
+  const { onExpandDirectory, onRevealPath } = props;
   useEffect(() => {
     if (!controlledSelectedPath) {
       return;
     }
+    onRevealPath?.(controlledSelectedPath);
     setExpandedPaths((current) => {
       const ancestors = ancestorPaths(controlledSelectedPath);
       if (ancestors.every((ancestor) => current.has(ancestor))) {
@@ -171,7 +181,7 @@ export function FileTreeBrowser(props: {
       }
       return next;
     });
-  }, [controlledSelectedPath]);
+  }, [controlledSelectedPath, onRevealPath]);
 
   useEffect(
     () => () => {
@@ -182,17 +192,23 @@ export function FileTreeBrowser(props: {
     [],
   );
 
-  const toggleDirectory = useCallback((path: string) => {
-    setExpandedPaths((current) => {
-      const next = new Set(current);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
-      return next;
-    });
-  }, []);
+  const toggleDirectory = useCallback(
+    (path: string) => {
+      setExpandedPaths((current) => {
+        const next = new Set(current);
+        if (next.has(path)) {
+          next.delete(path);
+        } else {
+          next.add(path);
+        }
+        return next;
+      });
+      // Loading an already-loaded directory is a no-op, so this can fire for
+      // collapses too instead of reading expansion state inside the updater.
+      onExpandDirectory?.(path);
+    },
+    [onExpandDirectory],
+  );
   const handleSelectFile = useCallback(
     (path: string) => {
       if (pendingSelectionTimeoutRef.current !== null) {
@@ -210,19 +226,20 @@ export function FileTreeBrowser(props: {
     },
     [onSelectFile],
   );
+  const { loadedDirPaths } = props;
   const renderItem = useCallback(
     ({ item }: { readonly item: VisibleFileTreeNode }) => (
       <FileTreeRow
         item={item}
         selected={item.node.kind === "file" && item.node.path === selectedPath}
         expanded={expandedPaths.has(item.node.path)}
-        iconColor={iconColor}
+        showChildCount={loadedDirPaths === undefined || loadedDirPaths.has(item.node.path)}
         onPressDirectory={toggleDirectory}
         onPreviewFile={onPreviewFile}
         onPressFile={handleSelectFile}
       />
     ),
-    [expandedPaths, handleSelectFile, iconColor, onPreviewFile, selectedPath, toggleDirectory],
+    [expandedPaths, handleSelectFile, loadedDirPaths, onPreviewFile, selectedPath, toggleDirectory],
   );
 
   if (props.error && props.entries.length === 0) {

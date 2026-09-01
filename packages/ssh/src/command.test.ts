@@ -13,6 +13,7 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import {
   baseSshArgs,
   getLastNonEmptyOutputLine,
+  parseRemoteT3CliPackageSpecOverride,
   parseSshResolveOutput,
   resolveRemoteT3CliPackageSpec,
   runSshCommand,
@@ -131,6 +132,50 @@ describe("ssh command", () => {
         }),
         "t3@nightly",
       );
+    }),
+  );
+
+  it.effect("prefers an override spec over the release channel", () =>
+    Effect.sync(() => {
+      assert.equal(
+        resolveRemoteT3CliPackageSpec({
+          appVersion: "0.0.17",
+          updateChannel: "latest",
+          overrideSpec: "/home/ubuntu/.t3/fork/t3-fork.tgz",
+        }),
+        "/home/ubuntu/.t3/fork/t3-fork.tgz",
+      );
+      assert.equal(
+        resolveRemoteT3CliPackageSpec({
+          appVersion: "0.0.17",
+          updateChannel: "latest",
+          overrideSpec: "   ",
+        }),
+        "t3@0.0.17",
+      );
+      assert.equal(
+        resolveRemoteT3CliPackageSpec({
+          appVersion: "0.0.17",
+          updateChannel: "latest",
+          overrideSpec: null,
+        }),
+        "t3@0.0.17",
+      );
+    }),
+  );
+
+  it.effect("parses the package spec override file contents", () =>
+    Effect.sync(() => {
+      assert.equal(
+        parseRemoteT3CliPackageSpecOverride(
+          ["# fork server tarball", "", "  /home/ubuntu/.t3/fork/t3-fork.tgz  ", "ignored"].join(
+            "\n",
+          ),
+        ),
+        "/home/ubuntu/.t3/fork/t3-fork.tgz",
+      );
+      assert.equal(parseRemoteT3CliPackageSpecOverride("# only comments\n\n"), null);
+      assert.equal(parseRemoteT3CliPackageSpecOverride(""), null);
     }),
   );
 

@@ -7,9 +7,10 @@ import type {
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
+import { useAtomCommand } from "~/state/use-atom-command";
 import { projectEnvironment } from "~/state/projects";
 import { useProjectPathSearch } from "~/state/queries";
 import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
@@ -18,6 +19,12 @@ const EMPTY_PROJECT_FILE_PATH = "";
 const EMPTY_PROJECT_FILE_QUERY_ATOM = Atom.make(
   AsyncResult.initial<ProjectReadFileResult, never>(false),
 ).pipe(Atom.withLabel("project-file-query:empty"));
+const EMPTY_PROJECT_ENTRIES_QUERY_ATOM = Atom.make(
+  AsyncResult.initial<ProjectListEntriesResult, never>(false),
+).pipe(Atom.withLabel("project-entries-query:empty"));
+const EMPTY_PROJECT_ENTRIES_SYNC_ATOM = Atom.make(() => {}).pipe(
+  Atom.withLabel("project-entries-sync:empty"),
+);
 function optimisticFileAtom(environmentId: EnvironmentId, cwd: string, relativePath: string) {
   return projectEnvironment.optimisticFile({ environmentId, cwd, relativePath });
 }
@@ -124,17 +131,57 @@ function errorMessage<A>(result: AsyncResult.AsyncResult<A, unknown>): string | 
 export function useProjectEntriesQuery(
   environmentId: EnvironmentId,
   cwd: string,
+  enabled = true,
 ): ProjectQueryState<ProjectListEntriesResult> {
-  const atom = getProjectEntriesQueryAtom(environmentId, cwd);
+  useProjectEntriesServerEvents(environmentId, cwd, enabled);
+  const atom = enabled
+    ? getProjectEntriesQueryAtom(environmentId, cwd)
+    : EMPTY_PROJECT_ENTRIES_QUERY_ATOM;
   const result = useAtomValue(atom);
   const refreshAtom = useAtomRefresh(atom);
-  const refresh = useCallback(() => refreshAtom(), [refreshAtom]);
+  const rescan = useAtomCommand(projectEnvironment.refreshEntries);
+  const [isRescanning, setIsRescanning] = useState(false);
+  // Manual refresh forces a server-side rescan before refetching: the watcher
+  // can miss changes (unwatchable filesystems, failed subscriptions), and
+  // re-reading the index alone would return the same stale entries.
+  const refresh = useCallback(() => {
+    setIsRescanning(true);
+    void rescan({ environmentId, input: { cwd } }).then(() => {
+      setIsRescanning(false);
+      refreshAtom();
+    });
+  }, [cwd, environmentId, refreshAtom, rescan]);
   return {
     data: Option.getOrNull(AsyncResult.value(result)),
     error: errorMessage(result),
-    isPending: result.waiting,
+    isPending: result.waiting || isRescanning,
     refresh,
   };
+}
+
+const projectEntriesSyncAtom = Atom.family((key: string) => {
+  const separatorIndex = key.indexOf("\n");
+  const environmentId = key.slice(0, separatorIndex) as EnvironmentId;
+  const cwd = key.slice(separatorIndex + 1);
+  const listAtom = getProjectEntriesQueryAtom(environmentId, cwd);
+  const eventsAtom = projectEnvironment.entriesEvents({ environmentId, input: { cwd } });
+  return Atom.make((get) => {
+    // The watcher-driven server pushes one event per change burst; each one
+    // invalidates the entries query so the explorer matches the filesystem.
+    get.subscribe(eventsAtom, () => {
+      appAtomRegistry.refresh(listAtom);
+    });
+  }).pipe(Atom.setIdleTTL(60_000), Atom.withLabel(`project-entries-sync:${key}`));
+});
+
+function useProjectEntriesServerEvents(
+  environmentId: EnvironmentId,
+  cwd: string,
+  enabled: boolean,
+): void {
+  useAtomValue(
+    enabled ? projectEntriesSyncAtom(`${environmentId}\n${cwd}`) : EMPTY_PROJECT_ENTRIES_SYNC_ATOM,
+  );
 }
 
 /**

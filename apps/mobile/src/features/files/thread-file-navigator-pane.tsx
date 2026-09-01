@@ -12,12 +12,13 @@ import {
 
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
-import { useThemeColor } from "../../lib/useThemeColor";
-import { projectEnvironment } from "../../state/projects";
-import { useEnvironmentQuery } from "../../state/query";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
+import { useEnvironmentServerConfig } from "../../state/entities";
+import { useProjectEntriesQuery } from "../../state/queries";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { FileTreeBrowser } from "./FileTreeBrowser";
 import { preloadWorkspaceFileContents } from "./preload-workspace-file";
+import { useLazyProjectEntries } from "./useLazyProjectEntries";
 
 export function ThreadFileNavigatorPane(props: {
   readonly cwd: string;
@@ -29,17 +30,24 @@ export function ThreadFileNavigatorPane(props: {
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const { themeAppearance: highlightTheme } = useAppearancePreferences();
-  const iconColor = String(useThemeColor("--color-icon-muted"));
-  const foregroundColor = String(useThemeColor("--color-foreground"));
-  const sheetColor = String(useThemeColor("--color-sheet"));
+  const theme = useUniwindTheme();
+  const foregroundColor = theme["--color-foreground"];
+  const sheetColor = theme["--color-sheet"];
   const headerScrollEdgeEffects = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
-  const entriesQuery = useEnvironmentQuery(
-    projectEnvironment.listEntries({
-      environmentId: props.environmentId,
-      input: { cwd: props.cwd },
-    }),
-  );
+  // Older servers lack projects.listDirectory; they keep the capped
+  // whole-tree listing until updated.
+  const lazyMode =
+    useEnvironmentServerConfig(props.environmentId)?.environment.capabilities
+      .workspaceDirectoryListing === true;
+  const entriesQuery = useProjectEntriesQuery(props.environmentId, props.cwd, !lazyMode);
   const entriesData = entriesQuery.data as ProjectListEntriesResult | null;
+  const lazyEntries = useLazyProjectEntries({
+    environmentId: props.environmentId,
+    cwd: props.cwd,
+    enabled: lazyMode,
+    searchQuery,
+  });
+  const refreshFiles = lazyMode ? lazyEntries.refresh : entriesQuery.refresh;
   const handlePreviewFile = useCallback(
     (relativePath: string) => {
       preloadWorkspaceFileContents({
@@ -58,25 +66,32 @@ export function ThreadFileNavigatorPane(props: {
           accessibilityLabel: "Refresh files",
           icon: { name: "arrow.clockwise", type: "sfSymbol" as const },
           identifier: "thread-file-navigator-refresh",
-          onPress: entriesQuery.refresh,
+          onPress: refreshFiles,
           sharesBackground: false,
           tintColor: foregroundColor,
           type: "button" as const,
           width: 44,
         },
       ] as ComponentProps<typeof ScreenStackHeaderConfig>["headerRightBarButtonItems"],
-    [entriesQuery.refresh, foregroundColor],
+    [refreshFiles, foregroundColor],
   );
 
   const fileTree = (
     <FileTreeBrowser
-      entries={entriesData?.entries ?? []}
-      error={entriesQuery.error}
-      isPending={entriesQuery.isPending}
+      entries={lazyMode ? lazyEntries.entries : (entriesData?.entries ?? [])}
+      error={lazyMode ? lazyEntries.error : entriesQuery.error}
+      isPending={lazyMode ? lazyEntries.isPending : entriesQuery.isPending}
       searchQuery={searchQuery}
       selectedPath={props.selectedPath}
+      {...(lazyMode
+        ? {
+            loadedDirPaths: lazyEntries.loadedDirPaths,
+            onExpandDirectory: lazyEntries.ensureDirLoaded,
+            onRevealPath: lazyEntries.ensurePathLoaded,
+          }
+        : {})}
       onPreviewFile={handlePreviewFile}
-      onRefresh={entriesQuery.refresh}
+      onRefresh={refreshFiles}
       onSelectFile={props.onSelectFile}
     />
   );
@@ -150,13 +165,23 @@ export function ThreadFileNavigatorPane(props: {
             accessibilityLabel="Refresh files"
             hitSlop={8}
             className="h-8 w-8 items-center justify-center rounded-full active:bg-subtle"
-            onPress={entriesQuery.refresh}
+            onPress={refreshFiles}
           >
-            <SymbolView name="arrow.clockwise" size={14} tintColor={iconColor} type="monochrome" />
+            <SymbolView
+              name="arrow.clockwise"
+              size={14}
+              tintColorClassName={"accent-icon-muted"}
+              type="monochrome"
+            />
           </Pressable>
         </View>
         <View className="flex-row items-center gap-2 border-t border-border px-3 py-2">
-          <SymbolView name="magnifyingglass" size={15} tintColor={iconColor} type="monochrome" />
+          <SymbolView
+            name="magnifyingglass"
+            size={15}
+            tintColorClassName={"accent-icon-muted"}
+            type="monochrome"
+          />
           <TextInput
             accessibilityLabel="Search files"
             autoCapitalize="none"

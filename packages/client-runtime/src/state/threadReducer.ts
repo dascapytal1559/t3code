@@ -92,6 +92,7 @@ export function applyThreadDetailEvent(
           archivedAt: null,
           settledOverride: null,
           settledAt: null,
+          unsettledAt: null,
           snoozedUntil: null,
           snoozedAt: null,
           deletedAt: null,
@@ -130,6 +131,7 @@ export function applyThreadDetailEvent(
           ...thread,
           settledOverride: "settled",
           settledAt: event.payload.settledAt,
+          unsettledAt: null,
           updatedAt: event.payload.updatedAt,
         },
       };
@@ -141,6 +143,12 @@ export function applyThreadDetailEvent(
           ...thread,
           settledOverride: event.payload.reason === "user" ? "active" : null,
           settledAt: null,
+          // A thread already pinned active keeps its re-entry stamp: the
+          // activity reset that clears the pin must not reorder the list.
+          unsettledAt:
+            thread.settledOverride === "active"
+              ? (thread.unsettledAt ?? null)
+              : event.payload.updatedAt,
           updatedAt: event.payload.updatedAt,
         },
       };
@@ -217,6 +225,9 @@ export function applyThreadDetailEvent(
           ...(event.payload.branch !== undefined ? { branch: event.payload.branch } : {}),
           ...(event.payload.worktreePath !== undefined
             ? { worktreePath: event.payload.worktreePath }
+            : {}),
+          ...(event.payload.linkedPullRequest !== undefined
+            ? { linkedPullRequest: event.payload.linkedPullRequest }
             : {}),
           updatedAt: event.payload.updatedAt,
         },
@@ -522,7 +533,11 @@ export function applyThreadDetailEvent(
       );
 
       const retainedTurnIds = new Set(Arr.map(checkpoints, (entry) => entry.turnId));
-      const messages = retainMessagesAfterRevert(thread.messages, retainedTurnIds);
+      const messages = retainMessagesAfterRevert(
+        thread.messages,
+        retainedTurnIds,
+        checkpoints.at(-1)?.completedAt ?? null,
+      );
       const proposedPlans = pipe(
         thread.proposedPlans,
         Arr.filter((plan) => plan.turnId === null || retainedTurnIds.has(plan.turnId)),
@@ -654,16 +669,21 @@ function rebindCheckpointAssistantMessage(
 function retainMessagesAfterRevert(
   messages: ReadonlyArray<OrchestrationMessage>,
   retainedTurnIds: ReadonlySet<string>,
+  lastRetainedCheckpointAt: string | null,
 ): OrchestrationMessage[] {
-  // Keep messages that belong to a retained turn, plus system messages and
-  // messages without a turn binding (pre-turn-0 user messages).
+  // Keep system messages and messages bound to a retained turn. Turn-less
+  // messages (user prompts are stored with a null turnId) survive only when
+  // they predate the last retained checkpoint: anything newer sits past the
+  // revert cut and would render as a ghost the server already dropped. A
+  // count-based rescue cannot work here — thread.messages is a paginated
+  // window, so whole-thread turn counts overshoot it.
   return Arr.filter(messages, (message) => {
     if (message.role === "system") {
       return true;
     }
-    if (message.turnId === null) {
-      return true;
+    if (message.turnId !== null) {
+      return retainedTurnIds.has(message.turnId);
     }
-    return retainedTurnIds.has(message.turnId);
+    return lastRetainedCheckpointAt !== null && message.createdAt <= lastRetainedCheckpointAt;
   });
 }

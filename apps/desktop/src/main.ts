@@ -7,8 +7,11 @@ for (const stream of [process.stdout, process.stderr]) {
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+// @effect-diagnostics-next-line nodeBuiltinImport:off - the fork server-root override must be read synchronously pre-ready (see readDesktopServerRootOverride).
+import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
@@ -16,7 +19,10 @@ import * as Electron from "electron";
 
 import * as NetService from "@t3tools/shared/Net";
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { resolveRemoteT3CliPackageSpec } from "@t3tools/ssh/command";
+import {
+  parseRemoteT3CliPackageSpecOverride,
+  resolveRemoteT3CliPackageSpec,
+} from "@t3tools/ssh/command";
 import type { RemoteT3RunnerOptions } from "@t3tools/ssh/tunnel";
 import serverPackageJson from "../../server/package.json" with { type: "json" };
 
@@ -64,6 +70,34 @@ import * as DesktopWslBackend from "./wsl/DesktopWslBackend.ts";
 import * as DesktopWslEnvironment from "./wsl/DesktopWslEnvironment.ts";
 import * as DesktopWslServerTree from "./wsl/DesktopWslServerTree.ts";
 
+// Fork: when this file exists and its first non-empty non-comment line names a
+// directory containing apps/server/dist/bin.mjs (plus the node_modules it
+// resolves against), packaged builds load the backend — and the web client it
+// serves — from that directory instead of the copy baked into app.asar,
+// making server/web deploys a JS payload swap with no DMG rebuild. Read once
+// at launch; a missing or invalid target falls back to the bundled tree.
+const desktopServerRootOverridePath = `${NodeOS.homedir()}/.t3/fork/desktop-server-root`;
+
+// Read synchronously: this runs while the DesktopEnvironment layer builds,
+// upstream of the Clerk bridge, which must be created before Electron's
+// "ready" event fires (it calls protocol.registerSchemesAsPrivileged).
+// Async I/O here would yield to the event loop and let "ready" win the race.
+const readDesktopServerRootOverride = Effect.sync((): string | null => {
+  let contents: string;
+  try {
+    contents = NodeFS.readFileSync(desktopServerRootOverridePath, "utf8");
+  } catch {
+    return null;
+  }
+  const line = contents
+    .split("\n")
+    .map((value) => value.trim())
+    .find((value) => value.length > 0 && !value.startsWith("#"));
+  if (line === undefined) return null;
+  const root = line.startsWith("~/") ? `${NodeOS.homedir()}/${line.slice(2)}` : line;
+  return NodeFS.existsSync(`${root}/apps/server/dist/bin.mjs`) ? root : null;
+});
+
 const desktopEnvironmentLayer = Layer.unwrap(
   Effect.gen(function* () {
     const metadata = yield* Effect.service(ElectronApp.ElectronApp).pipe(
@@ -71,19 +105,28 @@ const desktopEnvironmentLayer = Layer.unwrap(
     );
     const platform = yield* HostProcessPlatform;
     const processArch = yield* HostProcessArchitecture;
+    const serverRootOverride = yield* readDesktopServerRootOverride;
     return DesktopEnvironment.layer({
       dirname: __dirname,
       homeDirectory: NodeOS.homedir(),
       platform,
       processArch,
+      ...(serverRootOverride !== null ? { serverRootOverride } : {}),
       ...metadata,
     });
   }),
 );
 
+// Fork: when this file exists, its first non-empty non-comment line is used
+// verbatim as the npm package spec for SSH-launched remote servers — for
+// example the path of a fork-built t3 tarball already copied onto the remote
+// host. Read at every launch so a new spec applies on the next reconnect.
+const sshPackageSpecOverridePath = `${NodeOS.homedir()}/.t3/fork/ssh-t3-package-spec`;
+
 const resolveDesktopSshCliRunner = (
   environment: DesktopEnvironment.DesktopEnvironment["Service"],
   settings: DesktopAppSettings.DesktopSettings,
+  overrideSpec: string | null,
 ): RemoteT3RunnerOptions => {
   const devRemoteEntryPath = Option.getOrUndefined(environment.devRemoteT3ServerEntryPath);
   if (environment.isDevelopment && devRemoteEntryPath !== undefined) {
@@ -97,7 +140,9 @@ const resolveDesktopSshCliRunner = (
       appVersion: environment.appVersion,
       updateChannel: settings.updateChannel,
       isDevelopment: environment.isDevelopment,
+      overrideSpec,
     }),
+    preferPackageSpec: overrideSpec !== null && overrideSpec.trim().length > 0,
     nodeEngineRange: serverPackageJson.engines.node,
   };
 };
@@ -106,10 +151,16 @@ const desktopSshEnvironmentLayer = Layer.unwrap(
   Effect.gen(function* () {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     const settings = yield* DesktopAppSettings.DesktopAppSettings;
+    const fileSystem = yield* FileSystem.FileSystem;
     return DesktopSshEnvironment.layer({
-      resolveCliRunner: settings.get.pipe(
-        Effect.map((currentSettings) => resolveDesktopSshCliRunner(environment, currentSettings)),
-      ),
+      resolveCliRunner: Effect.gen(function* () {
+        const currentSettings = yield* settings.get;
+        const overrideSpec = yield* fileSystem.readFileString(sshPackageSpecOverridePath).pipe(
+          Effect.map(parseRemoteT3CliPackageSpecOverride),
+          Effect.orElseSucceed((): string | null => null),
+        );
+        return resolveDesktopSshCliRunner(environment, currentSettings, overrideSpec);
+      }),
     });
   }),
 );

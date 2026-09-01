@@ -25,13 +25,18 @@ import type {
   ProviderDriverKind,
   ProviderInstanceEnvironment,
   ProviderInstanceId,
+  ServerProviderSkill,
 } from "@t3tools/contracts";
 import type * as Effect from "effect/Effect";
 import type * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 
 import type * as TextGeneration from "../textGeneration/TextGeneration.ts";
-import type { ProviderAdapterError, ProviderDriverError } from "./Errors.ts";
+import type {
+  ProviderAdapterError,
+  ProviderDriverError,
+  ProviderSkillProbeError,
+} from "./Errors.ts";
 import type { ProviderAdapterShape } from "./Services/ProviderAdapter.ts";
 import type { ServerProviderShape } from "./Services/ServerProvider.ts";
 
@@ -71,6 +76,19 @@ export interface ProviderInstance {
   readonly snapshot: ServerProviderShape;
   readonly adapter: ProviderAdapterShape<ProviderAdapterError>;
   readonly textGeneration: TextGeneration.TextGeneration["Service"];
+  /**
+   * Contextual skill discovery for the composer's `$` picker: the skills
+   * this instance would load for a workspace directory. A probe that
+   * cannot produce an inventory (spawn error, timeout, non-zero exit)
+   * FAILS with `ProviderSkillProbeError` rather than succeeding with an
+   * empty list — callers keep the last good inventory on failure, and an
+   * empty success genuinely means "no skills here". Omitted by drivers
+   * whose CLI has no per-directory skill inventory (Cursor, OpenCode);
+   * callers fall back to the snapshot's baseline `skills`.
+   */
+  readonly discoverSkills?: (
+    cwd: string,
+  ) => Effect.Effect<ReadonlyArray<ServerProviderSkill>, ProviderSkillProbeError>;
 }
 
 export interface ProviderContinuationIdentity {

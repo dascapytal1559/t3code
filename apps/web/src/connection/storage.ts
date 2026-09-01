@@ -55,8 +55,11 @@ const StoredShellSnapshotJson = Schema.fromJsonString(StoredShellSnapshot);
 // exists for rollback safety: a pre-pagination client would decode a windowed
 // v2 record, silently drop the unknown `page` field, and treat the partial
 // thread as complete forever. Older entries fail to decode → cold cache.
+// v4 discards caches written before the revert-retention fix: they can hold
+// reverted (ghost) messages, and the afterSequence resume would trust them
+// forever without refetching a correcting snapshot.
 const StoredThreadSnapshot = Schema.Struct({
-  schemaVersion: Schema.Literal(3),
+  schemaVersion: Schema.Literal(4),
   environmentId: EnvironmentId,
   threadId: ThreadId,
   snapshot: OrchestrationThreadDetailSnapshot,
@@ -564,7 +567,7 @@ export const connectionStorageLayer = Layer.effectContext(
       saveThread: (environmentId, snapshot) =>
         Effect.gen(function* () {
           const encoded = yield* encodeStoredThreadSnapshot({
-            schemaVersion: 3,
+            schemaVersion: 4,
             environmentId,
             threadId: snapshot.thread.id,
             snapshot,

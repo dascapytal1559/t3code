@@ -3,9 +3,9 @@ import type {
   ContextMenuOpenContext as TreeContextMenuOpenContext,
 } from "@pierre/trees";
 import type { EnvironmentId, ProjectEntry } from "@t3tools/contracts";
-import { FileTree, useFileTree, useFileTreeSearch } from "@pierre/trees/react";
+import { FileTree, useFileTree, useFileTreeSearch, useFileTreeSelector } from "@pierre/trees/react";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
-import { RotateCw } from "lucide-react";
+import { ChevronsDownUpIcon, ChevronsUpDownIcon, RotateCw } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 
 import { Button } from "~/components/ui/button";
@@ -15,12 +15,17 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useComposerHandleContext } from "~/composerHandleContext";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { useTheme } from "~/hooks/useTheme";
+import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
 
+import { useServerConfigs } from "~/state/entities";
+
 import { createFileTreeDragMentionController } from "./fileTreeDragMention";
+import { areAllDirectoriesExpanded, setAllDirectoriesExpanded } from "./fileTreeExpansion";
 import { useProjectEntriesQuery } from "./projectFilesQueryState";
+import { useLazyFileTree } from "./useLazyFileTree";
 
 interface FileBrowserPanelProps {
   environmentId: EnvironmentId;
@@ -31,6 +36,8 @@ interface FileBrowserPanelProps {
   /** Bumped when the same path should be revealed again (e.g. re-opened from search). */
   selectedPathRevealId: number;
   onOpenFile: (relativePath: string) => void;
+  onRefreshSelectedFile?: () => void;
+  workspaceMutationId: string | null;
 }
 
 const TREE_UNSAFE_CSS = `
@@ -43,6 +50,10 @@ const TREE_UNSAFE_CSS = `
     --trees-font-size-override: 12px;
   }
   button[data-type='item'] { border-radius: 5px; }
+  /* The tree right-aligns the decoration lane (flex: 1, justify flex-end);
+     pin it to hug the row name instead so the symlink arrow reads as part
+     of the label. */
+  div[data-item-section='decoration'] { opacity: 0.55; flex: 0 0 auto; justify-content: flex-start; transform: translateY(1px); }
 `;
 
 function treePath(entry: ProjectEntry): string {
@@ -105,17 +116,40 @@ export default function FileBrowserPanel({
   selectedPath,
   selectedPathRevealId,
   onOpenFile,
+  onRefreshSelectedFile,
+  workspaceMutationId,
 }: FileBrowserPanelProps) {
   const { resolvedTheme } = useTheme();
   const composerRef = useComposerHandleContext();
-  const entriesQuery = useProjectEntriesQuery(environmentId, cwd);
+  const serverConfigs = useServerConfigs();
+  // Older servers lack projects.listDirectory; they keep the capped
+  // whole-tree listing until updated.
+  const lazyMode =
+    serverConfigs.get(environmentId)?.environment.capabilities.workspaceDirectoryListing === true;
+  const entriesQuery = useProjectEntriesQuery(environmentId, cwd, !lazyMode);
   const entries = entriesQuery.data?.entries ?? [];
   const entryKinds = useMemo(
     () => new Map(entries.map((entry) => [entry.path, entry.kind] as const)),
     [entries],
   );
   const entryKindsRef = useRef<ReadonlyMap<string, ProjectEntry["kind"]>>(entryKinds);
+  const symlinkTreePaths = useMemo(
+    () => new Set(entries.filter((entry) => entry.symlink).map(treePath)),
+    [entries],
+  );
+  const symlinkTreePathsRef = useRef<ReadonlySet<string>>(symlinkTreePaths);
+  const ignoredGitStatus = useMemo(
+    () =>
+      entries
+        .filter((entry) => entry.ignored)
+        .map((entry) => ({ path: treePath(entry), status: "ignored" as const })),
+    [entries],
+  );
   const treePaths = useMemo(() => entries.map(treePath), [entries]);
+  const directoryPaths = useMemo(
+    () => entries.filter((entry) => entry.kind === "directory").map(treePath),
+    [entries],
+  );
   const previousTreePathsRef = useRef<readonly string[]>([]);
   const syncingSelectionRef = useRef(false);
   const treeSelectionPathRef = useRef<string | null>(null);
@@ -222,7 +256,9 @@ export default function FileBrowserPanel({
     density: "compact",
     fileTreeSearchMode: "hide-non-matches",
     flattenEmptyDirectories: true,
-    initialExpansion: 1,
+    // VS Code default: the tree opens fully collapsed, so the lazy loader
+    // fetches nothing beyond the root listing until a folder is expanded.
+    initialExpansion: "closed",
     icons: T3_PIERRE_ICONS,
     onSelectionChange: (selectedPaths) => {
       // The drag controller's selection cache must track every change,
@@ -243,10 +279,38 @@ export default function FileBrowserPanel({
       }
     },
     paths: [],
+    // Rows are registered in treePath form (directories keep their trailing
+    // slash), so the decoration lookup uses item.path as-is.
+    renderRowDecoration: ({ item }) =>
+      symlinkTreePathsRef.current.has(item.path)
+        ? {
+            icon: { name: "t3-file-icon-symlink", viewBox: "0 0 16 16", width: 11, height: 11 },
+            title: "Symbolic link",
+          }
+        : null,
     search: false,
     unsafeCSS: TREE_UNSAFE_CSS,
   });
   const search = useFileTreeSearch(model);
+  const lazyTree = useLazyFileTree({
+    model,
+    environmentId,
+    cwd,
+    enabled: lazyMode,
+    searchValue: search.value,
+    entryKindsRef,
+    symlinkTreePathsRef,
+  });
+  // The lazy tree only knows loaded directories, so the toggle works on the
+  // root's direct children: expanding them fetches exactly one listing each
+  // instead of cascading loads through the whole workspace.
+  const toggleDirectoryPaths = lazyMode ? lazyTree.rootDirectoryPaths : directoryPaths;
+  const allDirectoriesExpanded = useFileTreeSelector(model, (currentModel) =>
+    areAllDirectoriesExpanded(currentModel, toggleDirectoryPaths),
+  );
+  const toggleAllDirectories = () => {
+    setAllDirectoriesExpanded(model, toggleDirectoryPaths, !allDirectoriesExpanded);
+  };
   const handleSearchValueChange = (value: string) => {
     if (value.trim().length === 0) {
       search.close();
@@ -254,13 +318,37 @@ export default function FileBrowserPanel({
     }
     search.setValue(value);
   };
+  const handleRefresh = () => {
+    if (lazyMode) {
+      lazyTree.refresh();
+    } else {
+      entriesQuery.refresh();
+    }
+    onRefreshSelectedFile?.();
+  };
+  const filesPending = lazyMode ? lazyTree.isPending : entriesQuery.isPending;
+  const filesError = lazyMode ? lazyTree.error : entriesQuery.error;
+  const showFilesError = lazyMode
+    ? lazyTree.error !== null
+    : entriesQuery.error !== null && entriesQuery.data === null;
+  // In lazy mode the filesystem watcher already converges the tree after
+  // agent edits, so mutation-driven refreshes would only duplicate fetches.
+  useWorkspaceMutationRefresh({
+    enabled: !lazyMode,
+    mutationId: workspaceMutationId,
+    refresh: entriesQuery.refresh,
+    resourceKey: `files:${environmentId}:${cwd}`,
+  });
 
   useEffect(() => {
+    if (lazyMode) return;
     if (previousTreePathsRef.current === treePaths) return;
     entryKindsRef.current = entryKinds;
+    symlinkTreePathsRef.current = symlinkTreePaths;
     previousTreePathsRef.current = treePaths;
     model.resetPaths(treePaths);
-  }, [entryKinds, model, treePaths]);
+    model.setGitStatus(ignoredGitStatus);
+  }, [entryKinds, ignoredGitStatus, lazyMode, model, symlinkTreePaths, treePaths]);
 
   useEffect(() => {
     if (!selectedPath) {
@@ -277,47 +365,71 @@ export default function FileBrowserPanel({
     ) {
       return;
     }
-    if (entryKinds.get(selectedPath) !== "file") return;
-    const selectedItem = model.getItem(selectedPath);
-    if (!selectedItem) return;
 
-    // A selection that originated inside the tree (clicking a row, possibly
-    // in an active tree search) is already visible; re-revealing it would
-    // close the search and clobber the user's context. Only sync external
-    // opens (file picker, content search, chat links).
-    const selectedInTree = model
-      .getSelectedPaths()
-      .some((path) => path.replace(/\/$/, "") === selectedPath);
-    if (selectedInTree && treeSelectionPathRef.current === selectedPath) {
+    let cancelled = false;
+    const reveal = () => {
+      if (cancelled) return;
+      if (entryKindsRef.current.get(selectedPath) !== "file") return;
+      const selectedItem = model.getItem(selectedPath);
+      if (!selectedItem) return;
+
+      // A selection that originated inside the tree (clicking a row, possibly
+      // in an active tree search) is already visible; re-revealing it would
+      // close the search and clobber the user's context. Only sync external
+      // opens (file picker, content search, chat links).
+      const selectedInTree = model
+        .getSelectedPaths()
+        .some((path) => path.replace(/\/$/, "") === selectedPath);
+      if (selectedInTree && treeSelectionPathRef.current === selectedPath) {
+        treeSelectionPathRef.current = null;
+        handledRevealRef.current = revealRequest;
+        return;
+      }
       treeSelectionPathRef.current = null;
       handledRevealRef.current = revealRequest;
-      return;
-    }
-    treeSelectionPathRef.current = null;
-    handledRevealRef.current = revealRequest;
 
-    syncingSelectionRef.current = true;
-    model.closeSearch();
-    for (const path of model.getSelectedPaths()) {
-      model.getItem(path)?.deselect();
-    }
+      syncingSelectionRef.current = true;
+      model.closeSearch();
+      for (const path of model.getSelectedPaths()) {
+        model.getItem(path)?.deselect();
+      }
 
-    // Directory rows are registered with a trailing slash (see treePath), so
-    // ancestor lookups must use the same form to expand them.
-    const segments = selectedPath.split("/");
-    let ancestorPath = "";
-    for (const segment of segments.slice(0, -1)) {
-      ancestorPath = ancestorPath ? `${ancestorPath}/${segment}` : segment;
-      const item = model.getItem(`${ancestorPath}/`) ?? model.getItem(ancestorPath);
-      if (item && "expand" in item) item.expand();
-    }
+      // Directory rows are registered with a trailing slash (see treePath), so
+      // ancestor lookups must use the same form to expand them.
+      const segments = selectedPath.split("/");
+      let ancestorPath = "";
+      for (const segment of segments.slice(0, -1)) {
+        ancestorPath = ancestorPath ? `${ancestorPath}/${segment}` : segment;
+        const item = model.getItem(`${ancestorPath}/`) ?? model.getItem(ancestorPath);
+        if (item && "expand" in item) item.expand();
+      }
 
-    selectedItem.select();
-    model.scrollToPath(selectedPath, { focus: true, offset: "center" });
-    queueMicrotask(() => {
-      syncingSelectionRef.current = false;
-    });
-  }, [entryKinds, model, selectedPath, selectedPathRevealId, treePaths]);
+      selectedItem.select();
+      model.scrollToPath(selectedPath, { focus: true, offset: "center" });
+      queueMicrotask(() => {
+        syncingSelectionRef.current = false;
+      });
+    };
+
+    if (lazyMode) {
+      // The file may sit in a directory the lazy tree never expanded; load
+      // its ancestors first, then run the same reveal as the legacy path.
+      void lazyTree.ensurePathLoaded(selectedPath).then((loaded) => {
+        if (loaded) {
+          reveal();
+        } else if (!cancelled) {
+          // Give up on paths the workspace no longer contains; a new reveal
+          // id retries after refresh.
+          handledRevealRef.current = revealRequest;
+        }
+      });
+    } else {
+      reveal();
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [entryKinds, lazyMode, lazyTree, model, selectedPath, selectedPathRevealId, treePaths]);
 
   // Tag tree drags with the composer mention payload. The row is read from
   // the composed event path (the tree's shadow root is open), so this does
@@ -354,7 +466,7 @@ export default function FileBrowserPanel({
         className="flex h-10 min-h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-2 in-data-[preview-panel-mode=inline]:mb-3 in-data-[preview-panel-mode=inline]:h-7 in-data-[preview-panel-mode=inline]:min-h-7 in-data-[preview-panel-mode=inline]:border-b-transparent"
         data-surface-subheader
       >
-        <RefreshFilesButton isPending={entriesQuery.isPending} onRefresh={entriesQuery.refresh} />
+        <RefreshFilesButton isPending={filesPending} onRefresh={handleRefresh} />
         <FileSearchField
           name="project-files-search"
           ariaLabel={`Search ${projectName} files`}
@@ -362,9 +474,35 @@ export default function FileBrowserPanel({
           onValueChange={handleSearchValueChange}
           onClose={search.close}
         />
+        {toggleDirectoryPaths.length > 0 ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="ghost"
+                  aria-label={
+                    allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"
+                  }
+                  onClick={toggleAllDirectories}
+                />
+              }
+            >
+              {allDirectoriesExpanded ? (
+                <ChevronsDownUpIcon className="size-3.5" />
+              ) : (
+                <ChevronsUpDownIcon className="size-3.5" />
+              )}
+            </TooltipTrigger>
+            <TooltipPopup>
+              {allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"}
+            </TooltipPopup>
+          </Tooltip>
+        ) : null}
       </div>
-      {entriesQuery.error && entriesQuery.data === null ? (
-        <div className="p-4 text-xs leading-relaxed text-destructive">{entriesQuery.error}</div>
+      {showFilesError ? (
+        <div className="p-4 text-xs leading-relaxed text-destructive">{filesError}</div>
       ) : (
         <FileTree
           model={model}
@@ -372,7 +510,7 @@ export default function FileBrowserPanel({
           className="min-h-0 flex-1 overflow-hidden"
           style={{
             colorScheme: resolvedTheme,
-            ["--trees-fg-override" as string]: "var(--foreground)",
+            ["--trees-fg-override" as string]: "var(--contrast-foreground)",
           }}
         />
       )}

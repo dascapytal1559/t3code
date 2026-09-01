@@ -5,6 +5,8 @@ export interface FileTreeNode {
   readonly path: string;
   readonly name: string;
   readonly kind: ProjectEntry["kind"];
+  readonly symlink: boolean;
+  readonly ignored: boolean;
   readonly children: ReadonlyArray<FileTreeNode>;
   readonly searchSegments: ReadonlyArray<string>;
   readonly searchWords: ReadonlyArray<string>;
@@ -19,6 +21,8 @@ interface MutableFileTreeNode {
   path: string;
   name: string;
   kind: ProjectEntry["kind"];
+  symlink: boolean;
+  ignored: boolean;
   children: Map<string, MutableFileTreeNode>;
 }
 
@@ -26,11 +30,15 @@ function createMutableNode(
   path: string,
   name: string,
   kind: ProjectEntry["kind"],
+  symlink: boolean,
+  ignored: boolean,
 ): MutableFileTreeNode {
   return {
     path,
     name,
     kind,
+    symlink,
+    ignored,
     children: new Map(),
   };
 }
@@ -68,6 +76,8 @@ function freezeNode(node: MutableFileTreeNode): FileTreeNode {
     path: node.path,
     name: node.name,
     kind: node.kind,
+    symlink: node.symlink,
+    ignored: node.ignored,
     children: [...node.children.values()].sort(compareNodes).map(freezeNode),
     searchSegments: searchTerms.segments,
     searchWords: searchTerms.words,
@@ -85,7 +95,7 @@ function compareNodes(
 }
 
 export function buildFileTree(entries: ReadonlyArray<ProjectEntry>): ReadonlyArray<FileTreeNode> {
-  const root = createMutableNode("", "", "directory");
+  const root = createMutableNode("", "", "directory", false, false);
 
   for (const entry of entries) {
     const parts = entry.path.split("/").filter(Boolean);
@@ -103,12 +113,16 @@ export function buildFileTree(entries: ReadonlyArray<ProjectEntry>): ReadonlyArr
       const path = parts.slice(0, index + 1).join("/");
       const isLeaf = index === parts.length - 1;
       const kind = isLeaf ? entry.kind : "directory";
+      const symlink = isLeaf && entry.symlink === true;
+      const ignored = isLeaf && entry.ignored === true;
       let child = current.children.get(part);
       if (!child) {
-        child = createMutableNode(path, part, kind);
+        child = createMutableNode(path, part, kind, symlink, ignored);
         current.children.set(part, child);
       } else if (isLeaf) {
         child.kind = entry.kind;
+        child.symlink = symlink;
+        child.ignored = ignored;
       }
       current = child;
     }
@@ -127,16 +141,6 @@ export function countFileNodes(nodes: ReadonlyArray<FileTreeNode>): number {
     }
   }
   return count;
-}
-
-export function defaultExpandedTreePaths(nodes: ReadonlyArray<FileTreeNode>): ReadonlySet<string> {
-  const expanded = new Set<string>();
-  for (const node of nodes) {
-    if (node.kind === "directory") {
-      expanded.add(node.path);
-    }
-  }
-  return expanded;
 }
 
 function valueMatchesSearchToken(value: string, token: string, fuzzy: boolean): boolean {

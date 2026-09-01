@@ -14,6 +14,7 @@ import type {
   OrchestrationThread,
   ProjectContentMatch,
   ProjectEntryKind,
+  ProviderInstanceId,
   ThreadId,
   VcsListRefsResult,
   VcsRef,
@@ -28,6 +29,7 @@ import { orchestrationEnvironment } from "./orchestration";
 import { isPaginatedBranchesNextPagePending } from "./paginatedBranches";
 import { projectContentSearch, projectEnvironment } from "./projects";
 import { useEnvironmentQuery } from "./query";
+import { serverEnvironment } from "./server";
 import { useEnvironmentThread } from "./threads";
 import { vcsEnvironment } from "./vcs";
 
@@ -45,6 +47,41 @@ const EMPTY_THREAD_SEARCH_ATOM = Atom.make({
   matches: EMPTY_THREAD_SEARCH_MATCHES,
   isLoading: false,
 }).pipe(Atom.withLabel("web:thread-search:empty"));
+const EMPTY_PROJECT_PATH_SEARCH_SYNC_ATOM = Atom.make(undefined).pipe(
+  Atom.withLabel("web:project-path-search-sync:empty"),
+);
+
+interface ProjectPathSearchSyncTarget {
+  readonly environmentId: EnvironmentId;
+  readonly cwd: string;
+  readonly query: string;
+  readonly limit: number;
+  readonly kind?: ProjectEntryKind;
+  readonly imageOnly?: boolean;
+}
+
+const projectPathSearchSyncAtom = Atom.family((key: string) => {
+  const target = JSON.parse(key) as ProjectPathSearchSyncTarget;
+  const searchAtom = projectEnvironment.searchEntries({
+    environmentId: target.environmentId,
+    input: {
+      cwd: target.cwd,
+      query: target.query,
+      limit: target.limit,
+      ...(target.kind ? { kind: target.kind } : {}),
+      ...(target.imageOnly ? { imageOnly: true } : {}),
+    },
+  });
+  const eventsAtom = projectEnvironment.entriesEvents({
+    environmentId: target.environmentId,
+    input: { cwd: target.cwd },
+  });
+  return Atom.make((get) => {
+    get.subscribe(eventsAtom, () => {
+      appAtomRegistry.refresh(searchAtom);
+    });
+  }).pipe(Atom.setIdleTTL(60_000), Atom.withLabel(`project-path-search-sync:${key}`));
+});
 
 const threadSearchResultsAtom = createThreadSearchResultsAtomFamily({
   getSearchAtom: (environmentId, query) =>
@@ -270,22 +307,37 @@ export function useProjectPathSearch(
     [target.cwd, target.environmentId, target.imageOnly, target.kind, target.query],
   );
   const debouncedTarget = useDebouncedValue(normalizedTarget, PROJECT_PATH_SEARCH_DEBOUNCE_MS);
-  const result = useEnvironmentQuery(
+  const searchTarget: ProjectPathSearchSyncTarget | null =
     debouncedTarget.environmentId !== null &&
-      debouncedTarget.cwd !== null &&
-      debouncedTarget.query !== null &&
-      (allowEmptyQuery || debouncedTarget.query.length > 0)
-      ? projectEnvironment.searchEntries({
+    debouncedTarget.cwd !== null &&
+    debouncedTarget.query !== null &&
+    (allowEmptyQuery || debouncedTarget.query.length > 0)
+      ? {
           environmentId: debouncedTarget.environmentId,
+          cwd: debouncedTarget.cwd,
+          query: debouncedTarget.query,
+          limit,
+          ...(debouncedTarget.kind ? { kind: debouncedTarget.kind } : {}),
+          ...(debouncedTarget.imageOnly ? { imageOnly: true } : {}),
+        }
+      : null;
+  const searchKey = searchTarget === null ? null : JSON.stringify(searchTarget);
+  useAtomValue(
+    searchKey === null ? EMPTY_PROJECT_PATH_SEARCH_SYNC_ATOM : projectPathSearchSyncAtom(searchKey),
+  );
+  const result = useEnvironmentQuery(
+    searchTarget === null
+      ? null
+      : projectEnvironment.searchEntries({
+          environmentId: searchTarget.environmentId,
           input: {
-            cwd: debouncedTarget.cwd,
-            query: debouncedTarget.query,
-            limit,
-            ...(debouncedTarget.kind ? { kind: debouncedTarget.kind } : {}),
-            ...(debouncedTarget.imageOnly ? { imageOnly: true } : {}),
+            cwd: searchTarget.cwd,
+            query: searchTarget.query,
+            limit: searchTarget.limit,
+            ...(searchTarget.kind ? { kind: searchTarget.kind } : {}),
+            ...(searchTarget.imageOnly ? { imageOnly: true } : {}),
           },
-        })
-      : null,
+        }),
   );
 
   return {
@@ -300,6 +352,34 @@ export function useProjectPathSearch(
 
 export function useComposerPathSearch(target: ComposerPathSearchTarget) {
   return useProjectPathSearch(target, COMPOSER_PATH_SEARCH_LIMIT);
+}
+
+interface ProviderContextSkillsTarget {
+  readonly environmentId: EnvironmentId | null;
+  readonly instanceId: ProviderInstanceId | null;
+  readonly cwd: string | null;
+}
+
+/**
+ * The skills the selected provider instance would load for the thread's
+ * workspace, from `server.listProviderSkills`. `skills` is `null` until
+ * the first response lands — callers fall back to the provider snapshot's
+ * baseline list. Fetched per (environment, instance, cwd); the server
+ * serves cached inventories stale-while-revalidate.
+ */
+export function useProviderContextSkills(target: ProviderContextSkillsTarget) {
+  const result = useEnvironmentQuery(
+    target.environmentId !== null && target.instanceId !== null
+      ? serverEnvironment.providerSkills({
+          environmentId: target.environmentId,
+          input: { instanceId: target.instanceId, cwd: target.cwd },
+        })
+      : null,
+  );
+  return {
+    skills: result.data?.skills ?? null,
+    isPending: result.isPending,
+  };
 }
 
 interface ProjectContentSearchTarget {

@@ -1,13 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { ProjectEntry } from "@t3tools/contracts";
 
-import {
-  buildFileTree,
-  countFileNodes,
-  defaultExpandedTreePaths,
-  firstFilePath,
-  flattenFileTree,
-} from "./fileTree";
+import { buildFileTree, countFileNodes, firstFilePath, flattenFileTree } from "./fileTree";
 
 const entries = [
   { kind: "file", path: "README.md" },
@@ -68,7 +62,7 @@ describe("mobile file tree helpers", () => {
     const tree = buildFileTree([
       {
         kind: "file",
-        path: ".plans/19-version-control-phase-1-vcs-driver-foundation.md",
+        path: "docs/internals/workspace-layout.md",
       },
       {
         kind: "file",
@@ -101,9 +95,25 @@ describe("mobile file tree helpers", () => {
     }
   });
 
-  it("expands top-level directories by default", () => {
-    const tree = buildFileTree(entries);
+  it("carries the symlink flag onto the linked entry's node only", () => {
+    const tree = buildFileTree([
+      { kind: "directory", path: "linked", symlink: true },
+      { kind: "file", path: "linked/inner.txt" },
+    ] satisfies ReadonlyArray<ProjectEntry>);
 
-    expect([...defaultExpandedTreePaths(tree)]).toEqual(["src"]);
+    expect(tree[0]?.symlink).toBe(true);
+    expect(tree[0]?.children[0]?.symlink).toBe(false);
+  });
+
+  it("carries the ignored flag onto the ignored entry's node only", () => {
+    const tree = buildFileTree([
+      { kind: "directory", path: "cache", ignored: true },
+      { kind: "file", path: "cache/result.json", ignored: true },
+      { kind: "file", path: "keep.ts" },
+    ] satisfies ReadonlyArray<ProjectEntry>);
+
+    expect(tree[0]?.ignored).toBe(true);
+    expect(tree[0]?.children[0]?.ignored).toBe(true);
+    expect(tree[1]?.ignored).toBe(false);
   });
 });
