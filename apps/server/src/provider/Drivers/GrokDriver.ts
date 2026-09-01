@@ -89,8 +89,8 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv> = {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const httpClient = yield* HttpClient.HttpClient;
       const serverSettings = yield* ServerSettingsService;
-      const eventLoggers = yield* ProviderEventLoggers;
       const { cwd } = yield* ServerConfig;
+      const eventLoggers = yield* ProviderEventLoggers;
       const processEnv = mergeProviderInstanceEnvironment(environment);
       const continuationIdentity = defaultProviderContinuationIdentity({
         driverKind: DRIVER_KIND,
@@ -161,7 +161,7 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv> = {
         adapter,
         textGeneration,
         discoverSkills: (workspaceCwd) =>
-          discoverGrokSkills(effectiveConfig, workspaceCwd, processEnv).pipe(
+          discoverGrokSkills(effectiveConfig, processEnv, workspaceCwd).pipe(
             Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
           ),
       } satisfies ProviderInstance;

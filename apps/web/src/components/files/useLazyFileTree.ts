@@ -122,6 +122,12 @@ export function applyDirListing(
 export interface LazyFileTree {
   readonly isPending: boolean;
   readonly error: string | null;
+  /**
+   * The workspace root's direct child directories in treePath form. The
+   * expand/collapse-all toggle works on this one level: the rest of the tree
+   * is only known lazily, and expanding these fetches exactly one listing each.
+   */
+  readonly rootDirectoryPaths: ReadonlyArray<string>;
   readonly refresh: () => void;
   /**
    * Loads every ancestor directory of a workspace-relative file path.
@@ -151,6 +157,7 @@ export function useLazyFileTree(options: {
   const generationRef = useRef(0);
   const [isRootPending, setIsRootPending] = useState(enabled);
   const [isRescanning, setIsRescanning] = useState(false);
+  const [rootEntries, setRootEntries] = useState<ReadonlyArray<ProjectEntry>>([]);
   const [error, setError] = useState<string | null>(null);
   const rescan = useAtomCommand(projectEnvironment.refreshEntries);
 
@@ -192,6 +199,7 @@ export function useLazyFileTree(options: {
         if (entries instanceof Error) return false;
         if (dirPath !== "" && store.entryKinds.get(dirPath) !== "directory") return false;
         applyDirListing(store, model, dirPath, entries);
+        if (dirPath === "") setRootEntries(entries);
         scanExpandedDirsRef.current();
         return true;
       });
@@ -233,6 +241,7 @@ export function useLazyFileTree(options: {
         if (dirPath !== "" && store.entryKinds.get(dirPath) !== "directory") return;
         if (!store.loadedDirs.has(dirPath)) return;
         applyDirListing(store, model, dirPath, entries);
+        if (dirPath === "") setRootEntries(entries);
       }),
     );
     scanExpandedDirsRef.current();
@@ -247,6 +256,7 @@ export function useLazyFileTree(options: {
     symlinkTreePathsRef.current = store.symlinkTreePaths;
     setError(null);
     setIsRootPending(true);
+    setRootEntries([]);
     model.resetPaths([]);
     void fetchDir("").then((entries) => {
       if (storeRef.current !== store) return;
@@ -257,6 +267,7 @@ export function useLazyFileTree(options: {
       }
       store.rootLoaded = true;
       applyDirListing(store, model, "", entries);
+      setRootEntries(entries);
       model.resetPaths(entries.map(treePath));
       // The tree opens collapsed (VS Code default), so this scan only loads
       // directories a reveal already expanded during the root fetch.
@@ -363,9 +374,14 @@ export function useLazyFileTree(options: {
     if (ops.length > 0) model.batch(ops);
   }, [enabled, model, pathSearch.entries, pathSearch.isPending]);
 
+  const rootDirectoryPaths = useMemo(
+    () => rootEntries.filter((entry) => entry.kind === "directory").map(treePath),
+    [rootEntries],
+  );
+
   const isPending = isRootPending || isRescanning;
   return useMemo(
-    () => ({ isPending, error, refresh, ensurePathLoaded }),
-    [ensurePathLoaded, error, isPending, refresh],
+    () => ({ isPending, error, rootDirectoryPaths, refresh, ensurePathLoaded }),
+    [ensurePathLoaded, error, isPending, refresh, rootDirectoryPaths],
   );
 }

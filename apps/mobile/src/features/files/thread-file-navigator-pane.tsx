@@ -12,7 +12,7 @@ import {
 
 import { AppText as Text, AppTextInput as TextInput } from "../../components/AppText";
 import { nativeHeaderScrollEdgeEffects } from "../../native/StackHeader";
-import { useThemeColor } from "../../lib/useThemeColor";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useEnvironmentServerConfig } from "../../state/entities";
 import { useProjectEntriesQuery } from "../../state/queries";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
@@ -30,9 +30,9 @@ export function ThreadFileNavigatorPane(props: {
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const { themeAppearance: highlightTheme } = useAppearancePreferences();
-  const iconColor = String(useThemeColor("--color-icon-muted"));
-  const foregroundColor = String(useThemeColor("--color-foreground"));
-  const sheetColor = String(useThemeColor("--color-sheet"));
+  const theme = useUniwindTheme();
+  const foregroundColor = theme["--color-foreground"];
+  const sheetColor = theme["--color-sheet"];
   const headerScrollEdgeEffects = nativeHeaderScrollEdgeEffects(Platform.OS, Platform.Version);
   // Older servers lack projects.listDirectory; they keep the capped
   // whole-tree listing until updated.
@@ -167,11 +167,21 @@ export function ThreadFileNavigatorPane(props: {
             className="h-8 w-8 items-center justify-center rounded-full active:bg-subtle"
             onPress={refreshFiles}
           >
-            <SymbolView name="arrow.clockwise" size={14} tintColor={iconColor} type="monochrome" />
+            <SymbolView
+              name="arrow.clockwise"
+              size={14}
+              tintColorClassName={"accent-icon-muted"}
+              type="monochrome"
+            />
           </Pressable>
         </View>
         <View className="flex-row items-center gap-2 border-t border-border px-3 py-2">
-          <SymbolView name="magnifyingglass" size={15} tintColor={iconColor} type="monochrome" />
+          <SymbolView
+            name="magnifyingglass"
+            size={15}
+            tintColorClassName={"accent-icon-muted"}
+            type="monochrome"
+          />
           <TextInput
             accessibilityLabel="Search files"
             autoCapitalize="none"
