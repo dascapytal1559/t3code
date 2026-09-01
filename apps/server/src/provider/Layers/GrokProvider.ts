@@ -3,7 +3,6 @@ import {
   type ModelCapabilities,
   type ServerProvider,
   type ServerProviderModel,
-  type ServerProviderSkill,
 } from "@t3tools/contracts";
 import type * as EffectAcpSchema from "effect-acp/schema";
 import { causeErrorTag } from "@t3tools/shared/observability";
