@@ -212,6 +212,7 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   const workspaceSearchIndexes = yield* WorkspaceSearchIndex.WorkspaceSearchIndexMap;
+  const filterSupplementalPaths = yield* WorkspaceSearchIndex.WorkspaceSupplementalPathFilter;
 
   const normalizeWorkspaceRoot = Effect.fn("WorkspaceEntries.normalizeWorkspaceRoot")(function* (
     cwd: string,
@@ -370,17 +371,37 @@ export const make = Effect.gen(function* () {
             relativePath: input.path,
           });
 
+    const entries = yield* Effect.tryPromise({
+      try: () => readDirectoryChildren(target.absolutePath, target.relativePath),
+      catch: (cause) =>
+        new WorkspaceEntriesListDirectoryReadError({
+          cwd: input.cwd,
+          path: input.path,
+          resolvedPath: target.absolutePath,
+          cause,
+        }),
+    });
+
+    const childName = (entry: ProjectEntry) =>
+      target.relativePath ? entry.path.slice(target.relativePath.length + 1) : entry.path;
+    const unignoredNames = yield* filterSupplementalPaths(
+      target.absolutePath,
+      entries.map(childName),
+    ).pipe(
+      Effect.tapError((cause) =>
+        Effect.logWarning("Failed to decorate ignored paths for directory listing", {
+          cwd: input.cwd,
+          path: input.path,
+          cause,
+        }),
+      ),
+      Effect.orElseSucceed(() => entries.map(childName)),
+    );
+    const unignoredNameSet = new Set(unignoredNames);
     return {
-      entries: yield* Effect.tryPromise({
-        try: () => readDirectoryChildren(target.absolutePath, target.relativePath),
-        catch: (cause) =>
-          new WorkspaceEntriesListDirectoryReadError({
-            cwd: input.cwd,
-            path: input.path,
-            resolvedPath: target.absolutePath,
-            cause,
-          }),
-      }),
+      entries: entries.map((entry) =>
+        unignoredNameSet.has(childName(entry)) ? entry : { ...entry, ignored: true },
+      ),
     };
   });
 

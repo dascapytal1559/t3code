@@ -6,6 +6,7 @@ export interface FileTreeNode {
   readonly name: string;
   readonly kind: ProjectEntry["kind"];
   readonly symlink: boolean;
+  readonly ignored: boolean;
   readonly children: ReadonlyArray<FileTreeNode>;
   readonly searchSegments: ReadonlyArray<string>;
   readonly searchWords: ReadonlyArray<string>;
@@ -21,6 +22,7 @@ interface MutableFileTreeNode {
   name: string;
   kind: ProjectEntry["kind"];
   symlink: boolean;
+  ignored: boolean;
   children: Map<string, MutableFileTreeNode>;
 }
 
@@ -29,12 +31,14 @@ function createMutableNode(
   name: string,
   kind: ProjectEntry["kind"],
   symlink: boolean,
+  ignored: boolean,
 ): MutableFileTreeNode {
   return {
     path,
     name,
     kind,
     symlink,
+    ignored,
     children: new Map(),
   };
 }
@@ -73,6 +77,7 @@ function freezeNode(node: MutableFileTreeNode): FileTreeNode {
     name: node.name,
     kind: node.kind,
     symlink: node.symlink,
+    ignored: node.ignored,
     children: [...node.children.values()].sort(compareNodes).map(freezeNode),
     searchSegments: searchTerms.segments,
     searchWords: searchTerms.words,
@@ -90,7 +95,7 @@ function compareNodes(
 }
 
 export function buildFileTree(entries: ReadonlyArray<ProjectEntry>): ReadonlyArray<FileTreeNode> {
-  const root = createMutableNode("", "", "directory", false);
+  const root = createMutableNode("", "", "directory", false, false);
 
   for (const entry of entries) {
     const parts = entry.path.split("/").filter(Boolean);
@@ -109,13 +114,15 @@ export function buildFileTree(entries: ReadonlyArray<ProjectEntry>): ReadonlyArr
       const isLeaf = index === parts.length - 1;
       const kind = isLeaf ? entry.kind : "directory";
       const symlink = isLeaf && entry.symlink === true;
+      const ignored = isLeaf && entry.ignored === true;
       let child = current.children.get(part);
       if (!child) {
-        child = createMutableNode(path, part, kind, symlink);
+        child = createMutableNode(path, part, kind, symlink, ignored);
         current.children.set(part, child);
       } else if (isLeaf) {
         child.kind = entry.kind;
         child.symlink = symlink;
+        child.ignored = ignored;
       }
       current = child;
     }

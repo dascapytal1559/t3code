@@ -138,6 +138,13 @@ export default function FileBrowserPanel({
     [entries],
   );
   const symlinkTreePathsRef = useRef<ReadonlySet<string>>(symlinkTreePaths);
+  const ignoredGitStatus = useMemo(
+    () =>
+      entries
+        .filter((entry) => entry.ignored)
+        .map((entry) => ({ path: treePath(entry), status: "ignored" as const })),
+    [entries],
+  );
   const treePaths = useMemo(() => entries.map(treePath), [entries]);
   const directoryPaths = useMemo(
     () => entries.filter((entry) => entry.kind === "directory").map(treePath),
@@ -340,7 +347,8 @@ export default function FileBrowserPanel({
     symlinkTreePathsRef.current = symlinkTreePaths;
     previousTreePathsRef.current = treePaths;
     model.resetPaths(treePaths);
-  }, [entryKinds, lazyMode, model, symlinkTreePaths, treePaths]);
+    model.setGitStatus(ignoredGitStatus);
+  }, [entryKinds, ignoredGitStatus, lazyMode, model, symlinkTreePaths, treePaths]);
 
   useEffect(() => {
     if (!selectedPath) {

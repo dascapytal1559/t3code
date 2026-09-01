@@ -93,14 +93,17 @@ no entry cap), and both the web tree and the mobile tree fetch a directory the
 first time it is expanded. The tree opens fully collapsed (the VS Code
 default), so only the root listing is fetched up front. Listings obey the
 same hard exclusions as search: `.git`, `.DS_Store`, and `.convex` stay hidden.
-All other direct children are shown even when the active VCS ignores them.
-Symlinks resolve to their target kind, and broken links are skipped. The legacy
-whole-tree listing and search remain VCS-ignore-aware; their supplemental
-symlink walk fails open when `git check-ignore` rejects pathspecs beyond a
-symbolic link. This deliberately follows VS Code's default split: ignored paths
-remain visible in the Explorer but are omitted from path and content search.
-The `.git` and `.DS_Store` exclusions also match VS Code defaults; `.convex` is
-a T3-specific cache exclusion.
+All other direct children are shown even when the active VCS ignores them; an
+optional `ProjectEntry.ignored` marker lets web and mobile render those rows in
+a muted color without making them less interactive. A failed ignore probe
+leaves rows visible and undecorated. Symlinks resolve to their target kind, and
+broken links are skipped. The legacy whole-tree listing and search remain
+VCS-ignore-aware; their supplemental symlink walk fails open when
+`git check-ignore` rejects pathspecs beyond a symbolic link. This deliberately
+follows VS Code's default split: ignored paths remain visible in the Explorer
+but are omitted from path and content search. The `.git` and `.DS_Store`
+exclusions also match VS Code defaults; `.convex` is a T3-specific cache
+exclusion.
 
 Watcher events and manual refresh refetch every loaded directory and diff the
 results into the tree, so expansion and selection state survive. Because the

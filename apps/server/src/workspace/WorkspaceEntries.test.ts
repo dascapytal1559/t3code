@@ -253,15 +253,42 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         );
         expect(root.entries).toEqual([
           { path: ".gitignore", kind: "file" },
-          { path: "ignored-dir", kind: "directory" },
-          { path: "ignored.txt", kind: "file" },
+          { path: "ignored-dir", kind: "directory", ignored: true },
+          { path: "ignored.txt", kind: "file", ignored: true },
           { path: "keep.ts", kind: "file" },
         ]);
 
         const nested = yield* listDirectory({ cwd, path: "ignored-dir" }).pipe(
           Effect.provide(realFilterEntriesLayer),
         );
-        expect(nested.entries).toEqual([{ path: "ignored-dir/nested.txt", kind: "file" }]);
+        expect(nested.entries).toEqual([
+          { path: "ignored-dir/nested.txt", kind: "file", ignored: true },
+        ]);
+      }),
+    );
+
+    it.effect("keeps entries undecorated when the ignore probe fails", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTempDir();
+        yield* writeTextFile(cwd, "keep.ts");
+
+        const result = yield* listDirectory({ cwd, path: "" }).pipe(
+          Effect.provide(
+            entriesLayerWithFilter(() =>
+              Effect.fail(
+                new VcsProcessExitError({
+                  operation: "test",
+                  command: "git",
+                  cwd,
+                  exitCode: 128,
+                  detail: "boom",
+                }),
+              ),
+            ),
+          ),
+        );
+
+        expect(result.entries).toEqual([{ path: "keep.ts", kind: "file" }]);
       }),
     );
 

@@ -33,6 +33,7 @@ export interface LazyTreeStore {
   readonly unloadedDirs: Set<string>;
   readonly entryKinds: Map<string, ProjectEntry["kind"]>;
   readonly symlinkTreePaths: Set<string>;
+  readonly ignoredTreePaths: Set<string>;
 }
 
 export function createStore(generation: number): LazyTreeStore {
@@ -45,6 +46,7 @@ export function createStore(generation: number): LazyTreeStore {
     unloadedDirs: new Set(),
     entryKinds: new Map(),
     symlinkTreePaths: new Set(),
+    ignoredTreePaths: new Set(),
   };
 }
 
@@ -55,6 +57,8 @@ function purgeSubtree(store: LazyTreeStore, rootPath: string): void {
     store.entryKinds.delete(path);
     store.symlinkTreePaths.delete(path);
     store.symlinkTreePaths.delete(`${path}/`);
+    store.ignoredTreePaths.delete(path);
+    store.ignoredTreePaths.delete(`${path}/`);
     store.loadedDirs.delete(path);
     store.unloadedDirs.delete(path);
     store.entriesByDir.delete(path);
@@ -67,6 +71,11 @@ export function trackEntry(store: LazyTreeStore, entry: ProjectEntry): void {
     store.symlinkTreePaths.add(treePath(entry));
   } else {
     store.symlinkTreePaths.delete(treePath(entry));
+  }
+  if (entry.ignored) {
+    store.ignoredTreePaths.add(treePath(entry));
+  } else {
+    store.ignoredTreePaths.delete(treePath(entry));
   }
   if (
     entry.kind === "directory" &&
@@ -84,7 +93,7 @@ export function trackEntry(store: LazyTreeStore, entry: ProjectEntry): void {
  */
 export function applyDirListing(
   store: LazyTreeStore,
-  model: Pick<FileTree, "batch">,
+  model: Pick<FileTree, "batch" | "setGitStatus">,
   dirPath: string,
   entries: ReadonlyArray<ProjectEntry>,
 ): void {
@@ -117,6 +126,9 @@ export function applyDirListing(
   store.loadedDirs.add(dirPath);
   store.unloadedDirs.delete(dirPath);
   if (ops.length > 0) model.batch(ops);
+  model.setGitStatus(
+    [...store.ignoredTreePaths].map((path) => ({ path, status: "ignored" as const })),
+  );
 }
 
 export interface LazyFileTree {

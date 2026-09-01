@@ -1,13 +1,18 @@
-import type { FileTreeBatchOperation } from "@pierre/trees";
+import type { FileTreeBatchOperation, GitStatusEntry } from "@pierre/trees";
 import { describe, expect, it } from "@effect/vitest";
 
 import { applyDirListing, createStore, trackEntry } from "./useLazyFileTree.ts";
 
 const recordingModel = () => {
   const batches: FileTreeBatchOperation[][] = [];
+  const gitStatuses: Array<ReadonlyArray<GitStatusEntry> | undefined> = [];
   return {
     batches,
-    model: { batch: (ops: readonly FileTreeBatchOperation[]) => void batches.push([...ops]) },
+    gitStatuses,
+    model: {
+      batch: (ops: readonly FileTreeBatchOperation[]) => void batches.push([...ops]),
+      setGitStatus: (statuses?: ReadonlyArray<GitStatusEntry>) => void gitStatuses.push(statuses),
+    },
   };
 };
 
@@ -33,6 +38,24 @@ describe("applyDirListing", () => {
     expect(store.unloadedDirs.has("src")).toBe(true);
     expect(store.entryKinds.get("src")).toBe("directory");
     expect(store.symlinkTreePaths.has("link.ts")).toBe(true);
+  });
+
+  it("maps ignored entries to the tree's built-in Git status", () => {
+    const store = createStore(1);
+    const { gitStatuses, model } = recordingModel();
+
+    applyDirListing(store, model, "", [
+      { path: "cache", kind: "directory", ignored: true },
+      { path: "keep.ts", kind: "file" },
+    ]);
+    applyDirListing(store, model, "cache", [
+      { path: "cache/result.json", kind: "file", ignored: true },
+    ]);
+
+    expect(gitStatuses.at(-1)).toEqual([
+      { path: "cache/", status: "ignored" },
+      { path: "cache/result.json", status: "ignored" },
+    ]);
   });
 
   it("diffs a refreshed listing into granular add and remove operations", () => {

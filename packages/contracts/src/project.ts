@@ -33,6 +33,9 @@ export const ProjectEntry = Schema.Struct({
   // reflects the resolved target. Omitted for regular entries to keep the
   // wire payload small.
   symlink: Schema.optional(Schema.Boolean),
+  // Present (true) only when the active VCS ignores this entry. Explorers use
+  // it as a decoration; ignored entries remain fully interactive.
+  ignored: Schema.optional(Schema.Boolean),
 });
 export type ProjectEntry = typeof ProjectEntry.Type;
 
