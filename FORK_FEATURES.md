@@ -8,32 +8,17 @@ behavior, not parallel-app branding.
 This file is the canonical fork-feature record. Update it when a feature's
 behavior changes, not merely when syncing with upstream.
 
-## Composer `$` skill invocation
+## Grok `$` skill rewrite
 
-The composer `$` picker is a user-invocation surface, the same role as a provider
-slash menu. Codex already treats `$name` as an explicit skill invoke. The stored
-message keeps the `$` token.
+Codex treats `$name` as a native invoke. Claude now does too, via upstream's
+last-block `/name` dispatch (`#9128`). Grok still expands skills only from
+`/name` in the prompt, so the fork rewrites composer `$name` tokens to `/name`
+on Grok's wire path. The stored message keeps the `$` token.
 
-Claude Code expands a skill only from the last text block, and only when `/name`
-is that block's first character. Upstream now does that split (`#9128`,
-`planClaudeSkillDispatch`): the last known `$skill` mention becomes a trailing
-`/name` block, earlier mentions become `/name` inline, and unknown tokens such
-as `$HOME` stay prose. Skills marked `disable-model-invocation` still run when
-the user picks them; skills the CLI rejects as user-invocable (`user-invocable:
-false`, or switched off) stay prose. The fork dropped its earlier in-place
-`$`→`/` rewrite on the Claude send path so the dispatcher can still see the `$`
-tokens. Ultrathink wrapping a leading `$skill` pick is now safe: the prefix
-lands in the leading text block and the command block still starts with `/name`.
-
-Grok still has no last-block dispatcher, so the fork rewrites composer `$name`
-tokens to `/name` on its wire path.
-
-Implementation: `apps/server/src/provider/Drivers/ClaudeSkillDispatch.ts`,
-`packages/shared/src/composerInlineTokens.ts`,
-`packages/shared/src/model.ts`, and
+Implementation: `packages/shared/src/composerInlineTokens.ts` and
 `apps/server/src/provider/Layers/GrokAdapter.ts`.
 
-![Composer skill picker showing user-invocable skills](./assets/fork-features/skills.png)
+This is a send-path rewrite and has no distinct client UI state to capture.
 
 ## Workspace-aware skills
 

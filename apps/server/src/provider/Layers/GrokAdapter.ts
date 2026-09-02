@@ -1518,6 +1518,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
               );
 
               const trimmedInput = input.input?.trim();
+              // Grok expands skills from `/name` in the prompt, not `$name`.
               const text = trimmedInput
                 ? rewriteComposerSkillTokensAsSlashCommands(trimmedInput)
                 : trimmedInput;

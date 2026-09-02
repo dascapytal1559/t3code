@@ -166,15 +166,6 @@ describe("applyClaudePromptEffortPrefix", () => {
     );
   });
 
-  it("wraps composer $skill picks so last-block dispatch can still invoke them", () => {
-    expect(applyClaudePromptEffortPrefix("$matts-wayfinder plan the work", "ultrathink")).toBe(
-      "Ultrathink:\n$matts-wayfinder plan the work",
-    );
-    expect(applyClaudePromptEffortPrefix(" $review src/model.ts ", "ultrathink")).toBe(
-      "Ultrathink:\n$review src/model.ts",
-    );
-  });
-
   it("still adds the ultrathink prefix to ordinary prompts", () => {
     expect(applyClaudePromptEffortPrefix("Investigate this failure", "ultrathink")).toBe(
       "Ultrathink:\nInvestigate this failure",

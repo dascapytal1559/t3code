@@ -141,9 +141,9 @@ export function collectComposerInlineTokens(
 }
 
 /**
- * Rewrite composer `$skill` tokens to `/skill` so providers that dispatch
- * skills as slash commands (Claude, Grok) actually invoke them. Codex keeps
- * `$skill` as its native invoke syntax and must not use this.
+ * Rewrite composer `$skill` tokens to `/skill` so Grok actually invokes them.
+ * Codex treats `$skill` natively; Claude uses last-block `/name` dispatch and
+ * must not use this (it needs to see the `$` tokens).
  */
 export function rewriteComposerSkillTokensAsSlashCommands(text: string): string {
   return text.replace(SKILL_TOKEN_FOR_DISPATCH_REGEX, "$1/$2");

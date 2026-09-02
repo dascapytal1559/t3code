@@ -334,8 +334,6 @@ export function applyClaudePromptEffortPrefix(
   // runs it. Command names come from arbitrary file names ("/deploy.prod",
   // "/plugin:skill"), so accept any first token without a second slash;
   // absolute paths like "/home/theo/app.ts" keep the prefix.
-  // Composer `$skill` picks are dispatched as a trailing `/name` text block
-  // after this prefix is applied, so wrapping them is safe.
   if (effort !== "ultrathink" || /^\/[^\s/]+(?:\s|$)/u.test(trimmed)) {
     return trimmed;
   }
