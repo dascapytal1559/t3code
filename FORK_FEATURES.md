@@ -6,7 +6,10 @@ This file tracks the behavior this fork adds on top of
 behavior, not parallel-app branding.
 
 This file is the canonical fork-feature record. Update it when a feature's
-behavior changes, not merely when syncing with upstream.
+behavior changes, not merely when syncing with upstream. Syncing from
+upstream is `.agents/skills/SYNC_UPSTREAM.md` in the wrapper repository:
+every sync reassesses these entries against stock upstream and drops
+deltas that are no longer needed.
 
 ## Workspace-aware skills
 
@@ -276,8 +279,9 @@ Implementation: `packages/client-runtime/src/state/threadReducer.ts`
 Last synced on 2026-09-02 against upstream `d937e3075` (v0.0.38 and following
 nightlies). The pre-sync fork is preserved at
 `backup/upstream-test-drive-pre-sync-20260902` (`d4f79f8a9`). This sync adopted
-upstream's Claude last-block `$skill` dispatch, kept the Grok `$`→`/` rewrite,
-moved the tilde-path skip into the shared inline-code candidate, and adapted
-the lazy explorer to upstream's incremental tree updates. The previous sync
+upstream's Claude last-block `$skill` dispatch, dropped the Grok `$`→`/`
+rewrite after confirming Grok does not block composer `$name` picks, moved
+the tilde-path skip into the shared inline-code candidate, and adapted the
+lazy explorer to upstream's incremental tree updates. The previous sync
 point is preserved at `backup/upstream-test-drive-pre-sync-20260901`
 (`fb5e3edd5`).
