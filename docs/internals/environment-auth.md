@@ -33,9 +33,10 @@ credentials additionally grant `access:read access:write relay:write`.
 Clients with `orchestration:read` can read files anywhere the environment's server account can
 read, following the environment-wide authorization model rather than introducing per-project
 filesystem permissions. `projects.readFile` accepts an absolute path and returns the text of that
-host file; only workspace-relative paths pass its root check, and `projects.writeFile` never
-accepts an absolute path. Clients use this to show files an agent wrote outside the workspace, such
-as a report in a temp directory, read-only.
+host file. Workspace-relative paths must be lexically inside the project root; a symlink in the
+workspace may still resolve outside it, and those files open the same way the explorer lists them.
+`projects.writeFile` never accepts an absolute path. Clients use absolute-path reads to show files
+an agent wrote outside the workspace, such as a report in a temp directory, read-only.
 
 ## Media preview access
 

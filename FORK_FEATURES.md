@@ -51,6 +51,9 @@ and path search and obey the project's VCS ignores. The walk is capped at 5,000
 entries and rebuilt when the workspace index refreshes. Search reports
 truncation when unique supplemental results exceed the requested limit. The
 lazy explorer follows symlinks directly as directories are expanded.
+Opening a listed file uses the same workspace-relative path: `projects.readFile`
+follows the link even when the target sits outside the workspace. Lexical `../`
+escapes are still rejected.
 
 Entries that are themselves symbolic links carry an optional `symlink` flag on
 the `ProjectEntry` contract (omitted for regular entries; `kind` still reflects
@@ -61,6 +64,7 @@ symlinked directory absorbed into a flattened single-child segment shows no
 badge.
 
 Implementation: `apps/server/src/workspace/WorkspaceSearchIndex.ts`,
+`apps/server/src/workspace/WorkspaceFileSystem.ts`,
 `packages/contracts/src/project.ts`,
 `apps/web/src/components/files/FileBrowserPanel.tsx`, and
 `apps/mobile/src/features/files/FileTreeBrowser.tsx`.

@@ -9,3 +9,7 @@ Path and content search continue to omit Git-ignored files. Expand an ignored fo
 contents directly.
 
 T3 Code always hides `.git`, `.DS_Store`, and `.convex` entries from the Explorer.
+
+Symlinked folders and files appear in the Explorer, including links whose target
+sits outside the project. You can open those files the same way as any other
+file in the tree.

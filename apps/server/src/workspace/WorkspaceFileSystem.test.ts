@@ -138,33 +138,42 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
       }),
     );
 
-    it.effect("rejects symlinks that resolve outside the workspace root", () =>
+    it.effect("reads files reached through workspace symlinks that resolve outside the root", () =>
       Effect.gen(function* () {
         const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const cwd = yield* makeTempDir;
         const outsideDir = yield* makeTempDir;
-        yield* writeTextFile(outsideDir, "secret.txt", "outside\n");
+        yield* writeTextFile(outsideDir, "secret.txt", "outside-file\n");
+        yield* writeTextFile(outsideDir, "notes/GLOBAL_AGENTS.md", "outside-dir\n");
         yield* fileSystem.symlink(
           path.join(outsideDir, "secret.txt"),
           path.join(cwd, "linked-secret.txt"),
         );
+        yield* fileSystem.symlink(outsideDir, path.join(cwd, "harness"));
 
-        const error = yield* workspaceFileSystem
-          .readFile({ cwd, relativePath: "linked-secret.txt" })
-          .pipe(Effect.flip);
-        const resolvedWorkspaceRoot = yield* fileSystem.realPath(cwd);
-        const resolvedPath = yield* fileSystem.realPath(path.join(outsideDir, "secret.txt"));
-
-        expect(error).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFilePathEscapeError);
-        expect(error).toMatchObject({
-          workspaceRoot: cwd,
+        const linkedFile = yield* workspaceFileSystem.readFile({
+          cwd,
           relativePath: "linked-secret.txt",
-          resolvedWorkspaceRoot,
-          resolvedPath,
         });
-        expect("cause" in error).toBe(false);
+        const linkedDescendant = yield* workspaceFileSystem.readFile({
+          cwd,
+          relativePath: "harness/notes/GLOBAL_AGENTS.md",
+        });
+
+        expect(linkedFile).toEqual({
+          relativePath: "linked-secret.txt",
+          contents: "outside-file\n",
+          byteLength: 13,
+          truncated: false,
+        });
+        expect(linkedDescendant).toEqual({
+          relativePath: "harness/notes/GLOBAL_AGENTS.md",
+          contents: "outside-dir\n",
+          byteLength: 12,
+          truncated: false,
+        });
       }),
     );
 
