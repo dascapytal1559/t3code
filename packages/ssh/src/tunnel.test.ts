@@ -157,23 +157,6 @@ describe("ssh tunnel scripts", () => {
     assert.notInclude(script, "--package t3@nightly; touch /tmp/t3-owned");
   });
 
-  it("runs an explicit package spec before a globally installed t3", () => {
-    const script = buildRemoteT3RunnerScript({
-      packageSpec: "/home/ubuntu/.t3/fork/t3-fork.tgz",
-      preferPackageSpec: true,
-    });
-
-    assert.include(script, "T3_PREFER_PACKAGE_SPEC=1");
-    assert.isBelow(
-      script.indexOf('if [ "$T3_PREFER_PACKAGE_SPEC" = "1" ]'),
-      script.indexOf("if command -v t3"),
-    );
-    assert.include(
-      script,
-      "exec npx --yes --package '/home/ubuntu/.t3/fork/t3-fork.tgz' -- t3 \"$@\"",
-    );
-  });
-
   it("builds the remote t3 runner with a node script override", () => {
     const script = buildRemoteT3RunnerScript({
       nodeScriptPath: "/Users/julius/Development/Work/codething-mvp/apps/server/dist/bin.mjs",

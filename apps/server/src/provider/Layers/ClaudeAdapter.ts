@@ -470,7 +470,7 @@ function isInterruptedResult(result: SDKResultMessage): boolean {
 const CLAUDE_AUTH_ERROR_PATTERN =
   /not logged in|please run \/login|failed to authenticate|oauth[^.]*(?:expired|revoked)|invalid (?:api key|bearer token)/i;
 
-function isClaudeAuthErrorResult(result: SDKResultMessage): boolean {
+export function isClaudeAuthErrorResult(result: SDKResultMessage): boolean {
   if (!result.is_error) {
     return false;
   }

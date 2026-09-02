@@ -117,27 +117,6 @@ describe("DesktopEnvironment", () => {
     }),
   );
 
-  it.effect("prefers a server root override in packaged builds only", () =>
-    Effect.gen(function* () {
-      const packaged = yield* makeEnvironment({
-        isPackaged: true,
-        appPath: "/Applications/T3 Code.app/Contents/Resources/app.asar",
-        serverRootOverride: "/Users/alice/.t3/fork/builds/abc123",
-      });
-      const development = yield* makeEnvironment({
-        serverRootOverride: "/Users/alice/.t3/fork/builds/abc123",
-      });
-
-      assert.equal(packaged.serverRoot, "/Users/alice/.t3/fork/builds/abc123");
-      assert.equal(
-        packaged.backendEntryPath,
-        "/Users/alice/.t3/fork/builds/abc123/apps/server/dist/bin.mjs",
-      );
-      assert.equal(packaged.appRoot, "/Applications/T3 Code.app/Contents/Resources/app.asar");
-      assert.equal(development.serverRoot, "/repo");
-    }),
-  );
-
   it.effect("keeps implicit development state separate from production state", () =>
     Effect.gen(function* () {
       const development = yield* makeEnvironment(

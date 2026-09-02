@@ -138,45 +138,6 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
       }),
     );
 
-    it.effect("reads files reached through workspace symlinks that resolve outside the root", () =>
-      Effect.gen(function* () {
-        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
-        const fileSystem = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        const cwd = yield* makeTempDir;
-        const outsideDir = yield* makeTempDir;
-        yield* writeTextFile(outsideDir, "secret.txt", "outside-file\n");
-        yield* writeTextFile(outsideDir, "notes/GLOBAL_AGENTS.md", "outside-dir\n");
-        yield* fileSystem.symlink(
-          path.join(outsideDir, "secret.txt"),
-          path.join(cwd, "linked-secret.txt"),
-        );
-        yield* fileSystem.symlink(outsideDir, path.join(cwd, "harness"));
-
-        const linkedFile = yield* workspaceFileSystem.readFile({
-          cwd,
-          relativePath: "linked-secret.txt",
-        });
-        const linkedDescendant = yield* workspaceFileSystem.readFile({
-          cwd,
-          relativePath: "harness/notes/GLOBAL_AGENTS.md",
-        });
-
-        expect(linkedFile).toEqual({
-          relativePath: "linked-secret.txt",
-          contents: "outside-file\n",
-          byteLength: 13,
-          truncated: false,
-        });
-        expect(linkedDescendant).toEqual({
-          relativePath: "harness/notes/GLOBAL_AGENTS.md",
-          contents: "outside-dir\n",
-          byteLength: 12,
-          truncated: false,
-        });
-      }),
-    );
-
     it.effect("rejects directories without manufacturing an I/O cause", () =>
       Effect.gen(function* () {
         const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;

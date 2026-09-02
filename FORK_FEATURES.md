@@ -11,6 +11,24 @@ upstream is `runbooks/SYNC_UPSTREAM.md` in the wrapper repository:
 every sync reassesses these entries against stock upstream and drops
 deltas that are no longer needed.
 
+## Reality check
+
+Every feature below ends with a **Tests:** paragraph naming the tests that
+prove it still works. Fork-only test files end in `.fork.test.ts` and sit
+next to the module they cover, so they never collide with upstream test
+files during a merge; the two tests that need a large upstream harness stay
+inside `server.test.ts` and `ClaudeAdapter.test.ts` with a `fork: ` name
+prefix. Run the whole fork suite from this directory with
+
+```
+vp run test:fork
+```
+
+Run it after every upstream sync. Red means the merge is not finished:
+either the fork code regressed, or the entry should have been retired and
+its `.fork.test.ts` files deleted with it. A feature without a **Tests:**
+paragraph is not done.
+
 ## Workspace-aware skills
 
 Skill inventories are resolved per project. The server queries the selected
@@ -26,6 +44,12 @@ cwd-scoped catalog is consumed by the shared composer menu hook
 `apps/mobile/src/state/use-provider-context-skills.ts`), which retains the
 last good answer so a probe refresh cannot blank an open picker; both thread
 composers and the new-task draft screen share it.
+
+Tests: `apps/server/src/provider/Services/ProviderSkillDiscovery.fork.test.ts`
+(per-cwd inventory cache: baseline fallback, stale-while-revalidate, last
+good answer on probe failure, coalescing, eviction). The driver probes spawn
+the real provider CLIs and the mobile picker hook is React Native glue;
+neither is unit-tested.
 
 The project and personal labels in the picker make the cwd-scoped inventory
 visible to the user:
@@ -60,6 +84,16 @@ Implementation: `apps/server/src/workspace/WorkspaceSearchIndex.ts`,
 `apps/web/src/components/files/FileBrowserPanel.tsx`, and
 `apps/mobile/src/features/files/FileTreeBrowser.tsx`.
 
+Tests: `apps/server/src/workspace/WorkspaceSearchIndex.fork.test.ts`
+(symlinked subtrees, outside targets, nested and broken links, search and
+truncation), `apps/server/src/workspace/WorkspaceFileSystem.fork.test.ts`
+(reading through links that resolve outside the root),
+`apps/server/src/workspace/WorkspaceEntries.fork.test.ts` (link kinds in
+`listDirectory`; search stays up when `git check-ignore` rejects a pathspec
+beyond a link), and `apps/mobile/src/features/files/fileTree.fork.test.ts`
+(the `symlink` flag stays on the linked node). The badge rendering itself
+is not unit-tested.
+
 `CLAUDE.md` is a symlink in this checkout; the explorer marks it with the muted
 arrow badge:
 
@@ -72,6 +106,9 @@ the native index omits. `.git`, `.DS_Store`, and upstream's `.convex` cache
 exclusion remain hidden, as do paths ignored by the active VCS.
 
 Implementation: `apps/server/src/workspace/WorkspaceSearchIndex.ts`.
+
+Tests: `apps/server/src/workspace/WorkspaceSearchIndex.fork.test.ts`
+(dotfiles listed; `.git` and `.DS_Store` still hidden).
 
 ![File explorer showing hidden root entries](./assets/fork-features/hidden-root.png)
 
@@ -119,8 +156,21 @@ lack it. `projects.listEntries` itself is unchanged for old clients.
 
 Implementation: `apps/server/src/workspace/WorkspaceEntries.ts`,
 `packages/contracts/src/project.ts`,
-`apps/web/src/components/files/useLazyFileTree.ts`, and
-`apps/mobile/src/features/files/useLazyProjectEntries.ts`.
+`apps/web/src/components/files/useLazyFileTree.ts`,
+`apps/mobile/src/features/files/useLazyProjectEntries.ts`, and
+`apps/mobile/src/features/files/lazyEntriesStore.ts`.
+
+Tests: `apps/server/src/workspace/WorkspaceEntries.fork.test.ts`
+(`listDirectory` children, hard exclusions, escape rejection, ignored
+markers, fail-open probe),
+`apps/server/src/environment/ServerEnvironment.fork.test.ts` (the
+`workspaceDirectoryListing` capability is advertised), the `fork:` seam test
+in `apps/server/src/server.test.ts` (`projects.listDirectory` over the
+websocket RPC), `apps/web/src/components/files/useLazyFileTree.fork.test.ts`
+(listing diffs into the tree model), and
+`apps/mobile/src/features/files/lazyEntriesStore.fork.test.ts` (listing
+diffs and search merging) plus `fileTree.fork.test.ts` (the `ignored`
+flag).
 
 The initial root listing is collapsed, and ignored entries such as
 `node_modules` remain usable but muted:
@@ -146,6 +196,11 @@ refetches, instead of merely re-reading the possibly stale index.
 Implementation: `apps/server/src/workspace/WorkspaceWatcher.ts`, with client
 query invalidation in the web and mobile `state/queries.ts` modules.
 
+Tests: `apps/server/src/workspace/WorkspaceWatcher.fork.test.ts` (external
+change refresh, cwd stream events, symlink-target watching, `notifyChanged`,
+release after the last subscriber). The client query invalidation is wiring
+and is not unit-tested.
+
 The refresh control in the explorer is the manual fallback for the same
 invalidation path. A still image cannot demonstrate watcher-driven updates,
 but it does show the user-visible recovery control:
@@ -168,6 +223,8 @@ clients.
 
 Implementation: `apps/server/src/http.ts` (`staticResponseCacheControl`).
 
+Tests: `apps/server/src/http.fork.test.ts`.
+
 This is HTTP cache behavior and has no distinct client UI state to capture.
 
 ## Tilde paths stay plain in chat
@@ -180,6 +237,9 @@ unchanged.
 
 Implementation: `packages/client-runtime/src/markdownLinks.ts` (inline-code
 candidate) and `apps/web/src/markdown-links.ts`.
+
+Tests: `packages/client-runtime/src/markdownLinks.fork.test.ts` and
+`apps/web/src/markdown-links.fork.test.ts`.
 
 ![A tilde path rendered as plain inline code](./assets/fork-features/tilde-path.png)
 
@@ -213,8 +273,14 @@ share one artifact. Which build is live is `readlink ~/.t3/fork/current`;
 whether the override took effect is visible in the backend child's argv,
 which contains the symlink entry path.
 
-Implementation: `apps/desktop/src/main.ts` and
+Implementation: `apps/desktop/src/app/DesktopForkOverrides.ts`
+(`readDesktopServerRootOverride`), `apps/desktop/src/main.ts`, and
 `apps/desktop/src/app/DesktopEnvironment.ts`.
+
+Tests: `apps/desktop/src/app/DesktopForkOverrides.fork.test.ts` (override
+detection returns the unresolved symlink path; missing or incomplete
+payloads fall back) and `apps/desktop/src/app/DesktopEnvironment.fork.test.ts`
+(the override applies to packaged builds only).
 
 This payload selection has no distinct client UI state to capture.
 
@@ -230,8 +296,15 @@ Deploys are covered by `runbooks/DEPLOY_FORK.md` in the wrapper repository.
 `runbooks/deploy/pack-server-tarball.sh` builds a SHA-versioned package for the remote
 host, and `runbooks/deploy/swap-fork-app.sh` replaces the stock-named desktop app.
 
-Implementation: `packages/ssh/src/command.ts`, `packages/ssh/src/tunnel.ts`, and
-`apps/desktop/src/main.ts`.
+Implementation: `packages/ssh/src/command.ts`, `packages/ssh/src/tunnel.ts`,
+`apps/desktop/src/app/DesktopForkOverrides.ts` (`readSshPackageSpecOverride`),
+and `apps/desktop/src/main.ts`.
+
+Tests: `packages/ssh/src/command.fork.test.ts` (override precedence and
+file parsing), `packages/ssh/src/tunnel.fork.test.ts` (the runner script
+tries the explicit spec before a global `t3`), and
+`apps/desktop/src/app/DesktopForkOverrides.fork.test.ts` (reading the
+override file).
 
 This remote-launch selection has no distinct client UI state to capture.
 
@@ -249,6 +322,11 @@ credentials and resumes from the persisted cursor.
 
 Implementation: `apps/server/src/provider/Layers/ClaudeAdapter.ts`
 (`isClaudeAuthErrorResult`, `handleResultMessage`).
+
+Tests: `apps/server/src/provider/Layers/ClaudeAdapter.fork.test.ts` (which
+results count as auth errors) and the `fork:` test in
+`apps/server/src/provider/Layers/ClaudeAdapter.test.ts` (warning carries the
+turn id, the turn completes, the runtime exits and the session is gone).
 
 Recovery is a transient provider-process lifecycle, so there is no stable UI
 state that honestly demonstrates it in a screenshot.
@@ -282,6 +360,14 @@ Implementation: `packages/client-runtime/src/state/threadReducer.ts`
 (`onRevertToTurnCount`, `onRevertUserMessage`),
 `apps/web/src/connection/storage.ts`, and
 `apps/mobile/src/connection/environment-cache-store.ts`.
+
+Tests: `packages/client-runtime/src/state/threadReducer.fork.test.ts`
+(retention after `thread.reverted`, including paginated windows),
+`apps/web/src/connection/storage.fork.test.ts` and
+`apps/mobile/src/connection/environment-cache-store.fork.test.ts` (v3 cache
+records are rejected, v4 round-trips). Returning the prompt to the composer
+is `ChatView` glue and is not unit-tested; the screenshot below is its
+evidence.
 
 ![Checkpoint revert confirmation explaining that the prompt returns to the composer](./assets/fork-features/checkpoint-revert.png)
 

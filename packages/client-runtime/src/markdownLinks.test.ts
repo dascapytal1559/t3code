@@ -15,10 +15,6 @@ describe("inlineCodeFilePathCandidate", () => {
     ["127.0.0.1:3000", null],
     ["example.com/index.html", null],
     ["example.pl/index.html", null],
-    ["~/basedcapital/harness", null],
-    ["~/notes.md", null],
-    ["~/src/main.ts:12", null],
-    ["~\\notes.md", null],
   ])("distinguishes file paths from code and hostnames in %s", (source, candidate) => {
     expect(inlineCodeFilePathCandidate(source)).toBe(candidate);
   });

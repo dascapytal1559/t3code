@@ -746,51 +746,6 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
-  it.effect("wraps ultrathink around a $skill pick and still dispatches the command", () => {
-    const homeDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "claude-skills-ultrathink-"));
-    NodeFS.mkdirSync(NodePath.join(homeDir, "skills", "review"), { recursive: true });
-    NodeFS.writeFileSync(
-      NodePath.join(homeDir, "skills", "review", "SKILL.md"),
-      "---\ndescription: Review.\n---\n# Body\n",
-    );
-    const harness = makeHarness({ claudeConfig: { homePath: homeDir } });
-    return Effect.gen(function* () {
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() => NodeFS.rmSync(homeDir, { recursive: true, force: true })),
-      );
-      const adapter = yield* ClaudeAdapter;
-      const modelSelection = createModelSelection(
-        ProviderInstanceId.make("claudeAgent"),
-        SYNTHETIC_CLAUDE_STANDARD_MODEL,
-        [{ id: "effort", value: "ultrathink" }],
-      );
-      const session = yield* adapter.startSession({
-        threadId: THREAD_ID,
-        provider: ProviderDriverKind.make("claudeAgent"),
-        modelSelection,
-        runtimeMode: "full-access",
-      });
-
-      yield* adapter.sendTurn({
-        threadId: session.threadId,
-        input: "$review src/model.ts",
-        attachments: [],
-        modelSelection,
-      });
-
-      const promptMessage = yield* Effect.promise(() =>
-        readFirstPromptMessage(harness.getLastCreateQueryInput()),
-      );
-      assert.deepEqual(promptMessage?.message.content, [
-        { type: "text", text: "Ultrathink:" },
-        { type: "text", text: "/review src/model.ts" },
-      ]);
-    }).pipe(
-      Effect.provideService(Random.Random, makeDeterministicRandomService()),
-      Effect.provide(harness.layer),
-    );
-  });
-
   it.effect("embeds image attachments in Claude user messages", () => {
     const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "claude-attachments-"));
     const harness = makeHarness({
@@ -2609,7 +2564,7 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
-  it.effect("recycles the session when a result reports a latched auth error", () => {
+  it.effect("fork: recycles the session when a result reports a latched auth error", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
       const adapter = yield* ClaudeAdapter;

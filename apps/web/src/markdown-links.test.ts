@@ -350,15 +350,6 @@ describe("resolveInlineCodeFileLinkMeta", () => {
     expect(resolveInlineCodeFileLinkMeta("Makefile:12")).toBeNull();
   });
 
-  it("leaves tilde paths as plain code — they may refer to another machine's home", () => {
-    expect(
-      resolveInlineCodeFileLinkMeta("~/basedcapital/harness", "/Users/julius/project"),
-    ).toBeNull();
-    expect(resolveInlineCodeFileLinkMeta("~/notes.md", "/Users/julius/project")).toBeNull();
-    expect(resolveInlineCodeFileLinkMeta("~/src/main.ts:12", "/Users/julius/project")).toBeNull();
-    expect(resolveInlineCodeFileLinkMeta("~\\notes.md", "/Users/julius/project")).toBeNull();
-  });
-
   it("does not treat arbitrary name:digits shapes as files", () => {
     expect(resolveInlineCodeFileLinkMeta("error:1", "/Users/julius/project")).toBeNull();
     expect(resolveInlineCodeFileLinkMeta("TODO:12", "/Users/julius/project")).toBeNull();

@@ -27,6 +27,7 @@
     "lint": "vp lint --report-unused-disable-directives",
     "lint:mobile": "node scripts/mobile-native-static-check.ts",
     "test": "vp run -r test",
+    "test:fork": "vp test run fork.test && vp test run -t 'fork: ' apps/server/src/server.test.ts apps/server/src/provider/Layers/ClaudeAdapter.test.ts",
     "test:resource-monitor": "cargo test --locked --manifest-path native/resource-monitor/Cargo.toml",
     "test:desktop-smoke": "vp run --filter @t3tools/desktop smoke-test",
     "fmt": "vp fmt",

@@ -10,6 +10,12 @@ import { projectEnvironment } from "../../state/projects";
 import { useDebouncedValue } from "../../state/queries";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
+import {
+  applyDirListing,
+  createStore,
+  type LazyEntriesStore,
+  mergeLoadedEntries,
+} from "./lazyEntriesStore";
 
 /** Matches PROJECT_SEARCH_ENTRIES_MAX_LIMIT, the schema cap on searchEntries. */
 const SEARCH_ENRICH_LIMIT = 200;
@@ -18,36 +24,6 @@ const SEARCH_ENRICH_DEBOUNCE_MS = 200;
 const EMPTY_EVENTS_ATOM = Atom.make(AsyncResult.initial<never, never>(false)).pipe(
   Atom.withLabel("lazy-project-entries-events:empty"),
 );
-
-interface LazyEntriesStore {
-  generation: number;
-  rootLoaded: boolean;
-  readonly loadedDirs: Set<string>;
-  readonly pendingDirs: Map<string, Promise<boolean>>;
-  readonly entriesByDir: Map<string, ReadonlyArray<ProjectEntry>>;
-  readonly entryKinds: Map<string, ProjectEntry["kind"]>;
-}
-
-function createStore(generation: number): LazyEntriesStore {
-  return {
-    generation,
-    rootLoaded: false,
-    loadedDirs: new Set(),
-    pendingDirs: new Map(),
-    entriesByDir: new Map(),
-    entryKinds: new Map(),
-  };
-}
-
-function purgeSubtree(store: LazyEntriesStore, rootPath: string): void {
-  const prefix = `${rootPath}/`;
-  for (const path of store.entryKinds.keys()) {
-    if (path !== rootPath && !path.startsWith(prefix)) continue;
-    store.entryKinds.delete(path);
-    store.loadedDirs.delete(path);
-    store.entriesByDir.delete(path);
-  }
-}
 
 export interface LazyProjectEntries {
   /** Flat merged listing of every loaded directory plus server search matches. */
@@ -108,18 +84,9 @@ export function useLazyProjectEntries(input: {
     [dirAtom],
   );
 
-  const applyDirListing = useCallback(
+  const applyListing = useCallback(
     (store: LazyEntriesStore, dirPath: string, entries: ReadonlyArray<ProjectEntry>) => {
-      const nextByPath = new Map(entries.map((entry) => [entry.path, entry] as const));
-      for (const previous of store.entriesByDir.get(dirPath) ?? []) {
-        if (nextByPath.get(previous.path)?.kind === previous.kind) continue;
-        purgeSubtree(store, previous.path);
-      }
-      for (const entry of entries) {
-        store.entryKinds.set(entry.path, entry.kind);
-      }
-      store.entriesByDir.set(dirPath, entries);
-      store.loadedDirs.add(dirPath);
+      applyDirListing(store, dirPath, entries);
       setVersion((current) => current + 1);
     },
     [],
@@ -138,13 +105,13 @@ export function useLazyProjectEntries(input: {
         store.pendingDirs.delete(dirPath);
         if (entries instanceof Error) return false;
         if (dirPath !== "" && store.entryKinds.get(dirPath) !== "directory") return false;
-        applyDirListing(store, dirPath, entries);
+        applyListing(store, dirPath, entries);
         return true;
       });
       store.pendingDirs.set(dirPath, request);
       return request;
     },
-    [applyDirListing, fetchDir],
+    [applyListing, fetchDir],
   );
 
   const refreshLoadedDirs = useCallback(async () => {
@@ -165,10 +132,10 @@ export function useLazyProjectEntries(input: {
         if (entries instanceof Error) return;
         if (dirPath !== "" && store.entryKinds.get(dirPath) !== "directory") return;
         if (!store.loadedDirs.has(dirPath)) return;
-        applyDirListing(store, dirPath, entries);
+        applyListing(store, dirPath, entries);
       }),
     );
-  }, [applyDirListing, dirAtom, fetchDir]);
+  }, [applyListing, dirAtom, fetchDir]);
 
   useEffect(() => {
     if (environmentId === null || cwd === null) {
@@ -191,13 +158,13 @@ export function useLazyProjectEntries(input: {
       store.rootLoaded = true;
       // The tree opens collapsed (VS Code default); expanding a row fetches
       // its listing through ensureDirLoaded.
-      applyDirListing(store, "", entries);
+      applyListing(store, "", entries);
     });
     return () => {
       store.generation = -1;
       if (storeRef.current === store) storeRef.current = null;
     };
-  }, [applyDirListing, cwd, environmentId, fetchDir, loadDir]);
+  }, [applyListing, cwd, environmentId, fetchDir, loadDir]);
 
   // One watcher event per change burst; refetch every loaded directory and
   // diff so the merged entries converge on the filesystem.
@@ -268,26 +235,14 @@ export function useLazyProjectEntries(input: {
   );
   const searchEntries = searchResult.data?.entries;
 
-  const entries = useMemo(() => {
-    const store = storeRef.current;
-    if (store === null) return [];
-    const merged: ProjectEntry[] = [];
-    const seen = new Set<string>();
-    for (const dirEntries of store.entriesByDir.values()) {
-      for (const entry of dirEntries) {
-        if (seen.has(entry.path)) continue;
-        seen.add(entry.path);
-        merged.push(entry);
-      }
-    }
-    for (const entry of searchEntries ?? []) {
-      if (seen.has(entry.path)) continue;
-      seen.add(entry.path);
-      merged.push(entry);
-    }
-    return merged;
+  const entries = useMemo(
+    () => {
+      const store = storeRef.current;
+      return store === null ? [] : mergeLoadedEntries(store, searchEntries);
+    },
     // version invalidates this memo whenever a directory listing lands.
-  }, [searchEntries, version]);
+    [searchEntries, version],
+  );
 
   const loadedDirPaths = useMemo(() => {
     const store = storeRef.current;

@@ -38,12 +38,4 @@ describe("planClaudeSkillDispatch", () => {
   it("ignores a dollar token glued to other text", () => {
     expect(planClaudeSkillDispatch("cost is 5$implement", SKILLS)).toBeUndefined();
   });
-
-  it("still dispatches a mention after an ultrathink prefix", () => {
-    expect(planClaudeSkillDispatch("Ultrathink:\n$review the diff", SKILLS)).toEqual({
-      leadingText: "Ultrathink:",
-      commandText: "/review the diff",
-      skillName: "review",
-    });
-  });
 });
