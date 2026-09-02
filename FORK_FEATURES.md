@@ -8,18 +8,6 @@ behavior, not parallel-app branding.
 This file is the canonical fork-feature record. Update it when a feature's
 behavior changes, not merely when syncing with upstream.
 
-## Grok `$` skill rewrite
-
-Codex treats `$name` as a native invoke. Claude now does too, via upstream's
-last-block `/name` dispatch (`#9128`). Grok still expands skills only from
-`/name` in the prompt, so the fork rewrites composer `$name` tokens to `/name`
-on Grok's wire path. The stored message keeps the `$` token.
-
-Implementation: `packages/shared/src/composerInlineTokens.ts` and
-`apps/server/src/provider/Layers/GrokAdapter.ts`.
-
-This is a send-path rewrite and has no distinct client UI state to capture.
-
 ## Workspace-aware skills
 
 Skill inventories are resolved per project. The server queries the selected

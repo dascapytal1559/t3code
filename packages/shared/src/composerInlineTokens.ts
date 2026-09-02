@@ -19,12 +19,6 @@ export interface CollectComposerInlineTokensOptions {
 }
 
 const SKILL_TOKEN_REGEX = /(^|\s)\$([a-zA-Z][a-zA-Z0-9:_-]*)(?=\s)/g;
-/**
- * Same token shape as the composer `$` chip, but also matches a token at the
- * end of the string. Send paths trim trailing whitespace, so a lone `$review`
- * would otherwise not rewrite.
- */
-const SKILL_TOKEN_FOR_DISPATCH_REGEX = /(^|\s)\$([a-zA-Z][a-zA-Z0-9:_-]*)(?=\s|$)/g;
 const MENTION_TOKEN_REGEX = /(^|\s)@(?:"((?:\\.|[^"\\])*)"|([^\s@"]+))(?=\s)/g;
 /**
  * The label body is bounded rather than `*`. Unbounded, every whitespace in
@@ -138,13 +132,4 @@ export function collectComposerInlineTokens(
   }
 
   return [...matches].sort((left, right) => left.start - right.start);
-}
-
-/**
- * Rewrite composer `$skill` tokens to `/skill` so Grok actually invokes them.
- * Codex treats `$skill` natively; Claude uses last-block `/name` dispatch and
- * must not use this (it needs to see the `$` tokens).
- */
-export function rewriteComposerSkillTokensAsSlashCommands(text: string): string {
-  return text.replace(SKILL_TOKEN_FOR_DISPATCH_REGEX, "$1/$2");
 }

@@ -12,7 +12,6 @@ import {
   type ThreadId,
   TurnId,
 } from "@t3tools/contracts";
-import { rewriteComposerSkillTokensAsSlashCommands } from "@t3tools/shared/composerInlineTokens";
 import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { stableStringify } from "@t3tools/shared/relaySigning";
@@ -1517,11 +1516,7 @@ export function makeGrokAdapter(grokSettings: GrokSettings, options?: GrokAdapte
                 "reasoningEffort",
               );
 
-              const trimmedInput = input.input?.trim();
-              // Grok expands skills from `/name` in the prompt, not `$name`.
-              const text = trimmedInput
-                ? rewriteComposerSkillTokensAsSlashCommands(trimmedInput)
-                : trimmedInput;
+              const text = input.input?.trim();
               // Grok ingests images only. Generic files reach the agent
               // through the path line ProviderService puts in the prompt.
               const imagePromptParts = yield* Effect.forEach(
