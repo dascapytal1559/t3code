@@ -7,7 +7,7 @@ for (const stream of [process.stdout, process.stderr]) {
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-// @effect-diagnostics-next-line nodeBuiltinImport:off - the fork server-root override must be read synchronously pre-ready (see readDesktopServerRootOverride).
+// @effect-diagnostics-next-line nodeBuiltinImport:off - the fork server-root override must be checked synchronously pre-ready (see readDesktopServerRootOverride).
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as Effect from "effect/Effect";
@@ -71,33 +71,28 @@ import * as DesktopWslBackend from "./wsl/DesktopWslBackend.ts";
 import * as DesktopWslEnvironment from "./wsl/DesktopWslEnvironment.ts";
 import * as DesktopWslServerTree from "./wsl/DesktopWslServerTree.ts";
 
-// Fork: when this file exists and its first non-empty non-comment line names a
-// directory containing apps/server/dist/bin.mjs (plus the node_modules it
-// resolves against), packaged builds load the backend — and the web client it
-// serves — from that directory instead of the copy baked into app.asar,
-// making server/web deploys a JS payload swap with no DMG rebuild. Read once
-// at launch; a missing or invalid target falls back to the bundled tree.
-const desktopServerRootOverridePath = `${NodeOS.homedir()}/.t3/fork/desktop-server-root`;
+// Fork: desktop server payload override. When `~/.t3/fork/current` — a
+// symlink the deploy scripts retarget at a staged build — contains
+// apps/server/dist/bin.mjs (plus the node_modules it resolves against),
+// packaged builds load the backend, and the web client it serves, from there
+// instead of the copy baked into app.asar. The symlink path reaches the
+// backend supervisor unresolved, and the supervisor respawns the backend child
+// from that same path whenever it exits, so a deploy is: retarget the symlink,
+// terminate the backend, reload the window. No app relaunch. Node resolves the
+// entry to its real path at spawn, so the outgoing backend keeps its own build
+// until it exits. A missing or invalid target at launch falls back to the
+// bundled tree.
+const desktopServerRootOverridePath = `${NodeOS.homedir()}/.t3/fork/current`;
 
-// Read synchronously: this runs while the DesktopEnvironment layer builds,
+// Checked synchronously: this runs while the DesktopEnvironment layer builds,
 // upstream of the Clerk bridge, which must be created before Electron's
 // "ready" event fires (it calls protocol.registerSchemesAsPrivileged).
 // Async I/O here would yield to the event loop and let "ready" win the race.
-const readDesktopServerRootOverride = Effect.sync((): string | null => {
-  let contents: string;
-  try {
-    contents = NodeFS.readFileSync(desktopServerRootOverridePath, "utf8");
-  } catch {
-    return null;
-  }
-  const line = contents
-    .split("\n")
-    .map((value) => value.trim())
-    .find((value) => value.length > 0 && !value.startsWith("#"));
-  if (line === undefined) return null;
-  const root = line.startsWith("~/") ? `${NodeOS.homedir()}/${line.slice(2)}` : line;
-  return NodeFS.existsSync(`${root}/apps/server/dist/bin.mjs`) ? root : null;
-});
+const readDesktopServerRootOverride = Effect.sync((): string | null =>
+  NodeFS.existsSync(`${desktopServerRootOverridePath}/apps/server/dist/bin.mjs`)
+    ? desktopServerRootOverridePath
+    : null,
+);
 
 const desktopEnvironmentLayer = Layer.unwrap(
   Effect.gen(function* () {

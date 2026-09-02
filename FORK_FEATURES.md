@@ -185,27 +185,37 @@ candidate) and `apps/web/src/markdown-links.ts`.
 
 ## Desktop runs a swappable server payload
 
-When `~/.t3/fork/desktop-server-root` exists on the desktop machine, its first
-non-empty, non-comment line names a directory that replaces the bundled server
-tree in packaged builds. The directory must contain `apps/server/dist/bin.mjs`
-(with `dist/client` inside) and a `node_modules` resolvable from its root —
-the same shape as the app.asar server root. Because the web client is served
-by the backend, one payload swap updates both server and frontend; only
-desktop shell changes (Electron main process, natives, packaging) still need a
-DMG rebuild. The file is read once at launch, `~/` expands to the home
-directory, and a missing or invalid target falls back to the bundled tree, so
-a stale pointer can never brick the app. Development launches ignore the file.
+When `~/.t3/fork/current` exists on the desktop machine and contains
+`apps/server/dist/bin.mjs` (with `dist/client` inside) and a `node_modules`
+resolvable from its root — the same shape as the app.asar server root —
+packaged builds load the backend from it instead of the bundled server tree.
+It is normally a symlink into `~/.t3/fork/builds/<sha>/`. Because the web
+client is served by the backend, one payload swap updates both server and
+frontend; only desktop shell changes (Electron main process, natives,
+packaging) still need a DMG rebuild.
+
+The symlink path is handed to the backend supervisor unresolved, and the
+supervisor respawns the backend child from that same path whenever it exits.
+A deploy is therefore: retarget the symlink, terminate the backend, reload the
+window — the app itself keeps running. Node resolves the entry to its real
+path at spawn, so the outgoing backend keeps its own build until it exits, and
+a build directory may only be deleted once nothing runs from it. A missing or
+invalid target at launch falls back to the bundled tree; a target that goes
+bad while the app runs makes the supervisor retry with backoff until it is
+fixed. Development launches ignore the symlink.
 
 The payload is staged from the same npm tarball the remote hosts install
-(`deploy/stage-server-payload.sh` in the wrapper repository extracts it and
-runs `npm install`), so local and remote deploys share one artifact. Whether
-the override took effect is observable in the backend child process's argv,
-which contains the resolved entry path.
+(`deploy/stage-server-payload.sh` in the wrapper repository extracts it into
+`builds/<sha>` and runs `npm install`; `deploy/swap-fork-payload.sh`
+retargets the symlink and restarts the backend), so local and remote deploys
+share one artifact. Which build is live is `readlink ~/.t3/fork/current`;
+whether the override took effect is visible in the backend child's argv,
+which contains the symlink entry path.
 
 Implementation: `apps/desktop/src/main.ts` and
 `apps/desktop/src/app/DesktopEnvironment.ts`.
 
-This launch-time payload selection has no distinct client UI state to capture.
+This payload selection has no distinct client UI state to capture.
 
 ## SSH launch runs the fork server
 
