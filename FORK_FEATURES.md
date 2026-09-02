@@ -198,8 +198,9 @@ The symlink path is handed to the backend supervisor unresolved, and the
 supervisor respawns the backend child from that same path whenever it exits.
 A deploy is therefore: retarget the symlink, terminate the backend, reload the
 window — the app itself keeps running. Node resolves the entry to its real
-path at spawn, so the outgoing backend keeps its own build until it exits, and
-a build directory may only be deleted once nothing runs from it. A missing or
+path at spawn, so the outgoing backend keeps its own build until it exits;
+the deploy scripts prune every other build only after the replacement is
+verified to be mapped from the new one. A missing or
 invalid target at launch falls back to the bundled tree; a target that goes
 bad while the app runs makes the supervisor retry with backoff until it is
 fixed. Development launches ignore the symlink.
