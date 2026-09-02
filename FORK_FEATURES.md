@@ -7,7 +7,7 @@ behavior, not parallel-app branding.
 
 This file is the canonical fork-feature record. Update it when a feature's
 behavior changes, not merely when syncing with upstream. Syncing from
-upstream is `.agents/skills/SYNC_UPSTREAM.md` in the wrapper repository:
+upstream is `runbooks/SYNC_UPSTREAM.md` in the wrapper repository:
 every sync reassesses these entries against stock upstream and drops
 deltas that are no longer needed.
 
@@ -206,8 +206,8 @@ bad while the app runs makes the supervisor retry with backoff until it is
 fixed. Development launches ignore the symlink.
 
 The payload is staged from the same npm tarball the remote hosts install
-(`deploy/stage-server-payload.sh` in the wrapper repository extracts it into
-`builds/<sha>` and runs `npm install`; `deploy/swap-fork-payload.sh`
+(`runbooks/deploy/stage-server-payload.sh` in the wrapper repository extracts it into
+`builds/<sha>` and runs `npm install`; `runbooks/deploy/swap-fork-payload.sh`
 retargets the symlink and restarts the backend), so local and remote deploys
 share one artifact. Which build is live is `readlink ~/.t3/fork/current`;
 whether the override took effect is visible in the backend child's argv,
@@ -226,9 +226,9 @@ runner. An explicit override is authoritative even when a global `t3` binary is
 already installed remotely. Remove the file to restore upstream's normal
 channel-derived package selection and global-binary preference.
 
-Deploys are covered by `.agents/skills/DEPLOY_FORK.md` in the wrapper repository.
-`deploy/pack-server-tarball.sh` builds a SHA-versioned package for the remote
-host, and `deploy/swap-fork-app.sh` replaces the stock-named desktop app.
+Deploys are covered by `runbooks/DEPLOY_FORK.md` in the wrapper repository.
+`runbooks/deploy/pack-server-tarball.sh` builds a SHA-versioned package for the remote
+host, and `runbooks/deploy/swap-fork-app.sh` replaces the stock-named desktop app.
 
 Implementation: `packages/ssh/src/command.ts`, `packages/ssh/src/tunnel.ts`, and
 `apps/desktop/src/main.ts`.
