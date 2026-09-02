@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { ProviderDriverKind, ProviderInstanceId, type ModelCapabilities } from "@t3tools/contracts";
+import { ProviderInstanceId, type ModelCapabilities } from "@t3tools/contracts";
 
 import {
   applyClaudePromptEffortPrefix,
@@ -11,8 +11,6 @@ import {
   getProviderOptionDescriptors,
   getProviderOptionBooleanSelectionValue,
   getProviderOptionStringSelectionValue,
-  normalizeCustomModelSlug,
-  normalizeModelSlug,
 } from "./model.ts";
 
 const codexCaps: ModelCapabilities = createModelCapabilities({
@@ -148,15 +146,6 @@ describe("descriptor helpers", () => {
   });
 });
 
-describe("model slug normalization", () => {
-  it("preserves exact custom slugs instead of expanding provider aliases", () => {
-    const claude = ProviderDriverKind.make("claudeAgent");
-
-    expect(normalizeModelSlug("opus", claude)).toBe("claude-opus-5");
-    expect(normalizeCustomModelSlug(" opus ")).toBe("opus");
-  });
-});
-
 describe("applyClaudePromptEffortPrefix", () => {
   it("keeps slash commands intact when ultrathink is selected", () => {
     expect(applyClaudePromptEffortPrefix("/compact", "ultrathink")).toBe("/compact");
@@ -175,11 +164,14 @@ describe("applyClaudePromptEffortPrefix", () => {
     expect(applyClaudePromptEffortPrefix("/deploy.prod to staging", "ultrathink")).toBe(
       "/deploy.prod to staging",
     );
+  });
+
+  it("wraps composer $skill picks so last-block dispatch can still invoke them", () => {
     expect(applyClaudePromptEffortPrefix("$matts-wayfinder plan the work", "ultrathink")).toBe(
-      "$matts-wayfinder plan the work",
+      "Ultrathink:\n$matts-wayfinder plan the work",
     );
     expect(applyClaudePromptEffortPrefix(" $review src/model.ts ", "ultrathink")).toBe(
-      "$review src/model.ts",
+      "Ultrathink:\n$review src/model.ts",
     );
   });
 

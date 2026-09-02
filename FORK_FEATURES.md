@@ -11,17 +11,26 @@ behavior changes, not merely when syncing with upstream.
 ## Composer `$` skill invocation
 
 The composer `$` picker is a user-invocation surface, the same role as a provider
-slash menu. Codex already treats `$name` as an explicit skill invoke. Claude and
-Grok dispatch skills by sending `/name` in the prompt, so the fork rewrites
-composer `$name` tokens to `/name` on those providers' wire paths. Skills the
-model is not allowed to trigger on its own (Claude/Grok `disable-model-invocation`)
-therefore still run when the user picked them. The stored message keeps the `$`
-token. Claude ultrathink does not wrap a leading `$skill` pick, because that
-prefix would turn the invoke into prose before the rewrite.
+slash menu. Codex already treats `$name` as an explicit skill invoke. The stored
+message keeps the `$` token.
 
-Implementation: `packages/shared/src/composerInlineTokens.ts`,
-`packages/shared/src/model.ts`,
-`apps/server/src/provider/Layers/ClaudeAdapter.ts`, and
+Claude Code expands a skill only from the last text block, and only when `/name`
+is that block's first character. Upstream now does that split (`#9128`,
+`planClaudeSkillDispatch`): the last known `$skill` mention becomes a trailing
+`/name` block, earlier mentions become `/name` inline, and unknown tokens such
+as `$HOME` stay prose. Skills marked `disable-model-invocation` still run when
+the user picks them; skills the CLI rejects as user-invocable (`user-invocable:
+false`, or switched off) stay prose. The fork dropped its earlier in-place
+`$`→`/` rewrite on the Claude send path so the dispatcher can still see the `$`
+tokens. Ultrathink wrapping a leading `$skill` pick is now safe: the prefix
+lands in the leading text block and the command block still starts with `/name`.
+
+Grok still has no last-block dispatcher, so the fork rewrites composer `$name`
+tokens to `/name` on its wire path.
+
+Implementation: `apps/server/src/provider/Drivers/ClaudeSkillDispatch.ts`,
+`packages/shared/src/composerInlineTokens.ts`,
+`packages/shared/src/model.ts`, and
 `apps/server/src/provider/Layers/GrokAdapter.ts`.
 
 ![Composer skill picker showing user-invocable skills](./assets/fork-features/skills.png)
@@ -189,7 +198,8 @@ avoids fabricating local links for paths mentioned on remote machines. Absolute
 and relative path chips, explicit Markdown links, and image embeds are
 unchanged.
 
-Implementation: `apps/web/src/markdown-links.ts`.
+Implementation: `packages/client-runtime/src/markdownLinks.ts` (inline-code
+candidate) and `apps/web/src/markdown-links.ts`.
 
 ![A tilde path rendered as plain inline code](./assets/fork-features/tilde-path.png)
 
@@ -286,8 +296,11 @@ Implementation: `packages/client-runtime/src/state/threadReducer.ts`
 
 ## Sync status
 
-Last synced on 2026-09-01 against upstream `c78ae50a5` (v0.0.35 → v0.0.38
+Last synced on 2026-09-02 against upstream `d937e3075` (v0.0.38 and following
 nightlies). The pre-sync fork is preserved at
-`backup/upstream-test-drive-pre-sync-20260901` (`fb5e3edd5`). This sync adapted
-the expand/collapse-all control to the lazy explorer. The previous sync point
-is preserved at `backup/upstream-test-drive-pre-sync-20260826` (`1a1658c21`).
+`backup/upstream-test-drive-pre-sync-20260902` (`d4f79f8a9`). This sync adopted
+upstream's Claude last-block `$skill` dispatch, kept the Grok `$`→`/` rewrite,
+moved the tilde-path skip into the shared inline-code candidate, and adapted
+the lazy explorer to upstream's incremental tree updates. The previous sync
+point is preserved at `backup/upstream-test-drive-pre-sync-20260901`
+(`fb5e3edd5`).

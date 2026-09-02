@@ -24,6 +24,7 @@ import { useServerConfigs } from "~/state/entities";
 
 import { createFileTreeDragMentionController } from "./fileTreeDragMention";
 import { areAllDirectoriesExpanded, setAllDirectoriesExpanded } from "./fileTreeExpansion";
+import { buildFileTreePathUpdates } from "./fileTreePathReconciliation";
 import { useProjectEntriesQuery } from "./projectFilesQueryState";
 import { useLazyFileTree } from "./useLazyFileTree";
 
@@ -150,7 +151,7 @@ export default function FileBrowserPanel({
     () => entries.filter((entry) => entry.kind === "directory").map(treePath),
     [entries],
   );
-  const previousTreePathsRef = useRef<readonly string[]>([]);
+  const previousTreePathsRef = useRef<readonly string[] | null>(null);
   const syncingSelectionRef = useRef(false);
   const treeSelectionPathRef = useRef<string | null>(null);
   const handledRevealRef = useRef<{ path: string; revealId: number } | null>(null);
@@ -342,13 +343,29 @@ export default function FileBrowserPanel({
 
   useEffect(() => {
     if (lazyMode) return;
+    if (entriesQuery.data === null) return;
     if (previousTreePathsRef.current === treePaths) return;
     entryKindsRef.current = entryKinds;
     symlinkTreePathsRef.current = symlinkTreePaths;
+    const previousTreePaths = previousTreePathsRef.current;
     previousTreePathsRef.current = treePaths;
-    model.resetPaths(treePaths);
+    if (previousTreePaths === null) {
+      model.resetPaths(treePaths);
+      model.setGitStatus(ignoredGitStatus);
+      return;
+    }
+    const updates = buildFileTreePathUpdates(previousTreePaths, treePaths);
+    if (updates.length > 0) model.batch(updates);
     model.setGitStatus(ignoredGitStatus);
-  }, [entryKinds, ignoredGitStatus, lazyMode, model, symlinkTreePaths, treePaths]);
+  }, [
+    entriesQuery.data,
+    entryKinds,
+    ignoredGitStatus,
+    lazyMode,
+    model,
+    symlinkTreePaths,
+    treePaths,
+  ]);
 
   useEffect(() => {
     if (!selectedPath) {
