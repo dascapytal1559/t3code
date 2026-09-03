@@ -183,3 +183,18 @@ On desktop, press `Cmd+Enter` on macOS or `Ctrl+Enter` on Windows and Linux from
 start it in the background. T3 Code opens another new thread and shows an **Open** action for the
 thread that started. The new thread keeps the selected workspace mode and base branch. If **New
 worktree** is selected, each background thread creates its own worktree.
+
+## Follow-ups while the agent is working
+
+Sending a message while a turn is running steers the current turn: T3 Code injects the follow-up
+into the live run instead of waiting. That is the default for Enter and the send button.
+
+To wait until the current turn finishes, press **Queue** or `Cmd+Enter` on macOS / `Ctrl+Enter` on
+Windows and Linux. Queued messages appear above the composer. Remove one with the × on its row.
+T3 Code sends the oldest queued message automatically when the thread is idle again. The queue
+stays on this client and survives a reload; it does not send while the app is closed.
+
+On mobile, Send still steers a running turn. Use the queue button next to Send to hold the
+follow-up until the turn finishes.
+
+A new thread still uses `Cmd+Enter` / `Ctrl+Enter` to start in the background, as above.

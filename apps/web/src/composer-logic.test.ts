@@ -4,6 +4,7 @@ import {
   clampCollapsedComposerCursor,
   collapseExpandedComposerCursor,
   composerSubmissionIntentForEnter,
+  resolveFollowUpSendIntent,
   detectComposerTrigger,
   expandCollapsedComposerCursor,
   isCollapsedCursorAdjacentToInlineToken,
@@ -57,12 +58,44 @@ describe("composerSubmissionIntentForEnter", () => {
     ).toBe("background");
   });
 
-  it("keeps Mod+Enter in the foreground for an active thread", () => {
+  it("queues with Mod+Enter on an existing thread", () => {
     expect(
       composerSubmissionIntentForEnter({
         isMobileViewport: false,
         shiftKey: false,
         modifierKey: true,
+        isDraftThread: false,
+      }),
+    ).toBe("queue");
+  });
+});
+
+describe("resolveFollowUpSendIntent", () => {
+  it("keeps background submission on a new thread", () => {
+    expect(
+      resolveFollowUpSendIntent({
+        intent: "background",
+        isRunning: false,
+        isDraftThread: true,
+      }),
+    ).toBe("background");
+  });
+
+  it("queues only while an existing thread is running", () => {
+    expect(
+      resolveFollowUpSendIntent({
+        intent: "queue",
+        isRunning: true,
+        isDraftThread: false,
+      }),
+    ).toBe("queue");
+  });
+
+  it("sends a queued shortcut when the thread is idle", () => {
+    expect(
+      resolveFollowUpSendIntent({
+        intent: "queue",
+        isRunning: false,
         isDraftThread: false,
       }),
     ).toBe("foreground");

@@ -55,6 +55,8 @@ export const QueuedThreadMessageSchema = Schema.Struct({
   // instead of appending a turn to an existing one.
   creation: Schema.optional(QueuedThreadCreationSchema),
   createdAt: IsoDateTime,
+  // When set, drain waits until the thread is idle instead of steering.
+  holdUntilIdle: Schema.optional(Schema.Boolean),
 });
 
 const decodeStoredQueuedThreadMessage = Schema.decodeUnknownSync(QueuedThreadMessageSchema);
@@ -82,6 +84,7 @@ export interface QueuedThreadMessage {
   readonly interactionMode?: ProviderInteractionModeType;
   readonly creation?: QueuedThreadCreation;
   readonly createdAt: string;
+  readonly holdUntilIdle?: boolean;
 }
 
 export interface ThreadSettingsSnapshot {
@@ -158,7 +161,11 @@ export function resolveThreadOutboxDeliveryAction(input: {
   readonly shellStatus: EnvironmentShellStatus;
   readonly environmentConnected: boolean;
   readonly threadBusy: boolean;
+  readonly holdUntilIdle?: boolean;
 }): ThreadOutboxDeliveryAction {
+  if (input.holdUntilIdle === true && input.threadBusy) {
+    return "wait";
+  }
   if (input.isCreation) {
     // A pending task creates its thread on delivery. If the thread already
     // exists the creation command went through and only cleanup remains.

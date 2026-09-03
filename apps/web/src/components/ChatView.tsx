@@ -89,6 +89,7 @@ import {
   collapseExpandedComposerCursor,
   type ComposerSubmissionIntent,
   parseStandaloneComposerSlashCommand,
+  resolveFollowUpSendIntent,
 } from "../composer-logic";
 import {
   derivePendingApprovals,
@@ -246,6 +247,13 @@ import {
   type DraftId,
 } from "../composerDraftStore";
 import {
+  enqueueQueuedFollowUp,
+  MAX_QUEUED_FOLLOW_UPS,
+  removeQueuedFollowUp,
+  useQueuedFollowUps,
+  type QueuedFollowUp,
+} from "../queuedFollowUpStore";
+import {
   appendTerminalContextsToPrompt,
   formatTerminalContextLabel,
   type TerminalContextDraft,
@@ -354,6 +362,7 @@ import {
   hasServerAcknowledgedLocalDispatch,
   isBranchMismatchDismissedForSession,
   shouldDockDraftHeroForSubmission,
+  shouldDrainQueuedFollowUp,
   shouldReleaseTimelineAnchorForToolActivity,
   shouldShowBranchMismatchBanner,
   shouldShowPlanFollowUpPrompt,
@@ -1545,6 +1554,8 @@ function ChatViewContent(props: ChatViewProps) {
   const attachmentPreviewHandoffByMessageIdRef = useRef<Record<string, string[]>>({});
   const attachmentPreviewPromotionInFlightByMessageIdRef = useRef<Record<string, true>>({});
   const sendInFlightRef = useRef(false);
+  const drainingFollowUpIdRef = useRef<string | null>(null);
+  const failedQueuedFollowUpIdRef = useRef<string | null>(null);
   const feedbackUploadsInFlightRef = useRef(new Set<string>());
   const terminalUiOpenByThreadRef = useRef<Record<string, boolean>>({});
 
@@ -5590,6 +5601,7 @@ function ChatViewContent(props: ChatViewProps) {
       annotation: PreviewAnnotationPayload;
       image: ComposerImageAttachment | null;
     },
+    queuedFollowUp?: QueuedFollowUp,
   ) => {
     e?.preventDefault();
     const notifyDirectAnnotationAttached = () => {
@@ -5637,18 +5649,28 @@ function ChatViewContent(props: ChatViewProps) {
       return;
     }
     const {
-      images: sendContextImages,
-      files: composerFiles,
-      terminalContexts: composerTerminalContexts,
-      elementContexts: composerElementContexts,
-      previewAnnotations: sendContextPreviewAnnotations,
-      reviewComments: composerReviewComments,
+      images: sendContextImagesFromComposer,
+      files: composerFilesFromComposer,
+      terminalContexts: composerTerminalContextsFromComposer,
+      elementContexts: composerElementContextsFromComposer,
+      previewAnnotations: sendContextPreviewAnnotationsFromComposer,
+      reviewComments: composerReviewCommentsFromComposer,
       selectedProvider: ctxSelectedProvider,
       selectedModel: ctxSelectedModel,
       selectedProviderModels: ctxSelectedProviderModels,
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
     } = sendCtx;
+    const sendContextImages = queuedFollowUp?.images ?? sendContextImagesFromComposer;
+    const composerFiles = queuedFollowUp?.files ?? composerFilesFromComposer;
+    const composerTerminalContexts =
+      queuedFollowUp?.terminalContexts ?? composerTerminalContextsFromComposer;
+    const composerElementContexts =
+      queuedFollowUp?.elementContexts ?? composerElementContextsFromComposer;
+    const sendContextPreviewAnnotations =
+      queuedFollowUp?.previewAnnotations ?? sendContextPreviewAnnotationsFromComposer;
+    const composerReviewComments =
+      queuedFollowUp?.reviewComments ?? composerReviewCommentsFromComposer;
     const annotationImageAlreadyAttached =
       directAnnotation?.image !== undefined &&
       sendContextImages.some((image) => image.id === directAnnotation.image?.id);
@@ -5681,7 +5703,7 @@ function ChatViewContent(props: ChatViewProps) {
             },
           ]
         : sendContextPreviewAnnotations;
-    const promptForSend = promptRef.current;
+    const promptForSend = queuedFollowUp?.prompt ?? promptRef.current;
     const {
       trimmedPrompt: trimmed,
       sendableTerminalContexts: sendableComposerTerminalContexts,
@@ -5794,6 +5816,7 @@ function ChatViewContent(props: ChatViewProps) {
     }
     if (
       !directAnnotation &&
+      !queuedFollowUp &&
       showPlanFollowUpPrompt &&
       activeProposedPlan &&
       composerImages.length === 0 &&
@@ -5825,6 +5848,7 @@ function ChatViewContent(props: ChatViewProps) {
     // Legacy plan mode: /plan and /default only act when the beta flag is on;
     // otherwise they send as plain text like any other message.
     const standaloneSlashCommand =
+      !queuedFollowUp &&
       settings.planModeEnabled &&
       composerImages.length === 0 &&
       composerFiles.length === 0 &&
@@ -5855,6 +5879,65 @@ function ChatViewContent(props: ChatViewProps) {
           }),
         );
       }
+      return;
+    }
+    const followUpIntent = resolveFollowUpSendIntent({
+      intent: submissionIntent,
+      isRunning: phase === "running",
+      isDraftThread: isLocalDraftThread,
+    });
+    if (followUpIntent === "queue" && !queuedFollowUp && isServerThread && activeThreadKey) {
+      const persistedAttachments: QueuedFollowUp["persistedAttachments"] = [];
+      for (const image of composerImages) {
+        const existing = image.previewUrl.startsWith("data:")
+          ? {
+              id: image.id,
+              name: image.name,
+              mimeType: image.mimeType,
+              sizeBytes: image.sizeBytes,
+              dataUrl: image.previewUrl,
+            }
+          : useComposerDraftStore
+              .getState()
+              .getComposerDraft(composerDraftTarget)
+              ?.persistedAttachments.find((attachment) => attachment.id === image.id);
+        if (existing) {
+          persistedAttachments.push(existing);
+          continue;
+        }
+        persistedAttachments.push({
+          id: image.id,
+          name: image.name,
+          mimeType: image.mimeType,
+          sizeBytes: image.sizeBytes,
+          dataUrl: await readFileAsDataUrl(image.file),
+        });
+      }
+      const queued = enqueueQueuedFollowUp(activeThreadKey, {
+        prompt: promptForSend,
+        images: composerImages,
+        files: composerFiles,
+        persistedAttachments,
+        terminalContexts: sendableComposerTerminalContexts,
+        elementContexts: composerElementContexts,
+        previewAnnotations: composerPreviewAnnotations,
+        reviewComments: composerReviewComments,
+      });
+      if ("error" in queued) {
+        if (queued.error === "full") {
+          toastManager.add(
+            stackedThreadToast({
+              type: "warning",
+              title: "Follow-up queue is full",
+              description: `Remove a queued message, or wait. At most ${MAX_QUEUED_FOLLOW_UPS} can wait.`,
+            }),
+          );
+        }
+        return;
+      }
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
       return;
     }
     if (!activeProject) {
@@ -6089,9 +6172,11 @@ function ChatViewContent(props: ChatViewProps) {
         }),
       );
     }
-    promptRef.current = "";
-    clearComposerDraftContent(composerDraftTarget);
-    composerRef.current?.resetCursorState();
+    if (!queuedFollowUp) {
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
+    }
 
     let firstComposerImageName: string | null = null;
     if (composerImagesSnapshot.length > 0) {
@@ -6228,6 +6313,9 @@ function ChatViewContent(props: ChatViewProps) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        if (queuedFollowUp && activeThreadKey) {
+          removeQueuedFollowUp(activeThreadKey, queuedFollowUp.id);
+        }
         if (turnUsesAttachmentUploads) {
           releaseDraftAttachments(composerAttachmentsSnapshot);
         }
@@ -6284,6 +6372,7 @@ function ChatViewContent(props: ChatViewProps) {
 
     if (failure !== null) {
       if (
+        !queuedFollowUp &&
         promptRef.current.length === 0 &&
         composerImagesRef.current.length === 0 &&
         composerFilesRef.current.length === 0 &&
@@ -6342,6 +6431,9 @@ function ChatViewContent(props: ChatViewProps) {
           error instanceof Error ? error.message : "Failed to send message.",
         );
       }
+      if (queuedFollowUp) {
+        failedQueuedFollowUpIdRef.current = queuedFollowUp.id;
+      }
     }
     sendInFlightRef.current = false;
     if (!turnStartSucceeded) {
@@ -6351,6 +6443,49 @@ function ChatViewContent(props: ChatViewProps) {
       resetLocalDispatch();
     }
   };
+  const onSendRef = useRef(onSend);
+  onSendRef.current = onSend;
+  const queuedFollowUpsForActiveThread = useQueuedFollowUps(
+    isServerThread ? activeThreadKey : null,
+  );
+
+  useEffect(() => {
+    const head = queuedFollowUpsForActiveThread[0];
+    if (failedQueuedFollowUpIdRef.current && failedQueuedFollowUpIdRef.current !== head?.id) {
+      failedQueuedFollowUpIdRef.current = null;
+    }
+    if (
+      !shouldDrainQueuedFollowUp({
+        isServerThread,
+        phase,
+        isSendBusy,
+        isConnecting,
+        hasPendingApproval: activePendingApproval !== null,
+        hasPendingUserInput: pendingUserInputs.length > 0,
+        queueLength: queuedFollowUpsForActiveThread.length,
+      }) ||
+      !head ||
+      sendInFlightRef.current ||
+      drainingFollowUpIdRef.current !== null ||
+      failedQueuedFollowUpIdRef.current === head.id
+    ) {
+      return;
+    }
+    drainingFollowUpIdRef.current = head.id;
+    void onSendRef.current(undefined, "foreground", undefined, head).finally(() => {
+      if (drainingFollowUpIdRef.current === head.id) {
+        drainingFollowUpIdRef.current = null;
+      }
+    });
+  }, [
+    activePendingApproval,
+    isConnecting,
+    isSendBusy,
+    isServerThread,
+    pendingUserInputs.length,
+    phase,
+    queuedFollowUpsForActiveThread,
+  ]);
 
   const onInterrupt = async () => {
     if (!activeThread) return;

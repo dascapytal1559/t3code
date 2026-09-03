@@ -944,6 +944,7 @@ export function useThreadOutboxDrain(): void {
         shellStatus,
         environmentConnected: environment?.connectionState === "connected",
         threadBusy: thread?.session?.status === "running" || thread?.session?.status === "starting",
+        holdUntilIdle: nextQueuedMessage.holdUntilIdle,
       });
       // The delivery action resolves first; the file-capability gate applies
       // only to a message that will send. Gating earlier would restore a
@@ -1043,7 +1044,8 @@ export function useThreadOutboxDrain(): void {
         }
         // The shell state is equally stale. Re-run the same delivery policy
         // against the live thread snapshot so a vanished thread or newly
-        // created target defers, while busy existing threads can still steer.
+        // created target defers, while busy existing threads can still steer
+        // unless this message asked to wait until idle.
         if (deliveryAction === "send") {
           const liveThread = findThread(
             appAtomRegistry.get(environmentThreadShells.threadShellsAtom),
@@ -1057,6 +1059,7 @@ export function useThreadOutboxDrain(): void {
             shellStatus,
             environmentConnected: environment?.connectionState === "connected",
             threadBusy: liveThreadBusy,
+            holdUntilIdle: nextQueuedMessage.holdUntilIdle,
           });
           if (liveDeliveryAction !== "send") {
             return true;

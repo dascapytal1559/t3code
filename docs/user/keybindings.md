@@ -83,6 +83,9 @@ Background submission from a new thread is the exception. `mod+enter` starts tha
 another new thread with the same workspace mode and base branch. **New worktree** remains selected,
 but the new thread does not reuse the worktree created for the thread that just started.
 
+On an existing thread, `mod+enter` queues the composer instead of steering the current turn. See
+[Follow-ups while the agent is working](./composer.md#follow-ups-while-the-agent-is-working).
+
 ## `when` Conditions
 
 A `when` expression is evaluated against context keys describing the current UI state. The keys

@@ -115,6 +115,11 @@ export interface ThreadDetailScreenProps {
   readonly projectWorkspaceRoot: string | null;
   readonly threadCwd: string | null;
   readonly selectedThreadQueueCount: number;
+  readonly selectedThreadQueuedMessages: ReadonlyArray<{
+    readonly messageId: MessageId;
+    readonly text: string;
+    readonly creation?: unknown;
+  }>;
   readonly serverConfig: T3ServerConfig | null;
   readonly layoutVariant?: LayoutVariant;
   readonly usesAutomaticContentInsets?: boolean;
@@ -126,7 +131,8 @@ export interface ThreadDetailScreenProps {
   readonly onNativePasteImages: (uris: ReadonlyArray<string>) => Promise<void>;
   readonly onRemoveDraftImage: (imageId: string) => void;
   readonly onStopThread: () => void;
-  readonly onSendMessage: () => Promise<MessageId | null>;
+  readonly onSendMessage: (options?: { holdUntilIdle?: boolean }) => Promise<MessageId | null>;
+  readonly onRemoveQueuedMessage: (messageId: MessageId) => void;
   readonly onReconnectEnvironment: () => void;
   readonly onUpdateThreadModelSelection: (modelSelection: ModelSelection) => void;
   readonly onUpdateThreadRuntimeMode: (runtimeMode: RuntimeMode) => void;
@@ -585,36 +591,39 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
     selectedThreadKey,
   ]);
 
-  const handleSendMessage = useCallback(async () => {
-    const targetThreadKey = selectedThreadKey;
-    const hasUserMessage = selectedThreadFeed.some(
-      (entry) => entry.type === "message" && entry.message.role === "user",
-    );
-    const messageId = await props.onSendMessage();
-    if (messageId === null || selectedThreadKeyRef.current !== targetThreadKey) {
-      return messageId;
-    }
+  const handleSendMessage = useCallback(
+    async (options?: { holdUntilIdle?: boolean }) => {
+      const targetThreadKey = selectedThreadKey;
+      const hasUserMessage = selectedThreadFeed.some(
+        (entry) => entry.type === "message" && entry.message.role === "user",
+      );
+      const messageId = await props.onSendMessage(options);
+      if (messageId === null || selectedThreadKeyRef.current !== targetThreadKey) {
+        return messageId;
+      }
 
-    setSubmittedMessageId(messageId);
-    setAnchorMessageId(
-      resolveThreadFeedSubmissionAnchor({
-        currentAnchorMessageId: anchorMessageId,
-        submittedMessageId: messageId,
-        hasStartedTurn: props.selectedThread.latestTurn !== null,
-        hasUserMessage,
-        queuedMessageCount: props.selectedThreadQueueCount,
-      }),
-    );
-    composerEditorRef.current?.blur();
-    return messageId;
-  }, [
-    anchorMessageId,
-    props.onSendMessage,
-    props.selectedThread.latestTurn,
-    props.selectedThreadQueueCount,
-    selectedThreadFeed,
-    selectedThreadKey,
-  ]);
+      setSubmittedMessageId(messageId);
+      setAnchorMessageId(
+        resolveThreadFeedSubmissionAnchor({
+          currentAnchorMessageId: anchorMessageId,
+          submittedMessageId: messageId,
+          hasStartedTurn: props.selectedThread.latestTurn !== null,
+          hasUserMessage,
+          queuedMessageCount: props.selectedThreadQueueCount,
+        }),
+      );
+      composerEditorRef.current?.blur();
+      return messageId;
+    },
+    [
+      anchorMessageId,
+      props.onSendMessage,
+      props.selectedThread.latestTurn,
+      props.selectedThreadQueueCount,
+      selectedThreadFeed,
+      selectedThreadKey,
+    ],
+  );
 
   const collapseComposer = useCallback(() => {
     composerEditorRef.current?.blur();
@@ -808,6 +817,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                   selectedThread={props.selectedThread}
                   serverConfig={props.serverConfig}
                   queueCount={props.selectedThreadQueueCount}
+                  queuedMessages={props.selectedThreadQueuedMessages}
                   environmentId={props.environmentId}
                   projectCwd={props.projectWorkspaceRoot}
                   bottomInset={composerBottomInset}
@@ -818,6 +828,7 @@ export const ThreadDetailScreen = memo(function ThreadDetailScreen(props: Thread
                   onRemoveDraftImage={props.onRemoveDraftImage}
                   onStopThread={props.onStopThread}
                   onSendMessage={handleSendMessage}
+                  onRemoveQueuedMessage={props.onRemoveQueuedMessage}
                   onReconnectEnvironment={props.onReconnectEnvironment}
                   onUpdateModelSelection={props.onUpdateThreadModelSelection}
                   onUpdateRuntimeMode={props.onUpdateThreadRuntimeMode}

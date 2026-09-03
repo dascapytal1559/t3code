@@ -267,4 +267,31 @@ describe("ComposerPrimaryActions", () => {
     expect(markup).toContain('aria-label="Stop generation"');
     expect(markup).not.toContain('aria-label="Send message"');
   });
+
+  it("renders a queue action while running when the composer has content", () => {
+    const markup = renderToStaticMarkup(
+      createElement(ComposerPrimaryActions, {
+        compact: false,
+        pendingAction: null,
+        isRunning: true,
+        showPlanFollowUpPrompt: false,
+        promptHasText: true,
+        isSendBusy: false,
+        sendDisabledReason: null,
+        isConnecting: false,
+        isEnvironmentUnavailable: false,
+        isPreparingWorktree: false,
+        hasSendableContent: true,
+        queueShortcutLabel: "⌘Enter",
+        onQueue: () => {},
+        onPreviousPendingQuestion: () => {},
+        onInterrupt: () => {},
+        onImplementPlanInNewThread: () => {},
+      }),
+    );
+
+    expect(markup).toContain('aria-label="Stop generation"');
+    expect(markup).toContain('aria-label="Queue (⌘Enter)"');
+    expect(markup).not.toContain('aria-label="Send message"');
+  });
 });

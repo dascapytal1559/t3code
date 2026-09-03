@@ -3,7 +3,7 @@ import { INLINE_TERMINAL_CONTEXT_PLACEHOLDER } from "./lib/terminalContext";
 
 export type ComposerTriggerKind = "path" | "slash-command" | "skill";
 export type ComposerSlashCommand = "model" | "plan" | "default";
-export type ComposerSubmissionIntent = "foreground" | "background";
+export type ComposerSubmissionIntent = "foreground" | "background" | "queue";
 
 export interface ComposerTrigger {
   kind: ComposerTriggerKind;
@@ -21,7 +21,25 @@ export function composerSubmissionIntentForEnter(input: {
   if (input.isMobileViewport || input.shiftKey) {
     return null;
   }
-  return input.modifierKey && input.isDraftThread ? "background" : "foreground";
+  if (input.modifierKey && input.isDraftThread) {
+    return "background";
+  }
+  return input.modifierKey ? "queue" : "foreground";
+}
+
+/** Queue only applies to a running existing thread. Otherwise the modifier send is a normal send. */
+export function resolveFollowUpSendIntent(input: {
+  intent: ComposerSubmissionIntent;
+  isRunning: boolean;
+  isDraftThread: boolean;
+}): ComposerSubmissionIntent {
+  if (input.intent === "background" && input.isDraftThread) {
+    return "background";
+  }
+  if (input.intent === "queue" && !input.isDraftThread && input.isRunning) {
+    return "queue";
+  }
+  return "foreground";
 }
 
 const isInlineTokenSegment = (

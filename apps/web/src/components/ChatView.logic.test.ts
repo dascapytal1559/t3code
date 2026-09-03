@@ -37,6 +37,7 @@ import {
   startNewThreadForProject,
   codexArtifactTemplatePromptToAppend,
   shouldDockDraftHeroForSubmission,
+  shouldDrainQueuedFollowUp,
   shouldReleaseTimelineAnchorForToolActivity,
   shouldShowBranchMismatchBanner,
   shouldShowPlanFollowUpPrompt,
@@ -67,6 +68,36 @@ describe("artifact template composer insertion", () => {
     const prompt = "Create a document using this $artifact-template-hello-world about…";
 
     expect(codexArtifactTemplatePromptToAppend(prompt, helloWorldTemplate)).toBeNull();
+  });
+});
+
+describe("queued follow-up drain", () => {
+  it("drains when a server thread is idle and sendable", () => {
+    expect(
+      shouldDrainQueuedFollowUp({
+        isServerThread: true,
+        phase: "ready",
+        isSendBusy: false,
+        isConnecting: false,
+        hasPendingApproval: false,
+        hasPendingUserInput: false,
+        queueLength: 1,
+      }),
+    ).toBe(true);
+  });
+
+  it("holds the queue while the current turn is running", () => {
+    expect(
+      shouldDrainQueuedFollowUp({
+        isServerThread: true,
+        phase: "running",
+        isSendBusy: false,
+        isConnecting: false,
+        hasPendingApproval: false,
+        hasPendingUserInput: false,
+        queueLength: 1,
+      }),
+    ).toBe(false);
   });
 });
 

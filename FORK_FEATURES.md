@@ -371,6 +371,41 @@ evidence.
 
 ![Checkpoint revert confirmation explaining that the prompt returns to the composer](./assets/fork-features/checkpoint-revert.png)
 
+## Queue follow-ups while a turn is running
+
+Upstream send while a turn is running always steers: the follow-up is injected
+into the live run. The fork keeps that as the default for Enter and Send, and
+adds an explicit queue for work that should wait until the current turn
+finishes.
+
+On web and desktop, **Queue** appears next to Stop when the composer has
+content during a running turn. `Cmd+Enter` on macOS / `Ctrl+Enter` on Windows
+and Linux queues on an existing running thread; the same shortcut on a new
+thread still starts it in the background. Queued messages render above the
+composer and can be removed. The oldest item auto-sends when the thread is
+idle again. The queue is client-persisted (survives reload, capped at 10) and
+does not drain while the app is closed.
+
+On mobile, Send still steers. A queue button next to Send holds the message
+until the thread is idle (`holdUntilIdle` on the existing outbox). The same
+list sits above the composer.
+
+Implementation: `apps/web/src/queuedFollowUpStore.ts`,
+`apps/web/src/components/chat/ComposerQueuedFollowUps.tsx`,
+`apps/web/src/composer-logic.ts` (`resolveFollowUpSendIntent`),
+`apps/web/src/components/ChatView.tsx` (enqueue + drain),
+`apps/mobile/src/state/thread-outbox-model.ts` (`holdUntilIdle`).
+
+Tests: `apps/web/src/queuedFollowUpStore.test.ts` (enqueue, cap, environment
+clear, preview text), `apps/web/src/composer-logic.test.ts` (Mod+Enter queues
+on an existing thread, falls back to send when idle, background start on a
+new thread is unchanged), `apps/web/src/components/ChatView.logic.test.ts`
+(drain only when idle and sendable),
+`apps/web/src/components/chat/ComposerPrimaryActions.test.tsx` (Queue next to
+Stop while running), `apps/mobile/src/state/thread-outbox.test.ts`
+(`holdUntilIdle` waits while the thread is busy; unmarked messages still
+steer).
+
 ## Sync status
 
 Last synced on 2026-09-02 against upstream `d937e3075` (v0.0.38 and following

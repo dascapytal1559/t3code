@@ -119,7 +119,13 @@ import {
 } from "../../lib/attachmentUploadState";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import { getTerminalFocusOwner } from "../../lib/terminalFocus";
-import { resolveShortcutCommand, shortcutLabelForCommand } from "../../keybindings";
+import {
+  formatShortcutLabel,
+  resolveShortcutCommand,
+  shortcutLabelForCommand,
+} from "../../keybindings";
+import { removeQueuedFollowUp, useQueuedFollowUps } from "../../queuedFollowUpStore";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   type TerminalContextDraft,
   type TerminalContextSelection,
@@ -146,6 +152,7 @@ import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
 import { ComposerPendingApprovalPanel } from "./ComposerPendingApprovalPanel";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { ComposerPlanFollowUpBanner } from "./ComposerPlanFollowUpBanner";
+import { ComposerQueuedFollowUps } from "./ComposerQueuedFollowUps";
 import { ComposerControl, ComposerControlIcon, ComposerSelectControl } from "./ComposerControl";
 import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
 import {
@@ -520,6 +527,8 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   hasSendableContent: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
   showSendWhileRunning?: boolean;
+  queueShortcutLabel?: string | null;
+  onQueue?: () => void;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
@@ -555,6 +564,10 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         onPreviousPendingQuestion={props.onPreviousPendingQuestion}
         onInterrupt={props.onInterrupt}
         onImplementPlanInNewThread={props.onImplementPlanInNewThread}
+        {...(props.queueShortcutLabel != null
+          ? { queueShortcutLabel: props.queueShortcutLabel }
+          : {})}
+        {...(props.onQueue ? { onQueue: props.onQueue } : {})}
       />
     </>
   );
@@ -2226,6 +2239,27 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       shouldBlurMobileComposerOnSubmit,
     ],
   );
+  const queuedFollowUpThreadKey = routeKind === "server" ? scopedThreadKey(routeThreadRef) : null;
+  const queuedFollowUps = useQueuedFollowUps(queuedFollowUpThreadKey);
+  const queueShortcutLabel = formatShortcutLabel({
+    key: "enter",
+    metaKey: false,
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+    modKey: true,
+  });
+  const handleQueueFollowUp = useCallback(() => {
+    submitComposer(undefined, "queue");
+  }, [submitComposer]);
+  const handleRemoveQueuedFollowUp = useCallback(
+    (followUpId: string) => {
+      if (queuedFollowUpThreadKey) {
+        removeQueuedFollowUp(queuedFollowUpThreadKey, followUpId);
+      }
+    },
+    [queuedFollowUpThreadKey],
+  );
   const compactThreadContext = useCallback(() => {
     if (
       compactDisabled ||
@@ -3610,6 +3644,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               />
             </ComposerBanner.Attachment>
           ) : null}
+          <ComposerQueuedFollowUps items={queuedFollowUps} onRemove={handleRemoveQueuedFollowUp} />
         </ComposerBanner.Column>
         {!isComposerApprovalState ? (
           <ComposerStashBadge
@@ -4279,6 +4314,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     hasSendableContent={composerSendState.hasSendableContent}
                     preserveComposerFocusOnPointerDown={isMobileViewport}
                     showSendWhileRunning={isMobileViewport}
+                    queueShortcutLabel={queueShortcutLabel}
+                    onQueue={handleQueueFollowUp}
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryAction}
                     onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}

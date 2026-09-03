@@ -74,6 +74,26 @@ export function shouldDockDraftHeroForSubmission(input: {
   );
 }
 
+export function shouldDrainQueuedFollowUp(input: {
+  isServerThread: boolean;
+  phase: SessionPhase;
+  isSendBusy: boolean;
+  isConnecting: boolean;
+  hasPendingApproval: boolean;
+  hasPendingUserInput: boolean;
+  queueLength: number;
+}): boolean {
+  return (
+    input.isServerThread &&
+    input.phase === "ready" &&
+    !input.isSendBusy &&
+    !input.isConnecting &&
+    !input.hasPendingApproval &&
+    !input.hasPendingUserInput &&
+    input.queueLength > 0
+  );
+}
+
 export function shouldReleaseTimelineAnchorForToolActivity(input: {
   anchorMessageId: MessageId | null;
   liveFollowEnabled: boolean;

@@ -1,11 +1,12 @@
 import { memo, type PointerEventHandler } from "react";
-import { ChevronDownIcon, ChevronLeftIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronLeftIcon, ListPlusIcon } from "lucide-react";
 import { useEnvironmentIdentificationMode } from "~/hooks/useSettings";
 import { cn } from "~/lib/utils";
 import { StageBackdropButtonArt, useSidebarStageBackdropVariant } from "../SidebarStageBackdrop";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { Spinner } from "../ui/spinner";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 interface PendingActionState {
   questionIndex: number;
@@ -31,6 +32,8 @@ interface ComposerPrimaryActionsProps {
   /** Enter-to-send is disabled on mobile viewports, where stop would otherwise
    * be the only primary action and a running turn could not be steered. */
   showSendWhileRunning?: boolean;
+  queueShortcutLabel?: string | null;
+  onQueue?: () => void;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
@@ -72,6 +75,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   hasSendableContent,
   preserveComposerFocusOnPointerDown = false,
   showSendWhileRunning = false,
+  queueShortcutLabel = null,
+  onQueue,
   onPreviousPendingQuestion,
   onInterrupt,
   onImplementPlanInNewThread,
@@ -274,9 +279,38 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     return sendButton;
   }
 
+  const queueDisabled =
+    isSendBusy || isSendDisabled || isConnecting || isEnvironmentUnavailable || !hasSendableContent;
+  const queueLabel = queueShortcutLabel ? `Queue (${queueShortcutLabel})` : "Queue";
+  const queueButton =
+    hasSendableContent && onQueue ? (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              className={cn(
+                "flex h-9 items-center justify-center gap-1 rounded-full border border-border/70 bg-background/70 px-2.5 text-xs font-medium text-foreground shadow-xs transition-all duration-150 enabled:cursor-pointer hover:bg-background hover:scale-105 disabled:pointer-events-none disabled:opacity-30 sm:h-8",
+                compact ? "min-w-8 px-2" : "px-2.5",
+              )}
+              {...pointerFocusProps}
+              disabled={queueDisabled}
+              aria-label={queueLabel}
+              onClick={onQueue}
+            />
+          }
+        >
+          <ListPlusIcon className="size-3.5" />
+          {compact ? null : <span>Queue</span>}
+        </TooltipTrigger>
+        <TooltipPopup side="top">{queueLabel}</TooltipPopup>
+      </Tooltip>
+    ) : null;
+
   return (
     <>
       {renderStopGenerationButton(false)}
+      {queueButton}
       {showSendWhileRunning && hasSendableContent ? sendButton : null}
     </>
   );

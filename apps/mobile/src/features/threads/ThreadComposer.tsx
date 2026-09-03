@@ -115,6 +115,11 @@ export interface ThreadComposerProps {
   readonly selectedThread: OrchestrationThreadShell;
   readonly serverConfig: T3ServerConfig | null;
   readonly queueCount: number;
+  readonly queuedMessages: ReadonlyArray<{
+    readonly messageId: MessageId;
+    readonly text: string;
+    readonly creation?: unknown;
+  }>;
   readonly environmentId: EnvironmentId;
   readonly projectCwd: string | null;
   readonly editorRef?: RefObject<ComposerEditorHandle | null>;
@@ -124,7 +129,8 @@ export interface ThreadComposerProps {
   readonly onNativePasteImages: (uris: ReadonlyArray<string>) => Promise<void>;
   readonly onRemoveDraftImage: (imageId: string) => void;
   readonly onStopThread: () => void;
-  readonly onSendMessage: () => Promise<MessageId | null>;
+  readonly onSendMessage: (options?: { holdUntilIdle?: boolean }) => Promise<MessageId | null>;
+  readonly onRemoveQueuedMessage: (messageId: MessageId) => void;
   readonly onUpdateModelSelection: (modelSelection: ModelSelection) => void;
   readonly onUpdateRuntimeMode: (runtimeMode: RuntimeMode) => void;
   readonly onUpdateInteractionMode: (interactionMode: ProviderInteractionMode) => void;
@@ -319,10 +325,11 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   const [previewFile, setPreviewFile] = useState<FilePreviewSource | null>(null);
   const [previewVideo, setPreviewVideo] = useState<VideoPreviewSource | null>(null);
   const hasContent = props.draftMessage.trim().length > 0 || props.draftAttachments.length > 0;
-  const showStopAction =
-    !hasContent &&
-    (props.selectedThread.session?.status === "running" ||
-      props.selectedThread.session?.status === "starting");
+  const isThreadRunning =
+    props.selectedThread.session?.status === "running" ||
+    props.selectedThread.session?.status === "starting";
+  const showStopAction = !hasContent && isThreadRunning;
+  const followUpQueue = props.queuedMessages.filter((message) => message.creation === undefined);
 
   const sendLabel =
     props.connectionState !== "connected" || props.queueCount > 0 ? "Queue" : "Send";
@@ -429,36 +436,45 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
   }, [onEditorFocusChange, onExpandedChange, settingsSheetPresentation.isActive]);
   const { onSendMessage } = props;
 
-  const handleSend = useCallback(async () => {
-    if (voiceInput.blocksSubmission) return;
-    const threadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
-    if (inFlightThreadIdsRef.current.has(threadKey)) return;
-    inFlightThreadIdsRef.current.add(threadKey);
-    try {
-      const messageId = await onSendMessage();
-      if (messageId === null) {
-        return;
+  const sendWithOptions = useCallback(
+    async (options?: { holdUntilIdle?: boolean }) => {
+      if (voiceInput.blocksSubmission) return;
+      const threadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
+      if (inFlightThreadIdsRef.current.has(threadKey)) return;
+      inFlightThreadIdsRef.current.add(threadKey);
+      try {
+        const messageId = await onSendMessage(options);
+        if (messageId === null) {
+          return;
+        }
+        // Sending a prompt starts agent work: arm the lock-screen card while the
+        // app is foregrounded and the activity token can be registered. Armed
+        // after the send so its preference read and native Activity start don't
+        // contend with the queued-message feedback on the tap frame.
+        armAgentAwarenessLiveActivityForLocalWork({
+          environmentId: props.environmentId,
+          threadTitle: props.selectedThread.title,
+          projectTitle: props.environmentLabel ?? "T3 Code",
+        });
+      } finally {
+        inFlightThreadIdsRef.current.delete(threadKey);
       }
-      // Sending a prompt starts agent work: arm the lock-screen card while the
-      // app is foregrounded and the activity token can be registered. Armed
-      // after the send so its preference read and native Activity start don't
-      // contend with the queued-message feedback on the tap frame.
-      armAgentAwarenessLiveActivityForLocalWork({
-        environmentId: props.environmentId,
-        threadTitle: props.selectedThread.title,
-        projectTitle: props.environmentLabel ?? "T3 Code",
-      });
-    } finally {
-      inFlightThreadIdsRef.current.delete(threadKey);
-    }
-  }, [
-    onSendMessage,
-    props.environmentId,
-    props.environmentLabel,
-    props.selectedThread.id,
-    props.selectedThread.title,
-    voiceInput.blocksSubmission,
-  ]);
+    },
+    [
+      onSendMessage,
+      props.environmentId,
+      props.environmentLabel,
+      props.selectedThread.id,
+      props.selectedThread.title,
+      voiceInput.blocksSubmission,
+    ],
+  );
+  const handleSend = useCallback(() => {
+    void sendWithOptions();
+  }, [sendWithOptions]);
+  const handleQueue = useCallback(() => {
+    void sendWithOptions({ holdUntilIdle: true });
+  }, [sendWithOptions]);
 
   // ── Model menu ───────────────────────────────────────────
   const modelOptions = useMemo(
@@ -590,6 +606,34 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
           />
         ) : null}
 
+        {followUpQueue.length > 0 ? (
+          <Animated.View
+            className="mb-2 rounded-2xl bg-card px-3 py-2"
+            entering={FadeIn.duration(180)}
+            exiting={FadeOut.duration(120)}
+          >
+            <Text className="pb-1 text-[11px] font-t3-bold uppercase tracking-wide text-foreground-muted">
+              Queued · {followUpQueue.length}
+            </Text>
+            {followUpQueue.map((message, index) => (
+              <View key={message.messageId} className="flex-row items-center gap-2 py-1">
+                <Text className="w-4 text-center text-xs text-foreground-muted">{index + 1}</Text>
+                <Text className="min-w-0 flex-1 text-sm text-foreground" numberOfLines={1}>
+                  {message.text.trim().length > 0 ? message.text.trim() : "Queued message"}
+                </Text>
+                <Pressable
+                  accessibilityLabel="Remove queued message"
+                  accessibilityRole="button"
+                  className="size-7 items-center justify-center active:opacity-70"
+                  onPress={() => props.onRemoveQueuedMessage(message.messageId)}
+                >
+                  <Text className="text-foreground-muted">✕</Text>
+                </Pressable>
+              </View>
+            ))}
+          </Animated.View>
+        ) : null}
+
         <ComposerSurface
           style={
             isExpanded
@@ -717,13 +761,23 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                     onPress={props.onStopThread}
                   />
                 ) : (
-                  <ComposerActionButton
-                    accessibilityLabel={attachmentBlockReason ?? sendLabel}
-                    icon="arrow.up"
-                    variant="primary"
-                    disabled={!canSend}
-                    onPress={handleSend}
-                  />
+                  <>
+                    {isThreadRunning && canSend ? (
+                      <ComposerActionButton
+                        accessibilityLabel="Queue until the current turn finishes"
+                        icon="tray.and.arrow.down"
+                        variant="secondary"
+                        onPress={handleQueue}
+                      />
+                    ) : null}
+                    <ComposerActionButton
+                      accessibilityLabel={attachmentBlockReason ?? sendLabel}
+                      icon="arrow.up"
+                      variant="primary"
+                      disabled={!canSend}
+                      onPress={handleSend}
+                    />
+                  </>
                 )}
               </View>
             ) : null}
@@ -808,13 +862,23 @@ export const ThreadComposer = memo(function ThreadComposer(props: ThreadComposer
                       onPress={props.onStopThread}
                     />
                   ) : voicePresentation.showsSend ? (
-                    <ComposerActionButton
-                      accessibilityLabel={attachmentBlockReason ?? sendLabel}
-                      icon="arrow.up"
-                      variant="primary"
-                      disabled={!canSend}
-                      onPress={handleSend}
-                    />
+                    <>
+                      {isThreadRunning && canSend ? (
+                        <ComposerActionButton
+                          accessibilityLabel="Queue until the current turn finishes"
+                          icon="tray.and.arrow.down"
+                          variant="secondary"
+                          onPress={handleQueue}
+                        />
+                      ) : null}
+                      <ComposerActionButton
+                        accessibilityLabel={attachmentBlockReason ?? sendLabel}
+                        icon="arrow.up"
+                        variant="primary"
+                        disabled={!canSend}
+                        onPress={handleSend}
+                      />
+                    </>
                   ) : null}
                 </View>
               </ComposerToolbarRow>

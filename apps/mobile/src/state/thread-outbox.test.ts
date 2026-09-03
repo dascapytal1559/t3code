@@ -993,6 +993,16 @@ describe("thread outbox", () => {
         isCreation: false,
         threadExists: true,
         shellStatus: "live",
+        environmentConnected: true,
+        threadBusy: true,
+        holdUntilIdle: true,
+      }),
+    ).toBe("wait");
+    expect(
+      resolveThreadOutboxDeliveryAction({
+        isCreation: false,
+        threadExists: true,
+        shellStatus: "live",
         environmentConnected: false,
         threadBusy: true,
       }),
