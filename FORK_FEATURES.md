@@ -251,8 +251,10 @@ resolvable from its root — the same shape as the app.asar server root —
 packaged builds load the backend from it instead of the bundled server tree.
 It is normally a symlink into `~/.t3/fork/builds/<sha>/`. Because the web
 client is served by the backend, one payload swap updates both server and
-frontend; only desktop shell changes (Electron main process, natives,
-packaging) still need a DMG rebuild.
+frontend. A DMG rebuild is only for Electron/native/packaging runtime
+changes; desktop tests and `test(…)` extracts of already-shipped override
+readers stay on the payload path. `runbooks/deploy/choose-deploy-path.sh`
+prints `payload` or `dmg`. When in doubt, payload.
 
 The symlink path is handed to the backend supervisor unresolved, and the
 supervisor respawns the backend child from that same path whenever it exits.
