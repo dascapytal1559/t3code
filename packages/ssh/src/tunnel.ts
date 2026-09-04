@@ -441,6 +441,10 @@ require_installed_t3_cli() {
   return 1
 }
 run_package_spec() {
+  # Fork: npm's audit request can hang indefinitely on some hosts, and every
+  # launcher attempt then stacks behind it (FORK_FEATURES.md: SSH launch runs
+  # the fork server). The spec is a local tarball; there is nothing to audit.
+  export npm_config_audit=false npm_config_fund=false
   if command -v npx >/dev/null 2>&1; then
     require_installed_t3_cli npx --yes --package @@T3_PACKAGE_SPEC@@ || exit 1
     exec npx --yes --package @@T3_PACKAGE_SPEC@@ -- t3 "$@"

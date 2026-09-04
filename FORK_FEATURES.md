@@ -298,13 +298,20 @@ Deploys are covered by `runbooks/DEPLOY_FORK.md` in the wrapper repository.
 `runbooks/deploy/pack-server-tarball.sh` builds a SHA-versioned package for the remote
 host, and `runbooks/deploy/swap-fork-app.sh` replaces the stock-named desktop app.
 
+The generated runner script also turns npm's audit and fund calls off for the
+package-spec install (`npm_config_audit=false npm_config_fund=false`). The
+spec is a local tarball, and npm's audit request has hung indefinitely on the
+remote hosts, stacking every launch attempt behind it until the launcher's
+install check timed out.
+
 Implementation: `packages/ssh/src/command.ts`, `packages/ssh/src/tunnel.ts`,
 `apps/desktop/src/app/DesktopForkOverrides.ts` (`readSshPackageSpecOverride`),
 and `apps/desktop/src/main.ts`.
 
 Tests: `packages/ssh/src/command.fork.test.ts` (override precedence and
 file parsing), `packages/ssh/src/tunnel.fork.test.ts` (the runner script
-tries the explicit spec before a global `t3`), and
+tries the explicit spec before a global `t3`, and disables npm audit and
+fund for the install), and
 `apps/desktop/src/app/DesktopForkOverrides.fork.test.ts` (reading the
 override file).
 

@@ -22,6 +22,21 @@ describe("ssh tunnel scripts (fork)", () => {
     );
   });
 
+  it("turns npm audit and fund off for the package-spec install", () => {
+    const script = buildRemoteT3RunnerScript({
+      packageSpec: "/home/ubuntu/.t3/fork/t3-fork.tgz",
+      preferPackageSpec: true,
+    });
+
+    // The audit request has hung indefinitely on remote hosts and stacked
+    // every launcher attempt behind it; the spec is a local tarball anyway.
+    assert.include(script, "export npm_config_audit=false npm_config_fund=false");
+    assert.isBelow(
+      script.indexOf("export npm_config_audit=false"),
+      script.indexOf("require_installed_t3_cli npx"),
+    );
+  });
+
   it("keeps the global binary first without an explicit spec", () => {
     const script = buildRemoteT3RunnerScript({ packageSpec: "t3@latest" });
 
