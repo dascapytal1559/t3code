@@ -31,8 +31,9 @@ import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
 
 import type { ProviderServiceError } from "../Errors.ts";
-import type { ProviderAdapterCapabilities } from "./ProviderAdapter.ts";
+import type { ProviderAdapterCapabilities, ProviderForkThreadInput } from "./ProviderAdapter.ts";
 import type { ProviderInstanceRoutingInfo } from "./ProviderAdapterRegistry.ts";
+import type { ProviderRuntimeBinding } from "./ProviderSessionDirectory.ts";
 
 /**
  * ProviderServiceShape - Service API for provider session and turn orchestration.
@@ -106,6 +107,18 @@ export interface ProviderServiceShape {
     readonly threadId: ThreadId;
     readonly numTurns: number;
   }) => Effect.Effect<void, ProviderServiceError>;
+
+  /**
+   * Build the session binding a forked thread starts from: the source
+   * thread's provider, instance, runtime mode, and cwd, with a resume cursor
+   * the adapter derived so its next `startSession` forks the provider-side
+   * conversation. Pure with respect to provider processes; the caller
+   * persists the binding once the fork thread exists. Fails when the source
+   * has no session or its driver cannot fork conversations.
+   */
+  readonly prepareForkedSessionBinding: (
+    input: Omit<ProviderForkThreadInput, "sourceResumeCursor">,
+  ) => Effect.Effect<ProviderRuntimeBinding, ProviderServiceError>;
 
   /**
    * Upload a thread and return the provider's shareable feedback identifier.

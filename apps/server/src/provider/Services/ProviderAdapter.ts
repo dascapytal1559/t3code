@@ -27,11 +27,46 @@ import type * as Stream from "effect/Stream";
 
 export type ProviderSessionModelSwitchMode = "in-session" | "unsupported";
 
+/**
+ * "native": the provider can continue a copy of a conversation through a
+ * chosen turn without replaying it as text, and the adapter implements
+ * `forkThread`. "unsupported": thread forking is hidden for this driver.
+ */
+export type ProviderConversationForkMode = "native" | "unsupported";
+
 export interface ProviderAdapterCapabilities {
   /**
    * Declares whether changing the model on an existing session is supported.
    */
   readonly sessionModelSwitch: ProviderSessionModelSwitchMode;
+  /**
+   * Declares whether a thread can be forked at a turn with provider-side
+   * conversation continuity (FORK_FEATURES.md: Fork a thread).
+   */
+  readonly conversationFork: ProviderConversationForkMode;
+}
+
+export interface ProviderForkThreadInput {
+  readonly sourceThreadId: ThreadId;
+  readonly targetThreadId: ThreadId;
+  /** Last source turn the fork keeps, inclusive. */
+  readonly turnId: TurnId;
+  /** 1-based position of `turnId` among the source thread's turns. */
+  readonly turnOrdinal: number;
+  /** Whether `turnId` is the source thread's most recent turn. */
+  readonly isLatestTurn: boolean;
+  /** The source thread's persisted resume cursor, as this adapter wrote it. */
+  readonly sourceResumeCursor: unknown;
+}
+
+export interface ProviderForkThreadResult {
+  /**
+   * Resume cursor seeded onto the fork's session binding. The next
+   * `startSession` for the fork consumes it to perform the provider-side fork
+   * lazily, so no provider process is needed at fork time and the source
+   * session is never touched.
+   */
+  readonly resumeCursor: unknown;
 }
 
 export interface ProviderThreadTurnSnapshot {
@@ -115,6 +150,15 @@ export interface ProviderAdapterShape<TError> {
     threadId: ThreadId,
     numTurns: number,
   ) => Effect.Effect<ProviderThreadSnapshot, TError>;
+
+  /**
+   * Derive the fork's resume cursor from the source thread's cursor. Required
+   * when `capabilities.conversationFork` is "native". Pure: it must not start
+   * or mutate provider sessions, and it must reject turns it cannot anchor.
+   */
+  readonly forkThread?: (
+    input: ProviderForkThreadInput,
+  ) => Effect.Effect<ProviderForkThreadResult, TError>;
 
   /**
    * Upload a thread to the provider when the adapter supports feedback.

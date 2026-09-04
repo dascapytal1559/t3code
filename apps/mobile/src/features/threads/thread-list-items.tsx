@@ -22,6 +22,8 @@ import { themeColorWithAlpha } from "../../lib/mobileTheme";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import { useThreadPr, type ThreadPr } from "../../state/use-thread-pr";
+import { resolveThreadForkTurnId } from "@t3tools/client-runtime/state/thread-fork";
+import { buildThreadForkMenuItems } from "./thread-fork-menu";
 import type { HomeGroupDisplayAction } from "../home/homeListItems";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
 import { buildThreadTitleRegenerationMenuItems } from "./thread-title-regeneration-menu";
@@ -429,6 +431,9 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
   readonly onDeleteThread: (thread: EnvironmentThreadShell) => void;
   readonly onRegenerateThreadTitle: (thread: EnvironmentThreadShell) => void;
   readonly titleRegenerationSupported: boolean;
+  readonly onForkThread: (thread: EnvironmentThreadShell) => void;
+  /** False when the server or this thread's provider cannot fork threads. */
+  readonly forkSupported: boolean;
   readonly onSwipeableWillOpen: (methods: SwipeableMethods) => void;
   readonly onSwipeableClose: (methods: SwipeableMethods) => void;
   readonly simultaneousSwipeGesture?: ComponentProps<
@@ -482,8 +487,12 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
     () => onRegenerateThreadTitle(thread),
     [onRegenerateThreadTitle, thread],
   );
+  const { onForkThread } = props;
+  const handleFork = useCallback(() => onForkThread(thread), [onForkThread, thread]);
+  const canFork = resolveThreadForkTurnId(thread) !== null;
   const menuActions = useMemo<MenuAction[]>(
     () => [
+      ...buildThreadForkMenuItems({ supported: props.forkSupported, canFork }),
       THREAD_ROW_MENU_ACTIONS[0]!,
       ...buildThreadTitleRegenerationMenuItems({
         supported: props.titleRegenerationSupported,
@@ -491,7 +500,7 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
       }),
       THREAD_ROW_MENU_ACTIONS[1]!,
     ],
-    [props.titleRegenerationSupported, thread.titleRegeneration],
+    [canFork, props.forkSupported, props.titleRegenerationSupported, thread.titleRegeneration],
   );
   const primaryAction = useMemo(
     () => ({
@@ -504,11 +513,12 @@ export const ThreadListRow = memo(function ThreadListRow(props: {
   );
   const handleMenuAction = useCallback(
     ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
+      if (nativeEvent.event === "fork") handleFork();
       if (nativeEvent.event === "archive") handleArchive();
       if (nativeEvent.event === "regenerate-title") handleRegenerateTitle();
       if (nativeEvent.event === "delete") handleDelete();
     },
-    [handleArchive, handleDelete, handleRegenerateTitle],
+    [handleArchive, handleDelete, handleFork, handleRegenerateTitle],
   );
 
   const statusPill = effectiveStatus ? (

@@ -71,6 +71,7 @@ import {
   DownloadIcon,
   EyeIcon,
   FileIcon,
+  GitForkIcon,
   GlobeIcon,
   HammerIcon,
   MessageCircleIcon,
@@ -165,6 +166,8 @@ interface TimelineRowSharedState {
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   activeThreadEnvironmentId: EnvironmentId;
   onRevertUserMessage: (messageId: MessageId) => void;
+  /** Null hides "Fork from here": the server or provider cannot fork threads. */
+  onForkFromTurn: ((turnId: TurnId) => void) | null;
   onUseArtifactTemplate: (template: CodexArtifactTemplate) => void;
   onImageExpand: (preview: ExpandedImagePreview) => void;
   onFileOpen: (attachment: ChatFileAttachment) => void;
@@ -246,6 +249,7 @@ interface MessagesTimelineProps {
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   revertTurnCountByUserMessageId: Map<MessageId, number>;
   onRevertUserMessage: (messageId: MessageId) => void;
+  onForkFromTurn?: ((turnId: TurnId) => void) | null;
   onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
   isRevertingCheckpoint: boolean;
   onImageExpand: (preview: ExpandedImagePreview) => void;
@@ -294,6 +298,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onOpenTurnDiff,
   revertTurnCountByUserMessageId,
   onRevertUserMessage,
+  onForkFromTurn = null,
   onUseArtifactTemplate = NOOP_USE_ARTIFACT_TEMPLATE,
   isRevertingCheckpoint,
   onImageExpand,
@@ -559,6 +564,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       skills,
       activeThreadEnvironmentId,
       onRevertUserMessage,
+      onForkFromTurn,
       onUseArtifactTemplate,
       onImageExpand,
       onFileOpen,
@@ -578,6 +584,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       skills,
       activeThreadEnvironmentId,
       onRevertUserMessage,
+      onForkFromTurn,
       onUseArtifactTemplate,
       onImageExpand,
       onFileOpen,
@@ -1282,6 +1289,9 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
         {row.showAssistantMeta ? (
           <div className="mt-1.5 flex items-center gap-2 text-xs tabular-nums opacity-0 transition-opacity duration-200 focus-within:opacity-100 group-hover/assistant:opacity-100">
             <AssistantCopyButton row={row} />
+            {ctx.onForkFromTurn !== null && row.message.turnId !== null && (
+              <ForkFromTurnButton turnId={row.message.turnId} />
+            )}
             {!row.message.streaming && (
               <Tooltip>
                 <TooltipTrigger
@@ -1298,6 +1308,36 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
         ) : null}
       </div>
     </>
+  );
+}
+
+/**
+ * "Fork from here" on a settled assistant reply: opens a new thread holding
+ * the conversation through this turn (FORK_FEATURES.md: Fork a thread). The
+ * row only renders once the turn has settled, so the fork point is stable.
+ */
+function ForkFromTurnButton({ turnId }: { turnId: TurnId }) {
+  const ctx = use(TimelineRowCtx);
+  const activity = use(TimelineRowActivityCtx);
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            disabled={activity.isRevertingCheckpoint || activity.isWorking}
+            onClick={() => ctx.onForkFromTurn?.(turnId)}
+            aria-label="Fork thread from here"
+          />
+        }
+      >
+        <GitForkIcon className="size-3" />
+      </TooltipTrigger>
+      <TooltipPopup side="top">Fork thread from here</TooltipPopup>
+    </Tooltip>
   );
 }
 

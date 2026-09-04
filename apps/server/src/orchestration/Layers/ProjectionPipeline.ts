@@ -1,9 +1,12 @@
 import {
   ApprovalRequestId,
   type ChatAttachment,
+  EventId,
+  MessageId,
   type OrchestrationEvent,
   type OrchestrationSessionStatus,
   ThreadId,
+  type TurnId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -34,6 +37,8 @@ import {
   ProjectionTurnRepository,
 } from "../../persistence/Services/ProjectionTurns.ts";
 import { ProjectionThreadRepository } from "../../persistence/Services/ProjectionThreads.ts";
+import { checkpointRefForThreadTurn } from "../../checkpointing/Utils.ts";
+import { forkedEntityId, resolveForkCutoff, type ForkCutoff } from "../threadFork.ts";
 import { ProjectionPendingApprovalRepositoryLive } from "../../persistence/Layers/ProjectionPendingApprovals.ts";
 import { ProjectionProjectRepositoryLive } from "../../persistence/Layers/ProjectionProjects.ts";
 import { ProjectionStateRepositoryLive } from "../../persistence/Layers/ProjectionState.ts";
@@ -222,19 +227,36 @@ function deriveHasActionableProposedPlan(input: {
   return latestPlan !== null && latestPlan.implementedAt === null;
 }
 
-function retainProjectionMessagesAfterRevert(
-  messages: ReadonlyArray<ProjectionThreadMessage>,
+/** Turns a revert to `turnCount` keeps: checkpointed turns at or before it. */
+function keptTurnsAfterRevert(
   turns: ReadonlyArray<ProjectionTurn>,
   turnCount: number,
-): ReadonlyArray<ProjectionThreadMessage> {
-  const retainedMessageIds = new Set<string>();
-  const retainedTurnIds = new Set<string>();
-  const keptTurns = turns.filter(
+): ReadonlyArray<ProjectionTurn> {
+  return turns.filter(
     (turn) =>
       turn.turnId !== null &&
       turn.checkpointTurnCount !== null &&
       turn.checkpointTurnCount <= turnCount,
   );
+}
+
+/**
+ * Messages to keep given the turns that survive: turn-linked messages of kept
+ * turns, system messages, and the earliest turnless prompts/replies needed to
+ * pad each role up to `turnCount`. Shared by revert (kept = checkpointed turns
+ * at or before the target) and fork (kept = turns through the fork turn).
+ */
+function maxIsoOrNull(left: string | null, right: string): string {
+  return left === null || right > left ? right : left;
+}
+
+function retainProjectionMessages(
+  messages: ReadonlyArray<ProjectionThreadMessage>,
+  keptTurns: ReadonlyArray<ProjectionTurn>,
+  turnCount: number,
+): ReadonlyArray<ProjectionThreadMessage> {
+  const retainedMessageIds = new Set<string>();
+  const retainedTurnIds = new Set<string>();
   for (const turn of keptTurns) {
     if (turn.turnId !== null) {
       retainedTurnIds.add(turn.turnId);
@@ -306,44 +328,54 @@ function retainProjectionMessagesAfterRevert(
   return messages.filter((message) => retainedMessageIds.has(message.messageId));
 }
 
-function retainProjectionActivitiesAfterRevert(
+function keptTurnIds(keptTurns: ReadonlyArray<ProjectionTurn>): ReadonlySet<string> {
+  return new Set(keptTurns.flatMap((turn) => (turn.turnId === null ? [] : [turn.turnId])));
+}
+
+function retainProjectionActivities(
   activities: ReadonlyArray<ProjectionThreadActivity>,
-  turns: ReadonlyArray<ProjectionTurn>,
-  turnCount: number,
+  keptTurns: ReadonlyArray<ProjectionTurn>,
 ): ReadonlyArray<ProjectionThreadActivity> {
-  const retainedTurnIds = new Set<string>(
-    turns
-      .filter(
-        (turn) =>
-          turn.turnId !== null &&
-          turn.checkpointTurnCount !== null &&
-          turn.checkpointTurnCount <= turnCount,
-      )
-      .flatMap((turn) => (turn.turnId === null ? [] : [turn.turnId])),
-  );
+  const retainedTurnIds = keptTurnIds(keptTurns);
   return activities.filter(
     (activity) => activity.turnId === null || retainedTurnIds.has(activity.turnId),
   );
 }
 
-function retainProjectionProposedPlansAfterRevert(
+function retainProjectionProposedPlans(
   proposedPlans: ReadonlyArray<ProjectionThreadProposedPlan>,
-  turns: ReadonlyArray<ProjectionTurn>,
-  turnCount: number,
+  keptTurns: ReadonlyArray<ProjectionTurn>,
 ): ReadonlyArray<ProjectionThreadProposedPlan> {
-  const retainedTurnIds = new Set<string>(
-    turns
-      .filter(
-        (turn) =>
-          turn.turnId !== null &&
-          turn.checkpointTurnCount !== null &&
-          turn.checkpointTurnCount <= turnCount,
-      )
-      .flatMap((turn) => (turn.turnId === null ? [] : [turn.turnId])),
-  );
+  const retainedTurnIds = keptTurnIds(keptTurns);
   return proposedPlans.filter(
     (proposedPlan) => proposedPlan.turnId === null || retainedTurnIds.has(proposedPlan.turnId),
   );
+}
+
+/**
+ * The slice of a source thread a fork inherits: its turns through the fork
+ * turn, in timeline order, plus the revert-style turn count used to pad
+ * turnless messages. Null when the fork turn is not a turn of the source.
+ */
+interface ForkSourceSlice {
+  readonly keptTurns: ReadonlyArray<ProjectionTurn>;
+  readonly cutoff: ForkCutoff;
+}
+
+function sliceForkSourceTurns(
+  sourceTurns: ReadonlyArray<ProjectionTurn>,
+  forkTurnId: TurnId,
+): ForkSourceSlice | null {
+  const cutoff = resolveForkCutoff(sourceTurns, forkTurnId);
+  if (cutoff === null) {
+    return null;
+  }
+  return {
+    cutoff,
+    keptTurns: sourceTurns.filter(
+      (turn) => turn.turnId !== null && cutoff.retainedTurnIds.has(turn.turnId),
+    ),
+  };
 }
 
 function collectThreadAttachmentRelativePaths(
@@ -500,6 +532,38 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
     const projectionTurnRepository = yield* ProjectionTurnRepository;
     const projectionPendingApprovalRepository = yield* ProjectionPendingApprovalRepository;
 
+    // Every projector copies its own rows for a fork from the source thread's
+    // projections, so replay from any per-projector cursor rebuilds the fork
+    // without the others having run first.
+    const loadForkSourceSlice = Effect.fn("loadForkSourceSlice")(function* (
+      forkedFrom: NonNullable<
+        Extract<OrchestrationEvent, { type: "thread.created" }>["payload"]["forkedFrom"]
+      >,
+    ) {
+      const sourceTurns = yield* projectionTurnRepository.listByThreadId({
+        threadId: forkedFrom.threadId,
+      });
+      return sliceForkSourceTurns(sourceTurns, forkedFrom.turnId);
+    });
+    const forkMessageId = (forkThreadId: ThreadId, messageId: MessageId | null) =>
+      messageId === null ? null : MessageId.make(forkedEntityId(forkThreadId, messageId));
+    const copyForkMessages = Effect.fn("copyForkMessages")(function* (
+      forkThreadId: ThreadId,
+      forkedFrom: { readonly threadId: ThreadId },
+      slice: ForkSourceSlice,
+    ) {
+      const sourceRows = yield* projectionThreadMessageRepository.listByThreadId({
+        threadId: forkedFrom.threadId,
+      });
+      return retainProjectionMessages(sourceRows, slice.keptTurns, slice.cutoff.turnCount).map(
+        (row) => ({
+          ...row,
+          messageId: MessageId.make(forkedEntityId(forkThreadId, row.messageId)),
+          threadId: forkThreadId,
+        }),
+      );
+    });
+
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const serverConfig = yield* ServerConfig;
@@ -650,6 +714,55 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             hasActionableProposedPlan: 0,
             deletedAt: null,
           });
+          if (event.payload.forkedFrom) {
+            // The other projectors may not have copied their rows yet (or may
+            // run later on replay), so derive the shell summary from the
+            // source rows the fork inherits rather than refreshing from the
+            // fork's own tables.
+            const slice = yield* loadForkSourceSlice(event.payload.forkedFrom);
+            if (slice === null) {
+              return;
+            }
+            const messages = yield* copyForkMessages(
+              event.payload.threadId,
+              event.payload.forkedFrom,
+              slice,
+            );
+            const [sourcePlans, sourceLifecycleActivities] = yield* Effect.all([
+              projectionThreadProposedPlanRepository.listByThreadId({
+                threadId: event.payload.forkedFrom.threadId,
+              }),
+              projectionThreadActivityRepository.listUserInputLifecycleByThreadId({
+                threadId: event.payload.forkedFrom.threadId,
+              }),
+            ]);
+            let latestUserMessageAt: string | null = null;
+            for (const message of messages) {
+              if (message.role === "user") {
+                latestUserMessageAt = maxIsoOrNull(latestUserMessageAt, message.createdAt);
+              }
+            }
+            const existingRow = yield* projectionThreadRepository.getById({
+              threadId: event.payload.threadId,
+            });
+            if (Option.isNone(existingRow)) {
+              return;
+            }
+            yield* projectionThreadRepository.upsert({
+              ...existingRow.value,
+              latestTurnId: event.payload.forkedFrom.turnId,
+              latestUserMessageAt,
+              pendingUserInputCount: derivePendingUserInputCountFromActivities(
+                retainProjectionActivities(sourceLifecycleActivities, slice.keptTurns),
+              ),
+              hasActionableProposedPlan: deriveHasActionableProposedPlan({
+                latestTurnId: event.payload.forkedFrom.turnId,
+                proposedPlans: retainProjectionProposedPlans(sourcePlans, slice.keptTurns),
+              })
+                ? 1
+                : 0,
+            });
+          }
           return;
 
         case "thread.archived": {
@@ -1019,11 +1132,27 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         // A draft retry re-creates a soft-deleted thread id. Every projector
         // drops its own rows for the old incarnation here so replay from any
         // per-projector cursor rebuilds the new thread without stale history.
-        case "thread.created":
+        case "thread.created": {
           yield* projectionThreadMessageRepository.deleteByThreadId({
             threadId: event.payload.threadId,
           });
+          if (!event.payload.forkedFrom) {
+            return;
+          }
+          const slice = yield* loadForkSourceSlice(event.payload.forkedFrom);
+          if (slice === null) {
+            return;
+          }
+          const rows = yield* copyForkMessages(
+            event.payload.threadId,
+            event.payload.forkedFrom,
+            slice,
+          );
+          yield* Effect.forEach(rows, projectionThreadMessageRepository.upsert, {
+            concurrency: 1,
+          }).pipe(Effect.asVoid);
           return;
+        }
 
         case "thread.message-sent": {
           if (event.payload.streaming) {
@@ -1086,9 +1215,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           const existingTurns = yield* projectionTurnRepository.listByThreadId({
             threadId: event.payload.threadId,
           });
-          const keptRows = retainProjectionMessagesAfterRevert(
+          const keptRows = retainProjectionMessages(
             existingRows,
-            existingTurns,
+            keptTurnsAfterRevert(existingTurns, event.payload.turnCount),
             event.payload.turnCount,
           );
           if (keptRows.length === existingRows.length) {
@@ -1117,11 +1246,33 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       "applyThreadProposedPlansProjection",
     )(function* (event, _attachmentSideEffects) {
       switch (event.type) {
-        case "thread.created":
+        case "thread.created": {
           yield* projectionThreadProposedPlanRepository.deleteByThreadId({
             threadId: event.payload.threadId,
           });
+          if (!event.payload.forkedFrom) {
+            return;
+          }
+          const slice = yield* loadForkSourceSlice(event.payload.forkedFrom);
+          if (slice === null) {
+            return;
+          }
+          const forkThreadId = event.payload.threadId;
+          const sourceRows = yield* projectionThreadProposedPlanRepository.listByThreadId({
+            threadId: event.payload.forkedFrom.threadId,
+          });
+          yield* Effect.forEach(
+            retainProjectionProposedPlans(sourceRows, slice.keptTurns),
+            (row) =>
+              projectionThreadProposedPlanRepository.upsert({
+                ...row,
+                planId: forkedEntityId(forkThreadId, row.planId),
+                threadId: forkThreadId,
+              }),
+            { concurrency: 1 },
+          ).pipe(Effect.asVoid);
           return;
+        }
 
         case "thread.proposed-plan-upserted":
           yield* projectionThreadProposedPlanRepository.upsert({
@@ -1147,10 +1298,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           const existingTurns = yield* projectionTurnRepository.listByThreadId({
             threadId: event.payload.threadId,
           });
-          const keptRows = retainProjectionProposedPlansAfterRevert(
+          const keptRows = retainProjectionProposedPlans(
             existingRows,
-            existingTurns,
-            event.payload.turnCount,
+            keptTurnsAfterRevert(existingTurns, event.payload.turnCount),
           );
           if (keptRows.length === existingRows.length) {
             return;
@@ -1174,11 +1324,33 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       "applyThreadActivitiesProjection",
     )(function* (event, _attachmentSideEffects) {
       switch (event.type) {
-        case "thread.created":
+        case "thread.created": {
           yield* projectionThreadActivityRepository.deleteByThreadId({
             threadId: event.payload.threadId,
           });
+          if (!event.payload.forkedFrom) {
+            return;
+          }
+          const slice = yield* loadForkSourceSlice(event.payload.forkedFrom);
+          if (slice === null) {
+            return;
+          }
+          const forkThreadId = event.payload.threadId;
+          const sourceRows = yield* projectionThreadActivityRepository.listByThreadId({
+            threadId: event.payload.forkedFrom.threadId,
+          });
+          yield* Effect.forEach(
+            retainProjectionActivities(sourceRows, slice.keptTurns),
+            (row) =>
+              projectionThreadActivityRepository.upsert({
+                ...row,
+                activityId: EventId.make(forkedEntityId(forkThreadId, row.activityId)),
+                threadId: forkThreadId,
+              }),
+            { concurrency: 1 },
+          ).pipe(Effect.asVoid);
           return;
+        }
 
         case "thread.activity-appended":
           yield* projectionThreadActivityRepository.upsert({
@@ -1206,10 +1378,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           const existingTurns = yield* projectionTurnRepository.listByThreadId({
             threadId: event.payload.threadId,
           });
-          const keptRows = retainProjectionActivitiesAfterRevert(
+          const keptRows = retainProjectionActivities(
             existingRows,
-            existingTurns,
-            event.payload.turnCount,
+            keptTurnsAfterRevert(existingTurns, event.payload.turnCount),
           );
           if (keptRows.length === existingRows.length) {
             return;
@@ -1256,11 +1427,42 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       "applyThreadTurnsProjection",
     )(function* (event, _attachmentSideEffects) {
       switch (event.type) {
-        case "thread.created":
+        case "thread.created": {
           yield* projectionTurnRepository.deleteByThreadId({
             threadId: event.payload.threadId,
           });
+          if (!event.payload.forkedFrom) {
+            return;
+          }
+          const slice = yield* loadForkSourceSlice(event.payload.forkedFrom);
+          if (slice === null) {
+            return;
+          }
+          const forkThreadId = event.payload.threadId;
+          // Turn ids are per-thread, so they carry over unchanged: Codex uses
+          // them as its own turn ids, and a fork of a fork must still be able
+          // to name them. Checkpoint refs move under the fork's namespace; the
+          // fork dispatcher copies the git refs to match.
+          yield* Effect.forEach(
+            slice.keptTurns,
+            (turn) =>
+              turn.turnId === null
+                ? Effect.void
+                : projectionTurnRepository.upsertByTurnId({
+                    ...turn,
+                    turnId: turn.turnId,
+                    threadId: forkThreadId,
+                    pendingMessageId: forkMessageId(forkThreadId, turn.pendingMessageId),
+                    assistantMessageId: forkMessageId(forkThreadId, turn.assistantMessageId),
+                    checkpointRef:
+                      turn.checkpointRef === null || turn.checkpointTurnCount === null
+                        ? turn.checkpointRef
+                        : checkpointRefForThreadTurn(forkThreadId, turn.checkpointTurnCount),
+                  }),
+            { concurrency: 1 },
+          ).pipe(Effect.asVoid);
           return;
+        }
 
         case "thread.turn-start-requested": {
           yield* projectionTurnRepository.replacePendingTurnStart({
@@ -1565,12 +1767,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           const existingTurns = yield* projectionTurnRepository.listByThreadId({
             threadId: event.payload.threadId,
           });
-          const keptTurns = existingTurns.filter(
-            (turn) =>
-              turn.turnId !== null &&
-              turn.checkpointTurnCount !== null &&
-              turn.checkpointTurnCount <= event.payload.turnCount,
-          );
+          const keptTurns = keptTurnsAfterRevert(existingTurns, event.payload.turnCount);
           yield* projectionTurnRepository.deleteByThreadId({
             threadId: event.payload.threadId,
           });

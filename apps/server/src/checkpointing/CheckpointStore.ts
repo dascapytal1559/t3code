@@ -46,6 +46,11 @@ export interface DeleteCheckpointRefsInput {
   readonly checkpointRefs: ReadonlyArray<CheckpointRef>;
 }
 
+export interface CopyCheckpointRefsInput {
+  readonly cwd: string;
+  readonly refs: ReadonlyArray<{ readonly from: CheckpointRef; readonly to: CheckpointRef }>;
+}
+
 /** Service tag for checkpoint persistence and restore operations. */
 export class CheckpointStore extends Context.Service<
   CheckpointStore,
@@ -92,6 +97,14 @@ export class CheckpointStore extends Context.Service<
      */
     readonly deleteCheckpointRefs: (
       input: DeleteCheckpointRefsInput,
+    ) => Effect.Effect<void, CheckpointStoreError>;
+
+    /**
+     * Point a thread's checkpoint refs at the commits another thread's refs
+     * name, so a forked thread can diff and revert its inherited turns.
+     */
+    readonly copyCheckpointRefs: (
+      input: CopyCheckpointRefsInput,
     ) => Effect.Effect<void, CheckpointStoreError>;
   }
 >()("t3/checkpointing/CheckpointStore") {}
@@ -157,6 +170,13 @@ export const make = Effect.gen(function* () {
     return yield* checkpoints.deleteCheckpointRefs(input);
   });
 
+  const copyCheckpointRefs: CheckpointStore["Service"]["copyCheckpointRefs"] = Effect.fn(
+    "copyCheckpointRefs",
+  )(function* (input) {
+    const checkpoints = yield* resolveCheckpoints("CheckpointStore.copyCheckpointRefs", input.cwd);
+    return yield* checkpoints.copyCheckpointRefs(input);
+  });
+
   return CheckpointStore.of({
     isGitRepository,
     captureCheckpoint,
@@ -164,6 +184,7 @@ export const make = Effect.gen(function* () {
     restoreCheckpoint,
     diffCheckpoints,
     deleteCheckpointRefs,
+    copyCheckpointRefs,
   });
 });
 

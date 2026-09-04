@@ -330,6 +330,32 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         command,
         threadId: command.threadId,
       });
+      if (command.forkedFrom) {
+        // The fork source must be settled at the fork turn: the provider
+        // fork primitives refuse in-progress turns, and copying a turn whose
+        // assistant message is still streaming would freeze a half message.
+        const source = yield* requireThread({
+          readModel,
+          command,
+          threadId: command.forkedFrom.threadId,
+        });
+        if (source.projectId !== command.projectId) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: `thread ${command.forkedFrom.threadId} belongs to another project and cannot be forked into project ${command.projectId}`,
+          });
+        }
+        const forkTurnRunning =
+          source.session?.activeTurnId === command.forkedFrom.turnId ||
+          (source.latestTurn?.turnId === command.forkedFrom.turnId &&
+            source.latestTurn.state === "running");
+        if (forkTurnRunning) {
+          return yield* new OrchestrationCommandInvariantError({
+            commandType: command.type,
+            detail: `turn ${command.forkedFrom.turnId} of thread ${command.forkedFrom.threadId} is still running and cannot be forked yet`,
+          });
+        }
+      }
       return {
         ...(yield* withEventBase({
           aggregateKind: "thread",
@@ -347,6 +373,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           interactionMode: command.interactionMode,
           branch: command.branch,
           worktreePath: command.worktreePath,
+          ...(command.forkedFrom ? { forkedFrom: command.forkedFrom } : {}),
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },

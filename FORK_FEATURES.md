@@ -408,6 +408,77 @@ Stop while running), `apps/mobile/src/state/thread-outbox.test.ts`
 (`holdUntilIdle` waits while the thread is busy; unmarked messages still
 steer).
 
+## Fork a thread
+
+Codex and Claude desktop let you branch a conversation; upstream T3 Code has
+only "New thread on branch" (a sibling with no history) and a destructive
+revert. The fork adds a real fork: a new thread that holds the source
+conversation through a chosen reply and continues it with the provider's own
+memory of that conversation, leaving the source untouched.
+
+Two entry points. "Fork thread from here" sits in the hover bar of every
+settled assistant reply and copies the conversation through that turn,
+inclusive. "Fork thread" in the thread action menu (sidebar row, chat header,
+and the mobile row menu) forks through the latest settled turn. Both are
+hidden on servers without the `threadFork` capability and on threads whose
+provider cannot fork natively (Cursor and Grok have no fork wired), and
+disabled while a turn is running. The fork inherits the source's project,
+model, runtime and interaction modes, branch, and worktree, is titled
+"<source title> (fork)", and opens as soon as its history lands.
+
+On the wire a fork is a `thread.create` with `forkedFrom: { threadId, turnId
+}`. The decider rejects sources in another project and forks through a
+running turn; the event keeps the provenance. Every projector copies its own
+rows from the source through the fork turn using the same retention rules as
+revert, so the fork holds exactly what the source would keep after reverting
+to that turn. Message, activity, and plan ids are re-minted deterministically
+from the fork's id (they are global primary keys), turn ids carry over
+unchanged (Codex uses them as its own), and checkpoint refs move under the
+fork's namespace with the git refs copied to match, so diff and revert work
+on inherited turns.
+
+Provider continuity is lazy and per adapter. The fork dispatcher asks the
+source's adapter for a seeded resume cursor and persists it on the fork's
+session binding; the fork's first message consumes it, so no provider process
+runs at fork time and a fork that never sends stays free. Codex seeds
+`{ threadId: <source>, forkLastTurnId }` and opens with `thread/fork`
+(inclusive, never falling back to a fresh thread). Claude seeds the source
+session id with `forkSession` and `resumeSessionAt`; to anchor older turns the
+adapter now records each completed turn's final assistant uuid in the cursor
+(`turnAnchors`), which also lets rollback point the resume anchor at the
+surviving turn instead of the newest message. Turns recorded before anchors
+existed can only be forked from the latest reply. OpenCode seeds the source
+session with the assistant ordinal and calls `session.fork` at that message.
+
+Implementation: `packages/contracts/src/orchestration.ts` (`ThreadForkSource`),
+`apps/server/src/orchestration/threadFork.ts` (cutoff and id rules),
+`decider.ts`, `projector.ts`, `Layers/ProjectionPipeline.ts` (per-projector
+copies), `Layers/ThreadFork.ts` (dispatch ordering, checkpoint ref copy),
+`provider/Services/ProviderAdapter.ts` (`conversationFork` capability,
+`forkThread`), `provider/Layers/{Codex,Claude,OpenCode}Adapter.ts`,
+`checkpointing/CheckpointStore.ts` and `vcs/GitVcsDriver.ts`
+(`copyCheckpointRefs`), `packages/client-runtime/src/state/thread-fork.ts`
+(client gating and title), `apps/web/src/hooks/useForkThread.ts`,
+`apps/web/src/components/chat/MessagesTimeline.tsx` (`ForkFromTurnButton`),
+`apps/web/src/components/threadActionMenu.logic.ts`, and
+`apps/mobile/src/features/home/useThreadListActions.ts` with the mobile row
+menus.
+
+Tests: `apps/server/src/orchestration/threadFork.fork.test.ts` (cutoff and
+deterministic ids), `decider.threadFork.fork.test.ts` (fork-point checks),
+`projector.threadFork.fork.test.ts` (command read model copy),
+`Layers/ProjectionPipeline.threadFork.fork.test.ts` (SQL projections, turn
+refs, shell summary), `apps/server/src/provider/Layers/CodexSessionRuntime.fork.test.ts`
+(`thread/fork` open path, no fallback), `ClaudeAdapter.fork.test.ts` (seed
+cursor and anchors), `OpenCodeAdapter.fork.test.ts` (seed cursor),
+`apps/server/src/environment/ServerEnvironment.fork.test.ts` (capability),
+`packages/client-runtime/src/state/thread-fork.fork.test.ts` (client gating),
+`apps/web/src/components/threadActionMenu.logic.fork.test.ts`, and
+`apps/mobile/src/features/threads/thread-fork-menu.fork.test.ts` (menu items).
+The end-to-end dispatch path (`Layers/ThreadFork.ts`) and the adapters'
+session-start consumption of the seeded cursors spawn real providers and are
+not unit-tested.
+
 ## Sync status
 
 Last synced on 2026-09-02 against upstream `d937e3075` (v0.0.38 and following

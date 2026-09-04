@@ -72,7 +72,18 @@ const OPENCODE_RESUME_VERSION = 1 as const;
  * rather than an error. Re-adopting the session id IS the resume mechanism —
  * OpenCode scopes a conversation's history by session id.
  */
-function parseOpenCodeResume(raw: unknown): { readonly sessionId: string } | undefined {
+interface OpenCodeResume {
+  readonly sessionId: string;
+  /**
+   * Seeded on a forked thread that has not started yet: `sessionId` names the
+   * source session and the next start forks it at its N-th assistant message
+   * (1-based, matching the T3 turn ordinal the way rollback does). Replaced by
+   * the fork's own session id once it starts. See FORK_FEATURES.md.
+   */
+  readonly forkAtAssistantOrdinal?: number;
+}
+
+function parseOpenCodeResume(raw: unknown): OpenCodeResume | undefined {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     return undefined;
   }
@@ -83,7 +94,31 @@ function parseOpenCodeResume(raw: unknown): { readonly sessionId: string } | und
   if (typeof record.sessionId !== "string" || record.sessionId.trim().length === 0) {
     return undefined;
   }
-  return { sessionId: record.sessionId.trim() };
+  const ordinal = record.forkAtAssistantOrdinal;
+  return {
+    sessionId: record.sessionId.trim(),
+    ...(typeof ordinal === "number" && Number.isInteger(ordinal) && ordinal >= 1
+      ? { forkAtAssistantOrdinal: ordinal }
+      : {}),
+  };
+}
+
+/** Cursor seeded onto a fork of an OpenCode thread. Pure. */
+export function buildOpenCodeForkResumeCursor(input: {
+  readonly sourceResumeCursor: unknown;
+  readonly turnOrdinal: number;
+}): { readonly resumeCursor: unknown } | { readonly issue: string } {
+  const source = parseOpenCodeResume(input.sourceResumeCursor);
+  if (!source) {
+    return { issue: "The source thread has no OpenCode session to fork." };
+  }
+  return {
+    resumeCursor: {
+      schemaVersion: OPENCODE_RESUME_VERSION,
+      sessionId: source.sessionId,
+      forkAtAssistantOrdinal: input.turnOrdinal,
+    },
+  };
 }
 
 /**
@@ -2380,7 +2415,8 @@ export function makeOpenCodeAdapter(
         const serverUrl = openCodeSettings.serverUrl;
         const serverPassword = openCodeSettings.serverPassword;
         const directory = input.cwd ?? serverConfig.cwd;
-        const resumeSessionId = parseOpenCodeResume(input.resumeCursor)?.sessionId;
+        const resume = parseOpenCodeResume(input.resumeCursor);
+        const resumeSessionId = resume?.sessionId;
         const existing = sessions.get(input.threadId);
         if (existing) {
           if (existing.session.status === "connecting" && !(yield* Ref.get(existing.stopped))) {
@@ -2430,6 +2466,46 @@ export function makeOpenCodeAdapter(
               // a confirmed not-found (start fresh); transport/auth/server
               // errors propagate instead of masking as a new empty session.
               const resolved = yield* Effect.gen(function* () {
+                // A seeded fork: copy the source session at the fork turn.
+                // Never falls back to a fresh session -- the thread already
+                // shows the copied history, and an empty session would lie.
+                if (resumeSessionId && resume?.forkAtAssistantOrdinal !== undefined) {
+                  const sourceMessages = yield* runOpenCodeSdk("session.messages", () =>
+                    client.session.messages({ sessionID: resumeSessionId }),
+                  );
+                  const assistantMessages = (sourceMessages.data ?? []).filter(
+                    (entry) => entry.info.role === "assistant",
+                  );
+                  const target = assistantMessages[resume.forkAtAssistantOrdinal - 1];
+                  if (!target) {
+                    return yield* new OpenCodeRuntimeError({
+                      operation: "session.fork",
+                      detail: `OpenCode session '${resumeSessionId}' has ${assistantMessages.length} assistant messages; cannot fork at message ${resume.forkAtAssistantOrdinal}.`,
+                    });
+                  }
+                  const forkedSession = yield* runOpenCodeSdk("session.fork", () =>
+                    client.session.fork({
+                      sessionID: resumeSessionId,
+                      messageID: target.info.id,
+                      directory,
+                    }),
+                  );
+                  const forked = forkedSession.data;
+                  if (!forked) {
+                    return yield* new OpenCodeRuntimeError({
+                      operation: "session.fork",
+                      detail: "OpenCode session.fork returned no session payload.",
+                    });
+                  }
+                  yield* runOpenCodeSdk("session.update", () =>
+                    client.session.update({
+                      sessionID: forked.id,
+                      permission: buildOpenCodePermissionRules(input.runtimeMode),
+                    }),
+                  );
+                  return { openCodeSession: forked, created: true };
+                }
+
                 const adopted = resumeSessionId
                   ? yield* runOpenCodeSdk("session.get", () =>
                       client.session.get({ sessionID: resumeSessionId }),
@@ -3261,11 +3337,27 @@ export function makeOpenCodeAdapter(
         );
       });
 
+    const forkThread: OpenCodeAdapterShape["forkThread"] = Effect.fn("forkThread")(
+      function* (input) {
+        const built = buildOpenCodeForkResumeCursor(input);
+        if ("issue" in built) {
+          return yield* new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "forkThread",
+            issue: built.issue,
+          });
+        }
+        return { resumeCursor: built.resumeCursor };
+      },
+    );
+
     return {
       provider: PROVIDER,
       capabilities: {
         sessionModelSwitch: "in-session",
+        conversationFork: "native",
       },
+      forkThread,
       startSession,
       sendTurn,
       interruptTurn,

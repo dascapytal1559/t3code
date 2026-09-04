@@ -86,6 +86,10 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   threadTitleRegeneration: Schema.optionalKey(Schema.Boolean),
   /** Server persists a pull request reference on thread.meta.update. */
   threadPullRequestLinking: Schema.optionalKey(Schema.Boolean),
+  /** Server understands forkedFrom on thread.create (copy a thread's history
+      through a turn and fork its provider session). Absent on older servers,
+      so clients hide the fork actions instead of sending the field. */
+  threadFork: Schema.optionalKey(Schema.Boolean),
   /** Server understands projects.listDirectory (per-directory explorer
       listing). Absent on older servers, so clients fall back to the capped
       projects.listEntries whole-tree listing instead of probing. */

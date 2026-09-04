@@ -1116,6 +1116,46 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     );
   });
 
+  const prepareForkedSessionBinding: ProviderServiceMethod<"prepareForkedSessionBinding"> =
+    Effect.fn("prepareForkedSessionBinding")(function* (input) {
+      const operation = "ProviderService.prepareForkedSessionBinding";
+      const binding = Option.getOrUndefined(yield* directory.getBinding(input.sourceThreadId));
+      if (!binding) {
+        return yield* toValidationError(
+          operation,
+          `Thread '${input.sourceThreadId}' has no provider session to fork.`,
+        );
+      }
+      const providerInstanceId = yield* requireBindingInstanceId(operation, binding);
+      const adapter = yield* registry.getByInstance(providerInstanceId);
+      if (adapter.capabilities.conversationFork !== "native" || adapter.forkThread === undefined) {
+        return yield* toValidationError(
+          operation,
+          `Provider '${adapter.provider}' cannot fork conversations.`,
+        );
+      }
+      const forked = yield* adapter.forkThread({
+        ...input,
+        sourceResumeCursor: binding.resumeCursor ?? null,
+      });
+      yield* Effect.annotateCurrentSpan({
+        "provider.kind": adapter.provider,
+        "provider.thread_id": input.targetThreadId,
+        "provider.fork.source_thread_id": input.sourceThreadId,
+        "provider.fork.turn_id": input.turnId,
+      });
+      return {
+        threadId: input.targetThreadId,
+        provider: binding.provider,
+        providerInstanceId,
+        ...(binding.adapterKey !== undefined ? { adapterKey: binding.adapterKey } : {}),
+        ...(binding.runtimeMode !== undefined ? { runtimeMode: binding.runtimeMode } : {}),
+        status: "stopped",
+        resumeCursor: forked.resumeCursor,
+        runtimePayload: binding.runtimePayload ?? null,
+      } satisfies ProviderSessionDirectory.ProviderRuntimeBinding;
+    });
+
   const uploadFeedback: ProviderServiceMethod<"uploadFeedback"> = Effect.fn("uploadFeedback")(
     function* (rawInput) {
       const input = yield* decodeInputOrValidationError({
@@ -1228,6 +1268,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     getCapabilities,
     getInstanceInfo,
     rollbackConversation,
+    prepareForkedSessionBinding,
     uploadFeedback,
     // Each access creates a fresh PubSub subscription so that multiple
     // consumers (ProviderRuntimeIngestion, CheckpointReactor, etc.) each

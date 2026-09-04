@@ -10,6 +10,7 @@ import { LegendList } from "@legendapp/list/react-native";
 import type { MenuAction } from "@react-native-menu/menu";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { providerSupportsThreadFork } from "@t3tools/client-runtime/state/thread-fork";
 import { sortPinnedThreadsByOrderKey } from "@t3tools/client-runtime/state/thread-sort";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LayoutChangeEvent } from "react-native";
@@ -159,6 +160,7 @@ function ThreadNavigationSidebarPane(
     unpinThread,
     movePinnedThread,
     regenerateThreadTitle,
+    forkThread,
   } = useThreadListActions();
   const threadListV2Enabled = useThreadListV2Enabled();
   const pendingTasks = usePendingNewTasks();
@@ -441,6 +443,15 @@ function ThreadNavigationSidebarPane(
     }
     return supported;
   }, [serverConfigs]);
+  const forkEnvironmentIds = useMemo(() => {
+    const supported = new Set<EnvironmentId>();
+    for (const [environmentId, config] of serverConfigs) {
+      if (config.environment.capabilities.threadFork === true) {
+        supported.add(environmentId);
+      }
+    }
+    return supported;
+  }, [serverConfigs]);
   // Canonical arranged pinned order for Move up/down flags — computed from
   // all shells so search/scope filtering never disables a valid move.
   const arrangedPinnedKeys = useMemo(() => {
@@ -707,6 +718,14 @@ function ThreadNavigationSidebarPane(
     },
     [props.onSelectThread],
   );
+  const handleForkThread = useCallback(
+    (thread: EnvironmentThreadShell) => {
+      void forkThread(thread).then((fork) => {
+        if (fork) handleSelectThread(fork);
+      });
+    },
+    [forkThread, handleSelectThread],
+  );
   const handleScrollBeginDrag = useCallback(() => {
     openSwipeableRef.current?.close();
   }, []);
@@ -870,6 +889,11 @@ function ThreadNavigationSidebarPane(
               onArchiveThread={archiveThread}
               onRegenerateThreadTitle={regenerateThreadTitle}
               titleRegenerationSupported={titleRegenerationEnvironmentIds.has(thread.environmentId)}
+              onForkThread={handleForkThread}
+              forkSupported={
+                forkEnvironmentIds.has(thread.environmentId) &&
+                providerSupportsThreadFork(thread.session?.providerName)
+              }
               settlementSupported={settlementEnvironmentIds.has(thread.environmentId)}
               onSettleThread={settleThread}
               snoozeSupported={snoozeEnvironmentIds.has(thread.environmentId)}
@@ -990,6 +1014,11 @@ function ThreadNavigationSidebarPane(
               onDeleteThread={confirmDeleteThread}
               onRegenerateThreadTitle={regenerateThreadTitle}
               titleRegenerationSupported={titleRegenerationEnvironmentIds.has(thread.environmentId)}
+              onForkThread={handleForkThread}
+              forkSupported={
+                forkEnvironmentIds.has(thread.environmentId) &&
+                providerSupportsThreadFork(thread.session?.providerName)
+              }
               onSelectThread={handleSelectThread}
               onSwipeableClose={handleSwipeableClose}
               onSwipeableWillOpen={handleSwipeableWillOpen}
@@ -1017,6 +1046,8 @@ function ThreadNavigationSidebarPane(
       handleSelectThread,
       handleSwipeableClose,
       handleSwipeableWillOpen,
+      forkEnvironmentIds,
+      handleForkThread,
       movePinnedThread,
       openPendingTask,
       pinReorderEnvironmentIds,

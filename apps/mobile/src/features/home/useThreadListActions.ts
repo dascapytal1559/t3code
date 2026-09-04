@@ -1,5 +1,12 @@
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import {
+  forkedThreadTitle,
+  providerSupportsThreadFork,
+  resolveThreadForkTurnId,
+} from "@t3tools/client-runtime/state/thread-fork";
 import { canSnooze } from "@t3tools/client-runtime/state/thread-settled";
+import { ThreadId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Haptics from "expo-haptics";
 import { useCallback, useRef } from "react";
@@ -55,6 +62,40 @@ function environmentSupportsTitleRegeneration(
     appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
       .threadTitleRegeneration === true
   );
+}
+
+/** Version skew plus provider gate for the row menu's "Fork thread" item. */
+export function threadForkSupported(thread: EnvironmentThreadShell): boolean {
+  return (
+    appAtomRegistry.get(environmentServerConfigsAtom).get(thread.environmentId)?.environment
+      .capabilities.threadFork === true && providerSupportsThreadFork(thread.session?.providerName)
+  );
+}
+
+const FORK_SHELL_WAIT_MS = 5_000;
+
+/** Resolve once the fork's shell lands in the list state, so navigation has a
+    real thread to open. Null on timeout: the fork still exists server-side. */
+function waitForThreadShell(
+  ref: ReturnType<typeof scopeThreadRef>,
+): Promise<EnvironmentThreadShell | null> {
+  const atom = environmentThreadShells.threadShellAtom(ref);
+  const existing = appAtomRegistry.get(atom);
+  if (existing) return Promise.resolve(existing);
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (shell: EnvironmentThreadShell | null) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timeoutId);
+      unsubscribe();
+      resolve(shell);
+    };
+    const unsubscribe = appAtomRegistry.subscribe(atom, (shell) => {
+      if (shell) finish(shell);
+    });
+    const timeoutId = setTimeout(() => finish(null), FORK_SHELL_WAIT_MS);
+  });
 }
 
 type ThreadListAction = "archive" | "unarchive" | "delete" | "settle" | "unsettle";
@@ -227,8 +268,12 @@ export function useThreadListActions(): {
     direction: "up" | "down",
   ) => Promise<boolean>;
   readonly regenerateThreadTitle: (thread: EnvironmentThreadShell) => Promise<boolean>;
+  /** Resolves with the fork's shell once it exists, or null when the fork
+      was refused or its shell did not arrive in time. */
+  readonly forkThread: (thread: EnvironmentThreadShell) => Promise<EnvironmentThreadShell | null>;
 } {
   const executeAction = useThreadActionExecutor();
+  const createMutation = useAtomCommand(threadEnvironment.create, { reportFailure: false });
   const snoozeMutation = useAtomCommand(threadEnvironment.snooze, { reportFailure: false });
   const unsnoozeMutation = useAtomCommand(threadEnvironment.unsnooze, { reportFailure: false });
   const pinMutation = useAtomCommand(threadEnvironment.pin, { reportFailure: false });
@@ -532,6 +577,55 @@ export function useThreadListActions(): {
 
   const confirmDeleteThread = useConfirmDeleteThread(executeAction);
 
+  const forkThread = useCallback(
+    async (thread: EnvironmentThreadShell): Promise<EnvironmentThreadShell | null> => {
+      if (!threadForkSupported(thread)) {
+        Alert.alert(
+          "Could not fork thread",
+          "This environment's server or the thread's provider does not support forking threads.",
+        );
+        return null;
+      }
+      const turnId = resolveThreadForkTurnId(thread);
+      if (turnId === null) {
+        Alert.alert("Nothing to fork yet", "Wait for the current reply to finish, then fork.");
+        return null;
+      }
+      selectionHaptic();
+      const forkThreadId = ThreadId.make(
+        globalThis.crypto?.randomUUID?.() ??
+          `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+      );
+      const result = await createMutation({
+        environmentId: thread.environmentId,
+        input: {
+          threadId: forkThreadId,
+          projectId: thread.projectId,
+          title: forkedThreadTitle(thread.title),
+          modelSelection: thread.modelSelection,
+          runtimeMode: thread.runtimeMode,
+          interactionMode: thread.interactionMode,
+          branch: thread.branch,
+          worktreePath: thread.worktreePath,
+          forkedFrom: { threadId: thread.id, turnId },
+          createdAt: new Date().toISOString(),
+        },
+      });
+      if (result._tag === "Failure") {
+        const error = Cause.squash(result.cause);
+        Alert.alert(
+          "Could not fork thread",
+          error instanceof Error && error.message.trim().length > 0
+            ? error.message
+            : "The thread could not be forked.",
+        );
+        return null;
+      }
+      return await waitForThreadShell(scopeThreadRef(thread.environmentId, forkThreadId));
+    },
+    [createMutation],
+  );
+
   return {
     archiveThread,
     confirmDeleteThread,
@@ -543,6 +637,7 @@ export function useThreadListActions(): {
     unpinThread,
     movePinnedThread,
     regenerateThreadTitle,
+    forkThread,
   };
 }
 

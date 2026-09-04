@@ -732,6 +732,17 @@ const ProjectDeleteCommand = Schema.Struct({
   force: Schema.optional(Schema.Boolean),
 });
 
+/**
+ * Provenance for a forked thread: the source thread and the last turn copied
+ * into the fork (inclusive). Present on thread.create / thread.created only
+ * when the thread started as a fork.
+ */
+export const ThreadForkSource = Schema.Struct({
+  threadId: ThreadId,
+  turnId: TurnId,
+});
+export type ThreadForkSource = typeof ThreadForkSource.Type;
+
 const ThreadCreateCommand = Schema.Struct({
   type: Schema.Literal("thread.create"),
   commandId: CommandId,
@@ -745,6 +756,10 @@ const ThreadCreateCommand = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  /** Copy the source thread's history through this turn and fork its
+      provider session. Servers without the threadFork capability reject the
+      unknown field, so clients gate on the capability before sending. */
+  forkedFrom: Schema.optional(ThreadForkSource),
   createdAt: IsoDateTime,
 });
 
@@ -1210,6 +1225,9 @@ export const ThreadCreatedPayload = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  /** Set when this thread was created as a fork; projectors copy the source
+      thread's history through the named turn. Absent on plain creates. */
+  forkedFrom: Schema.optional(ThreadForkSource),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });

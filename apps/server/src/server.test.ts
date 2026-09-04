@@ -109,6 +109,7 @@ import {
 } from "./orchestration/Errors.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ThreadDeletionReactor } from "./orchestration/Services/ThreadDeletionReactor.ts";
+import { ThreadFork } from "./orchestration/Services/ThreadFork.ts";
 import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
 import { PersistenceSqlError } from "./persistence/Errors.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
@@ -855,6 +856,9 @@ const buildAppUnderTest = (options?: {
             streamDomainEvents: Stream.empty,
             latestSequence: Effect.succeed(0),
             ...options?.layers?.orchestrationEngine,
+          }),
+          Layer.mock(ThreadFork)({
+            forkThread: () => Effect.die("ThreadFork not stubbed in this test"),
           }),
           Layer.mock(ThreadDeletionReactor)({
             start: () => Effect.void,

@@ -68,6 +68,13 @@ export function hasConfiguredMcpServer(appServerArgs: ReadonlyArray<string> | un
 
 export const CodexResumeCursorSchema = Schema.Struct({
   threadId: Schema.String,
+  /**
+   * Seeded on a forked thread that has not started yet: `threadId` names the
+   * source app-server thread and the next open forks it through this turn
+   * (inclusive) via `thread/fork`. Replaced by the fork's own thread id once
+   * the fork starts. See FORK_FEATURES.md: Fork a thread.
+   */
+  forkLastTurnId: Schema.optionalKey(Schema.String),
 });
 const CodexUserInputAnswerObject = Schema.Struct({
   answers: Schema.Array(Schema.String),
@@ -677,9 +684,10 @@ export function isRecoverableThreadResumeError(error: unknown): boolean {
 
 type CodexThreadOpenResponse =
   | CodexRpc.ClientRequestResponsesByMethod["thread/start"]
-  | CodexRpc.ClientRequestResponsesByMethod["thread/resume"];
+  | CodexRpc.ClientRequestResponsesByMethod["thread/resume"]
+  | CodexRpc.ClientRequestResponsesByMethod["thread/fork"];
 
-type CodexThreadOpenMethod = "thread/start" | "thread/resume";
+type CodexThreadOpenMethod = "thread/start" | "thread/resume" | "thread/fork";
 
 interface CodexThreadOpenClient {
   readonly request: <M extends CodexThreadOpenMethod>(
@@ -696,6 +704,8 @@ export const openCodexThread = (input: {
   readonly requestedModel: string | undefined;
   readonly serviceTier: CodexServiceTier | undefined;
   readonly resumeThreadId: string | undefined;
+  /** Fork the resume thread through this turn instead of resuming it. */
+  readonly forkLastTurnId?: string | undefined;
 }): Effect.Effect<CodexThreadOpenResponse, CodexErrors.CodexAppServerError> => {
   const resumeThreadId = input.resumeThreadId;
   const startParams = buildThreadStartParams({
@@ -707,6 +717,18 @@ export const openCodexThread = (input: {
 
   if (resumeThreadId === undefined) {
     return input.client.request("thread/start", startParams);
+  }
+
+  // A fork never falls back to a fresh thread: the user was promised the
+  // source conversation, and an empty thread wearing its history would lie.
+  if (input.forkLastTurnId !== undefined) {
+    const { ephemeral, ...forkStartParams } = startParams;
+    return input.client.request("thread/fork", {
+      threadId: resumeThreadId,
+      lastTurnId: input.forkLastTurnId,
+      ...forkStartParams,
+      ...(typeof ephemeral === "boolean" ? { ephemeral } : {}),
+    });
   }
 
   return input.client
@@ -2243,6 +2265,7 @@ export const makeCodexSessionRuntime = (
         requestedModel,
         serviceTier: options.serviceTier,
         resumeThreadId: readResumeCursorThreadId(options.resumeCursor),
+        forkLastTurnId: options.resumeCursor?.forkLastTurnId,
       });
 
       const providerThreadId = opened.thread.id;

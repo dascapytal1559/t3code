@@ -98,7 +98,9 @@ import {
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { useThreadActions } from "../hooks/useThreadActions";
+import { readThreadForkSupported, useForkThread } from "../hooks/useForkThread";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { resolveThreadForkTurnId } from "@t3tools/client-runtime/state/thread-fork";
 import { openCommandPalette } from "../commandPaletteBus";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { useClientSettings } from "../hooks/useSettings";
@@ -2319,6 +2321,9 @@ export default function Sidebar() {
   // a ref keeps it out of attemptSettle's dependency array.
   const handleNewThreadRef = useRef(newThreadContext.handleNewThread);
   handleNewThreadRef.current = newThreadContext.handleNewThread;
+  const forkThread = useForkThread();
+  const forkThreadRef = useRef(forkThread);
+  forkThreadRef.current = forkThread;
   const settledThreadKeys = useMemo(
     () =>
       new Set(
@@ -3127,11 +3132,13 @@ export default function Sidebar() {
               isRegeneratingTitle,
               isRunning:
                 thread.session?.status === "running" && thread.session.activeTurnId != null,
+              canFork: resolveThreadForkTurnId(thread) !== null,
               supports: {
                 settlement: supportsSettlement,
                 snooze: supportsSnooze,
                 pinning: supportsPinning,
                 titleRegeneration: supportsTitleRegeneration,
+                fork: readThreadForkSupported(threadRef),
               },
               snoozePresets,
             }),
@@ -3181,6 +3188,10 @@ export default function Sidebar() {
             }
             return;
           }
+          case "fork":
+            // The hook toasts its own failures; the menu just kicks it off.
+            await forkThreadRef.current(threadRef);
+            return;
           case "settle":
             attemptSettle(threadRef);
             return;

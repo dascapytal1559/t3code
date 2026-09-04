@@ -218,7 +218,9 @@ import {
 } from "../hooks/useSettings";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { useForkThread } from "../hooks/useForkThread";
 import { useThreadActions } from "../hooks/useThreadActions";
+import { providerSupportsThreadFork } from "@t3tools/client-runtime/state/thread-fork";
 import { resolveAppModelSelectionForInstance } from "../modelSelection";
 import { confirmTerminalClose, isTerminalCloseConfirmPending } from "../lib/terminalCloseConfirm";
 import { getTerminalFocusOwner } from "../lib/terminalFocus";
@@ -7144,6 +7146,22 @@ function ChatViewContent(props: ChatViewProps) {
   onRevertToTurnCountRef.current = onRevertToTurnCount;
   const timelineEntriesRef = useRef(timelineEntries);
   timelineEntriesRef.current = timelineEntries;
+  const forkThread = useForkThread();
+  const forkThreadRef = useRef(forkThread);
+  forkThreadRef.current = forkThread;
+  const activeThreadRefForFork = useRef(activeThreadRef);
+  activeThreadRefForFork.current = activeThreadRef;
+  // Stable so it never busts the timeline context; null hides the button
+  // when the server or the thread's provider cannot fork.
+  const onForkFromTurn = useCallback((turnId: TurnId) => {
+    const threadRef = activeThreadRefForFork.current;
+    if (threadRef === null) return;
+    void forkThreadRef.current(threadRef, { turnId });
+  }, []);
+  const threadForkSupported =
+    isServerThread &&
+    serverConfig?.environment.capabilities.threadFork === true &&
+    providerSupportsThreadFork(activeThread?.session?.providerName);
   const onRevertUserMessage = useCallback((messageId: MessageId) => {
     const targetTurnCount = revertTurnCountRef.current.get(messageId);
     if (typeof targetTurnCount !== "number") {
@@ -7429,6 +7447,7 @@ function ChatViewContent(props: ChatViewProps) {
                 onOpenTurnDiff={onOpenTurnDiff}
                 revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
                 onRevertUserMessage={onRevertUserMessage}
+                onForkFromTurn={threadForkSupported ? onForkFromTurn : null}
                 onUseArtifactTemplate={useArtifactTemplate}
                 isRevertingCheckpoint={isRevertingCheckpoint}
                 onImageExpand={onExpandTimelineImage}

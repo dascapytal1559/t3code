@@ -2006,16 +2006,39 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     ),
   );
 
+  // T3 turn ids are the app-server's own turn ids, so the fork cursor names
+  // the source thread plus the turn to fork through; the fork's first
+  // `startSession` turns that into a `thread/fork` call. A fork of a fork that
+  // never started still points at the original app-server thread, which is
+  // correct because the turn ids are shared along the chain.
+  const forkThread: CodexAdapterShape["forkThread"] = Effect.fn("forkThread")(function* (input) {
+    if (!isCodexResumeCursorSchema(input.sourceResumeCursor)) {
+      return yield* new ProviderAdapterValidationError({
+        provider: PROVIDER,
+        operation: "forkThread",
+        issue: `Thread '${input.sourceThreadId}' has no Codex thread to fork from.`,
+      });
+    }
+    return {
+      resumeCursor: {
+        threadId: input.sourceResumeCursor.threadId,
+        forkLastTurnId: input.turnId,
+      },
+    };
+  });
+
   return {
     provider: PROVIDER,
     capabilities: {
       sessionModelSwitch: "in-session",
+      conversationFork: "native",
     },
     startSession,
     sendTurn,
     interruptTurn,
     readThread,
     rollbackThread,
+    forkThread,
     uploadFeedback,
     respondToRequest,
     respondToUserInput,

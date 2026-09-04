@@ -1,5 +1,7 @@
 import type { OrchestrationEvent, OrchestrationReadModel, ThreadId } from "@t3tools/contracts";
 import {
+  EventId,
+  MessageId,
   OrchestrationCheckpointSummary,
   OrchestrationMessage,
   OrchestrationSession,
@@ -8,6 +10,7 @@ import {
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+import { checkpointRefForThreadTurn } from "../checkpointing/Utils.ts";
 import { toProjectorDecodeError, type OrchestrationProjectorDecodeError } from "./Errors.ts";
 import {
   MessageSentPayloadSchema,
@@ -34,6 +37,7 @@ import {
   ThreadSessionSetPayload,
   ThreadTurnDiffCompletedPayload,
 } from "./Schemas.ts";
+import { forkedEntityId, resolveForkCutoff } from "./threadFork.ts";
 
 type ThreadPatch = Partial<Omit<OrchestrationThread, "id" | "projectId">>;
 const MAX_THREAD_MESSAGES = 2_000;
@@ -185,6 +189,93 @@ function compareThreadActivities(
   return left.createdAt.localeCompare(right.createdAt) || left.id.localeCompare(right.id);
 }
 
+/**
+ * History a fork inherits from its source thread, keyed by the fork's own ids
+ * and checkpoint refs. Reuses the revert retention rules so the fork holds
+ * exactly what the source would keep after reverting to the fork turn.
+ * The command read model caps messages and checkpoints, so a fork turn older
+ * than the caps copies nothing here; the SQL projections are authoritative.
+ */
+function copyThreadHistoryForFork(
+  source: OrchestrationThread,
+  forkThreadId: ThreadId,
+  forkTurnId: OrchestrationThread["checkpoints"][number]["turnId"],
+): Pick<
+  OrchestrationThread,
+  "messages" | "activities" | "proposedPlans" | "checkpoints" | "latestTurn"
+> {
+  const empty = {
+    messages: [],
+    activities: [],
+    proposedPlans: [],
+    checkpoints: [],
+    latestTurn: null,
+  } as const;
+  const orderedCheckpoints = source.checkpoints.toSorted(
+    (left, right) => left.checkpointTurnCount - right.checkpointTurnCount,
+  );
+  const orderedTurns = orderedCheckpoints.some((checkpoint) => checkpoint.turnId === forkTurnId)
+    ? orderedCheckpoints
+    : [
+        ...new Set(source.messages.flatMap((message) => (message.turnId ? [message.turnId] : []))),
+      ].map((turnId) => ({ turnId, checkpointTurnCount: null }));
+  const cutoff = resolveForkCutoff(orderedTurns, forkTurnId);
+  if (cutoff === null) {
+    return empty;
+  }
+  const remapMessageId = (messageId: OrchestrationMessage["id"]) =>
+    MessageId.make(forkedEntityId(forkThreadId, messageId));
+  const checkpoints = orderedCheckpoints
+    .filter((checkpoint) => cutoff.retainedTurnIds.has(checkpoint.turnId))
+    .map((checkpoint) => ({
+      ...checkpoint,
+      checkpointRef: checkpointRefForThreadTurn(forkThreadId, checkpoint.checkpointTurnCount),
+      assistantMessageId:
+        checkpoint.assistantMessageId === null
+          ? null
+          : remapMessageId(checkpoint.assistantMessageId),
+    }))
+    .slice(-MAX_THREAD_CHECKPOINTS);
+  const messages = retainThreadMessagesAfterRevert(
+    source.messages,
+    cutoff.retainedTurnIds,
+    cutoff.turnCount,
+  )
+    .map((message) => ({ ...message, id: remapMessageId(message.id) }))
+    .slice(-MAX_THREAD_MESSAGES);
+  const activities = retainThreadActivitiesAfterRevert(
+    source.activities,
+    cutoff.retainedTurnIds,
+  ).map((activity) => ({
+    ...activity,
+    id: EventId.make(forkedEntityId(forkThreadId, activity.id)),
+  }));
+  const proposedPlans = retainThreadProposedPlansAfterRevert(
+    source.proposedPlans,
+    cutoff.retainedTurnIds,
+  ).map((plan) => ({ ...plan, id: forkedEntityId(forkThreadId, plan.id) }));
+  const forkCheckpoint = checkpoints.find((checkpoint) => checkpoint.turnId === forkTurnId);
+  const latestTurn: OrchestrationThread["latestTurn"] = forkCheckpoint
+    ? {
+        turnId: forkCheckpoint.turnId,
+        state: checkpointStatusToLatestTurnState(forkCheckpoint.status),
+        requestedAt: forkCheckpoint.completedAt,
+        startedAt: forkCheckpoint.completedAt,
+        completedAt: forkCheckpoint.completedAt,
+        assistantMessageId: forkCheckpoint.assistantMessageId,
+      }
+    : source.latestTurn?.turnId === forkTurnId
+      ? {
+          ...source.latestTurn,
+          assistantMessageId:
+            source.latestTurn.assistantMessageId === null
+              ? null
+              : remapMessageId(source.latestTurn.assistantMessageId),
+        }
+      : null;
+  return { messages, activities, proposedPlans, checkpoints, latestTurn };
+}
+
 export function createEmptyReadModel(nowIso: string): OrchestrationReadModel {
   return {
     snapshotSequence: 0,
@@ -286,7 +377,7 @@ export function projectEvent(
           event.type,
           "payload",
         );
-        const thread: OrchestrationThread = yield* decodeForEvent(
+        const createdThread: OrchestrationThread = yield* decodeForEvent(
           OrchestrationThread,
           {
             id: payload.threadId,
@@ -315,6 +406,20 @@ export function projectEvent(
           event.type,
           "thread",
         );
+        const forkSource = payload.forkedFrom
+          ? nextBase.threads.find((entry) => entry.id === payload.forkedFrom?.threadId)
+          : undefined;
+        const thread: OrchestrationThread =
+          payload.forkedFrom && forkSource
+            ? {
+                ...createdThread,
+                ...copyThreadHistoryForFork(
+                  forkSource,
+                  createdThread.id,
+                  payload.forkedFrom.turnId,
+                ),
+              }
+            : createdThread;
         const existing = nextBase.threads.find((entry) => entry.id === thread.id);
         return {
           ...nextBase,

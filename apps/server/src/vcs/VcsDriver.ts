@@ -38,8 +38,16 @@ export interface VcsDeleteCheckpointRefsInput {
   readonly checkpointRefs: ReadonlyArray<CheckpointRef>;
 }
 
+export interface VcsCopyCheckpointRefsInput {
+  readonly cwd: string;
+  /** Source refs that do not resolve are skipped rather than failing the copy. */
+  readonly refs: ReadonlyArray<{ readonly from: CheckpointRef; readonly to: CheckpointRef }>;
+}
+
 export interface VcsCheckpointOps {
   readonly captureCheckpoint: (input: VcsCaptureCheckpointInput) => Effect.Effect<void, VcsError>;
+  /** Point new checkpoint refs at the commits existing refs name. */
+  readonly copyCheckpointRefs: (input: VcsCopyCheckpointRefsInput) => Effect.Effect<void, VcsError>;
   readonly hasCheckpointRef: (
     input: Omit<VcsRestoreCheckpointInput, "fallbackToHead">,
   ) => Effect.Effect<boolean, VcsError>;
