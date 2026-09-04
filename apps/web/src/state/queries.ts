@@ -354,34 +354,6 @@ export function useComposerPathSearch(target: ComposerPathSearchTarget) {
   return useProjectPathSearch(target, COMPOSER_PATH_SEARCH_LIMIT);
 }
 
-interface ProviderContextSkillsTarget {
-  readonly environmentId: EnvironmentId | null;
-  readonly instanceId: ProviderInstanceId | null;
-  readonly cwd: string | null;
-}
-
-/**
- * The skills the selected provider instance would load for the thread's
- * workspace, from `server.listProviderSkills`. `skills` is `null` until
- * the first response lands — callers fall back to the provider snapshot's
- * baseline list. Fetched per (environment, instance, cwd); the server
- * serves cached inventories stale-while-revalidate.
- */
-export function useProviderContextSkills(target: ProviderContextSkillsTarget) {
-  const result = useEnvironmentQuery(
-    target.environmentId !== null && target.instanceId !== null
-      ? serverEnvironment.providerSkills({
-          environmentId: target.environmentId,
-          input: { instanceId: target.instanceId, cwd: target.cwd },
-        })
-      : null,
-  );
-  return {
-    skills: result.data?.skills ?? null,
-    isPending: result.isPending,
-  };
-}
-
 interface ProjectContentSearchTarget {
   readonly environmentId: EnvironmentId | null;
   readonly cwd: string | null;

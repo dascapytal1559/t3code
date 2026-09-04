@@ -19,6 +19,7 @@ import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
+import { PIERRE_TREE_UNSAFE_CSS, pierreTreeStyle } from "~/pierre-tree-theme";
 
 import { useServerConfigs } from "~/state/entities";
 
@@ -41,19 +42,10 @@ interface FileBrowserPanelProps {
   workspaceMutationId: string | null;
 }
 
-const TREE_UNSAFE_CSS = `
-  :host {
-    --trees-bg-override: transparent;
-    --trees-selected-bg-override: color-mix(in srgb, currentColor 12%, transparent);
-    --trees-hover-bg-override: color-mix(in srgb, currentColor 7%, transparent);
-    --trees-border-color-override: color-mix(in srgb, currentColor 14%, transparent);
-    --trees-font-family-override: var(--font-sans);
-    --trees-font-size-override: 12px;
-  }
-  button[data-type='item'] { border-radius: 5px; }
-  /* The tree right-aligns the decoration lane (flex: 1, justify flex-end);
-     pin it to hug the row name instead so the symlink arrow reads as part
-     of the label. */
+/* The tree right-aligns the decoration lane (flex: 1, justify flex-end);
+   pin it to hug the row name instead so the symlink arrow reads as part
+   of the label (FORK_FEATURES.md: Symlink-aware explorer and search). */
+const SYMLINK_DECORATION_UNSAFE_CSS = `
   div[data-item-section='decoration'] { opacity: 0.55; flex: 0 0 auto; justify-content: flex-start; transform: translateY(1px); }
 `;
 
@@ -290,7 +282,7 @@ export default function FileBrowserPanel({
           }
         : null,
     search: false,
-    unsafeCSS: TREE_UNSAFE_CSS,
+    unsafeCSS: PIERRE_TREE_UNSAFE_CSS + SYMLINK_DECORATION_UNSAFE_CSS,
   });
   const search = useFileTreeSearch(model);
   const lazyTree = useLazyFileTree({
@@ -525,10 +517,7 @@ export default function FileBrowserPanel({
           model={model}
           aria-label={`${projectName} files`}
           className="min-h-0 flex-1 overflow-hidden"
-          style={{
-            colorScheme: resolvedTheme,
-            ["--trees-fg-override" as string]: "var(--contrast-foreground)",
-          }}
+          style={pierreTreeStyle(resolvedTheme)}
         />
       )}
     </div>

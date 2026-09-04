@@ -376,25 +376,6 @@ export function useProjectEntriesQuery(
   return { ...query, isPending: query.isPending || isRescanning, refresh };
 }
 
-export function useProviderContextSkills(target: {
-  readonly environmentId: EnvironmentId | null;
-  readonly instanceId: ProviderInstanceId | null;
-  readonly cwd: string | null;
-}) {
-  const result = useEnvironmentQuery(
-    target.environmentId !== null && target.instanceId !== null
-      ? serverEnvironment.providerSkills({
-          environmentId: target.environmentId,
-          input: { instanceId: target.instanceId, cwd: target.cwd },
-        })
-      : null,
-  );
-  return {
-    skills: result.data?.skills ?? null,
-    isPending: result.isPending,
-  };
-}
-
 export function useCheckpointDiff(target: CheckpointDiffTarget) {
   const targets = useMemo(
     () => buildCheckpointDiffTargets(target),

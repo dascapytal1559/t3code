@@ -7,6 +7,7 @@
 - [Keyboard shortcuts](./user/keybindings.md)
 - [Organizing threads](./user/thread-sidebar.md)
 - [Review usage](./user/usage.md)
+- [Anonymous usage data](./user/telemetry.md)
 - [Customize a project icon](./user/project-settings.md)
 - [Browse project files](./user/file-explorer.md)
 - [Mobile appearance](./user/mobile-appearance.md)

@@ -29,33 +29,6 @@ either the fork code regressed, or the entry should have been retired and
 its `.fork.test.ts` files deleted with it. A feature without a **Tests:**
 paragraph is not done.
 
-## Workspace-aware skills
-
-Skill inventories are resolved per project. The server queries the selected
-provider instance with the active project's directory as its working directory
-instead of reusing one server-wide snapshot probed at startup. Projects with
-different repo-local or nested skill sets therefore see their own inventory in
-the `$` and `/` menus.
-
-Implementation: provider skill drivers under
-`apps/server/src/provider/Drivers/` and their provider layers. On mobile the
-cwd-scoped catalog is consumed by the shared composer menu hook
-(`apps/mobile/src/features/threads/use-composer-command-menu.ts` via
-`apps/mobile/src/state/use-provider-context-skills.ts`), which retains the
-last good answer so a probe refresh cannot blank an open picker; both thread
-composers and the new-task draft screen share it.
-
-Tests: `apps/server/src/provider/Services/ProviderSkillDiscovery.fork.test.ts`
-(per-cwd inventory cache: baseline fallback, stale-while-revalidate, last
-good answer on probe failure, coalescing, eviction). The driver probes spawn
-the real provider CLIs and the mobile picker hook is React Native glue;
-neither is unit-tested.
-
-The project and personal labels in the picker make the cwd-scoped inventory
-visible to the user:
-
-![Project-scoped and personal skills in the composer picker](./assets/fork-features/skills.png)
-
 ## Symlink-aware explorer and search
 
 The native workspace scanner (`@ff-labs/fff-node`) does not traverse symlinks.
@@ -148,7 +121,9 @@ workspace — while legacy servers keep upstream's full-tree toggle. Collapsing
 leaves nested expansion state intact, so re-expanding a folder restores the
 subtree the user had open. Upstream's workspace-mutation refresh (#8803) is
 disabled in lazy mode because the filesystem watcher already converges the
-tree after agent edits.
+tree after agent edits; the same gate applies to upstream's file-preview
+breadcrumbs menu (#8910), which still reads the legacy capped listing but no
+longer forces a full index rescan on every agent turn.
 
 Version skew: the server advertises the `workspaceDirectoryListing` capability;
 clients fall back to the legacy capped `listEntries` flow against servers that
@@ -206,26 +181,6 @@ invalidation path. A still image cannot demonstrate watcher-driven updates,
 but it does show the user-visible recovery control:
 
 ![File explorer with its refresh control](./assets/fork-features/live-refresh.png)
-
-## Deterministic web-client cache headers
-
-Upstream serves the bundled web client with no `Cache-Control`, leaving
-Chromium's heuristic cache to decide freshness — after a deploy, clients
-could serve the previous frontend for up to an hour depending on file ages
-(the "hit Cmd+R after relaunch" ritual). The static route now marks
-content-hashed `assets/*` responses `public, max-age=31536000, immutable`
-and everything else (`index.html`, the SPA fallback, root files)
-`no-cache`, so every load revalidates the entry point and a swapped build
-is picked up on the next reload, deterministically. Applies to all
-surfaces the server serves: the desktop renderer (whose `t3code://app`
-protocol proxies these headers through), local browsers, and remote
-clients.
-
-Implementation: `apps/server/src/http.ts` (`staticResponseCacheControl`).
-
-Tests: `apps/server/src/http.fork.test.ts`.
-
-This is HTTP cache behavior and has no distinct client UI state to capture.
 
 ## Tilde paths stay plain in chat
 
@@ -488,12 +443,14 @@ not unit-tested.
 
 ## Sync status
 
-Last synced on 2026-09-02 against upstream `d937e3075` (v0.0.38 and following
-nightlies). The pre-sync fork is preserved at
-`backup/upstream-test-drive-pre-sync-20260902` (`d4f79f8a9`). This sync adopted
-upstream's Claude last-block `$skill` dispatch, dropped the Grok `$`→`/`
-rewrite after confirming Grok does not block composer `$name` picks, moved
-the tilde-path skip into the shared inline-code candidate, and adapted the
-lazy explorer to upstream's incremental tree updates. The previous sync
-point is preserved at `backup/upstream-test-drive-pre-sync-20260901`
-(`fb5e3edd5`).
+Last synced on 2026-09-05 against upstream `5eab021a5` (v0.0.39 nightlies
+through 2026-09-04). The pre-sync fork is preserved at
+`backup/upstream-test-drive-pre-sync-20260905` (`63b7242d3`). This sync
+dropped the workspace-aware skills layer (upstream now scopes skills and
+slash commands per project through `snapshotForCwd` workspace snapshots)
+and the deterministic web-client cache headers (upstream's static route now
+sends the same `immutable` / `no-cache` split plus ETags), re-layered the
+queue button and fork button onto upstream's restructured composer and
+assistant-meta row, and gated upstream's new breadcrumbs mutation refresh
+in watcher mode. The previous sync point is preserved at
+`backup/upstream-test-drive-pre-sync-20260902` (`d4f79f8a9`).

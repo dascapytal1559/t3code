@@ -21,7 +21,7 @@ import {
 import { ReviewCommentContextSchema, type ReviewCommentContext } from "./reviewCommentContext";
 import { type ElementContextDraft } from "./lib/elementContext";
 import { type TerminalContextDraft } from "./lib/terminalContext";
-import { createDebouncedStorage, createMemoryStorage } from "./lib/storage";
+import { createDeferredStorage, createMemoryStorage } from "./lib/storage";
 import { randomUUID } from "./lib/utils";
 
 export const QUEUED_FOLLOW_UP_STORAGE_KEY = "t3code:queued-follow-ups:v1";
@@ -213,8 +213,9 @@ interface QueuedFollowUpStoreState {
   clearEnvironment: (environmentId: EnvironmentId) => void;
 }
 
-const queuedFollowUpStorage = createDebouncedStorage(
+const queuedFollowUpStorage = createDeferredStorage<string>(
   typeof localStorage !== "undefined" ? localStorage : createMemoryStorage(),
+  (value) => value,
   300,
 );
 
