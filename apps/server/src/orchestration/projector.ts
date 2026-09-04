@@ -202,14 +202,26 @@ function copyThreadHistoryForFork(
   forkTurnId: OrchestrationThread["checkpoints"][number]["turnId"],
 ): Pick<
   OrchestrationThread,
-  "messages" | "activities" | "proposedPlans" | "checkpoints" | "latestTurn"
+  "messages" | "activities" | "proposedPlans" | "checkpoints" | "latestTurn" | "session"
 > {
+  // Provider identity carries over so the fork routes to the same provider
+  // and instance; the fork has no live process, hence "stopped".
+  const session: OrchestrationThread["session"] = source.session
+    ? {
+        ...source.session,
+        threadId: forkThreadId,
+        status: "stopped",
+        activeTurnId: null,
+        lastError: null,
+      }
+    : null;
   const empty = {
     messages: [],
     activities: [],
     proposedPlans: [],
     checkpoints: [],
     latestTurn: null,
+    session,
   } as const;
   const orderedCheckpoints = source.checkpoints.toSorted(
     (left, right) => left.checkpointTurnCount - right.checkpointTurnCount,
@@ -273,7 +285,7 @@ function copyThreadHistoryForFork(
               : remapMessageId(source.latestTurn.assistantMessageId),
         }
       : null;
-  return { messages, activities, proposedPlans, checkpoints, latestTurn };
+  return { messages, activities, proposedPlans, checkpoints, latestTurn, session };
 }
 
 export function createEmptyReadModel(nowIso: string): OrchestrationReadModel {

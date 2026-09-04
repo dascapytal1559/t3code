@@ -96,7 +96,16 @@ function sourceThread(): OrchestrationThread {
     proposedPlans: [],
     activities: [activity("act-1", "t1", 1), activity("act-3", "t3", 3)],
     checkpoints: [checkpoint("t1", 1, "a1"), checkpoint("t2", 2, "a2"), checkpoint("t3", 3, "a3")],
-    session: null,
+    session: {
+      threadId: SOURCE,
+      status: "ready",
+      providerName: "claudeAgent",
+      providerInstanceId: ProviderInstanceId.make("claudeAgent_z"),
+      runtimeMode: "full-access",
+      activeTurnId: null,
+      lastError: null,
+      updatedAt: NOW,
+    },
   };
 }
 
@@ -154,6 +163,12 @@ it.layer(NodeServices.layer)("projector thread fork", (it) => {
         turnId: "t2",
         state: "completed",
         assistantMessageId: forkedEntityId(FORK, "a2"),
+      });
+      expect(fork!.session).toMatchObject({
+        threadId: FORK,
+        status: "stopped",
+        providerName: "claudeAgent",
+        providerInstanceId: "claudeAgent_z",
       });
       // The source is untouched.
       const source = next.threads.find((thread) => thread.id === SOURCE);

@@ -1406,6 +1406,27 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         yield* projectionThreadSessionRepository.deleteByThreadId({
           threadId: event.payload.threadId,
         });
+        if (!event.payload.forkedFrom) {
+          return;
+        }
+        // The fork inherits the source's provider identity (driver and
+        // instance) so clients lock the composer to the same provider before
+        // the fork's own session exists. "stopped" is how any settled thread's
+        // session reads once its process is gone; the fork has none yet.
+        const sourceSession = yield* projectionThreadSessionRepository.getByThreadId({
+          threadId: event.payload.forkedFrom.threadId,
+        });
+        if (Option.isNone(sourceSession)) {
+          return;
+        }
+        yield* projectionThreadSessionRepository.upsert({
+          ...sourceSession.value,
+          threadId: event.payload.threadId,
+          status: "stopped",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: event.occurredAt,
+        });
         return;
       }
       if (event.type !== "thread.session-set") {

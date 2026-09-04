@@ -151,6 +151,21 @@ it.layer(TestLayer)("OrchestrationProjectionPipeline thread fork", (it) => {
         }),
       );
       yield* appendAndProject(threadCreated(SOURCE));
+      yield* appendAndProject(
+        event("thread.session-set", at(1), {
+          threadId: SOURCE,
+          session: {
+            threadId: SOURCE,
+            status: "running",
+            providerName: "claudeAgent",
+            providerInstanceId: ProviderInstanceId.make("claudeAgent_z"),
+            runtimeMode: "full-access",
+            activeTurnId: TurnId.make("t3"),
+            lastError: null,
+            updatedAt: at(1),
+          },
+        }),
+      );
       // Three turns: user prompt (turnless), assistant reply, checkpoint.
       yield* appendAndProject(message("u1", "user", null, 2));
       yield* appendAndProject(message("a1", "assistant", "t1", 3));
@@ -234,6 +249,31 @@ it.layer(TestLayer)("OrchestrationProjectionPipeline thread fork", (it) => {
         WHERE thread_id = ${FORK}
       `;
       assert.deepEqual(threadRows, [{ latestTurnId: "t2", latestUserMessageAt: at(5) }]);
+
+      // The composer locks to the provider through the session identity, so
+      // the fork carries the source's driver and instance with no live process.
+      const sessionRows = yield* sql<{
+        readonly status: string;
+        readonly providerName: string | null;
+        readonly providerInstanceId: string | null;
+        readonly activeTurnId: string | null;
+      }>`
+        SELECT
+          status,
+          provider_name AS "providerName",
+          provider_instance_id AS "providerInstanceId",
+          active_turn_id AS "activeTurnId"
+        FROM projection_thread_sessions
+        WHERE thread_id = ${FORK}
+      `;
+      assert.deepEqual(sessionRows, [
+        {
+          status: "stopped",
+          providerName: "claudeAgent",
+          providerInstanceId: "claudeAgent_z",
+          activeTurnId: null,
+        },
+      ]);
 
       // The source keeps everything.
       const sourceCounts = yield* sql<{ readonly messages: number; readonly turns: number }>`
