@@ -33,8 +33,12 @@ paragraph is not done.
 
 Web and desktop render fenced `mermaid` blocks as diagrams in chat, Markdown
 file previews, and PR descriptions. Rendering runs locally in the client and
-loads Mermaid only when needed. Diagrams follow light/dark mode; wide diagrams
-scroll horizontally. The Source/Diagram toggle and existing Copy code action
+loads Mermaid only when needed. Flowcharts default to top-to-bottom; the
+direction toggle restores the original layout when preferred. This changes
+only the rendered flowchart header, preserving labels, subgraph directions,
+and the original source. Other diagram types keep their own layout rules.
+Diagrams follow light/dark mode; wide diagrams scroll horizontally.
+The Source/Diagram toggle and existing Copy code action
 keep the original text available. Streaming responses show source until the
 response finishes, and invalid or oversized diagrams fall back to source.
 Native mobile continues to show Mermaid source using its separate native
@@ -47,7 +51,9 @@ failure recovery, size limits, and hostile directives. SVG measurements are
 stubbed because jsdom has no layout engine; this is not a visual layout test.
 `apps/web/src/components/ChatMarkdown.mermaid.fork.test.ts` checks streaming,
 source/diagram switching, copying source, ordinary fences, error recovery, and
-stale async results after source/theme changes.
+stale async results after source/theme changes, and switching layout without
+changing copied source. `apps/web/src/lib/mermaidLayout.fork.test.ts` covers
+flowchart headers, frontmatter, comments, and preservation of other content.
 
 ## Symlink-aware explorer and search
 

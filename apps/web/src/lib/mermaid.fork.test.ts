@@ -2,6 +2,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 
 import { renderMermaid } from "./mermaid";
+import { verticalMermaidSource } from "./mermaidLayout";
 
 function svgDocument(image: string) {
   expect(image.startsWith("data:image/svg+xml;charset=utf-8,")).toBe(true);
@@ -61,6 +62,24 @@ describe("Mermaid rendering", () => {
     const darkStyle = svgDocument(dark).querySelector("style")!.textContent;
     expect(lightStyle).toContain("#ECECFF");
     expect(darkStyle).toContain("#1f2020");
+  });
+
+  it("lays out the vertical preference downward and preserves the original horizontal option", async () => {
+    const source = "flowchart LR\nVerticalStart --> VerticalEnd";
+    const vertical = svgDocument(await renderMermaid(verticalMermaidSource(source), "light"));
+    const horizontal = svgDocument(await renderMermaid(source, "light"));
+    const position = (svg: Document, name: string) => {
+      const transform = svg.querySelector(`.node[id*="-${name}-"]`)!.getAttribute("transform")!;
+      return transform.match(/-?\d+(?:\.\d+)?/g)!.map(Number);
+    };
+    const [startX, startY] = position(vertical, "VerticalStart");
+    const [endX, endY] = position(vertical, "VerticalEnd");
+    expect(endX).toBe(startX);
+    expect(endY).toBeGreaterThan(startY!);
+    const [originalStartX, originalStartY] = position(horizontal, "VerticalStart");
+    const [originalEndX, originalEndY] = position(horizontal, "VerticalEnd");
+    expect(originalEndX).toBeGreaterThan(originalStartX!);
+    expect(originalEndY).toBe(originalStartY);
   });
 
   it("cleans up parse failures and still renders the next diagram", async () => {

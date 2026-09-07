@@ -94,6 +94,7 @@ import { resolveProtocolRelativeMediaUrl } from "./media/mediaContent";
 import { CHAT_FILE_TAG_CHIP_CLASS_NAME, FileTagChipContent } from "./chat/FileTagChip";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 import { MermaidDiagram } from "./MermaidDiagram";
+import { verticalMermaidSource } from "../lib/mermaidLayout";
 import {
   revealInFileExplorerLabelForKind,
   revealInFileExplorerLabelForOs,
@@ -897,6 +898,8 @@ function MarkdownCodeBlock({
   children: ReactNode;
 }) {
   const isMermaid = language.toLowerCase() === "mermaid";
+  const verticalCode = isMermaid ? verticalMermaidSource(code) : code;
+  const [useOriginalDirection, setUseOriginalDirection] = useState(false);
   const [showSource, setShowSource] = useState(false);
   const [copied, setCopied] = useState(false);
   const [wrapped, setWrapped] = useState(readInitialWordWrapSetting);
@@ -957,6 +960,19 @@ function MarkdownCodeBlock({
           />
         </span>
         <span className="flex items-center gap-0.5" role="toolbar" aria-label="Code block actions">
+          {verticalCode !== code && !showSource && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              className="chat-markdown-chrome-action"
+              aria-label="Use original Mermaid direction"
+              aria-pressed={useOriginalDirection}
+              onClick={() => setUseOriginalDirection((value) => !value)}
+            >
+              {useOriginalDirection ? "Original direction" : "Top to bottom"}
+            </Button>
+          )}
           {isMermaid && (
             <Button
               type="button"
@@ -1008,7 +1024,12 @@ function MarkdownCodeBlock({
         </span>
       </div>
       {isMermaid && !showSource ? (
-        <MermaidDiagram code={code} theme={theme} isStreaming={isStreaming} fallback={children} />
+        <MermaidDiagram
+          code={useOriginalDirection ? code : verticalCode}
+          theme={theme}
+          isStreaming={isStreaming}
+          fallback={children}
+        />
       ) : (
         children
       )}

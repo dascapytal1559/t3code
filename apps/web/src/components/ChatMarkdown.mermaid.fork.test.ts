@@ -170,7 +170,7 @@ describe("Mermaid Markdown fences", () => {
     await act(async () => current.resolve("data:image/svg+xml,new-light"));
     await act(async () => old.resolve("data:image/svg+xml,old-dark"));
     expect(container.querySelector("img")?.src).toBe("data:image/svg+xml,new-light");
-    expect(render).toHaveBeenLastCalledWith("flowchart LR\nNew --> Diagram\n", "light");
+    expect(render).toHaveBeenLastCalledWith("flowchart TB\nNew --> Diagram\n", "light");
   });
 
   it("rerenders an unchanged diagram when only the theme changes", async () => {
@@ -184,6 +184,21 @@ describe("Mermaid Markdown fences", () => {
     expect(container.querySelector("img")).toBeNull();
     await act(async () => light.resolve("data:image/svg+xml,light"));
     expect(container.querySelector("img")?.src).toBe("data:image/svg+xml,light");
-    expect(render).toHaveBeenLastCalledWith("flowchart LR\nSame --> Diagram\n", "light");
+    expect(render).toHaveBeenLastCalledWith("flowchart TB\nSame --> Diagram\n", "light");
+  });
+
+  it("defaults to vertical flowcharts and lets the user restore the source direction", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    await update("flowchart LR\nStart --> Finish");
+    expect(render).toHaveBeenLastCalledWith("flowchart TB\nStart --> Finish\n", "dark");
+    await click("Use original Mermaid direction");
+    expect(render).toHaveBeenLastCalledWith("flowchart LR\nStart --> Finish\n", "dark");
+    await click("Use original Mermaid direction");
+    expect(render).toHaveBeenLastCalledWith("flowchart TB\nStart --> Finish\n", "dark");
+    await click("Copy code");
+    expect(writeText).toHaveBeenLastCalledWith("flowchart LR\nStart --> Finish\n");
+    await click("Show Mermaid source");
+    expect(container.querySelector("pre")?.textContent).toContain("flowchart LR");
   });
 });
