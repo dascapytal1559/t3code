@@ -10,7 +10,6 @@ import {
   checkpointRefForThreadTurn,
   resolveThreadWorkspaceCwd,
 } from "../../checkpointing/Utils.ts";
-import { isGitRepository } from "../../git/Utils.ts";
 import { ProjectionTurnRepository } from "../../persistence/Services/ProjectionTurns.ts";
 import { ProviderValidationError } from "../../provider/Errors.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
@@ -58,7 +57,7 @@ const make = Effect.gen(function* () {
       thread: source.value,
       projects: Option.isSome(project) ? [project.value] : [],
     });
-    if (cwd === undefined || !isGitRepository(cwd)) {
+    if (cwd === undefined || !(yield* checkpointStore.isGitRepository(cwd))) {
       return;
     }
     const refs = [

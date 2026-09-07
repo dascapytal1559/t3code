@@ -8,7 +8,12 @@
  * projectors and across event-log replays.
  */
 import * as NodeCrypto from "node:crypto";
-import type { ThreadId, TurnId } from "@t3tools/contracts";
+import {
+  isImportedAgentSessionMessageId,
+  MessageId,
+  type ThreadId,
+  type TurnId,
+} from "@t3tools/contracts";
 
 /**
  * Deterministic id for a row copied into a fork. Message and activity ids are
@@ -20,6 +25,12 @@ import type { ThreadId, TurnId } from "@t3tools/contracts";
 export function forkedEntityId(forkThreadId: ThreadId, sourceId: string): string {
   const hex = NodeCrypto.createHash("sha256").update(`${forkThreadId} ${sourceId}`).digest("hex");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
+/** Preserve imported history's revert boundary while giving its copy a unique id. */
+export function forkedMessageId(forkThreadId: ThreadId, sourceId: string): MessageId {
+  const id = forkedEntityId(forkThreadId, sourceId);
+  return MessageId.make(isImportedAgentSessionMessageId(sourceId) ? `import:${id}` : id);
 }
 
 export interface ForkCutoff {

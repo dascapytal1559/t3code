@@ -179,6 +179,32 @@ it.layer(NodeServices.layer)("projector thread fork", (it) => {
     }),
   );
 
+  it.effect("keeps imported history when reverting a fork", () =>
+    Effect.gen(function* () {
+      const source = sourceThread();
+      const imported = [
+        message("import:user", "user", null, NOW),
+        message("import:assistant", "assistant", null, NOW),
+      ];
+      const model = {
+        ...createEmptyReadModel(NOW),
+        threads: [{ ...source, messages: [...imported, ...source.messages] }],
+      };
+      const next = yield* projectEvent(model, forkEvent("t2"));
+      const fork = next.threads.find((thread) => thread.id === FORK)!;
+      expect(fork.messages).toHaveLength(6);
+      const reverted = yield* projectEvent(next, {
+        ...forkEvent("t2"),
+        type: "thread.reverted",
+        payload: { threadId: FORK, turnCount: 0 },
+      });
+      expect(
+        reverted.threads.find((thread) => thread.id === FORK)?.messages.map((entry) => entry.text),
+      ).toEqual(imported.map((entry) => entry.text));
+      expect(reverted.threads.find((thread) => thread.id === SOURCE)?.messages).toHaveLength(8);
+    }),
+  );
+
   it.effect("creates an empty thread when the fork turn is unknown to the read model", () =>
     Effect.gen(function* () {
       const model = { ...createEmptyReadModel(NOW), threads: [sourceThread()] };

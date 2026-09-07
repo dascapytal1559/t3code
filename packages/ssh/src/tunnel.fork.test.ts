@@ -18,8 +18,9 @@ describe("ssh tunnel scripts (fork)", () => {
     );
     assert.include(
       script,
-      "exec npx --yes --package '/home/ubuntu/.t3/fork/t3-fork.tgz' -- t3 \"$@\"",
+      "require_installed_t3_cli npx --yes --package '/home/ubuntu/.t3/fork/t3-fork.tgz'",
     );
+    assert.include(script, 'exec "$T3_CLI_PATH" "$@"');
   });
 
   it("turns npm audit and fund off for the package-spec install", () => {

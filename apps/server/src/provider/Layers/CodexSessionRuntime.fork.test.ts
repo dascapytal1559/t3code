@@ -42,6 +42,7 @@ describe("openCodexThread fork", () => {
     Effect.gen(function* () {
       const calls: Array<{ method: OpenMethod; payload: unknown }> = [];
       const client = {
+        raw: { request: () => Effect.die("Forking must not resume the source thread") },
         request: <M extends OpenMethod>(
           method: M,
           payload: CodexRpc.ClientRequestParamsByMethod[M],
@@ -81,6 +82,7 @@ describe("openCodexThread fork", () => {
     Effect.gen(function* () {
       const calls: Array<OpenMethod> = [];
       const client = {
+        raw: { request: () => Effect.die("Forking must not resume the source thread") },
         request: <M extends OpenMethod>(
           method: M,
           _payload: CodexRpc.ClientRequestParamsByMethod[M],

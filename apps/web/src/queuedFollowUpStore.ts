@@ -24,7 +24,7 @@ import { type TerminalContextDraft } from "./lib/terminalContext";
 import { createDeferredStorage, createMemoryStorage } from "./lib/storage";
 import { randomUUID } from "./lib/utils";
 
-export const QUEUED_FOLLOW_UP_STORAGE_KEY = "t3code:queued-follow-ups:v1";
+const QUEUED_FOLLOW_UP_STORAGE_KEY = "t3code:queued-follow-ups:v1";
 export const MAX_QUEUED_FOLLOW_UPS = 10;
 
 const PersistedTerminalContextDraft = Schema.Struct({

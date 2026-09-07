@@ -67,6 +67,7 @@ function makeDatabase() {
         removed.push(id);
         values.delete(id);
       }),
+    listCache: () => Effect.succeed([]),
     clearCacheKind: () => Effect.void,
     clearEnvironmentCache: () => Effect.void,
     clearAllCaches: Effect.void,

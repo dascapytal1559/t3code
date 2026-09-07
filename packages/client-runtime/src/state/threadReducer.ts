@@ -12,6 +12,8 @@ import type {
   OrchestrationThreadActivity,
   TurnId,
 } from "@t3tools/contracts";
+import { isImportedAgentSessionMessageId } from "@t3tools/contracts";
+import { compareDateTimeStrings } from "@t3tools/shared/dateTime";
 
 export type ThreadDetailReducerResult =
   | { readonly kind: "updated"; readonly thread: OrchestrationThread }
@@ -95,6 +97,7 @@ export function applyThreadDetailEvent(
           interactionMode: event.payload.interactionMode,
           branch: event.payload.branch,
           worktreePath: event.payload.worktreePath,
+          branchPullRequest: null,
           latestTurn: null,
           createdAt: event.payload.createdAt,
           updatedAt: event.payload.updatedAt,
@@ -102,6 +105,7 @@ export function applyThreadDetailEvent(
           settledOverride: null,
           settledAt: null,
           unsettledAt: null,
+          activeOrderKey: null,
           snoozedUntil: null,
           snoozedAt: null,
           deletedAt: null,
@@ -141,6 +145,7 @@ export function applyThreadDetailEvent(
           settledOverride: "settled",
           settledAt: event.payload.settledAt,
           unsettledAt: null,
+          activeOrderKey: null,
           updatedAt: event.payload.updatedAt,
         },
       };
@@ -237,6 +242,12 @@ export function applyThreadDetailEvent(
             : {}),
           ...(event.payload.linkedPullRequest !== undefined
             ? { linkedPullRequest: event.payload.linkedPullRequest }
+            : {}),
+          ...(event.payload.branchPullRequest !== undefined
+            ? { branchPullRequest: event.payload.branchPullRequest }
+            : {}),
+          ...(event.payload.activeOrderKey !== undefined
+            ? { activeOrderKey: event.payload.activeOrderKey }
             : {}),
           updatedAt: event.payload.updatedAt,
         },
@@ -521,7 +532,10 @@ export function applyThreadDetailEvent(
         (thread.latestTurn === null || thread.latestTurn.turnId === event.payload.turnId)
           ? {
               turnId: event.payload.turnId,
-              state: checkpointStatusToTurnState(event.payload.status),
+              state:
+                thread.latestTurn?.state === "interrupted"
+                  ? "interrupted"
+                  : checkpointStatusToTurnState(event.payload.status),
               requestedAt: thread.latestTurn?.requestedAt ?? event.payload.completedAt,
               startedAt: thread.latestTurn?.startedAt ?? event.payload.completedAt,
               completedAt: event.payload.completedAt,
@@ -754,12 +768,15 @@ function retainMessagesAfterRevert(
   // count-based rescue cannot work here — thread.messages is a paginated
   // window, so whole-thread turn counts overshoot it.
   return Arr.filter(messages, (message) => {
-    if (message.role === "system") {
+    if (message.role === "system" || isImportedAgentSessionMessageId(message.id)) {
       return true;
     }
     if (message.turnId !== null) {
       return retainedTurnIds.has(message.turnId);
     }
-    return lastRetainedCheckpointAt !== null && message.createdAt <= lastRetainedCheckpointAt;
+    return (
+      lastRetainedCheckpointAt !== null &&
+      compareDateTimeStrings(message.createdAt, lastRetainedCheckpointAt) <= 0
+    );
   });
 }

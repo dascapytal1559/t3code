@@ -279,7 +279,8 @@ when its OAuth refresh fails (typically because a concurrent Claude process
 rotated the shared credentials first): every later turn short-circuits to
 "Not logged in · Please run /login" even after credentials are valid again.
 Upstream keeps that process alive across turns, stranding the one thread while
-new threads work. The fork detects auth-error results, posts a runtime warning
+new threads work. The fork detects auth-error results or upstream’s structured authentication
+failure evidence, posts a runtime warning
 to the thread, and closes the runtime so the normal teardown path emits
 `session.exited`; the next message respawns the CLI, which reads the current
 credentials and resumes from the persisted cursor.
@@ -310,8 +311,10 @@ corrected by a fresh snapshot — it survived app restarts indefinitely.
 The fork fixes retention in the shared client reducer: turn-less messages
 (user prompts carry a null `turnId`) are kept only when they predate the last
 retained checkpoint's `completedAt`; anything newer sits past the revert cut.
-A count-based rescue is deliberately avoided because `thread.messages` is a
-paginated window while turn counts are whole-thread. The thread snapshot
+A count-based rescue, including upstream’s current fallback, is deliberately
+avoided because `thread.messages` is a paginated window while turn counts are
+whole-thread. Timestamp comparisons account for time-zone offsets. Imported
+conversation history stays intact when reverting, matching upstream’s boundary. The thread snapshot
 cache schema version is bumped (web v4, mobile v4) so caches written before
 the fix are discarded once and refetched. On the web client, the reverted
 prompt's text is placed back into the composer after a successful revert for
@@ -321,7 +324,8 @@ states that the prompt will be returned.
 
 Implementation: `packages/client-runtime/src/state/threadReducer.ts`
 (`retainMessagesAfterRevert`), `apps/web/src/components/ChatView.tsx`
-(`onRevertToTurnCount`, `onRevertUserMessage`),
+(`onRevertToTurnCount`, `onRevertTimelineTurn`),
+`apps/web/src/components/chat/MessagesTimeline.tsx` (`RevertUserMessageButton`),
 `apps/web/src/connection/storage.ts`, and
 `apps/mobile/src/connection/environment-cache-store.ts`.
 
@@ -394,7 +398,8 @@ running turn; the event keeps the provenance. Every projector copies its own
 rows from the source through the fork turn using the same retention rules as
 revert, so the fork holds exactly what the source would keep after reverting
 to that turn. Message, activity, and plan ids are re-minted deterministically
-from the fork's id (they are global primary keys), turn ids carry over
+from the fork's id (they are global primary keys). Imported message copies retain
+upstream’s `import:` marker so later reverts preserve that history. Turn ids carry over
 unchanged (Codex uses them as its own), and checkpoint refs move under the
 fork's namespace with the git refs copied to match, so diff and revert work
 on inherited turns.
@@ -430,7 +435,8 @@ Tests: `apps/server/src/orchestration/threadFork.fork.test.ts` (cutoff and
 deterministic ids), `decider.threadFork.fork.test.ts` (fork-point checks),
 `projector.threadFork.fork.test.ts` (command read model copy),
 `Layers/ProjectionPipeline.threadFork.fork.test.ts` (SQL projections, turn
-refs, shell summary), `apps/server/src/provider/Layers/CodexSessionRuntime.fork.test.ts`
+refs, shell summary; both projector tests cover imported history surviving a
+fork and subsequent revert), `apps/server/src/provider/Layers/CodexSessionRuntime.fork.test.ts`
 (`thread/fork` open path, no fallback), `ClaudeAdapter.fork.test.ts` (seed
 cursor and anchors), `OpenCodeAdapter.fork.test.ts` (seed cursor),
 `apps/server/src/environment/ServerEnvironment.fork.test.ts` (capability),
@@ -443,14 +449,12 @@ not unit-tested.
 
 ## Sync status
 
-Last synced on 2026-09-05 against upstream `5eab021a5` (v0.0.39 nightlies
-through 2026-09-04). The pre-sync fork is preserved at
-`backup/upstream-test-drive-pre-sync-20260905` (`63b7242d3`). This sync
-dropped the workspace-aware skills layer (upstream now scopes skills and
-slash commands per project through `snapshotForCwd` workspace snapshots)
-and the deterministic web-client cache headers (upstream's static route now
-sends the same `immutable` / `no-cache` split plus ETags), re-layered the
-queue button and fork button onto upstream's restructured composer and
-assistant-meta row, and gated upstream's new breadcrumbs mutation refresh
-in watcher mode. The previous sync point is preserved at
-`backup/upstream-test-drive-pre-sync-20260902` (`d4f79f8a9`).
+Last synced on 2026-09-07 against upstream `6abdf37a5`
+(v0.0.39-nightly.20260907.1325). The pre-sync fork is preserved at
+`backup/upstream-test-drive-pre-sync-20260907` (`9b3ad29b0`). All eleven
+features remain needed. This sync adapted queued sends and prompt restoration
+to the new composer and timeline, adopted direct CLI execution for SSH while
+keeping the package override, moved fork checkpoint copying onto upstream’s
+repository detector, and preserved imported-history markers through forks and
+reverts. Obsolete mobile tree helpers were removed. The previous sync point
+is preserved at `backup/upstream-test-drive-pre-sync-20260905` (`63b7242d3`).

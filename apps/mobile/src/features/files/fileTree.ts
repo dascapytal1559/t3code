@@ -131,18 +131,6 @@ export function buildFileTree(entries: ReadonlyArray<ProjectEntry>): ReadonlyArr
   return [...root.children.values()].sort(compareNodes).map(freezeNode);
 }
 
-export function countFileNodes(nodes: ReadonlyArray<FileTreeNode>): number {
-  let count = 0;
-  for (const node of nodes) {
-    if (node.kind === "file") {
-      count += 1;
-    } else {
-      count += countFileNodes(node.children);
-    }
-  }
-  return count;
-}
-
 function valueMatchesSearchToken(value: string, token: string, fuzzy: boolean): boolean {
   return (
     scoreQueryMatch({
@@ -208,17 +196,4 @@ export function flattenFileTree(input: {
     flattenNode(output, node, 0, input.expanded, searchTokens);
   }
   return output;
-}
-
-export function firstFilePath(nodes: ReadonlyArray<FileTreeNode>): string | null {
-  for (const node of nodes) {
-    if (node.kind === "file") {
-      return node.path;
-    }
-    const child = firstFilePath(node.children);
-    if (child !== null) {
-      return child;
-    }
-  }
-  return null;
 }

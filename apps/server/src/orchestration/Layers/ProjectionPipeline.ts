@@ -1,13 +1,15 @@
 import {
   ApprovalRequestId,
+  isImportedAgentSessionMessageId,
   type ChatAttachment,
   EventId,
-  MessageId,
+  type MessageId,
   type OrchestrationEvent,
   type OrchestrationSessionStatus,
   ThreadId,
   type TurnId,
 } from "@t3tools/contracts";
+import { compareDateTimeStrings } from "@t3tools/shared/dateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -38,7 +40,12 @@ import {
 } from "../../persistence/Services/ProjectionTurns.ts";
 import { ProjectionThreadRepository } from "../../persistence/Services/ProjectionThreads.ts";
 import { checkpointRefForThreadTurn } from "../../checkpointing/Utils.ts";
-import { forkedEntityId, resolveForkCutoff, type ForkCutoff } from "../threadFork.ts";
+import {
+  forkedEntityId,
+  forkedMessageId,
+  resolveForkCutoff,
+  type ForkCutoff,
+} from "../threadFork.ts";
 import { ProjectionPendingApprovalRepositoryLive } from "../../persistence/Layers/ProjectionPendingApprovals.ts";
 import { ProjectionProjectRepositoryLive } from "../../persistence/Layers/ProjectionProjects.ts";
 import { ProjectionStateRepositoryLive } from "../../persistence/Layers/ProjectionState.ts";
@@ -240,16 +247,16 @@ function keptTurnsAfterRevert(
   );
 }
 
+function maxIsoOrNull(left: string | null, right: string): string {
+  return left === null || right > left ? right : left;
+}
+
 /**
  * Messages to keep given the turns that survive: turn-linked messages of kept
  * turns, system messages, and the earliest turnless prompts/replies needed to
  * pad each role up to `turnCount`. Shared by revert (kept = checkpointed turns
  * at or before the target) and fork (kept = turns through the fork turn).
  */
-function maxIsoOrNull(left: string | null, right: string): string {
-  return left === null || right > left ? right : left;
-}
-
 function retainProjectionMessages(
   messages: ReadonlyArray<ProjectionThreadMessage>,
   keptTurns: ReadonlyArray<ProjectionTurn>,
@@ -270,7 +277,7 @@ function retainProjectionMessages(
   }
 
   for (const message of messages) {
-    if (message.role === "system") {
+    if (message.role === "system" || isImportedAgentSessionMessageId(message.messageId)) {
       retainedMessageIds.add(message.messageId);
       continue;
     }
@@ -280,7 +287,10 @@ function retainProjectionMessages(
   }
 
   const retainedUserCount = messages.filter(
-    (message) => message.role === "user" && retainedMessageIds.has(message.messageId),
+    (message) =>
+      message.role === "user" &&
+      !isImportedAgentSessionMessageId(message.messageId) &&
+      retainedMessageIds.has(message.messageId),
   ).length;
   const missingUserCount = Math.max(0, turnCount - retainedUserCount);
   if (missingUserCount > 0) {
@@ -293,7 +303,7 @@ function retainProjectionMessages(
       )
       .toSorted(
         (left, right) =>
-          left.createdAt.localeCompare(right.createdAt) ||
+          compareDateTimeStrings(left.createdAt, right.createdAt) ||
           left.messageId.localeCompare(right.messageId),
       )
       .slice(0, missingUserCount);
@@ -303,7 +313,10 @@ function retainProjectionMessages(
   }
 
   const retainedAssistantCount = messages.filter(
-    (message) => message.role === "assistant" && retainedMessageIds.has(message.messageId),
+    (message) =>
+      message.role === "assistant" &&
+      !isImportedAgentSessionMessageId(message.messageId) &&
+      retainedMessageIds.has(message.messageId),
   ).length;
   const missingAssistantCount = Math.max(0, turnCount - retainedAssistantCount);
   if (missingAssistantCount > 0) {
@@ -316,7 +329,7 @@ function retainProjectionMessages(
       )
       .toSorted(
         (left, right) =>
-          left.createdAt.localeCompare(right.createdAt) ||
+          compareDateTimeStrings(left.createdAt, right.createdAt) ||
           left.messageId.localeCompare(right.messageId),
       )
       .slice(0, missingAssistantCount);
@@ -546,7 +559,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       return sliceForkSourceTurns(sourceTurns, forkedFrom.turnId);
     });
     const forkMessageId = (forkThreadId: ThreadId, messageId: MessageId | null) =>
-      messageId === null ? null : MessageId.make(forkedEntityId(forkThreadId, messageId));
+      messageId === null ? null : forkedMessageId(forkThreadId, messageId);
     const copyForkMessages = Effect.fn("copyForkMessages")(function* (
       forkThreadId: ThreadId,
       forkedFrom: { readonly threadId: ThreadId },
@@ -558,7 +571,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       return retainProjectionMessages(sourceRows, slice.keptTurns, slice.cutoff.turnCount).map(
         (row) => ({
           ...row,
-          messageId: MessageId.make(forkedEntityId(forkThreadId, row.messageId)),
+          messageId: forkedMessageId(forkThreadId, row.messageId),
           threadId: forkThreadId,
         }),
       );
@@ -651,19 +664,18 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         return;
       }
 
-      const [latestUserMessageAt, proposedPlans, activities, pendingApprovalCount] =
+      const [latestUserMessageAt, hasActionableProposedPlan, activities, pendingApprovalCount] =
         yield* Effect.all([
           projectionThreadMessageRepository.getLatestUserMessageAt({ threadId }),
-          projectionThreadProposedPlanRepository.listByThreadId({ threadId }),
+          projectionThreadProposedPlanRepository.hasActionableByThreadId({
+            threadId,
+            latestTurnId: existingRow.value.latestTurnId,
+          }),
           projectionThreadActivityRepository.listUserInputLifecycleByThreadId({ threadId }),
           projectionPendingApprovalRepository.countPendingByThreadId({ threadId }),
         ]);
 
       const pendingUserInputCount = derivePendingUserInputCountFromActivities(activities);
-      const hasActionableProposedPlan = deriveHasActionableProposedPlan({
-        latestTurnId: existingRow.value.latestTurnId,
-        proposedPlans,
-      });
 
       yield* projectionThreadRepository.upsert({
         ...existingRow.value,
@@ -689,6 +701,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             branch: event.payload.branch,
             worktreePath: event.payload.worktreePath,
             linkedPullRequest: null,
+            branchPullRequest: null,
             latestTurnId: null,
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
@@ -700,6 +713,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             snoozedAt: null,
             pinnedAt: null,
             pinOrderKey: null,
+            activeOrderKey: null,
             titleRegenerationRequestId: null,
             titleRegenerationStartedAt: null,
             latestUserMessageAt: null,
@@ -803,6 +817,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             settledOverride: "settled",
             settledAt: event.payload.settledAt,
             unsettledAt: null,
+            activeOrderKey: null,
             updatedAt: event.payload.updatedAt,
           });
           return;
@@ -922,6 +937,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
             ...(event.payload.title !== undefined ? { title: event.payload.title } : {}),
+            ...(event.payload.activeOrderKey !== undefined
+              ? { activeOrderKey: event.payload.activeOrderKey }
+              : {}),
             ...(event.payload.titleRegeneration !== undefined
               ? {
                   titleRegenerationRequestId: event.payload.titleRegeneration?.requestId ?? null,
@@ -937,6 +955,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               : {}),
             ...(event.payload.linkedPullRequest !== undefined
               ? { linkedPullRequest: event.payload.linkedPullRequest }
+              : {}),
+            ...(event.payload.branchPullRequest !== undefined
+              ? { branchPullRequest: event.payload.branchPullRequest }
               : {}),
             updatedAt: event.payload.updatedAt,
           });
@@ -1016,6 +1037,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             updatedAt: event.occurredAt,
             latestUserMessageAt:
               event.payload.role === "user" &&
+              !isImportedAgentSessionMessageId(event.payload.messageId) &&
               (previousLatest === null || event.payload.createdAt > previousLatest)
                 ? event.payload.createdAt
                 : previousLatest,
@@ -1796,7 +1818,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             yield* projectionTurnRepository.upsertByTurnId({
               ...existingTurn.value,
               assistantMessageId: event.payload.assistantMessageId,
-              state: turnStillRunning ? existingTurn.value.state : nextState,
+              state:
+                turnStillRunning || existingTurn.value.state === "interrupted"
+                  ? existingTurn.value.state
+                  : nextState,
               checkpointTurnCount: event.payload.checkpointTurnCount,
               checkpointRef: event.payload.checkpointRef,
               checkpointStatus: event.payload.status,

@@ -285,4 +285,45 @@ it.layer(TestLayer)("OrchestrationProjectionPipeline thread fork", (it) => {
       assert.equal(CheckpointRef.make(checkpointRefForThreadTurn(SOURCE, 3)).length > 0, true);
     }),
   );
+  it.effect("keeps imported history when reverting a fork", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const appendAndProject = (input: EventInput) =>
+        eventStore
+          .append(input)
+          .pipe(Effect.flatMap((saved) => projectionPipeline.projectEvent(saved)));
+      yield* appendAndProject(
+        event("project.created", at(0), {
+          projectId: PROJECT,
+          title: "Project",
+          workspaceRoot: "/tmp/project-fork",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: at(0),
+          updatedAt: at(0),
+        }),
+      );
+      yield* appendAndProject(threadCreated(SOURCE));
+      yield* appendAndProject(message("import:user", "user", null, 1));
+      yield* appendAndProject(message("import:assistant", "assistant", null, 2));
+      yield* appendAndProject(message("u1", "user", null, 3));
+      yield* appendAndProject(message("a1", "assistant", "t1", 4));
+      yield* appendAndProject(turnCompleted("t1", 1, "a1", 5));
+      yield* appendAndProject(threadCreated(FORK, { threadId: SOURCE, turnId: TurnId.make("t1") }));
+      const before = yield* sql<{
+        readonly count: number;
+      }>`SELECT COUNT(*) AS count FROM projection_thread_messages WHERE thread_id = ${FORK}`;
+      assert.equal(before[0]?.count, 4);
+      yield* appendAndProject(event("thread.reverted", at(6), { threadId: FORK, turnCount: 0 }));
+      const messages = yield* sql<{
+        readonly text: string;
+      }>`SELECT text FROM projection_thread_messages WHERE thread_id = ${FORK} ORDER BY created_at ASC`;
+      assert.deepEqual(messages, [
+        { text: "user import:user" },
+        { text: "assistant import:assistant" },
+      ]);
+    }),
+  );
 });
