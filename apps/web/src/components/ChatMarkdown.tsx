@@ -93,6 +93,7 @@ import { MediaActions, type MediaActionSource } from "./media/MediaActions";
 import { resolveProtocolRelativeMediaUrl } from "./media/mediaContent";
 import { CHAT_FILE_TAG_CHIP_CLASS_NAME, FileTagChipContent } from "./chat/FileTagChip";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
+import { MermaidDiagram } from "./MermaidDiagram";
 import {
   revealInFileExplorerLabelForKind,
   revealInFileExplorerLabelForOs,
@@ -885,14 +886,18 @@ function MarkdownCodeBlock({
   language,
   fenceTitle,
   theme,
+  isStreaming,
   children,
 }: {
   code: string;
   language: string;
   fenceTitle: string | null;
   theme: "light" | "dark";
+  isStreaming: boolean;
   children: ReactNode;
 }) {
+  const isMermaid = language.toLowerCase() === "mermaid";
+  const [showSource, setShowSource] = useState(false);
   const [copied, setCopied] = useState(false);
   const [wrapped, setWrapped] = useState(readInitialWordWrapSetting);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -952,6 +957,19 @@ function MarkdownCodeBlock({
           />
         </span>
         <span className="flex items-center gap-0.5" role="toolbar" aria-label="Code block actions">
+          {isMermaid && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              className="chat-markdown-chrome-action"
+              aria-label={showSource ? "Show Mermaid diagram" : "Show Mermaid source"}
+              aria-pressed={showSource}
+              onClick={() => setShowSource((value) => !value)}
+            >
+              {showSource ? "Diagram" : "Source"}
+            </Button>
+          )}
           <Tooltip>
             <TooltipTrigger
               render={
@@ -989,7 +1007,11 @@ function MarkdownCodeBlock({
           </Tooltip>
         </span>
       </div>
-      {children}
+      {isMermaid && !showSource ? (
+        <MermaidDiagram code={code} theme={theme} isStreaming={isStreaming} fallback={children} />
+      ) : (
+        children
+      )}
     </div>
   );
 }
@@ -3078,6 +3100,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
         language={language}
         fenceTitle={fenceTitle}
         theme={resolvedTheme}
+        isStreaming={isStreaming}
       >
         <RenderErrorBoundary
           resetKeys={[codeBlock.code, language, diffThemeName, isStreaming]}
