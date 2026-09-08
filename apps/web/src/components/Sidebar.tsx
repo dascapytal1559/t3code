@@ -28,6 +28,7 @@ import {
 import {
   resolveEnvironmentMachineKind,
   type EnvironmentMachineKind,
+  type ProjectIconColor,
   type ProjectIconOverride,
   type ScopedThreadRef,
   type ThreadId,
@@ -116,6 +117,8 @@ import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
+import { assignRemoteEnvironmentColors } from "../environmentColors";
+import { projectIconColorClassName } from "../projectIconColors";
 import {
   readThreadShell,
   useAllEnvironmentProjectSnapshotsReady,
@@ -989,7 +992,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   isActive: boolean;
   openPullRequestsInRightPanel: boolean;
   jumpLabel: string | null;
-  isRemoteEnvironment: boolean;
+  /** Null for threads on this machine; every other environment is drawn as its
+      colored machine glyph beside the project name. */
+  remoteEnvironmentColor: ProjectIconColor | null;
   environmentLabel: string | null;
   environmentMachine: EnvironmentMachineKind;
   projectCwd: string | null;
@@ -1741,18 +1746,23 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   </span>
                 ) : null}
                 {/* The local environment is "this machine" and needs no marker;
-                    every other one is named beside the project so rows on
-                    different hosts read apart at a glance. */}
-                {props.isRemoteEnvironment ? (
-                  <span className="inline-flex shrink-0 items-center gap-1 text-sidebar-muted-foreground/70 text-xs">
+                    every other one shows its machine glyph in the color dealt
+                    to that host, so rows on different hosts read apart at a
+                    glance. The host's name is in the row tooltip. */}
+                {props.remoteEnvironmentColor ? (
+                  <span
+                    className={cn(
+                      "inline-flex shrink-0 items-center",
+                      projectIconColorClassName(props.remoteEnvironmentColor),
+                    )}
+                  >
                     <EnvironmentMachineIcon
                       aria-hidden
                       kind={props.environmentMachine}
                       className="size-3.5 shrink-0"
                     />
-                    <span className="sr-only">Remote host: </span>
-                    <span className="max-w-24 truncate">
-                      {props.environmentLabel?.trim() || "Remote"}
+                    <span className="sr-only">
+                      Remote host: {props.environmentLabel?.trim() || "Remote"}
                     </span>
                   </span>
                 ) : null}
@@ -2206,15 +2216,24 @@ export default function Sidebar() {
       ),
     [environments],
   );
-  const desktopLocalEnvironmentIds = useMemo(
-    () =>
-      new Set(
-        environments
-          .filter((environment) => isDesktopLocalConnectionTarget(environment.entry.target))
-          .map((environment) => environment.environmentId),
-      ),
-    [environments],
-  );
+  const remoteEnvironmentColorById = useMemo(() => {
+    const desktopLocalEnvironmentIds = new Set(
+      environments
+        .filter((environment) => isDesktopLocalConnectionTarget(environment.entry.target))
+        .map((environment) => environment.environmentId),
+    );
+    return assignRemoteEnvironmentColors(
+      environments
+        .map((environment) => environment.environmentId)
+        .filter((environmentId) =>
+          isRemoteThreadEnvironment({
+            threadEnvironmentId: environmentId,
+            primaryEnvironmentId,
+            desktopLocalEnvironmentIds,
+          }),
+        ),
+    );
+  }, [environments, primaryEnvironmentId]);
   const environmentMachineById = useMemo(
     () =>
       new Map(
@@ -4700,11 +4719,9 @@ export default function Sidebar() {
                             jumpLabel={
                               showThreadJumpHints ? (jumpLabelByKey.get(threadKey) ?? null) : null
                             }
-                            isRemoteEnvironment={isRemoteThreadEnvironment({
-                              threadEnvironmentId: thread.environmentId,
-                              primaryEnvironmentId,
-                              desktopLocalEnvironmentIds,
-                            })}
+                            remoteEnvironmentColor={
+                              remoteEnvironmentColorById.get(thread.environmentId) ?? null
+                            }
                             environmentLabel={
                               environmentLabelById.get(thread.environmentId) ?? null
                             }

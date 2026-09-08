@@ -58,18 +58,22 @@ flowchart headers, frontmatter, comments, and preservation of other content.
 ## Remote host on thread cards
 
 Upstream marks a sidebar thread row that lives on another machine with a
-machine glyph in the branch line. The fork names the host instead: the first
-line of the card shows the project name followed by the machine glyph and the
-environment label (for example `basedcapital` then `basedcapital-zdata`), so
-rows from different hosts read apart at a glance. Threads on the primary
-environment, and on any environment that is a desktop-local connection target
-(the same machine reached a second way), carry no marker. In the hosted app
-there is no primary environment, so every thread that is not desktop-local is
-named. The label truncates on its own, ahead of the project name, so a long
-host name never hides the project. Screen readers hear "Remote host:" before
-the label.
+gray machine glyph in the branch line. The fork deals every remote
+environment a color and draws its machine glyph in that color on the first
+line of the card, right after the project name, so rows from different hosts
+read apart at a glance without a label; the host's name stays in the row
+tooltip and is read to screen readers as "Remote host: <name>". Colors are
+dealt in catalog order from a fixed sequence of well-separated hues (blue,
+orange, emerald, violet, rose, ...), so a host keeps its color as long as the
+remotes added before it stay, and the sequence wraps after twelve hosts.
+Threads on the primary environment, and on any environment that is a
+desktop-local connection target (the same machine reached a second way),
+carry no marker. In the hosted app there is no primary environment, so every
+thread that is not desktop-local is marked.
 
-Tests: `apps/web/src/components/Sidebar.remoteHost.fork.test.ts` covers the
+Tests: `apps/web/src/environmentColors.fork.test.ts` covers dealing order,
+stability when a later host is removed, duplicate ids, and wrap-around.
+`apps/web/src/components/Sidebar.remoteHost.fork.test.ts` covers the
 primary, desktop-local, remote, and no-primary cases of
 `isRemoteThreadEnvironment`. The card markup itself has no render test; the
 web package has no React render harness.
