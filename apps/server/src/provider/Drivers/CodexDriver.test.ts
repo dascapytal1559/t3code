@@ -174,7 +174,7 @@ it.layer(testLayer)("CodexDriver", (it) => {
               "install",
               "-g",
               "--prefix",
-              installPath,
+              yield* fs.realPath(installPath),
               "--allow-scripts=@openai/codex",
               "@openai/codex@latest",
             ],
@@ -361,7 +361,11 @@ it.layer(testLayer)("CodexDriver", (it) => {
         if (fixture.nodeFirst) {
           expect(capabilities.update).toMatchObject({
             executable: "npm",
-            args: expect.arrayContaining(["--prefix", npmPrefix, "@openai/codex@latest"]),
+            args: expect.arrayContaining([
+              "--prefix",
+              yield* fs.realPath(npmPrefix),
+              "@openai/codex@latest",
+            ]),
           });
         } else {
           expect(capabilities.update).toBeNull();
