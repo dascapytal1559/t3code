@@ -1180,6 +1180,23 @@ const ThreadHistoryImportCommand = Schema.Struct({
   ).check(Schema.isNonEmpty()),
 });
 
+const ThreadHistorySyncCommand = Schema.Struct({
+  type: Schema.Literal("thread.history.sync"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  turnId: TurnId,
+  messages: Schema.Array(
+    Schema.Struct({
+      messageId: MessageId,
+      role: Schema.Literals(["user", "assistant"]),
+      text: Schema.String,
+      createdAt: IsoDateTime,
+    }),
+  ),
+  activity: OrchestrationThreadActivity,
+  createdAt: IsoDateTime,
+});
+
 const ThreadProposedPlanUpsertCommand = Schema.Struct({
   type: Schema.Literal("thread.proposed-plan.upsert"),
   commandId: CommandId,
@@ -1249,6 +1266,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadMessageAssistantDeltaCommand,
   ThreadMessageAssistantCompleteCommand,
   ThreadHistoryImportCommand,
+  ThreadHistorySyncCommand,
   ThreadProposedPlanUpsertCommand,
   ThreadTurnDiffCompleteCommand,
   ThreadActivityAppendCommand,

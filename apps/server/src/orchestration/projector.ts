@@ -717,7 +717,11 @@ export function projectEvent(
                 : entry,
             )
           : [...thread.messages, message];
-        const cappedMessages = messages.slice(-MAX_THREAD_MESSAGES);
+        const orderedMessages =
+          event.metadata.historyImport === true
+            ? [...messages].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+            : messages;
+        const cappedMessages = orderedMessages.slice(-MAX_THREAD_MESSAGES);
 
         return {
           ...nextBase,

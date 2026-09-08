@@ -10,8 +10,8 @@
  * Each call to `create()` captures the `codexConfig` argument in closures
  * owned by the returned instance. Two instances created with different
  * `homePath`s (e.g. `codex_personal` + `codex_work`) therefore run with
- * fully independent Codex app-server processes and `CODEX_HOME`
- * environments — no shared mutable state.
+ * independent Codex app-server processes and `CODEX_HOME` environments. When
+ * `desktopLauncherPath` is set, they instead attach to the desktop-owned backend.
  *
  * Resource lifecycle: `create()` runs in a scope handed in by the registry.
  * Closing that scope releases the adapter's child processes, the managed
@@ -134,7 +134,22 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
       const serverSettings = yield* ServerSettingsService;
       const eventLoggers = yield* ProviderEventLoggers;
       const modelManifest = yield* ModelManifest.ModelManifest;
-      const processEnv = mergeProviderInstanceEnvironment(environment);
+      const sharedDesktop = config.desktopLauncherPath.length > 0;
+      if (
+        sharedDesktop &&
+        (config.shadowHomePath || config.launchArgs || (environment?.length ?? 0) > 0)
+      ) {
+        return yield* new ProviderDriverError({
+          driver: DRIVER_KIND,
+          instanceId,
+          detail:
+            "Shared Codex uses the desktop account and launch settings. Remove the shadow home, custom launch arguments and provider environment overrides.",
+        });
+      }
+      const processEnv = {
+        ...mergeProviderInstanceEnvironment(environment),
+        ...(sharedDesktop ? { T3_CODEX_SHARED_CLIENT: "1", T3_CODEX_SHARED_AUTOSTART: "0" } : {}),
+      };
       const homeLayout = yield* resolveCodexHomeLayout(config);
       const continuationIdentity = codexContinuationIdentity(homeLayout);
       const stampIdentity = withInstanceIdentity({
@@ -158,7 +173,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
       const effectiveConfig = {
         ...config,
         enabled,
-        binaryPath: expandHomePath(config.binaryPath),
+        binaryPath: expandHomePath(sharedDesktop ? config.desktopLauncherPath : config.binaryPath),
         homePath: homeLayout.effectiveHomePath ?? "",
       } satisfies CodexSettings;
       const resolveMaintenance = yield* makeCachedProviderMaintenanceResolution(
@@ -225,7 +240,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
           resolveMaintenance().pipe(
             Effect.flatMap((maintenanceCapabilities) =>
               enrichProviderSnapshotWithVersionAdvisory(snapshot, maintenanceCapabilities, {
-                enableProviderUpdateChecks: settings.enableProviderUpdateChecks,
+                enableProviderUpdateChecks: !sharedDesktop && settings.enableProviderUpdateChecks,
               }),
             ),
             Effect.provideService(HttpClient.HttpClient, httpClient),

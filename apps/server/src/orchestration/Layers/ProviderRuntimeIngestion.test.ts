@@ -401,6 +401,78 @@ describe("ProviderRuntimeIngestion", () => {
     };
   }
 
+  it("fork: imports completed shared history once without inventing checkpoints or replacing local messages", async () => {
+    const harness = await createHarness();
+    const threadId = ThreadId.make("thread-1");
+    await harness.dispatch({
+      type: "thread.turn.start",
+      commandId: CommandId.make("local-pending"),
+      threadId,
+      message: {
+        messageId: MessageId.make("local-message"),
+        role: "user",
+        text: "Continue here",
+        attachments: [],
+      },
+      interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+      runtimeMode: "approval-required",
+      createdAt: "2026-01-01T00:00:10.000Z",
+    });
+    const event: ProviderRuntimeEvent = {
+      type: "thread.history.refreshed",
+      eventId: EventId.make("history-1"),
+      provider: ProviderDriverKind.make("codex"),
+      threadId,
+      createdAt: "2026-01-01T00:00:11.000Z",
+      payload: {
+        nativeThreadId: "native-shared",
+        turns: [
+          {
+            id: "desktop-turn",
+            status: "completed",
+            startedAt: 1767225601,
+            items: [
+              {
+                id: "user-native",
+                type: "userMessage",
+                content: [{ type: "text", text: "Desktop question" }],
+              },
+              {
+                id: "shell-native",
+                type: "commandExecution",
+                command: "pwd",
+                aggregatedOutput: "/tmp/project",
+                exitCode: 0,
+              },
+              { id: "assistant-native", type: "agentMessage", text: "Desktop answer" },
+            ],
+          },
+        ],
+      },
+    };
+    await harness.emitAndDrain([event]);
+    const first = (await harness.readModel()).threads[0]!;
+    await harness.emitAndDrain([{ ...event, eventId: EventId.make("history-after-reconnect") }]);
+    const second = (await harness.readModel()).threads[0]!;
+    expect(second.messages.map((message) => message.text)).toEqual([
+      "Desktop question",
+      "Desktop answer",
+      "Continue here",
+    ]);
+    expect(second.messages).toEqual(first.messages);
+    expect(
+      second.activities.filter((activity) => activity.kind === "shared.conversation.turn"),
+    ).toHaveLength(1);
+    expect(
+      second.activities.find((activity) => activity.kind === "shared.conversation.turn")?.payload,
+    ).toEqual({ nativeThreadId: "native-shared", ...event.payload.turns[0] });
+    expect(second.checkpoints).toEqual(first.checkpoints);
+    expect(second.latestTurn).toEqual(first.latestTurn);
+    expect(second.messages.find((message) => message.id === "local-message")?.text).toBe(
+      "Continue here",
+    );
+  });
+
   it("maps turn started/completed events into thread session updates", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";

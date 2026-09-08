@@ -56,6 +56,33 @@ const noSpawn = ChildProcessSpawner.make(() =>
 );
 
 it.layer(testLayer)("CodexDriver", (it) => {
+  it.effect(
+    "fork: rejects account overlays and custom startup settings in shared desktop mode",
+    () =>
+      Effect.gen(function* () {
+        for (const override of [
+          { shadowHomePath: "/must-not-materialize" },
+          { launchArgs: "-c model=custom" },
+        ]) {
+          const error = yield* CodexDriver.create({
+            instanceId: ProviderInstanceId.make("shared"),
+            displayName: "Shared Codex",
+            enabled: false,
+            environment: [],
+            config: {
+              ...CodexDriver.defaultConfig(),
+              desktopLauncherPath: "/explicit/shared-launcher",
+              ...override,
+            },
+          }).pipe(Effect.flip);
+          expect(error.detail).toContain("Remove the shadow home");
+        }
+      }).pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn),
+        Effect.scoped,
+      ),
+  );
+
   it.effect.skipIf(windowsHost)(
     "runs the standalone updater against the shared home, not the shadow home",
     () =>

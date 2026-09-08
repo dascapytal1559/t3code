@@ -8,6 +8,7 @@
  * @module CodexAdapterLive
  */
 import {
+  SharedThreadHistory,
   EventId,
   type CanonicalItemType,
   type CanonicalRequestType,
@@ -47,6 +48,7 @@ import * as EffectCodexSchema from "effect-codex-app-server/schema";
 
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { getCodexServiceTierOptionValue } from "../../codexModelOptions.ts";
+import * as McpSessionRegistry from "../../mcp/McpSessionRegistry.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 
 import {
@@ -1296,6 +1298,18 @@ function mapToRuntimeEvents(
   event: ProviderEvent,
   canonicalThreadId: ThreadId,
 ): ReadonlyArray<ProviderRuntimeEvent> {
+  if (event.kind === "notification" && event.method === "shared/history") {
+    const history = readPayload(SharedThreadHistory, event.payload);
+    return history
+      ? [
+          {
+            ...runtimeEventBase(event, canonicalThreadId),
+            type: "thread.history.refreshed",
+            payload: history,
+          },
+        ]
+      : [];
+  }
   if (event.kind === "notification" && event.method.startsWith("collabAgent/")) {
     return mapCollabAgentEvent(event, canonicalThreadId);
   }
@@ -2255,8 +2269,19 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           providerInstanceId: boundInstanceId,
           cwd: input.cwd ?? process.cwd(),
           binaryPath: codexConfig.binaryPath,
+          sharedDesktop: codexConfig.desktopLauncherPath.length > 0,
+          ...(codexConfig.desktopLauncherPath && mcpSession
+            ? { sharedMcp: McpSessionRegistry.activeSharedMcpCredential() }
+            : {}),
           launchArgs: resolveCodexLaunchArgs(codexConfig.launchArgs, options?.environment),
-          ...(options?.environment ? { environment: options.environment } : {}),
+          ...(options?.environment
+            ? {
+                environment: {
+                  ...options.environment,
+                  ...(codexConfig.desktopLauncherPath ? { T3_CODEX_SHARED_AUTOSTART: "1" } : {}),
+                },
+              }
+            : {}),
           ...(codexConfig.homePath ? { homePath: codexConfig.homePath } : {}),
           ...(isCodexResumeCursorSchema(input.resumeCursor)
             ? { resumeCursor: input.resumeCursor }
@@ -2266,7 +2291,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             ? { model: input.modelSelection.model }
             : {}),
           ...(serviceTier ? { serviceTier } : {}),
-          ...(mcpSession
+          ...(mcpSession && !codexConfig.desktopLauncherPath
             ? {
                 environment: {
                   ...(options?.environment ?? process.env),
@@ -2400,6 +2425,23 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           ),
         );
 
+        if (
+          codexConfig.desktopLauncherPath &&
+          mcpSession &&
+          isCodexResumeCursorSchema(started.resumeCursor)
+        ) {
+          const bound = yield* McpSessionRegistry.bindActiveNativeMcpThread(
+            started.resumeCursor.threadId,
+            mcpSession.providerSessionId,
+          );
+          if (!bound)
+            return yield* new ProviderAdapterValidationError({
+              provider: PROVIDER,
+              operation: "startSession",
+              issue:
+                "This native conversation is already bound to another T3 task, or its preview credential expired. Reopen the original T3 task.",
+            });
+        }
         sessions.set(input.threadId, {
           threadId: input.threadId,
           scope: sessionScope,
@@ -2674,6 +2716,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     capabilities: {
       sessionModelSwitch: "in-session",
       conversationFork: "native",
+      ...(codexConfig.desktopLauncherPath ? { supportsConversationRollback: false } : {}),
       promptlessTurnContinuation: true,
     },
     startSession,

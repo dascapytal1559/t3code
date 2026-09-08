@@ -20,7 +20,21 @@ export interface McpIssuedCredential {
   readonly config: McpProviderSession.McpProviderSessionConfig;
 }
 
+export interface SharedMcpCredential {
+  readonly endpoint: string;
+  readonly authorizationHeader: string;
+}
+
 export interface McpSessionRegistryShape {
+  readonly sharedCredential: SharedMcpCredential;
+  readonly authenticateShared: (token: string) => Effect.Effect<boolean>;
+  readonly bindNativeThread: (
+    nativeThreadId: string,
+    providerSessionId: string,
+  ) => Effect.Effect<boolean>;
+  readonly resolveNativeThread: (
+    nativeThreadId: string,
+  ) => Effect.Effect<McpInvocationContext.McpInvocationScope | undefined>;
   readonly issue: (request: McpCredentialRequest) => Effect.Effect<McpIssuedCredential>;
   readonly resolve: (
     rawToken: string,
@@ -103,10 +117,14 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       ? `http://${getHttpMcpEndpointHost(httpServer.address.hostname)}:${httpServer.address.port}/mcp`
       : "http://127.0.0.1/mcp";
 
+  const sharedToken = yield* crypto.randomBytes(32).pipe(Effect.map(tokenFromBytes), Effect.orDie);
+  const nativeBindings = new Map<string, string>();
   const hashToken = (token: string) =>
     crypto
       .digest("SHA-256", new TextEncoder().encode(token))
       .pipe(Effect.map(bytesToHex), Effect.orDie);
+
+  const sharedTokenHash = yield* hashToken(sharedToken);
 
   const pruneDead = (records: ReadonlyMap<string, CredentialRecord>, timestamp: number) => {
     const next = new Map(
@@ -187,6 +205,44 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     }));
 
   return McpSessionRegistry.of({
+    sharedCredential: { endpoint, authorizationHeader: `Bearer ${sharedToken}` },
+    authenticateShared: (token) =>
+      hashToken(token).pipe(Effect.map((hash) => hash === sharedTokenHash)),
+    bindNativeThread: Effect.fn("McpSessionRegistry.bindNativeThread")(
+      function* (nativeThreadId, providerSessionId) {
+        const timestamp = yield* currentTimeMillis;
+        const { records } = yield* SynchronizedRef.get(state);
+        const current = Array.from(pruneDead(records, timestamp).values());
+        const requested = current.find(
+          (record) => record.scope.providerSessionId === providerSessionId,
+        );
+        if (!requested) return false;
+        const previous = current.find(
+          (record) => record.scope.providerSessionId === nativeBindings.get(nativeThreadId),
+        );
+        if (previous && previous.scope.threadId !== requested.scope.threadId) return false;
+        nativeBindings.set(nativeThreadId, providerSessionId);
+        return true;
+      },
+    ),
+    resolveNativeThread: Effect.fn("McpSessionRegistry.resolveNativeThread")(
+      function* (nativeThreadId) {
+        const providerSessionId = nativeBindings.get(nativeThreadId);
+        if (!providerSessionId) return undefined;
+        const timestamp = yield* currentTimeMillis;
+        return yield* SynchronizedRef.modify(state, ({ records }) => {
+          const next = new Map(pruneDead(records, timestamp));
+          for (const [hash, record] of next) {
+            if (record.scope.providerSessionId === providerSessionId) {
+              next.set(hash, { ...record, lastAliveAt: timestamp });
+              return [record.scope, { records: next }] as const;
+            }
+          }
+          nativeBindings.delete(nativeThreadId);
+          return [undefined, { records: next }] as const;
+        });
+      },
+    ),
     issue,
     resolve,
     touch,
@@ -198,7 +254,9 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     revokeThread: Effect.fn("McpSessionRegistry.revokeThread")(function* (threadId) {
       yield* revokeWhere((record) => record.scope.threadId === threadId);
     }),
-    revokeAll: SynchronizedRef.set(state, { records: new Map() }),
+    revokeAll: SynchronizedRef.set(state, { records: new Map() }).pipe(
+      Effect.tap(() => Effect.sync(() => nativeBindings.clear())),
+    ),
   });
 });
 
@@ -248,3 +306,13 @@ export const revokeAllActiveMcpCredentials = (): Effect.Effect<void> =>
 export const __testing = {
   make: makeWithOptions,
 };
+
+export const activeSharedMcpCredential = (): SharedMcpCredential | undefined =>
+  activeMcpSessionRegistry?.sharedCredential;
+export const bindActiveNativeMcpThread = (
+  nativeThreadId: string,
+  providerSessionId: string,
+): Effect.Effect<boolean> =>
+  activeMcpSessionRegistry
+    ? activeMcpSessionRegistry.bindNativeThread(nativeThreadId, providerSessionId)
+    : Effect.succeed(false);
