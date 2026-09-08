@@ -22,6 +22,24 @@ import { isLatestTurnSettled } from "../session-logic";
 
 const THREAD_SELECTION_SAFE_SELECTOR = "[data-thread-item], [data-thread-selection-safe]";
 export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 200;
+
+// Fork: Remote host on thread cards (FORK_FEATURES.md). The primary
+// environment is "this machine" and needs no marker, and so is any other
+// environment that is a desktop-local connection target (the same machine
+// reached a second way). Everything else is a remote host and is named on
+// the card. With no primary environment (the hosted app) every thread that is
+// not desktop-local is remote, which is the point: the host label is what
+// tells rows on different machines apart.
+export function isRemoteThreadEnvironment(input: {
+  threadEnvironmentId: string;
+  primaryEnvironmentId: string | null;
+  desktopLocalEnvironmentIds: ReadonlySet<string>;
+}): boolean {
+  return (
+    input.threadEnvironmentId !== input.primaryEnvironmentId &&
+    !input.desktopLocalEnvironmentIds.has(input.threadEnvironmentId)
+  );
+}
 // Visible sidebar rows are prewarmed into the thread-detail cache so opening a
 // nearby thread usually reuses an already-hot subscription. Each prewarmed
 // thread holds a live, fully hydrated detail subscription (all messages and

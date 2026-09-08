@@ -115,6 +115,7 @@ import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
+import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import {
   readThreadShell,
   useAllEnvironmentProjectSnapshotsReady,
@@ -169,6 +170,7 @@ import {
   useRetainedValue,
   useSidebarRowSubscriptionLease,
   useThreadJumpHintVisibility,
+  isRemoteThreadEnvironment,
   type SidebarListItem,
   type SidebarListMarker,
   type SidebarSection,
@@ -987,7 +989,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   isActive: boolean;
   openPullRequestsInRightPanel: boolean;
   jumpLabel: string | null;
-  currentEnvironmentId: string | null;
+  isRemoteEnvironment: boolean;
   environmentLabel: string | null;
   environmentMachine: EnvironmentMachineKind;
   projectCwd: string | null;
@@ -1190,12 +1192,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const modelLabel = selectedModel
     ? getTriggerDisplayModelLabel(selectedModel)
     : thread.modelSelection.model;
-
-  // The local environment is "this machine" and needs no marker; every other
-  // one gets its machine glyph. With no local environment (the hosted app)
-  // that is every thread, which is the point: the glyph is what tells rows on
-  // different machines apart.
-  const isRemote = thread.environmentId !== props.currentEnvironmentId;
 
   const detailsTooltip = (
     <SidebarThreadTooltip
@@ -1733,18 +1729,34 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 projectIcon={props.projectIcon}
                 className="size-4 shrink-0"
               />
-              {props.projectDisplayName ? (
-                <span
-                  className={cn(
-                    "min-w-0 flex-1 truncate text-secondary-label text-xs",
-                    shouldRecede ? "font-normal" : "font-medium",
-                  )}
-                >
-                  {props.projectDisplayName}
-                </span>
-              ) : (
-                <span className="flex-1" />
-              )}
+              <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                {props.projectDisplayName ? (
+                  <span
+                    className={cn(
+                      "min-w-0 truncate text-secondary-label text-xs",
+                      shouldRecede ? "font-normal" : "font-medium",
+                    )}
+                  >
+                    {props.projectDisplayName}
+                  </span>
+                ) : null}
+                {/* The local environment is "this machine" and needs no marker;
+                    every other one is named beside the project so rows on
+                    different hosts read apart at a glance. */}
+                {props.isRemoteEnvironment ? (
+                  <span className="inline-flex shrink-0 items-center gap-1 text-sidebar-muted-foreground/70 text-xs">
+                    <EnvironmentMachineIcon
+                      aria-hidden
+                      kind={props.environmentMachine}
+                      className="size-3.5 shrink-0"
+                    />
+                    <span className="sr-only">Remote host: </span>
+                    <span className="max-w-24 truncate">
+                      {props.environmentLabel?.trim() || "Remote"}
+                    </span>
+                  </span>
+                ) : null}
+              </span>
               {pinIndicator}
               {/* The visible state owns this slot's width: status at rest,
                   actions on hover/keyboard focus or while the popover is open. Keeping
@@ -1904,21 +1916,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                   <span className="text-red-600 dark:text-red-400">−{diff.deletions}</span>
                 </span>
               ) : null}
-              <span
-                aria-hidden
-                className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1"
-              >
-                {isRemote ? (
-                  <span className="inline-flex shrink-0 items-center text-sidebar-muted-foreground/70">
-                    <EnvironmentMachineIcon
-                      aria-hidden
-                      kind={props.environmentMachine}
-                      className="size-3.5"
-                    />
-                  </span>
-                ) : null}
+              <span className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1">
                 {driverKind ? (
-                  <span className="inline-flex shrink-0 items-center">
+                  <span aria-hidden className="inline-flex shrink-0 items-center">
                     <ProviderInstanceIcon
                       driverKind={driverKind}
                       displayName={
@@ -2203,6 +2203,15 @@ export default function Sidebar() {
     () =>
       new Map(
         environments.map((environment) => [environment.environmentId, environment.label] as const),
+      ),
+    [environments],
+  );
+  const desktopLocalEnvironmentIds = useMemo(
+    () =>
+      new Set(
+        environments
+          .filter((environment) => isDesktopLocalConnectionTarget(environment.entry.target))
+          .map((environment) => environment.environmentId),
       ),
     [environments],
   );
@@ -4691,7 +4700,11 @@ export default function Sidebar() {
                             jumpLabel={
                               showThreadJumpHints ? (jumpLabelByKey.get(threadKey) ?? null) : null
                             }
-                            currentEnvironmentId={primaryEnvironmentId}
+                            isRemoteEnvironment={isRemoteThreadEnvironment({
+                              threadEnvironmentId: thread.environmentId,
+                              primaryEnvironmentId,
+                              desktopLocalEnvironmentIds,
+                            })}
                             environmentLabel={
                               environmentLabelById.get(thread.environmentId) ?? null
                             }

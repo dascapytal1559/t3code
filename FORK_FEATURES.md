@@ -55,6 +55,25 @@ stale async results after source/theme changes, and switching layout without
 changing copied source. `apps/web/src/lib/mermaidLayout.fork.test.ts` covers
 flowchart headers, frontmatter, comments, and preservation of other content.
 
+## Remote host on thread cards
+
+Upstream marks a sidebar thread row that lives on another machine with a
+machine glyph in the branch line. The fork names the host instead: the first
+line of the card shows the project name followed by the machine glyph and the
+environment label (for example `basedcapital` then `basedcapital-zdata`), so
+rows from different hosts read apart at a glance. Threads on the primary
+environment, and on any environment that is a desktop-local connection target
+(the same machine reached a second way), carry no marker. In the hosted app
+there is no primary environment, so every thread that is not desktop-local is
+named. The label truncates on its own, ahead of the project name, so a long
+host name never hides the project. Screen readers hear "Remote host:" before
+the label.
+
+Tests: `apps/web/src/components/Sidebar.remoteHost.fork.test.ts` covers the
+primary, desktop-local, remote, and no-primary cases of
+`isRemoteThreadEnvironment`. The card markup itself has no render test; the
+web package has no React render harness.
+
 ## Symlink-aware explorer and search
 
 The native workspace scanner (`@ff-labs/fff-node`) does not traverse symlinks.
