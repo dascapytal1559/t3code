@@ -201,6 +201,24 @@ The initial root listing is collapsed, and ignored entries such as
 
 ![Collapsed lazy file explorer with muted ignored entries](./assets/fork-features/file-explorer.png)
 
+## Copy absolute path from the explorer and breadcrumbs
+
+Right-clicking a row in the file explorer or a crumb in the file-preview
+breadcrumbs offers **Copy absolute path** alongside upstream's **Copy
+mention** and **Add to chat**. The breadcrumbs previously had no menu of their
+own (the desktop shell showed its generic Cut/Copy/Paste menu), so they now
+share the explorer's menu through one helper; the project-root crumb and
+host-path crumbs for files outside the workspace offer only the absolute path,
+since a mention cannot address either. The path is joined from the workspace
+root with the entry's relative path, using backslashes under a Windows root.
+
+Implementation: `apps/web/src/components/files/fileEntryContextMenu.ts`,
+`workspaceAbsolutePath` in `apps/web/src/components/files/filePath.ts`, and
+the right-click wiring in `FileBrowserPanel.tsx` and `FileBreadcrumbs.tsx`.
+
+Tests: `apps/web/src/components/files/filePath.test.ts` (`workspaceAbsolutePath`
+joining, root handling, absolute pass-through, Windows separators).
+
 ## Live filesystem updates
 
 While a client subscribes to workspace changes, the server watches the active

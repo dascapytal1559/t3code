@@ -2,7 +2,7 @@ import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { Spinner } from "~/components/ui/spinner";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { ArrowLeftIcon, ChevronRightIcon } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { type MouseEvent, useEffect, useMemo, useState } from "react";
 
 import { PierreEntryIcon } from "~/components/chat/PierreEntryIcon";
 import {
@@ -14,12 +14,14 @@ import {
   MenuTrigger,
 } from "~/components/ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import { useComposerHandleContext } from "~/composerHandleContext";
 import { useTheme } from "~/hooks/useTheme";
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
 import { useServerConfigs } from "~/state/entities";
 import { cn } from "~/lib/utils";
 import { isAbsolutePath } from "~/terminal-links";
 
+import { showFileEntryContextMenu } from "./fileEntryContextMenu";
 import {
   type FileBreadcrumb,
   fileBreadcrumbChildren,
@@ -37,6 +39,8 @@ interface FileBreadcrumbsProps {
   readonly workspaceMutationId: string | null;
 }
 
+type CrumbContextMenuHandler = (crumb: FileBreadcrumb, event: MouseEvent<HTMLElement>) => void;
+
 function pathLabel(path: string, projectName: string): string {
   return path.slice(path.lastIndexOf("/") + 1) || projectName;
 }
@@ -44,6 +48,7 @@ function pathLabel(path: string, projectName: string): string {
 function BreadcrumbLabel(props: {
   readonly current?: boolean;
   readonly label: string;
+  readonly onContextMenu: (event: MouseEvent<HTMLElement>) => void;
   readonly pathLabel: string;
 }) {
   return (
@@ -55,6 +60,7 @@ function BreadcrumbLabel(props: {
               "block max-w-40 truncate rounded-sm px-0.5",
               props.current ? "font-medium text-foreground" : "text-muted-foreground",
             )}
+            onContextMenu={props.onContextMenu}
           />
         }
       >
@@ -204,7 +210,12 @@ function BreadcrumbMenuContent(props: {
   );
 }
 
-function DirectoryBreadcrumb(props: FileBreadcrumbsProps & { readonly crumb: FileBreadcrumb }) {
+function DirectoryBreadcrumb(
+  props: FileBreadcrumbsProps & {
+    readonly crumb: FileBreadcrumb;
+    readonly onCrumbContextMenu: CrumbContextMenuHandler;
+  },
+) {
   const [open, setOpen] = useState(false);
   const [directoryPath, setDirectoryPath] = useState(props.crumb.path);
 
@@ -228,6 +239,7 @@ function DirectoryBreadcrumb(props: FileBreadcrumbsProps & { readonly crumb: Fil
                 <button
                   type="button"
                   aria-label={`Browse ${props.crumb.label}`}
+                  onContextMenu={(event) => props.onCrumbContextMenu(props.crumb, event)}
                   className="relative block max-w-40 cursor-pointer rounded-sm px-0.5 text-left text-muted-foreground outline-none pointer-coarse:after:-inset-y-3 pointer-coarse:after:absolute pointer-coarse:after:inset-x-0 hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-popup-open:bg-accent data-popup-open:text-foreground"
                 />
               }
@@ -259,11 +271,23 @@ function DirectoryBreadcrumb(props: FileBreadcrumbsProps & { readonly crumb: Fil
 }
 
 export function FileBreadcrumbs(props: FileBreadcrumbsProps) {
+  const composerRef = useComposerHandleContext();
   const hostPath = isAbsolutePath(props.relativePath);
   const breadcrumbs = useMemo(
     () => fileBreadcrumbs(props.projectName, props.relativePath),
     [props.projectName, props.relativePath],
   );
+  // Preventing the DOM default also keeps the desktop shell from popping its
+  // generic Cut/Copy/Paste menu over the crumb.
+  const onCrumbContextMenu: CrumbContextMenuHandler = (crumb, event) => {
+    event.preventDefault();
+    void showFileEntryContextMenu({
+      cwd: props.cwd,
+      path: crumb.path,
+      composerRef,
+      position: { x: event.clientX, y: event.clientY },
+    });
+  };
 
   return breadcrumbs.map((crumb, index) => (
     <div
@@ -276,12 +300,21 @@ export function FileBreadcrumbs(props: FileBreadcrumbsProps) {
       ) : null}
       {crumb.kind === "file" ? (
         <span aria-current="page">
-          <BreadcrumbLabel current label={crumb.label} pathLabel={crumb.path} />
+          <BreadcrumbLabel
+            current
+            label={crumb.label}
+            onContextMenu={(event) => onCrumbContextMenu(crumb, event)}
+            pathLabel={crumb.path}
+          />
         </span>
       ) : hostPath ? (
-        <BreadcrumbLabel label={crumb.label} pathLabel={crumb.path} />
+        <BreadcrumbLabel
+          label={crumb.label}
+          onContextMenu={(event) => onCrumbContextMenu(crumb, event)}
+          pathLabel={crumb.path}
+        />
       ) : (
-        <DirectoryBreadcrumb {...props} crumb={crumb} />
+        <DirectoryBreadcrumb {...props} crumb={crumb} onCrumbContextMenu={onCrumbContextMenu} />
       )}
     </div>
   ));

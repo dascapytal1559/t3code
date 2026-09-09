@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { fileBreadcrumbChildren, fileBreadcrumbParent, fileBreadcrumbs } from "./filePath";
+import {
+  fileBreadcrumbChildren,
+  fileBreadcrumbParent,
+  fileBreadcrumbs,
+  workspaceAbsolutePath,
+} from "./filePath";
 
 describe("fileBreadcrumbs", () => {
   it("builds project, directory, and file crumbs", () => {
@@ -93,5 +98,34 @@ describe("fileBreadcrumbParent", () => {
     ["", null],
   ])("returns the parent of %j", (path, expected) => {
     expect(fileBreadcrumbParent(path)).toBe(expected);
+  });
+});
+
+describe("workspaceAbsolutePath", () => {
+  it("joins a workspace-relative path onto the project root", () => {
+    expect(workspaceAbsolutePath("/Users/me/project", "apps/web/src/main.tsx")).toBe(
+      "/Users/me/project/apps/web/src/main.tsx",
+    );
+  });
+
+  it("tolerates trailing separators on the root and directory paths", () => {
+    expect(workspaceAbsolutePath("/Users/me/project/", "apps/web/")).toBe(
+      "/Users/me/project/apps/web",
+    );
+  });
+
+  it("returns the project root for the empty path", () => {
+    expect(workspaceAbsolutePath("/Users/me/project", "")).toBe("/Users/me/project");
+  });
+
+  it("passes absolute host paths through unchanged", () => {
+    expect(workspaceAbsolutePath("/Users/me/project", "/tmp/report.md")).toBe("/tmp/report.md");
+    expect(workspaceAbsolutePath("C:\\work", "D:\\other\\report.md")).toBe("D:\\other\\report.md");
+  });
+
+  it("uses backslashes under a Windows project root", () => {
+    expect(workspaceAbsolutePath("C:\\work\\project", "apps/web/main.tsx")).toBe(
+      "C:\\work\\project\\apps\\web\\main.tsx",
+    );
   });
 });
