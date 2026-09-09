@@ -1,13 +1,23 @@
 # T3 Code fork
 
 This file tracks the behavior this fork adds on top of
-[upstream T3 Code](./README.md). The fork uses the stock
+[upstream T3 Code](../README.md). The fork uses the stock
 **T3 Code (Alpha)** desktop identity; the differences below are product
 behavior, not parallel-app branding.
 
+This directory holds everything fork-specific that is not code:
+
+- `README.md` (this file): the fork feature record.
+- `DEPLOY_FORK.md`: deploying the fork to the local desktop app and the
+  remote hosts.
+- `SYNC_UPSTREAM.md`: merging upstream T3 Code into the fork.
+- `deploy/`: the scripts the deploy runbook drives.
+- `SHARED_CODEX.md` and `restart-codex-backend.sh`: the shared Codex desktop
+  backend setup on this Mac.
+
 This file is the canonical fork-feature record. Update it when a feature's
 behavior changes, not merely when syncing with upstream. Syncing from
-upstream is `runbooks/SYNC_UPSTREAM.md` in the wrapper repository:
+upstream is `fork/SYNC_UPSTREAM.md`:
 every sync reassesses these entries against stock upstream and drops
 deltas that are no longer needed.
 
@@ -18,7 +28,7 @@ prove it still works. Fork-only test files end in `.fork.test.ts` and sit
 next to the module they cover, so they never collide with upstream test
 files during a merge; the two tests that need a large upstream harness stay
 inside `server.test.ts` and `ClaudeAdapter.test.ts` with a `fork: ` name
-prefix. Run the whole fork suite from this directory with
+prefix. Run the whole fork suite from the repo root with
 
 ```
 vp run test:fork
@@ -119,7 +129,7 @@ is not unit-tested.
 `CLAUDE.md` is a symlink in this checkout; the explorer marks it with the muted
 arrow badge:
 
-![File explorer showing a symlink badge](./assets/fork-features/symlink-explorer.png)
+![File explorer showing a symlink badge](./assets/symlink-explorer.png)
 
 ## Hidden-root visibility
 
@@ -132,7 +142,7 @@ Implementation: `apps/server/src/workspace/WorkspaceSearchIndex.ts`.
 Tests: `apps/server/src/workspace/WorkspaceSearchIndex.fork.test.ts`
 (dotfiles listed; `.git` and `.DS_Store` still hidden).
 
-![File explorer showing hidden root entries](./assets/fork-features/hidden-root.png)
+![File explorer showing hidden root entries](./assets/hidden-root.png)
 
 ## Lazy per-directory file explorer
 
@@ -199,7 +209,7 @@ flag).
 The initial root listing is collapsed, and ignored entries such as
 `node_modules` remain usable but muted:
 
-![Collapsed lazy file explorer with muted ignored entries](./assets/fork-features/file-explorer.png)
+![Collapsed lazy file explorer with muted ignored entries](./assets/file-explorer.png)
 
 ## Copy absolute path from the explorer and breadcrumbs
 
@@ -247,7 +257,7 @@ The refresh control in the explorer is the manual fallback for the same
 invalidation path. A still image cannot demonstrate watcher-driven updates,
 but it does show the user-visible recovery control:
 
-![File explorer with its refresh control](./assets/fork-features/live-refresh.png)
+![File explorer with its refresh control](./assets/live-refresh.png)
 
 ## Tilde paths stay plain in chat
 
@@ -263,7 +273,7 @@ candidate) and `apps/web/src/markdown-links.ts`.
 Tests: `packages/client-runtime/src/markdownLinks.fork.test.ts` and
 `apps/web/src/markdown-links.fork.test.ts`.
 
-![A tilde path rendered as plain inline code](./assets/fork-features/tilde-path.png)
+![A tilde path rendered as plain inline code](./assets/tilde-path.png)
 
 ## Desktop runs a swappable server payload
 
@@ -275,7 +285,7 @@ It is normally a symlink into `~/.t3/fork/builds/<sha>/`. Because the web
 client is served by the backend, one payload swap updates both server and
 frontend. A DMG rebuild is only for Electron/native/packaging runtime
 changes; desktop tests and `test(…)` extracts of already-shipped override
-readers stay on the payload path. `runbooks/deploy/choose-deploy-path.sh`
+readers stay on the payload path. `fork/deploy/choose-deploy-path.sh`
 prints `payload` or `dmg`. When in doubt, payload.
 
 The symlink path is handed to the backend supervisor unresolved, and the
@@ -290,8 +300,8 @@ bad while the app runs makes the supervisor retry with backoff until it is
 fixed. Development launches ignore the symlink.
 
 The payload is staged from the same npm tarball the remote hosts install
-(`runbooks/deploy/stage-server-payload.sh` in the wrapper repository extracts it into
-`builds/<sha>` and runs `npm install`; `runbooks/deploy/swap-fork-payload.sh`
+(`fork/deploy/stage-server-payload.sh` extracts it into
+`builds/<sha>` and runs `npm install`; `fork/deploy/swap-fork-payload.sh`
 retargets the symlink and restarts the backend), so local and remote deploys
 share one artifact. Which build is live is `readlink ~/.t3/fork/current`;
 whether the override took effect is visible in the backend child's argv,
@@ -316,9 +326,9 @@ runner. An explicit override is authoritative even when a global `t3` binary is
 already installed remotely. Remove the file to restore upstream's normal
 channel-derived package selection and global-binary preference.
 
-Deploys are covered by `runbooks/DEPLOY_FORK.md` in the wrapper repository.
-`runbooks/deploy/pack-server-tarball.sh` builds a SHA-versioned package for the remote
-host, and `runbooks/deploy/swap-fork-app.sh` replaces the stock-named desktop app.
+Deploys are covered by `fork/DEPLOY_FORK.md`.
+`fork/deploy/pack-server-tarball.sh` builds a SHA-versioned package for the remote
+host, and `fork/deploy/swap-fork-app.sh` replaces the stock-named desktop app.
 
 The generated runner script also turns npm's audit and fund calls off for the
 package-spec install (`npm_config_audit=false npm_config_fund=false`). The
@@ -404,7 +414,7 @@ records are rejected, v4 round-trips). Returning the prompt to the composer
 is `ChatView` glue and is not unit-tested; the screenshot below is its
 evidence.
 
-![Checkpoint revert confirmation explaining that the prompt returns to the composer](./assets/fork-features/checkpoint-revert.png)
+![Checkpoint revert confirmation explaining that the prompt returns to the composer](./assets/checkpoint-revert.png)
 
 ## Queue follow-ups while a turn is running
 

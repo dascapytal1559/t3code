@@ -1,0 +1,9 @@
+# One SSH host alias per line. Every host needs `audit=false` and
+# `fund=false` in ~/.npmrc: npm's audit call hangs on these hosts and stalls
+# the app's launcher (see DEPLOY_FORK.md, step 6). ship-server-tarball.sh copies the fork server
+# tarball to each host and restart-remote-servers.sh (run by both swap
+# scripts) restarts its t3 server onto it. All hosts must expose the tarball
+# at the same absolute path, since ~/.t3/fork/ssh-t3-package-spec is one
+# global spec (user must be `ubuntu`).
+basedcapital-zdata
+basedcapital-bsc-archival
