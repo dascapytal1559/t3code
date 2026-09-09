@@ -130,3 +130,12 @@ In an existing Codex thread, send `/feedback` with an optional description, for
 example `/feedback The agent stopped before finishing the tests`. This uploads
 the conversation and Codex logs to OpenAI. The returned thread ID can be shared
 with OpenAI support.
+
+## Open a Codex app thread in T3 Code
+
+A conversation started in the Codex app can be continued in T3 Code. Copy its
+link from the Codex app (it looks like `codex://threads/<id>`), open the command
+palette, and paste it. Choose **Import Codex thread**; with several connected
+computers, pick the one whose Codex home holds the conversation. T3 Code adds
+the project for the conversation's directory if it is not already there and
+opens the thread with its history. A bare thread id works too.

@@ -581,6 +581,56 @@ The end-to-end dispatch path (`Layers/ThreadFork.ts`) and the adapters'
 session-start consumption of the seeded cursors spawn real providers and are
 not unit-tested.
 
+## Import a Codex or Claude thread by id
+
+The Codex app hands out `codex://threads/<id>` links, and the welcome wizard
+is upstream's only way to pull Codex or Claude Code transcripts into T3 Code:
+per project, only the last 30 days, and only during onboarding. The fork lets
+you import one conversation by naming it. Paste a `codex://threads/<id>` link
+or a bare session id into the command palette on web or desktop and an
+**Import Codex thread** (or **Import Claude Code thread**) action appears
+above the search results, one per connected environment whose server
+advertises the `agentSessionThreadImport` capability. Bare ids are routed by
+UUID version: Codex mints UUIDv7 thread ids, Claude Code mints UUIDv4
+session ids; other versions are not offered. Running the action opens the
+imported thread.
+
+The server locates the transcript by file name under the configured home
+(`sessions/**/rollout-*-<id>[_<part>].jsonl` for Codex, `projects/*/<id>.jsonl`
+for Claude), reads the newest file naming the session, and takes the project
+from the transcript's working directory: an active project rooted there is
+reused, otherwise a project titled after the directory is created. A session
+imported before opens as-is, even in another project; a deleted imported
+thread is refused rather than resurrected. Directories that no longer exist
+or that can never be projects (home, temp, T3 worktrees) fail with a message
+naming the directory. There is no age window. The imported thread carries the
+same resume cursor the wizard import writes, so under the shared Codex
+backend the next message continues the Codex app's own conversation.
+Mobile has no paste entry point and does not offer the action.
+
+Implementation: `packages/contracts/src/agentSessions.ts`
+(`AgentSessionThreadImportInput`, `AgentSessionThreadImportError`,
+`parseAgentSessionThreadReference`), `rpc.ts` (`agentSessions.importThread`),
+`environment.ts` (capability), `apps/server/src/project/AgentSessionScanner.ts`
+(`findThread`), `AgentSessionImporter.ts` (`importAgentThreadById`, sharing
+the per-thread import with the wizard path), `apps/server/src/ws.ts`,
+`apps/server/src/auth/RpcAuthorization.ts`, `apps/web/src/state/agentSessions.ts`,
+and `apps/web/src/components/CommandPalette.logic.ts`
+(`resolveAgentSessionImportTargets`) with the palette wiring in
+`CommandPalette.tsx`.
+
+Tests: `packages/contracts/src/agentSessions.fork.test.ts` (link and bare-id
+parsing, version routing), `apps/server/src/project/AgentSessionScanner.fork.test.ts`
+(newest continuation file wins, no age window, persisted project match,
+not-found versus unreadable, missing and excluded directories, Claude lookup
+never opens a Codex file), `apps/server/src/project/AgentSessionImporter.fork.test.ts`
+(project creation and reuse, existing thread opens untouched, deleted thread
+refused, typed lookup failures),
+`apps/server/src/environment/ServerEnvironment.fork.test.ts` (capability), and
+`apps/web/src/components/CommandPalette.logic.fork.test.ts` (which
+environments get the action). The palette item itself is glue and is not
+render-tested.
+
 ## Sync status
 
 Last synced on 2026-09-07 against upstream `6abdf37a5`

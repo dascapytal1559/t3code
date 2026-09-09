@@ -23,3 +23,13 @@ export const agentSessionImport = createEnvironmentRpcCommand(connectionAtomRunt
   label: "environment-data:agent-sessions:import",
   tag: WS_METHODS.agentSessionsImport,
 });
+
+/**
+ * Import one Codex or Claude session by its native id, creating the project
+ * its transcript names when needed. Fed by a pasted `codex://threads/<id>`
+ * link or bare session id in the command palette.
+ */
+export const agentSessionThreadImport = createEnvironmentRpcCommand(connectionAtomRuntime, {
+  label: "environment-data:agent-sessions:import-thread",
+  tag: WS_METHODS.agentSessionsImportThread,
+});

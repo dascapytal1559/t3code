@@ -33,6 +33,9 @@ import {
   AgentSessionImportProjectChangedError,
   AgentSessionImportProjectNotFoundError,
   AgentSessionImportResult,
+  AgentSessionThreadImportError,
+  AgentSessionThreadImportInput,
+  AgentSessionThreadImportResult,
   AgentSessionScanInput,
   AgentSessionScanResult,
   AgentSessionScanError,
@@ -260,6 +263,7 @@ export const WS_METHODS = {
   filesystemBrowse: "filesystem.browse",
   agentSessionsScan: "agentSessions.scan",
   agentSessionsImport: "agentSessions.import",
+  agentSessionsImportThread: "agentSessions.importThread",
   assetsCreateUrl: "assets.createUrl",
   attachmentsCreateUploadUrl: "attachments.createUploadUrl",
   attachmentsDelete: "attachments.delete",
@@ -864,6 +868,16 @@ const WsAgentSessionsImportRpc = Rpc.make(WS_METHODS.agentSessionsImport, {
   ]),
 });
 
+const WsAgentSessionsImportThreadRpc = Rpc.make(WS_METHODS.agentSessionsImportThread, {
+  payload: AgentSessionThreadImportInput,
+  success: AgentSessionThreadImportResult,
+  error: Schema.Union([
+    AgentSessionThreadImportError,
+    AgentSessionScanError,
+    EnvironmentAuthorizationError,
+  ]),
+});
+
 const WsAssetsCreateUrlRpc = Rpc.make(WS_METHODS.assetsCreateUrl, {
   payload: AssetCreateUrlInput,
   success: AssetCreateUrlResult,
@@ -1279,6 +1293,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsFilesystemBrowseRpc,
   WsAgentSessionsScanRpc,
   WsAgentSessionsImportRpc,
+  WsAgentSessionsImportThreadRpc,
   WsAssetsCreateUrlRpc,
   WsAttachmentsCreateUploadUrlRpc,
   WsAttachmentsDeleteRpc,

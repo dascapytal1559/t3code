@@ -4,6 +4,11 @@ import {
   THREAD_JUMP_KEYBINDING_COMMANDS,
 } from "@t3tools/contracts";
 import { filterFilesystemBrowseEntries } from "@t3tools/client-runtime/state/filesystem";
+import {
+  parseAgentSessionThreadReference,
+  type AgentSessionThreadReference,
+  type EnvironmentId,
+} from "@t3tools/contracts";
 import type { SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
@@ -472,4 +477,38 @@ export function getCommandPaletteInputPlaceholder(mode: CommandPaletteMode): str
     case "submenu-browse":
       return "Enter path (e.g. ~/projects/my-app)";
   }
+}
+
+export interface AgentSessionImportEnvironmentOption {
+  readonly environmentId: EnvironmentId;
+  readonly label: string;
+  readonly isConnected: boolean;
+  /** The environment's server advertises `agentSessionThreadImport`. */
+  readonly supportsImport: boolean;
+}
+
+export interface AgentSessionImportTargets {
+  readonly reference: AgentSessionThreadReference;
+  readonly environments: ReadonlyArray<AgentSessionImportEnvironmentOption>;
+}
+
+/**
+ * A pasted `codex://threads/<id>` link or bare session id turns the root
+ * palette query into an import action for every connected environment whose
+ * server can import by id. Null when the query is anything else, or in a
+ * submenu, so ordinary searches never see it.
+ */
+export function resolveAgentSessionImportTargets(input: {
+  readonly query: string;
+  readonly isInSubmenu: boolean;
+  readonly environments: ReadonlyArray<AgentSessionImportEnvironmentOption>;
+}): AgentSessionImportTargets | null {
+  if (input.isInSubmenu) return null;
+  const reference = parseAgentSessionThreadReference(input.query);
+  if (reference === null) return null;
+  const environments = input.environments.filter(
+    (environment) => environment.isConnected && environment.supportsImport,
+  );
+  if (environments.length === 0) return null;
+  return { reference, environments };
 }

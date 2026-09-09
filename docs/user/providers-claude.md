@@ -99,3 +99,9 @@ config directory and put the router's endpoint and credential variables in that
 instance's **Environment variables**. The router must run where the environment
 can reach it. Follow the [Claude Code Router instructions](https://github.com/musistudio/claude-code-router)
 for its installation and routing configuration.
+
+## Open a Claude Code session in T3 Code
+
+Paste a Claude Code session id into the command palette and choose **Import
+Claude Code thread**. T3 Code adds the project for the session's directory if
+needed and opens the thread with its history.

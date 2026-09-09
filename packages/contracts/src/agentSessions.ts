@@ -1,5 +1,11 @@
 import * as Schema from "effect/Schema";
-import { IsoDateTime, NonNegativeInt, ProjectId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  IsoDateTime,
+  NonNegativeInt,
+  ProjectId,
+  ThreadId,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
 /** Coding agent home directories the scanner knows how to read. */
@@ -84,6 +90,101 @@ export const AgentSessionImportResult = Schema.Struct({
   skippedCount: NonNegativeInt,
 });
 export type AgentSessionImportResult = typeof AgentSessionImportResult.Type;
+
+/** Import one provider session by its native id, creating the project its transcript names when needed. */
+export const AgentSessionThreadImportInput = Schema.Struct({
+  source: AgentSessionSource,
+  providerSessionId: TrimmedNonEmptyString,
+});
+export type AgentSessionThreadImportInput = typeof AgentSessionThreadImportInput.Type;
+
+export const AgentSessionThreadImportResult = Schema.Struct({
+  projectId: ProjectId,
+  threadId: ThreadId,
+  /** True when the transcript's directory had no active project and one was created for it. */
+  projectCreated: Schema.Boolean,
+});
+export type AgentSessionThreadImportResult = typeof AgentSessionThreadImportResult.Type;
+
+export const AgentSessionThreadImportFailure = Schema.Literals([
+  "not-found",
+  "unreadable",
+  "missing-directory",
+  "excluded-directory",
+  "thread-deleted",
+  "import-failed",
+]);
+export type AgentSessionThreadImportFailure = typeof AgentSessionThreadImportFailure.Type;
+
+const AGENT_SESSION_SOURCE_LABELS: Record<AgentSessionSource, string> = {
+  claudeAgent: "Claude Code",
+  codex: "Codex",
+};
+
+export class AgentSessionThreadImportError extends Schema.TaggedErrorClass<AgentSessionThreadImportError>()(
+  "AgentSessionThreadImportError",
+  {
+    source: AgentSessionSource,
+    providerSessionId: TrimmedNonEmptyString,
+    reason: AgentSessionThreadImportFailure,
+    /** The transcript's working directory, for directory failures. */
+    path: Schema.optional(Schema.String),
+    /** The underlying failure, for import failures. */
+    detail: Schema.optional(Schema.String),
+  },
+) {
+  override get message(): string {
+    const label = AGENT_SESSION_SOURCE_LABELS[this.source];
+    const session = `${label} session '${this.providerSessionId}'`;
+    switch (this.reason) {
+      case "not-found":
+        return `${session} was not found in the configured ${label} home.`;
+      case "unreadable":
+        return `${session} has no readable transcript.`;
+      case "missing-directory":
+        return `${session} ran in '${this.path ?? "an unknown directory"}', which no longer exists.`;
+      case "excluded-directory":
+        return `${session} ran in '${this.path ?? "an unknown directory"}', which cannot be a project.`;
+      case "thread-deleted":
+        return `${session} was imported before and that thread has been deleted.`;
+      case "import-failed":
+        return `${session} could not be imported${this.detail ? `: ${this.detail}` : "."}`;
+    }
+  }
+}
+
+export interface AgentSessionThreadReference {
+  readonly source: AgentSessionSource;
+  readonly providerSessionId: string;
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-([0-9a-f])[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CODEX_THREAD_URL_PATTERN = /^codex:\/\/threads\/([0-9a-f-]{36})\/?$/i;
+
+/**
+ * Read a pasted session reference: a `codex://threads/<id>` link from the
+ * Codex app, or a bare session id. Codex mints UUIDv7 thread ids and Claude
+ * Code mints UUIDv4 session ids, so the version nibble names the source.
+ */
+export function parseAgentSessionThreadReference(text: string): AgentSessionThreadReference | null {
+  const trimmed = text.trim();
+  const codexUrl = CODEX_THREAD_URL_PATTERN.exec(trimmed);
+  if (codexUrl !== null) {
+    const providerSessionId = codexUrl[1]!.toLowerCase();
+    return UUID_PATTERN.test(providerSessionId) ? { source: "codex", providerSessionId } : null;
+  }
+  const bare = UUID_PATTERN.exec(trimmed);
+  if (bare === null) return null;
+  const providerSessionId = trimmed.toLowerCase();
+  switch (bare[1]!.toLowerCase()) {
+    case "7":
+      return { source: "codex", providerSessionId };
+    case "4":
+      return { source: "claudeAgent", providerSessionId };
+    default:
+      return null;
+  }
+}
 
 export class AgentSessionScanError extends Schema.TaggedErrorClass<AgentSessionScanError>()(
   "AgentSessionScanError",

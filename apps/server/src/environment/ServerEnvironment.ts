@@ -230,6 +230,7 @@ export const make = Effect.gen(function* () {
       threadTitleRegeneration: true,
       threadPullRequestLinking: true,
       threadFork: true,
+      agentSessionThreadImport: true,
       workspaceDirectoryListing: true,
       environmentIcon: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),

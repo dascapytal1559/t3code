@@ -43,6 +43,7 @@ import {
   FileSearchIcon,
   FolderIcon,
   FolderPlusIcon,
+  ImportIcon,
   LinkIcon,
   MessageSquareIcon,
   PaletteIcon,
@@ -79,6 +80,7 @@ import { useEnvironmentQuery } from "../state/query";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
+import { agentSessionThreadImport } from "../state/agentSessions";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { useProjects, useThreadShells } from "../state/entities";
 import { useThreadSearch } from "../state/queries";
@@ -135,6 +137,8 @@ import {
   RECENT_THREAD_LIMIT,
   reduceCommandPaletteUiState,
   type SearchOverlayMode,
+  resolveAgentSessionImportTargets,
+  type CommandPaletteGroup,
 } from "./CommandPalette.logic";
 import { orderItemsByPreferredIds, sortLogicalProjectsForSidebar } from "./Sidebar.logic";
 import { resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
@@ -588,6 +592,9 @@ function OpenCommandPaletteDialog(props: {
   const loadBrowsePath = useAtomQueryRunner(filesystemEnvironment.browse, {
     reportFailure: false,
     reportDefect: false,
+  });
+  const importAgentSessionThread = useAtomCommand(agentSessionThreadImport, {
+    reportFailure: false,
   });
   const cloneRepository = useAtomCommand(sourceControlEnvironment.cloneRepository, {
     reportFailure: false,
@@ -1776,14 +1783,78 @@ function OpenCommandPaletteDialog(props: {
         )
       : (currentView?.groups ?? rootGroups);
 
-  const filteredGroups = filterCommandPaletteGroups({
-    activeGroups,
+  // A pasted Codex thread link or session id imports that conversation instead
+  // of searching for it; one action per environment that can host the import.
+  const agentSessionImportTargets = resolveAgentSessionImportTargets({
     query: deferredQuery,
     isInSubmenu: currentView !== null,
-    projectSearchItems: projectSearchItems,
-    settingsSearchItems,
-    threadSearchItems: allThreadItems,
+    environments: environments.map((environment) => ({
+      environmentId: environment.environmentId,
+      label: environment.label,
+      isConnected: environment.connection.phase === "connected",
+      supportsImport:
+        environment.serverConfig?.environment.capabilities.agentSessionThreadImport === true,
+    })),
   });
+  const agentSessionImportGroups: CommandPaletteGroup[] =
+    agentSessionImportTargets === null
+      ? []
+      : [
+          {
+            value: "import-agent-session",
+            label: "Import",
+            items: agentSessionImportTargets.environments.map((environment) => {
+              const { reference } = agentSessionImportTargets;
+              const sourceLabel = reference.source === "codex" ? "Codex" : "Claude Code";
+              return {
+                kind: "action",
+                value: `import-agent-session:${environment.environmentId}`,
+                searchTerms: [],
+                title: `Import ${sourceLabel} thread`,
+                description:
+                  agentSessionImportTargets.environments.length > 1
+                    ? `${reference.providerSessionId} · ${environment.label}`
+                    : reference.providerSessionId,
+                icon: <ImportIcon className={ITEM_ICON_CLASS} />,
+                run: async () => {
+                  const result = await importAgentSessionThread({
+                    environmentId: environment.environmentId,
+                    input: reference,
+                  });
+                  if (result._tag === "Success") {
+                    await navigate({
+                      to: "/$environmentId/$threadId",
+                      params: buildThreadRouteParams(
+                        scopeThreadRef(environment.environmentId, result.value.threadId),
+                      ),
+                    });
+                    return;
+                  }
+                  if (isAtomCommandInterrupted(result)) return;
+                  toastManager.add(
+                    stackedThreadToast({
+                      type: "error",
+                      title: `Failed to import ${sourceLabel} thread`,
+                      description: errorMessage(squashAtomCommandFailure(result)),
+                    }),
+                  );
+                },
+              };
+            }),
+          },
+        ];
+
+  const filteredGroups = [
+    ...agentSessionImportGroups,
+    ...filterCommandPaletteGroups({
+      activeGroups,
+      query: deferredQuery,
+      isInSubmenu: currentView !== null,
+      projectSearchItems: projectSearchItems,
+      settingsSearchItems,
+      threadSearchItems: allThreadItems,
+    }),
+  ];
 
   const handleAddProjectForEnvironment = useCallback(
     async (input: {

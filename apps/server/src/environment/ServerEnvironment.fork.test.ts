@@ -49,4 +49,20 @@ it.layer(NodeServices.layer)("ServerEnvironmentLive (fork)", (it) => {
       expect(descriptor.capabilities.threadFork).toBe(true);
     }),
   );
+
+  it.effect("advertises the agentSessionThreadImport capability", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-server-environment-fork-test-",
+      });
+
+      const descriptor = yield* Effect.gen(function* () {
+        const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
+        return yield* serverEnvironment.getDescriptor;
+      }).pipe(Effect.provide(makeServerEnvironmentLayer(baseDir)));
+
+      expect(descriptor.capabilities.agentSessionThreadImport).toBe(true);
+    }),
+  );
 });

@@ -130,7 +130,7 @@ import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
-import { importRecentAgentThreads } from "./project/AgentSessionImporter.ts";
+import { importAgentThreadById, importRecentAgentThreads } from "./project/AgentSessionImporter.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
@@ -2456,6 +2456,27 @@ const makeWsRpcLayer = (
           observeRpcEffect(
             WS_METHODS.agentSessionsImport,
             importRecentAgentThreads(input).pipe(
+              Effect.provideService(AgentSessionScanner.AgentSessionScanner, agentSessionScanner),
+              Effect.provideService(
+                OrchestrationEngine.OrchestrationEngineService,
+                orchestrationEngine,
+              ),
+              Effect.provideService(
+                ProjectionSnapshotQuery.ProjectionSnapshotQuery,
+                projectionSnapshotQuery,
+              ),
+              Effect.provideService(Crypto.Crypto, crypto),
+              Effect.provideService(
+                ProviderSessionDirectory.ProviderSessionDirectory,
+                providerSessionDirectory,
+              ),
+            ),
+            { "rpc.aggregate": "workspace" },
+          ),
+        [WS_METHODS.agentSessionsImportThread]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.agentSessionsImportThread,
+            importAgentThreadById(input).pipe(
               Effect.provideService(AgentSessionScanner.AgentSessionScanner, agentSessionScanner),
               Effect.provideService(
                 OrchestrationEngine.OrchestrationEngineService,

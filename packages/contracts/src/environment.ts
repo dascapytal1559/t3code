@@ -127,6 +127,10 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       through a turn and fork its provider session). Absent on older servers,
       so clients hide the fork actions instead of sending the field. */
   threadFork: Schema.optionalKey(Schema.Boolean),
+  /** Server understands agentSessions.importThread (import one Codex or
+      Claude session by its native id). Absent on older servers, so clients
+      hide the action instead of sending it. */
+  agentSessionThreadImport: Schema.optionalKey(Schema.Boolean),
   /** Server understands projects.listDirectory (per-directory explorer
       listing). Absent on older servers, so clients fall back to the capped
       projects.listEntries whole-tree listing instead of probing. */
