@@ -20,13 +20,15 @@ export interface McpInvocationScope {
 
 export class McpInvocationContext extends Context.Service<
   McpInvocationContext,
-  McpInvocationScope
+  McpInvocationScope | undefined
 >()("t3/mcp/McpInvocationContext") {}
 
 export const requireMcpCapability = Effect.fn("mcp.requireCapability")(function* (
   capability: McpCapability,
 ) {
   const invocation = yield* McpInvocationContext;
+  if (!invocation)
+    return yield* Effect.die("MCP tool invocation requires an authenticated task scope.");
   if (!invocation.capabilities.has(capability)) {
     return yield* new PreviewAutomationUnavailableError({
       capability,

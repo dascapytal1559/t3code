@@ -164,6 +164,10 @@ export interface CodexSessionRuntimeOptions {
   readonly threadId: ThreadId;
   readonly providerInstanceId?: ProviderInstanceId;
   readonly binaryPath: string;
+  readonly sharedDesktop?: boolean;
+  readonly sharedMcp?:
+    | { readonly endpoint: string; readonly authorizationHeader: string }
+    | undefined;
   readonly homePath?: string;
   readonly launchArgs?: string;
   readonly environment?: NodeJS.ProcessEnv;
@@ -683,6 +687,30 @@ export function isRecoverableThreadResumeError(error: unknown): boolean {
   return RECOVERABLE_THREAD_RESUME_ERROR_SNIPPETS.some((snippet) => message.includes(snippet));
 }
 
+const isCodexRequestError = Schema.is(CodexErrors.CodexAppServerRequestError);
+
+export const readSharedCodexTurns = (
+  read: Effect.Effect<
+    CodexRpc.ClientRequestResponsesByMethod["thread/read"],
+    CodexErrors.CodexAppServerError
+  >,
+  newThreadWithoutTurns: boolean,
+) =>
+  read.pipe(
+    Effect.map((response) => response.thread.turns),
+    Effect.catchIf(
+      (error) =>
+        newThreadWithoutTurns &&
+        isCodexRequestError(error) &&
+        error.code === -32601 &&
+        error.errorMessage === "list_turns is not supported yet",
+      // Codex 0.153.4 cannot list turns before the first rollout is written.
+      // Only a task created by this runtime with no observed turn is empty;
+      // a resumed task's history failure must remain an error.
+      () => Effect.succeed([]),
+    ),
+  );
+
 const CodexThreadResumeMetadata = Schema.Struct({
   cwd: Schema.String,
   model: Schema.String,
@@ -713,6 +741,7 @@ export const openCodexThread = (input: {
   readonly requestedModel: string | undefined;
   readonly serviceTier: CodexServiceTier | undefined;
   readonly resumeThreadId: string | undefined;
+  readonly sharedDesktop?: boolean;
   /** Fork the resume thread through this turn instead of resuming it. */
   readonly forkLastTurnId?: string | undefined;
 }): Effect.Effect<typeof CodexThreadResumeMetadata.Type, CodexErrors.CodexAppServerError> => {
@@ -761,14 +790,16 @@ export const openCodexThread = (input: {
           ),
         ),
       ),
-      Effect.catchIf(isRecoverableThreadResumeError, (error) =>
-        Effect.logWarning("codex app-server thread resume fell back to fresh start", {
-          threadId: input.threadId,
-          requestedRuntimeMode: input.runtimeMode,
-          resumeThreadId,
-          recoverable: true,
-          cause: error,
-        }).pipe(Effect.andThen(input.client.request("thread/start", startParams))),
+      Effect.catchIf(
+        (error) => !input.sharedDesktop && isRecoverableThreadResumeError(error),
+        (error) =>
+          Effect.logWarning("codex app-server thread resume fell back to fresh start", {
+            threadId: input.threadId,
+            requestedRuntimeMode: input.runtimeMode,
+            resumeThreadId,
+            recoverable: true,
+            cause: error,
+          }).pipe(Effect.andThen(input.client.request("thread/start", startParams))),
       ),
     );
 };
@@ -1300,6 +1331,39 @@ export const makeCodexSessionRuntime = (
           ...event,
         });
       });
+    let newThreadWithoutTurns = false;
+    const publishSharedHistory = Effect.fn("CodexSessionRuntime.publishSharedHistory")(
+      function* () {
+        const nativeThreadId = currentProviderThreadId(yield* Ref.get(sessionRef));
+        if (!options.sharedDesktop || !nativeThreadId) return;
+        const turns = yield* readSharedCodexTurns(
+          client.request("thread/read", {
+            threadId: nativeThreadId,
+            includeTurns: true,
+          }),
+          newThreadWithoutTurns,
+        );
+        if (turns.length > 0) newThreadWithoutTurns = false;
+        yield* emitEvent({
+          kind: "notification",
+          threadId: options.threadId,
+          method: "shared/history",
+          payload: {
+            nativeThreadId,
+            turns: turns
+              .filter((turn) => turn.status !== "inProgress")
+              .map((turn) => ({
+                id: turn.id,
+                status: turn.status,
+                startedAt: turn.startedAt ?? null,
+                items: turn.items,
+              })),
+          },
+        });
+      },
+    );
+    const ownedTurns = new Set<string>();
+    let startingTurn = false;
     const emitSessionEvent = (method: string, message: string) =>
       emitEvent({
         kind: "session",
@@ -1775,6 +1839,26 @@ export const makeCodexSessionRuntime = (
 
         const payload = notification.params;
         const route = readRouteFields(notification);
+        if (
+          (notification.method === "turn/started" || notification.method === "turn/completed") &&
+          readNotificationThreadId(notification) ===
+            currentProviderThreadId(yield* Ref.get(sessionRef))
+        )
+          newThreadWithoutTurns = false;
+        if (options.sharedDesktop && !startingTurn && ownedTurns.size === 0) {
+          // Desktop turns do not create T3 checkpoints or trigger T3 approvals.
+          if (notification.method === "turn/completed") yield* publishSharedHistory();
+          return;
+        }
+        if (
+          options.sharedDesktop &&
+          route.turnId &&
+          !startingTurn &&
+          readNotificationThreadId(notification) ===
+            currentProviderThreadId(yield* Ref.get(sessionRef)) &&
+          !ownedTurns.has(route.turnId)
+        )
+          return;
         const collabReceiverTurns = yield* Ref.get(collabReceiverTurnsRef);
         const childParentTurnId = (() => {
           const providerConversationId = readNotificationThreadId(notification);
@@ -1894,7 +1978,14 @@ export const makeCodexSessionRuntime = (
             : {}),
           ...(payload !== undefined ? { payload } : {}),
         });
-      });
+      }).pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            if (notification.method === "turn/completed")
+              ownedTurns.delete(notification.params.turn.id);
+          }),
+        ),
+      );
 
     const currentSessionProviderThreadId = Effect.map(Ref.get(sessionRef), currentProviderThreadId);
 
@@ -2274,12 +2365,40 @@ export const makeCodexSessionRuntime = (
       Effect.forkIn(runtimeScope),
     );
 
+    const assertSharedIdle = Effect.fn("CodexSessionRuntime.assertSharedIdle")(function* (
+      providerThreadId: string,
+    ) {
+      if (!options.sharedDesktop) return;
+      const current = yield* client.request("thread/read", {
+        threadId: providerThreadId,
+        includeTurns: false,
+      });
+      if (current.thread.status.type === "active")
+        return yield* CodexErrors.CodexAppServerRequestError.invalidParams(
+          "This task has an active turn. Finish it in the app that started it before continuing from T3.",
+        );
+    });
+
     const start = Effect.fn("CodexSessionRuntime.start")(function* () {
       yield* emitSessionEvent("session/connecting", "Starting Codex App Server session.");
       yield* client.request("initialize", buildCodexInitializeParams());
       yield* client.notify("initialized", undefined);
+      if (options.sharedMcp) {
+        yield* client.request("config/value/write", {
+          keyPath: "mcp_servers.t3-shared",
+          mergeStrategy: "replace",
+          value: {
+            url: options.sharedMcp.endpoint,
+            http_headers: { Authorization: options.sharedMcp.authorizationHeader },
+          },
+        });
+        yield* client.request("config/mcpServer/reload", undefined);
+      }
 
       const requestedModel = normalizeCodexModelSlug(options.model);
+      const resumeThreadId = readResumeCursorThreadId(options.resumeCursor);
+      if (options.sharedDesktop && resumeThreadId && !options.resumeCursor?.forkLastTurnId)
+        yield* assertSharedIdle(resumeThreadId);
 
       const opened = yield* openCodexThread({
         client,
@@ -2290,9 +2409,11 @@ export const makeCodexSessionRuntime = (
         serviceTier: options.serviceTier,
         resumeThreadId: readResumeCursorThreadId(options.resumeCursor),
         forkLastTurnId: options.resumeCursor?.forkLastTurnId,
+        ...(options.sharedDesktop !== undefined ? { sharedDesktop: options.sharedDesktop } : {}),
       });
 
       const providerThreadId = opened.thread.id;
+      newThreadWithoutTurns = resumeThreadId === undefined;
       const session = {
         ...(yield* Ref.get(sessionRef)),
         status: "ready",
@@ -2302,6 +2423,7 @@ export const makeCodexSessionRuntime = (
         updatedAt: yield* nowIso,
       } satisfies ProviderSession;
       yield* Ref.set(sessionRef, session);
+      yield* publishSharedHistory();
       yield* emitSessionEvent("session/ready", "Codex App Server session ready.");
       return session;
     });
@@ -2342,11 +2464,16 @@ export const makeCodexSessionRuntime = (
       getSession: Ref.get(sessionRef),
       compactThread: Effect.gen(function* () {
         const providerThreadId = yield* readProviderThreadId;
+        yield* assertSharedIdle(providerThreadId);
         yield* client.request("thread/compact/start", { threadId: providerThreadId });
       }),
       sendTurn: (input) =>
         Effect.gen(function* () {
           const providerThreadId = yield* readProviderThreadId;
+          if (options.sharedDesktop) {
+            yield* assertSharedIdle(providerThreadId);
+            yield* publishSharedHistory();
+          }
           if (hasConfiguredMcpServer(options.appServerArgs)) {
             yield* client.request("config/mcpServer/reload", undefined).pipe(
               Effect.catch((cause) =>
@@ -2371,16 +2498,27 @@ export const makeCodexSessionRuntime = (
             // Derived from the session's own MCP configuration rather than the
             // setting, so the prompt describes the tools this turn actually
             // has even if the setting changed after the session started.
-            browserToolsAvailable: hasConfiguredMcpServer(options.appServerArgs),
+            browserToolsAvailable:
+              options.sharedMcp !== undefined || hasConfiguredMcpServer(options.appServerArgs),
           });
-          const rawResponse = yield* client.raw.request("turn/start", params);
-          const response = yield* decodeV2TurnStartResponse(rawResponse).pipe(
-            Effect.mapError((error) =>
-              CodexErrors.CodexAppServerProtocolParseError.fromSchemaError(
-                "decode-response-payload",
-                error,
-                { method: "turn/start" },
+          startingTurn = true;
+          const response = yield* client.raw.request("turn/start", params).pipe(
+            Effect.flatMap((rawResponse) =>
+              decodeV2TurnStartResponse(rawResponse).pipe(
+                Effect.mapError((error) =>
+                  CodexErrors.CodexAppServerProtocolParseError.fromSchemaError(
+                    "decode-response-payload",
+                    error,
+                    { method: "turn/start" },
+                  ),
+                ),
               ),
+            ),
+            Effect.tap((response) => Effect.sync(() => ownedTurns.add(response.turn.id))),
+            Effect.ensuring(
+              Effect.sync(() => {
+                startingTurn = false;
+              }),
             ),
           );
           const turnId = TurnId.make(response.turn.id);
@@ -2405,6 +2543,13 @@ export const makeCodexSessionRuntime = (
         Effect.gen(function* () {
           const providerThreadId = yield* readProviderThreadId;
           const session = yield* Ref.get(sessionRef);
+          if (
+            options.sharedDesktop &&
+            (!session.activeTurnId || !ownedTurns.has(session.activeTurnId))
+          )
+            return yield* CodexErrors.CodexAppServerRequestError.invalidParams(
+              "Only the app that started this turn can stop it from T3.",
+            );
           // Stop-everything: children are full threads with their own turns;
           // interrupting only the parent leaves the fleet running. Interrupt
           // each live child turn first, best-effort per child, BOUNDED: the

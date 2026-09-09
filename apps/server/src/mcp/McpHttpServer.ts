@@ -3,6 +3,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import type * as Types from "effect/Types";
@@ -72,7 +73,56 @@ const makeMcpAuthMiddleware = McpSessionRegistry.McpSessionRegistry.pipe(
         authorization?.startsWith("Bearer ") === true
           ? authorization.slice("Bearer ".length).trim()
           : "";
-      const invocation = yield* registry.resolve(token);
+      let invocation = yield* registry.resolve(token);
+      if (!invocation && (yield* registry.authenticateShared(token))) {
+        if (request.method !== "POST") {
+          // Stream negotiation and session termination have no JSON-RPC
+          // envelope. The transport validates these methods; only POST can
+          // invoke a tool and therefore needs a task binding below.
+          return yield* httpEffect.pipe(
+            Effect.provideService(McpInvocationContext.McpInvocationContext, undefined),
+            Effect.map(normalizeMcpHttpResponse),
+          );
+        }
+        const envelope = yield* request.json.pipe(
+          Effect.flatMap(
+            Schema.decodeUnknownEffect(
+              Schema.Struct({
+                method: Schema.String,
+                params: Schema.optionalKey(
+                  Schema.Struct({
+                    _meta: Schema.optionalKey(
+                      Schema.Struct({ threadId: Schema.optionalKey(Schema.String) }),
+                    ),
+                  }),
+                ),
+              }),
+            ),
+          ),
+          Effect.option,
+        );
+        if (Option.isNone(envelope)) return unauthorized;
+        if (envelope.value.method === "tools/call") {
+          const nativeId = envelope.value.params?._meta?.threadId;
+          invocation = nativeId ? yield* registry.resolveNativeThread(nativeId) : undefined;
+        } else if (
+          [
+            "initialize",
+            "notifications/initialized",
+            "tools/list",
+            "resources/list",
+            "resources/templates/list",
+            "prompts/list",
+            "ping",
+          ].includes(envelope.value.method)
+        ) {
+          // Discovery has no task identity. The allowlist excludes tool calls.
+          return yield* httpEffect.pipe(
+            Effect.provideService(McpInvocationContext.McpInvocationContext, undefined),
+            Effect.map(normalizeMcpHttpResponse),
+          );
+        }
+      }
       if (!invocation) {
         // Without this the only symptom of a dead credential is the agent
         // quietly losing the whole `t3-code` toolkit for the rest of its
@@ -91,7 +141,7 @@ const makeMcpAuthMiddleware = McpSessionRegistry.McpSessionRegistry.pipe(
   Effect.withSpan("McpHttpServer.makeAuthMiddleware"),
 );
 
-const McpAuthMiddlewareLive = HttpRouter.middleware<{
+export const McpAuthMiddlewareLive = HttpRouter.middleware<{
   provides: McpInvocationContext.McpInvocationContext;
 }>()(makeMcpAuthMiddleware).layer;
 

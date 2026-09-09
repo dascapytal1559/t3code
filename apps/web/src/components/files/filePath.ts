@@ -60,3 +60,16 @@ export function fileBreadcrumbParent(directoryPath: string): string | null {
   const separatorIndex = directoryPath.lastIndexOf("/");
   return separatorIndex === -1 ? "" : directoryPath.slice(0, separatorIndex);
 }
+
+/**
+ * Absolute host path for a workspace entry. Paths that are already absolute
+ * (files opened from outside the workspace) pass through unchanged; the empty
+ * path is the workspace root itself.
+ */
+export function workspaceAbsolutePath(cwd: string, relativePath: string): string {
+  if (isAbsolutePath(relativePath)) return relativePath;
+  const separator = isWindowsAbsolutePath(cwd) ? "\\" : "/";
+  const base = cwd.replace(/[\\/]+$/, "");
+  const parts = relativePath.split(/[\\/]/).filter(Boolean);
+  return parts.length === 0 ? cwd : [base, ...parts].join(separator);
+}

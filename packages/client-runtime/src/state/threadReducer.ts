@@ -347,6 +347,17 @@ export function applyThreadDetailEvent(
                 },
           )
         : Arr.append(thread.messages, message);
+      if (event.metadata.historyImport === true) {
+        return {
+          kind: "updated",
+          thread: {
+            ...thread,
+            messages: [...messages].sort(
+              (a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+            ),
+          },
+        };
+      }
       // Update latestTurn for assistant messages bound to a turn. A completed
       // assistant message only settles the turn once the session is no longer
       // running it — providers may emit several assistant messages per turn

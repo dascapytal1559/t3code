@@ -16,9 +16,9 @@ deltas that are no longer needed.
 Every feature below ends with a **Tests:** paragraph naming the tests that
 prove it still works. Fork-only test files end in `.fork.test.ts` and sit
 next to the module they cover, so they never collide with upstream test
-files during a merge; the two tests that need a large upstream harness stay
-inside `server.test.ts` and `ClaudeAdapter.test.ts` with a `fork: ` name
-prefix. Run the whole fork suite from this directory with
+files during a merge; the few tests that need a large upstream harness stay
+inside their upstream test file with a `fork: ` name prefix, and
+`test:fork` in `package.json` lists those files. Run the whole fork suite from this directory with
 
 ```
 vp run test:fork
@@ -201,6 +201,24 @@ The initial root listing is collapsed, and ignored entries such as
 
 ![Collapsed lazy file explorer with muted ignored entries](./assets/fork-features/file-explorer.png)
 
+## Copy absolute path from the explorer and breadcrumbs
+
+Right-clicking a row in the file explorer or a crumb in the file-preview
+breadcrumbs offers **Copy absolute path** alongside upstream's **Copy
+mention** and **Add to chat**. The breadcrumbs previously had no menu of their
+own (the desktop shell showed its generic Cut/Copy/Paste menu), so they now
+share the explorer's menu through one helper; the project-root crumb and
+host-path crumbs for files outside the workspace offer only the absolute path,
+since a mention cannot address either. The path is joined from the workspace
+root with the entry's relative path, using backslashes under a Windows root.
+
+Implementation: `apps/web/src/components/files/fileEntryContextMenu.ts`,
+`workspaceAbsolutePath` in `apps/web/src/components/files/filePath.ts`, and
+the right-click wiring in `FileBrowserPanel.tsx` and `FileBreadcrumbs.tsx`.
+
+Tests: `apps/web/src/components/files/filePath.test.ts` (`workspaceAbsolutePath`
+joining, root handling, absolute pass-through, Windows separators).
+
 ## Live filesystem updates
 
 While a client subscribes to workspace changes, the server watches the active
@@ -320,6 +338,73 @@ fund for the install), and
 override file).
 
 This remote-launch selection has no distinct client UI state to capture.
+
+## Shared Codex desktop backend
+
+Codex and T3 can drive the same native Codex conversation from one backend
+owned by the Codex desktop app, so the two apps never compete as writers on a
+thread and every Codex conversation, including ones T3 started, shows up in
+the Codex app. The Codex provider gains a **Shared Codex app launcher**
+setting (`desktopLauncherPath`). When set, the driver runs that launcher in
+place of the Codex binary, refuses shadow homes, custom launch arguments and
+provider environment overrides (shared mode uses the app's account), and
+skips provider update checks.
+
+The launcher is a separate bundle, `dist/codex-shared-launcher.mjs`, built
+from `apps/server/src/codex-shared-launcher.ts` and installed with
+`install --app --codex-home --directory --launch-agents`. The installer
+writes a `codex-shared` shell wrapper, a config file, and a login agent that
+sets `CODEX_CLI_PATH` so the Codex app spawns the launcher instead of its
+bundled binary; uninstall restores the previous environment and the Codex
+MCP entry it replaced. Launched by the Codex app, the launcher owns the
+backend: it holds a `lockf` lease so no second writer starts, runs the
+bundled Codex binary with `--listen` on a random loopback port, relays the
+app's stdio to that socket, publishes `backend.json` plus a token-guarded
+control socket, and answers `shared-status`, `shared-restart` (idle check,
+quit the owning app, relaunch) and `shared-uninstall`. Launched by T3
+(`T3_CODEX_SHARED_CLIENT=1`), it attaches to that backend, opens the Codex
+app first when a task starts and no backend is up
+(`T3_CODEX_SHARED_AUTOSTART=1`), rejects account login/logout, and forwards
+server-to-client requests only for turns this connection started.
+
+On the T3 side, `CodexSessionRuntime` in shared mode never falls back to a
+fresh thread when a resume fails, refuses to send or compact while the other
+app has an active turn, only stops turns it started, and drops notifications
+for turns it does not own. After the desktop completes a turn, and before
+each T3 turn, it reads the native thread and emits
+`thread.history.refreshed`; ingestion turns each not-yet-known completed turn
+into a `thread.history.sync` command whose deterministic command id makes
+repeated refreshes idempotent. The decider records the turn's user and
+assistant messages with `historyImport` metadata (no checkpoints, no
+approvals) plus a `shared.conversation.turn` activity, and the projector and
+client reducer order imported messages by time, using the UUIDv7 turn id
+for millisecond precision. Rewind is unavailable in shared mode. T3's MCP
+tools reach Codex through one shared bearer credential written into the
+Codex config as `mcp_servers.t3-shared` at session start; the MCP server
+authenticates that token, lets discovery through, and routes each tool call
+to the T3 task bound to the native thread id Codex sends in `_meta`. User
+documentation lives in `docs/user/providers-codex.md`. macOS only.
+
+Tests: `apps/server/src/codexShared/launcher.fork.test.ts` (macOS only:
+lease survives the launcher descriptor closing, install and uninstall
+restore the login environment and refuse a held lease),
+`codexShared/transport.fork.test.ts` (account mutations blocked, foreign
+server requests filtered, own requests relayed),
+`apps/server/src/orchestration/sharedCodexHistory.fork.test.ts` (UUIDv7
+ordering and idempotent command ids),
+`apps/server/src/mcp/McpSessionRegistry.shared.fork.test.ts` and
+`McpHttpServer.shared.fork.test.ts` (shared credential, native-thread
+binding, discovery allowlist, concurrent routing, revocation),
+`apps/server/src/provider/Layers/CodexSessionRuntime.shared.fork.test.ts`
+(first-turn history read, no fresh-start fallback), the `fork: ` tests in
+`ProviderRuntimeIngestion.test.ts` (import once, no checkpoints) and
+`CodexDriver.test.ts` (shared mode rejects overlays), and
+`packages/client-runtime/src/state/threadReducer.sharedHistory.fork.test.ts`
+(imported messages ordered before newer local ones). Separate isolated
+acceptance runs exercised the real Codex app, backend ownership, stdio relay,
+app restart, native MCP metadata and configuration restoration. Hands-on
+checks covered conversation switching and both apps' browser tools. These
+acceptance runs are not yet part of the repository's regression suite.
 
 ## Claude session recovery after latched auth errors
 

@@ -4,6 +4,65 @@ For one account, use the default Codex provider with your normal Codex login.
 [Provider setup](./install.md#providers) covers installation, Settings > Providers,
 and custom binaries or environment variables.
 
+## Continue the same conversation in Codex and T3
+
+Shared desktop mode lets both apps stay open and continue the same native
+conversation between completed turns. Codex owns the backend; closing a T3
+session only disconnects T3. Starting a task opens Codex if needed. If an existing
+Codex instance uses incompatible launch settings, T3 asks you to restart it.
+
+This mode currently targets macOS with one shared backend and one fixed account.
+T3 clients on other devices can use that Mac's server. Leave shadow homes, custom
+launch arguments and provider environment overrides empty. Switch accounts in
+Codex itself.
+
+Install the shared launcher from the T3 distribution. Supply the actual app,
+Codex home and installation paths:
+
+```bash
+node /path/to/t3/dist/codex-shared-launcher.mjs install \
+  --app "/Applications/ChatGPT.app" \
+  --codex-home "$HOME/.codex" \
+  --directory "$HOME/.t3/codex-shared" \
+  --launch-agents "$HOME/Library/LaunchAgents"
+```
+
+Quit and reopen Codex. In **Settings > Providers > Codex**, set **Shared Codex app
+launcher** to `~/.t3/codex-shared/codex-shared` and **CODEX_HOME path** to the home
+used above. The shared launcher takes precedence over the ordinary binary path.
+Leaving the shared launcher field empty uses the independent backend.
+
+The installer preserves ordinary Dock and Finder launch through a per-user
+`CODEX_CLI_PATH` setting and a login agent. Other future GUI programs that honor
+that variable can see it. The signed Codex app stays unchanged.
+
+Completed desktop turns are refreshed before T3 continues. Their messages and
+native tool records are retained without creating T3 checkpoints. T3 refuses to
+send into, or stop, an active turn owned by the other app. T3 rewind is unavailable
+in shared mode; its turn counts do not yet account for intervening desktop turns.
+
+Update Codex through its normal app updater. To restart the shared backend
+manually:
+
+```bash
+"$HOME/.t3/codex-shared/codex-shared" shared-restart
+```
+
+This checks for active turns, quits the owning Codex instance, waits for backend
+ownership to end, and reopens the app using its current bundled executable. It
+also closes Codex windows. The stdio connection requires this app relaunch.
+`shared-status` reports the current backend. There is no separate CLI update.
+
+To remove shared mode, finish any work and quit Codex, then run:
+
+```bash
+"$HOME/.t3/codex-shared/codex-shared" shared-uninstall
+```
+
+Clear **Shared Codex app launcher** in T3 afterward. Removal restores the prior
+login environment and the MCP configuration entry replaced by this integration.
+Your conversations and other Codex settings remain in place.
+
 ## Use multiple accounts
 
 A shared Codex home with a shadow home lets work and personal accounts continue

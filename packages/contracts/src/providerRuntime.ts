@@ -164,6 +164,7 @@ const ProviderRuntimeEventType = Schema.Literals([
   "thread.realtime.closed",
   "turn.started",
   "turn.completed",
+  "thread.history.refreshed",
   "turn.aborted",
   "turn.plan.updated",
   "turn.proposed.delta",
@@ -1226,7 +1227,26 @@ const ProviderRuntimeErrorEvent = Schema.Struct({
 });
 export type ProviderRuntimeErrorEvent = typeof ProviderRuntimeErrorEvent.Type;
 
+export const SharedThreadHistory = Schema.Struct({
+  nativeThreadId: Schema.String,
+  turns: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      status: Schema.String,
+      startedAt: Schema.NullOr(Schema.Number),
+      items: Schema.Array(Schema.Unknown),
+    }),
+  ),
+});
+export type SharedThreadHistory = typeof SharedThreadHistory.Type;
+const ProviderRuntimeSharedHistoryEvent = Schema.Struct({
+  ...ProviderRuntimeEventBase.fields,
+  type: Schema.Literal("thread.history.refreshed"),
+  payload: SharedThreadHistory,
+});
+
 export const ProviderRuntimeEventV2 = Schema.Union([
+  ProviderRuntimeSharedHistoryEvent,
   ProviderRuntimeSessionStartedEvent,
   ProviderRuntimeSessionConfiguredEvent,
   ProviderRuntimeSessionStateChangedEvent,

@@ -48,6 +48,7 @@ import {
   ProviderRuntimeIngestionService,
   type ProviderRuntimeIngestionShape,
 } from "../Services/ProviderRuntimeIngestion.ts";
+import { sharedHistoryCommand } from "../sharedCodexHistory.ts";
 import { projectActivityPayload } from "../ActivityPayloadProjection.ts";
 import { forkParked } from "../../serverActivation.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
@@ -1483,6 +1484,29 @@ const make = Effect.gen(function* () {
       const thread = yield* resolveThreadRuntimeContext(event.threadId);
       if (!thread) return;
 
+      if (event.type === "thread.history.refreshed") {
+        const [localTurns, messages] = yield* Effect.all(
+          [
+            projectionTurnRepository.listByThreadId({ threadId: thread.id }),
+            projectionThreadMessages.listByThreadId({ threadId: thread.id }),
+          ],
+          { concurrency: "unbounded" },
+        );
+        // Forked T3 tasks may already contain these native turns under copied
+        // message IDs. A native turn is imported only once in each T3 task.
+        const knownTurns = new Set(
+          [...localTurns, ...messages].flatMap((entry) =>
+            entry.turnId === null ? [] : [String(entry.turnId)],
+          ),
+        );
+        for (const turn of event.payload.turns) {
+          if (turn.status === "inProgress" || knownTurns.has(turn.id)) continue;
+          yield* orchestrationEngine.dispatch(
+            sharedHistoryCommand(thread.id, event.payload.nativeThreadId, turn, event.createdAt),
+          );
+        }
+        return;
+      }
       const now = event.createdAt;
       const eventTurnId = toTurnId(event.turnId);
       const activeTurnId = thread.session?.activeTurnId ?? null;

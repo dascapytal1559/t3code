@@ -1542,6 +1542,38 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "thread.history.sync": {
+      const thread = yield* requireThread({ readModel, command, threadId: command.threadId });
+      if (thread.deletedAt !== null) return [];
+      const base = {
+        aggregateKind: "thread" as const,
+        aggregateId: command.threadId,
+        occurredAt: command.createdAt,
+        commandId: command.commandId,
+        metadata: { historyImport: true },
+      };
+      const events: Array<PlannedOrchestrationEvent> = [];
+      for (const message of command.messages) {
+        events.push({
+          ...(yield* withEventBase(base)),
+          type: "thread.message-sent",
+          payload: {
+            threadId: command.threadId,
+            ...message,
+            turnId: command.turnId,
+            streaming: false,
+            updatedAt: message.createdAt,
+          },
+        });
+      }
+      events.push({
+        ...(yield* withEventBase(base)),
+        type: "thread.activity-appended",
+        payload: { threadId: command.threadId, activity: command.activity },
+      });
+      return events;
+    }
+
     case "thread.history.import": {
       const thread = yield* requireThread({
         readModel,

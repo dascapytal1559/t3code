@@ -454,6 +454,15 @@ export const CodexSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
+    desktopLauncherPath: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Shared Codex app launcher",
+        description:
+          "Use an installed shared launcher to continue the Codex app's conversations. Leave empty to run Codex independently. Shared mode uses the app's account and does not support shadow homes or custom launch arguments.",
+        providerSettingsForm: { clearWhenEmpty: "omit" },
+      }),
+    ),
     binaryPath: makeBinaryPathSetting("codex").pipe(
       Schema.annotateKey({
         title: "Binary path",
@@ -497,7 +506,7 @@ export const CodexSettings = makeProviderSettingsSchema(
     ),
   },
   {
-    order: ["binaryPath", "homePath", "shadowHomePath", "launchArgs"],
+    order: ["desktopLauncherPath", "binaryPath", "homePath", "shadowHomePath", "launchArgs"],
   },
 );
 export type CodexSettings = typeof CodexSettings.Type;

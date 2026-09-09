@@ -222,6 +222,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       });
 
       assert.deepEqual(next.providers.codex, {
+        desktopLauncherPath: "",
         enabled: true,
         binaryPath: "/opt/homebrew/bin/codex",
         homePath: "/Users/julius/.codex",
@@ -931,6 +932,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       });
 
       assert.deepEqual(next.providers.codex, {
+        desktopLauncherPath: "",
         enabled: true,
         binaryPath: "/opt/homebrew/bin/codex",
         homePath: "",

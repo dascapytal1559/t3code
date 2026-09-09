@@ -56,6 +56,33 @@ const noSpawn = ChildProcessSpawner.make(() =>
 );
 
 it.layer(testLayer)("CodexDriver", (it) => {
+  it.effect(
+    "fork: rejects account overlays and custom startup settings in shared desktop mode",
+    () =>
+      Effect.gen(function* () {
+        for (const override of [
+          { shadowHomePath: "/must-not-materialize" },
+          { launchArgs: "-c model=custom" },
+        ]) {
+          const error = yield* CodexDriver.create({
+            instanceId: ProviderInstanceId.make("shared"),
+            displayName: "Shared Codex",
+            enabled: false,
+            environment: [],
+            config: {
+              ...CodexDriver.defaultConfig(),
+              desktopLauncherPath: "/explicit/shared-launcher",
+              ...override,
+            },
+          }).pipe(Effect.flip);
+          expect(error.detail).toContain("Remove the shadow home");
+        }
+      }).pipe(
+        Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, noSpawn),
+        Effect.scoped,
+      ),
+  );
+
   it.effect.skipIf(windowsHost)(
     "runs the standalone updater against the shared home, not the shadow home",
     () =>
@@ -174,7 +201,7 @@ it.layer(testLayer)("CodexDriver", (it) => {
               "install",
               "-g",
               "--prefix",
-              installPath,
+              yield* fs.realPath(installPath),
               "--allow-scripts=@openai/codex",
               "@openai/codex@latest",
             ],
@@ -361,7 +388,11 @@ it.layer(testLayer)("CodexDriver", (it) => {
         if (fixture.nodeFirst) {
           expect(capabilities.update).toMatchObject({
             executable: "npm",
-            args: expect.arrayContaining(["--prefix", npmPrefix, "@openai/codex@latest"]),
+            args: expect.arrayContaining([
+              "--prefix",
+              yield* fs.realPath(npmPrefix),
+              "@openai/codex@latest",
+            ]),
           });
         } else {
           expect(capabilities.update).toBeNull();
