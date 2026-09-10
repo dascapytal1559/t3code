@@ -65,7 +65,10 @@ function event<T extends OrchestrationEvent["type"]>(
 
 const at = (seconds: number) => `2026-03-01T12:00:${String(seconds).padStart(2, "0")}.000Z`;
 
-const threadCreated = (threadId: ThreadId, forkedFrom?: { threadId: ThreadId; turnId: TurnId }) =>
+const threadCreated = (
+  threadId: ThreadId,
+  forkedFrom?: { threadId: ThreadId; turnId: TurnId; cutoffAt?: string | null },
+) =>
   event("thread.created", at(1), {
     threadId,
     projectId: PROJECT,
@@ -285,6 +288,125 @@ it.layer(TestLayer)("OrchestrationProjectionPipeline thread fork", (it) => {
       assert.equal(CheckpointRef.make(checkpointRefForThreadTurn(SOURCE, 3)).length > 0, true);
     }),
   );
+  // A prompt is not one turn: background work finishing after the reply opens
+  // a prompt-less turn, and a prompt sent mid-turn steers into the running
+  // one. The event's time cut keeps everything created before the next turn
+  // was requested and nothing after, with no counting.
+  it.effect("cuts by time: keeps prompt-less and steered turns, drops the next prompt", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const appendAndProject = (input: EventInput) =>
+        eventStore
+          .append(input)
+          .pipe(Effect.flatMap((saved) => projectionPipeline.projectEvent(saved)));
+
+      yield* appendAndProject(
+        event("project.created", at(0), {
+          projectId: PROJECT,
+          title: "Project",
+          workspaceRoot: "/tmp/project-fork",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: at(0),
+          updatedAt: at(0),
+        }),
+      );
+      yield* appendAndProject(threadCreated(SOURCE));
+      // t1: the prompt and its reply.
+      yield* appendAndProject(message("u1", "user", null, 2));
+      yield* appendAndProject(message("a1", "assistant", "t1", 3));
+      yield* appendAndProject(turnCompleted("t1", 1, "a1", 4));
+      // t1b: a background task reports in after the reply (no prompt), and a
+      // steer lands while it runs.
+      yield* appendAndProject(message("a1b", "assistant", "t1b", 5));
+      yield* appendAndProject(activity("act-1b", "t1b", 5));
+      yield* appendAndProject(message("u1s", "user", null, 6));
+      yield* appendAndProject(message("a1b2", "assistant", "t1b", 7));
+      yield* appendAndProject(turnCompleted("t1b", 2, "a1b2", 8));
+      // t2: the follow-up prompt that starts the next turn.
+      yield* appendAndProject(message("u2", "user", null, 9));
+      yield* appendAndProject(message("a2", "assistant", "t2", 10));
+      yield* appendAndProject(turnCompleted("t2", 3, "a2", 11));
+      yield* appendAndProject(activity("act-2", "t2", 11));
+
+      yield* appendAndProject(
+        threadCreated(FORK, { threadId: SOURCE, turnId: TurnId.make("t1b"), cutoffAt: at(9) }),
+      );
+
+      const messageRows = yield* sql<{ readonly text: string }>`
+        SELECT text
+        FROM projection_thread_messages
+        WHERE thread_id = ${FORK}
+        ORDER BY created_at ASC, message_id ASC
+      `;
+      assert.deepEqual(
+        messageRows.map((row) => row.text),
+        ["user u1", "assistant a1", "assistant a1b", "user u1s", "assistant a1b2"],
+      );
+      const activityRows = yield* sql<{ readonly summary: string }>`
+        SELECT summary FROM projection_thread_activities WHERE thread_id = ${FORK}
+      `;
+      assert.deepEqual(
+        activityRows.map((row) => row.summary),
+        ["act-1b"],
+      );
+      const threadRows = yield* sql<{ readonly latestUserMessageAt: string | null }>`
+        SELECT latest_user_message_at AS "latestUserMessageAt"
+        FROM projection_threads
+        WHERE thread_id = ${FORK}
+      `;
+      assert.deepEqual(threadRows, [{ latestUserMessageAt: at(6) }]);
+    }),
+  );
+
+  it.effect("copies everything when the fork turn is the source's last", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const appendAndProject = (input: EventInput) =>
+        eventStore
+          .append(input)
+          .pipe(Effect.flatMap((saved) => projectionPipeline.projectEvent(saved)));
+
+      yield* appendAndProject(
+        event("project.created", at(0), {
+          projectId: PROJECT,
+          title: "Project",
+          workspaceRoot: "/tmp/project-fork",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: at(0),
+          updatedAt: at(0),
+        }),
+      );
+      yield* appendAndProject(threadCreated(SOURCE));
+      // One turn, three prompts: the count-padded rule would keep one.
+      yield* appendAndProject(message("u1", "user", null, 2));
+      yield* appendAndProject(message("u1s", "user", null, 3));
+      yield* appendAndProject(message("u1t", "user", null, 4));
+      yield* appendAndProject(message("a1", "assistant", "t1", 5));
+      yield* appendAndProject(turnCompleted("t1", 1, "a1", 6));
+
+      yield* appendAndProject(
+        threadCreated(FORK, { threadId: SOURCE, turnId: TurnId.make("t1"), cutoffAt: null }),
+      );
+
+      const messageRows = yield* sql<{ readonly text: string }>`
+        SELECT text
+        FROM projection_thread_messages
+        WHERE thread_id = ${FORK}
+        ORDER BY created_at ASC, message_id ASC
+      `;
+      assert.deepEqual(
+        messageRows.map((row) => row.text),
+        ["user u1", "user u1s", "user u1t", "assistant a1"],
+      );
+    }),
+  );
+
   it.effect("keeps imported history when reverting a fork", () =>
     Effect.gen(function* () {
       const projectionPipeline = yield* OrchestrationProjectionPipeline;

@@ -14,6 +14,7 @@ import {
   type ThreadId,
   type TurnId,
 } from "@t3tools/contracts";
+import { compareDateTimeStrings } from "@t3tools/shared/dateTime";
 
 /**
  * Deterministic id for a row copied into a fork. Message and activity ids are
@@ -66,4 +67,37 @@ export function resolveForkCutoff(
     }
   }
   return null;
+}
+
+/**
+ * The instant a fork's copied history ends: the request time of the first
+ * source turn after the fork turn (pending rows included), or null when the
+ * fork turn is the source's last. Turns run one at a time, a steered prompt
+ * lands before the next turn is requested, and queued follow-ups are held by
+ * the client until sent, so every row the fork keeps was created before this
+ * instant. It replaces prompt-per-turn counting, which breaks once background
+ * work opens prompt-less turns or steering puts several prompts in one turn.
+ * `turns` may be in any order. Null as well when the fork turn is unknown.
+ */
+export function resolveForkCutoffAt(
+  turns: ReadonlyArray<{ readonly turnId: TurnId | null; readonly requestedAt: string }>,
+  forkTurnId: TurnId,
+): string | null {
+  const forkTurn = turns.find((turn) => turn.turnId === forkTurnId);
+  if (forkTurn === undefined) return null;
+  let cutoffAt: string | null = null;
+  for (const turn of turns) {
+    if (turn === forkTurn || compareDateTimeStrings(turn.requestedAt, forkTurn.requestedAt) <= 0) {
+      continue;
+    }
+    if (cutoffAt === null || compareDateTimeStrings(turn.requestedAt, cutoffAt) < 0) {
+      cutoffAt = turn.requestedAt;
+    }
+  }
+  return cutoffAt;
+}
+
+/** Whether a source row created at `createdAt` belongs to a fork cut at `cutoffAt`. */
+export function forkKeepsRow(cutoffAt: string | null, createdAt: string): boolean {
+  return cutoffAt === null || compareDateTimeStrings(createdAt, cutoffAt) < 0;
 }

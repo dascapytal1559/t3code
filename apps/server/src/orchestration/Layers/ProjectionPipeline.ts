@@ -6,8 +6,8 @@ import {
   type MessageId,
   type OrchestrationEvent,
   type OrchestrationSessionStatus,
+  type ThreadForkSource,
   ThreadId,
-  type TurnId,
 } from "@t3tools/contracts";
 import { compareDateTimeStrings } from "@t3tools/shared/dateTime";
 import * as Effect from "effect/Effect";
@@ -43,6 +43,7 @@ import { checkpointRefForThreadTurn } from "../../checkpointing/Utils.ts";
 import {
   forkedEntityId,
   forkedMessageId,
+  forkKeepsRow,
   resolveForkCutoff,
   type ForkCutoff,
 } from "../threadFork.ts";
@@ -367,28 +368,45 @@ function retainProjectionProposedPlans(
 
 /**
  * The slice of a source thread a fork inherits: its turns through the fork
- * turn, in timeline order, plus the revert-style turn count used to pad
- * turnless messages. Null when the fork turn is not a turn of the source.
+ * turn, in timeline order, and where its copied history ends. `cutoffAt` is
+ * the event's time cut (null: the fork turn was the source's last, keep
+ * everything); undefined on events from before the cut existed, which fall
+ * back to revert-style retention padded by `cutoff.turnCount`. Null when the
+ * fork turn is not a turn of the source.
  */
 interface ForkSourceSlice {
   readonly keptTurns: ReadonlyArray<ProjectionTurn>;
   readonly cutoff: ForkCutoff;
+  readonly cutoffAt: string | null | undefined;
 }
 
 function sliceForkSourceTurns(
   sourceTurns: ReadonlyArray<ProjectionTurn>,
-  forkTurnId: TurnId,
+  forkedFrom: ThreadForkSource,
 ): ForkSourceSlice | null {
-  const cutoff = resolveForkCutoff(sourceTurns, forkTurnId);
+  const cutoff = resolveForkCutoff(sourceTurns, forkedFrom.turnId);
   if (cutoff === null) {
     return null;
   }
   return {
     cutoff,
+    cutoffAt: forkedFrom.cutoffAt,
     keptTurns: sourceTurns.filter(
       (turn) => turn.turnId !== null && cutoff.retainedTurnIds.has(turn.turnId),
     ),
   };
+}
+
+/** Rows a fork copies: everything before the time cut, or the legacy rule. */
+function retainForkRows<T extends { readonly createdAt: string }>(
+  rows: ReadonlyArray<T>,
+  slice: ForkSourceSlice,
+  legacy: () => ReadonlyArray<T>,
+): ReadonlyArray<T> {
+  const cutoffAt = slice.cutoffAt;
+  return cutoffAt === undefined
+    ? legacy()
+    : rows.filter((row) => forkKeepsRow(cutoffAt, row.createdAt));
 }
 
 function collectThreadAttachmentRelativePaths(
@@ -556,7 +574,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       const sourceTurns = yield* projectionTurnRepository.listByThreadId({
         threadId: forkedFrom.threadId,
       });
-      return sliceForkSourceTurns(sourceTurns, forkedFrom.turnId);
+      return sliceForkSourceTurns(sourceTurns, forkedFrom);
     });
     const forkMessageId = (forkThreadId: ThreadId, messageId: MessageId | null) =>
       messageId === null ? null : forkedMessageId(forkThreadId, messageId);
@@ -568,14 +586,28 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       const sourceRows = yield* projectionThreadMessageRepository.listByThreadId({
         threadId: forkedFrom.threadId,
       });
-      return retainProjectionMessages(sourceRows, slice.keptTurns, slice.cutoff.turnCount).map(
-        (row) => ({
-          ...row,
-          messageId: forkedMessageId(forkThreadId, row.messageId),
-          threadId: forkThreadId,
-        }),
-      );
+      return retainForkRows(sourceRows, slice, () =>
+        retainProjectionMessages(sourceRows, slice.keptTurns, slice.cutoff.turnCount),
+      ).map((row) => ({
+        ...row,
+        messageId: forkedMessageId(forkThreadId, row.messageId),
+        threadId: forkThreadId,
+      }));
     });
+    const copyForkActivities = (
+      sourceRows: ReadonlyArray<ProjectionThreadActivity>,
+      slice: ForkSourceSlice,
+    ) =>
+      retainForkRows(sourceRows, slice, () =>
+        retainProjectionActivities(sourceRows, slice.keptTurns),
+      );
+    const copyForkProposedPlans = (
+      sourceRows: ReadonlyArray<ProjectionThreadProposedPlan>,
+      slice: ForkSourceSlice,
+    ) =>
+      retainForkRows(sourceRows, slice, () =>
+        retainProjectionProposedPlans(sourceRows, slice.keptTurns),
+      );
 
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -761,11 +793,11 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               latestTurnId: event.payload.forkedFrom.turnId,
               latestUserMessageAt,
               pendingUserInputCount: derivePendingUserInputCountFromActivities(
-                retainProjectionActivities(sourceLifecycleActivities, slice.keptTurns),
+                copyForkActivities(sourceLifecycleActivities, slice),
               ),
               hasActionableProposedPlan: deriveHasActionableProposedPlan({
                 latestTurnId: event.payload.forkedFrom.turnId,
-                proposedPlans: retainProjectionProposedPlans(sourcePlans, slice.keptTurns),
+                proposedPlans: copyForkProposedPlans(sourcePlans, slice),
               })
                 ? 1
                 : 0,
@@ -1278,7 +1310,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             threadId: event.payload.forkedFrom.threadId,
           });
           yield* Effect.forEach(
-            retainProjectionProposedPlans(sourceRows, slice.keptTurns),
+            copyForkProposedPlans(sourceRows, slice),
             (row) =>
               projectionThreadProposedPlanRepository.upsert({
                 ...row,
@@ -1356,7 +1388,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             threadId: event.payload.forkedFrom.threadId,
           });
           yield* Effect.forEach(
-            retainProjectionActivities(sourceRows, slice.keptTurns),
+            copyForkActivities(sourceRows, slice),
             (row) =>
               projectionThreadActivityRepository.upsert({
                 ...row,

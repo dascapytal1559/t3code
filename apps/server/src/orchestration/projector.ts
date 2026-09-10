@@ -1,4 +1,9 @@
-import type { OrchestrationEvent, OrchestrationReadModel, ThreadId } from "@t3tools/contracts";
+import type {
+  OrchestrationEvent,
+  OrchestrationReadModel,
+  ThreadForkSource,
+  ThreadId,
+} from "@t3tools/contracts";
 import {
   EventId,
   isImportedAgentSessionMessageId,
@@ -39,7 +44,7 @@ import {
   ThreadSessionSetPayload,
   ThreadTurnDiffCompletedPayload,
 } from "./Schemas.ts";
-import { forkedEntityId, forkedMessageId, resolveForkCutoff } from "./threadFork.ts";
+import { forkedEntityId, forkedMessageId, forkKeepsRow, resolveForkCutoff } from "./threadFork.ts";
 
 type ThreadPatch = Partial<Omit<OrchestrationThread, "id" | "projectId">>;
 const MAX_THREAD_MESSAGES = 2_000;
@@ -223,15 +228,16 @@ function compareThreadActivities(
 
 /**
  * History a fork inherits from its source thread, keyed by the fork's own ids
- * and checkpoint refs. Reuses the revert retention rules so the fork holds
- * exactly what the source would keep after reverting to the fork turn.
- * The command read model caps messages and checkpoints, so a fork turn older
- * than the caps copies nothing here; the SQL projections are authoritative.
+ * and checkpoint refs. Rows are kept by the event's time cut (`cutoffAt`);
+ * events from before the cut existed reuse the revert retention rules
+ * instead. The command read model caps messages and checkpoints, so a fork
+ * turn older than the caps copies nothing here; the SQL projections are
+ * authoritative.
  */
 function copyThreadHistoryForFork(
   source: OrchestrationThread,
   forkThreadId: ThreadId,
-  forkTurnId: OrchestrationThread["checkpoints"][number]["turnId"],
+  forkedFrom: ThreadForkSource,
 ): Pick<
   OrchestrationThread,
   "messages" | "activities" | "proposedPlans" | "checkpoints" | "latestTurn" | "session"
@@ -258,6 +264,7 @@ function copyThreadHistoryForFork(
   const orderedCheckpoints = source.checkpoints.toSorted(
     (left, right) => left.checkpointTurnCount - right.checkpointTurnCount,
   );
+  const forkTurnId = forkedFrom.turnId;
   const orderedTurns = orderedCheckpoints.some((checkpoint) => checkpoint.turnId === forkTurnId)
     ? orderedCheckpoints
     : [
@@ -280,23 +287,25 @@ function copyThreadHistoryForFork(
           : remapMessageId(checkpoint.assistantMessageId),
     }))
     .slice(-MAX_THREAD_CHECKPOINTS);
-  const messages = retainThreadMessagesAfterRevert(
-    source.messages,
-    cutoff.retainedTurnIds,
-    cutoff.turnCount,
+  const cutoffAt = forkedFrom.cutoffAt;
+  const retainForkRows = <T extends { readonly createdAt: string }>(
+    rows: ReadonlyArray<T>,
+    legacy: () => ReadonlyArray<T>,
+  ): ReadonlyArray<T> =>
+    cutoffAt === undefined ? legacy() : rows.filter((row) => forkKeepsRow(cutoffAt, row.createdAt));
+  const messages = retainForkRows(source.messages, () =>
+    retainThreadMessagesAfterRevert(source.messages, cutoff.retainedTurnIds, cutoff.turnCount),
   )
     .map((message) => ({ ...message, id: remapMessageId(message.id) }))
     .slice(-MAX_THREAD_MESSAGES);
-  const activities = retainThreadActivitiesAfterRevert(
-    source.activities,
-    cutoff.retainedTurnIds,
+  const activities = retainForkRows(source.activities, () =>
+    retainThreadActivitiesAfterRevert(source.activities, cutoff.retainedTurnIds),
   ).map((activity) => ({
     ...activity,
     id: EventId.make(forkedEntityId(forkThreadId, activity.id)),
   }));
-  const proposedPlans = retainThreadProposedPlansAfterRevert(
-    source.proposedPlans,
-    cutoff.retainedTurnIds,
+  const proposedPlans = retainForkRows(source.proposedPlans, () =>
+    retainThreadProposedPlansAfterRevert(source.proposedPlans, cutoff.retainedTurnIds),
   ).map((plan) => ({ ...plan, id: forkedEntityId(forkThreadId, plan.id) }));
   const forkCheckpoint = checkpoints.find((checkpoint) => checkpoint.turnId === forkTurnId);
   const latestTurn: OrchestrationThread["latestTurn"] = forkCheckpoint
@@ -465,11 +474,7 @@ export function projectEvent(
           payload.forkedFrom && forkSource
             ? {
                 ...createdThread,
-                ...copyThreadHistoryForFork(
-                  forkSource,
-                  createdThread.id,
-                  payload.forkedFrom.turnId,
-                ),
+                ...copyThreadHistoryForFork(forkSource, createdThread.id, payload.forkedFrom),
               }
             : createdThread;
         const existing = nextBase.threads.find((entry) => entry.id === thread.id);

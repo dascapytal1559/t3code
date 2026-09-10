@@ -109,7 +109,7 @@ function sourceThread(): OrchestrationThread {
   };
 }
 
-function forkEvent(turnId: string): OrchestrationEvent {
+function forkEvent(turnId: string, cutoffAt?: string | null): OrchestrationEvent {
   return {
     sequence: 10,
     eventId: EventId.make("evt-fork"),
@@ -130,7 +130,11 @@ function forkEvent(turnId: string): OrchestrationEvent {
       interactionMode: "default",
       branch: null,
       worktreePath: null,
-      forkedFrom: { threadId: SOURCE, turnId: TurnId.make(turnId) },
+      forkedFrom: {
+        threadId: SOURCE,
+        turnId: TurnId.make(turnId),
+        ...(cutoffAt !== undefined ? { cutoffAt } : {}),
+      },
       createdAt: NOW,
       updatedAt: NOW,
     },
@@ -176,6 +180,44 @@ it.layer(NodeServices.layer)("projector thread fork", (it) => {
       expect(source?.checkpoints[0]?.checkpointRef).toBe(
         CheckpointRef.make(checkpointRefForThreadTurn(SOURCE, 1)),
       );
+    }),
+  );
+
+  it.effect("cuts by time when the event carries a cutoff", () =>
+    Effect.gen(function* () {
+      const source = sourceThread();
+      const withSteer: OrchestrationThread = {
+        ...source,
+        // A steer into t2 and a background completion after its reply, both
+        // before u3 requested t3: the cut keeps them and drops u3 onward.
+        messages: [
+          ...source.messages.slice(0, 4),
+          message("u2s", "user", null, "2026-01-01T00:00:04.200Z"),
+          message("a2b", "assistant", "t2b", "2026-01-01T00:00:04.500Z"),
+          ...source.messages.slice(4),
+        ],
+        activities: [
+          activity("act-1", "t1", 1),
+          { ...activity("act-2b", null, 2), createdAt: "2026-01-01T00:00:04.500Z" },
+          { ...activity("act-3", "t3", 3), createdAt: "2026-01-01T00:00:06.000Z" },
+        ],
+      };
+      const model = { ...createEmptyReadModel(NOW), threads: [withSteer] };
+      const next = yield* projectEvent(model, forkEvent("t2", "2026-01-01T00:00:05.000Z"));
+      const fork = next.threads.find((thread) => thread.id === FORK);
+      expect(fork!.messages.map((entry) => entry.text)).toEqual([
+        "user u1",
+        "assistant a1",
+        "user u2",
+        "assistant a2",
+        "user u2s",
+        "assistant a2b",
+      ]);
+      expect(fork!.activities.map((entry) => entry.summary)).toEqual(["act-1", "act-2b"]);
+
+      // No cut: the fork turn is the source's last, everything is copied.
+      const all = yield* projectEvent(model, forkEvent("t2", null));
+      expect(all.threads.find((thread) => thread.id === FORK)?.messages).toHaveLength(8);
     }),
   );
 

@@ -800,6 +800,13 @@ const ProjectDeleteCommand = Schema.Struct({
 export const ThreadForkSource = Schema.Struct({
   threadId: ThreadId,
   turnId: TurnId,
+  /**
+   * Server-set on the event: the request time of the first source turn after
+   * the fork turn, or null when the fork turn is the source's last. Projectors
+   * copy every row created before it. Absent only on events recorded before
+   * the cut existed; those replay under the older turn-count retention.
+   */
+  cutoffAt: Schema.optional(Schema.NullOr(IsoDateTime)),
 });
 export type ThreadForkSource = typeof ThreadForkSource.Type;
 

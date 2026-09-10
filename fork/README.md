@@ -471,10 +471,20 @@ model, runtime and interaction modes, branch, and worktree, is titled
 
 On the wire a fork is a `thread.create` with `forkedFrom: { threadId, turnId
 }`. The decider rejects sources in another project and forks through a
-running turn; the event keeps the provenance. Every projector copies its own
-rows from the source through the fork turn using the same retention rules as
-revert, so the fork holds exactly what the source would keep after reverting
-to that turn. Message, activity, and plan ids are re-minted deterministically
+running turn; the event keeps the provenance. The fork dispatcher adds
+`forkedFrom.cutoffAt` to the dispatched command: the request time of the
+first source turn after the fork turn (pending rows included), or null when
+the fork turn is the source's last. Every projector copies its own rows from
+the source that were created before that instant (everything, on null), plus
+the turn rows through the fork turn. Until 2026-09-10 the copy reused
+revert's retention rules, which assume one prompt per turn and pad the user
+side by count; a Claude prompt often spans several turns (background work
+finishing after the reply opens a prompt-less synthetic turn) and a prompt
+sent mid-turn steers into the running one, so the padding pulled in prompts
+from after the fork point. Events recorded before `cutoffAt` existed replay
+under the old rules. Revert still uses those count-padded rules and has the
+same latent leak; it is upstream code and was left alone.
+Message, activity, and plan ids are re-minted deterministically
 from the fork's id (they are global primary keys). Imported message copies retain
 upstream’s `import:` marker so later reverts preserve that history. Turn ids carry over
 unchanged (Codex uses them as its own), and checkpoint refs move under the
@@ -519,12 +529,13 @@ copies), `Layers/ThreadFork.ts` (dispatch ordering, checkpoint ref copy),
 `apps/mobile/src/features/home/useThreadListActions.ts` with the mobile row
 menus.
 
-Tests: `apps/server/src/orchestration/threadFork.fork.test.ts` (cutoff and
-deterministic ids), `decider.threadFork.fork.test.ts` (fork-point checks),
-`projector.threadFork.fork.test.ts` (command read model copy),
+Tests: `apps/server/src/orchestration/threadFork.fork.test.ts` (cutoff, time
+cut, and deterministic ids), `decider.threadFork.fork.test.ts` (fork-point
+checks), `projector.threadFork.fork.test.ts` (command read model copy),
 `Layers/ProjectionPipeline.threadFork.fork.test.ts` (SQL projections, turn
-refs, shell summary; both projector tests cover imported history surviving a
-fork and subsequent revert), `apps/server/src/provider/Layers/CodexSessionRuntime.fork.test.ts`
+refs, shell summary; both projector tests cover the time cut keeping steered
+and prompt-less turns while dropping the next prompt, and imported history
+surviving a fork and subsequent revert), `apps/server/src/provider/Layers/CodexSessionRuntime.fork.test.ts`
 (`thread/fork` open path, no fallback), `ClaudeAdapter.fork.test.ts` (seed
 cursor, anchors, and the fork-point error wording), `ClaudeAdapter.test.ts`
 (the settled turn's `turn.completed` carries the anchored cursor),

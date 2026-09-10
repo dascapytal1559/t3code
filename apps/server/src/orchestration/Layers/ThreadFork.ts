@@ -17,7 +17,7 @@ import { ProviderSessionDirectory } from "../../provider/Services/ProviderSessio
 import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts";
 import { ThreadDeletionReactor } from "../Services/ThreadDeletionReactor.ts";
 import { ThreadFork, type ThreadForkShape } from "../Services/ThreadFork.ts";
-import { resolveForkCutoff } from "../threadFork.ts";
+import { resolveForkCutoff, resolveForkCutoffAt } from "../threadFork.ts";
 
 const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
@@ -108,7 +108,12 @@ const make = Effect.gen(function* () {
       isLatestTurn: turnIds.at(-1) === forkTurnId,
     });
 
-    const created = yield* dispatch(command);
+    // The event names where the copied history ends, so both projectors cut
+    // by time instead of counting prompts per turn.
+    const created = yield* dispatch({
+      ...command,
+      forkedFrom: { ...command.forkedFrom, cutoffAt: resolveForkCutoffAt(sourceTurns, forkTurnId) },
+    });
     // Same fence as a plain create: the deletion reactor must finish with
     // any prior incarnation of this thread id before it owns resources.
     yield* threadDeletionReactor.drainThrough(created.sequence);
