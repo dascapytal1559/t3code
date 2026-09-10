@@ -135,7 +135,27 @@ describe("buildClaudeForkResumeCursor", () => {
         turnOrdinal: 1,
         isLatestTurn: false,
       }),
-    ).toHaveProperty("issue");
+    ).toEqual({
+      issue:
+        "Claude has no saved anchor for this reply, so the thread can only be forked from its latest reply.",
+    });
+  });
+
+  it("names the missing resume point when even the latest turn cannot be forked", () => {
+    // A cursor persisted at turn start, before the reply arrived: it has the
+    // session but neither the reply UUID nor an anchor for the turn.
+    expect(
+      buildClaudeForkResumeCursor({
+        sourceResumeCursor: { threadId: "source", resume: sourceCursor.resume, turnCount: 0 },
+        targetThreadId: ThreadId.make("fork"),
+        turnId: TurnId.make("t1"),
+        turnOrdinal: 1,
+        isLatestTurn: true,
+      }),
+    ).toEqual({
+      issue:
+        "Claude has no saved resume point for this thread yet. Send one more message, wait for the reply, then fork.",
+    });
   });
 
   it("refuses sources without a Claude session", () => {

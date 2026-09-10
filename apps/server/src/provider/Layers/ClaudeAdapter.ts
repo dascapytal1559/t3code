@@ -948,9 +948,10 @@ function readClaudeResumeState(resumeCursor: unknown): ClaudeResumeState | undef
 
 /**
  * Cursor seeded onto a fork of a Claude thread. Pure so the fork dispatcher
- * can validate the fork point before any thread is created. Turns recorded
- * before anchors shipped can only be forked at the source's latest reply,
- * where `resumeSessionAt` already names the right message.
+ * can validate the fork point before any thread is created. A turn without an
+ * anchor (recorded before anchors shipped, or whose cursor never reached the
+ * directory) can only be forked at the source's latest reply, where
+ * `resumeSessionAt` already names the right message.
  */
 export function buildClaudeForkResumeCursor(input: {
   readonly sourceResumeCursor: unknown;
@@ -973,8 +974,9 @@ export function buildClaudeForkResumeCursor(input: {
         : undefined;
   if (!resumeSessionAt) {
     return {
-      issue:
-        "Claude recorded this reply before fork anchors existed, so the thread can only be forked from its latest reply.",
+      issue: input.isLatestTurn
+        ? "Claude has no saved resume point for this thread yet. Send one more message, wait for the reply, then fork."
+        : "Claude has no saved anchor for this reply, so the thread can only be forked from its latest reply.",
     };
   }
   return {
@@ -2724,6 +2726,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       items: [...turnState.items],
       ...(context.lastAssistantUuid ? { assistantUuid: context.lastAssistantUuid } : {}),
     });
+    // The cursor rides on turn.completed so ProviderService can persist it
+    // without looking the session up: a stopping session is gone by then.
+    yield* updateResumeCursor(context);
 
     yield* emitThreadTokenUsage(context, usageSnapshot, {
       rawMethod: "claude/result",
@@ -2748,6 +2753,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           : {}),
         ...(errorMessage ? { errorMessage } : {}),
         tokenUsage: normalizeClaudeTurnTokenUsage(result, turnState.hasSubagents, status),
+        ...(context.session.resumeCursor !== undefined
+          ? { resumeCursor: context.session.resumeCursor }
+          : {}),
       },
       providerRefs: nativeProviderRefs(context),
     });
@@ -2761,7 +2769,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       updatedAt,
       ...(status === "failed" && errorMessage ? { lastError: errorMessage } : {}),
     };
-    yield* updateResumeCursor(context);
   });
 
   const handleStreamEvent = Effect.fn("handleStreamEvent")(function* (

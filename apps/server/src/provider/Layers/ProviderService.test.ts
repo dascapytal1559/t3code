@@ -2817,6 +2817,46 @@ fanout.layer("ProviderServiceLive fanout", (it) => {
     }),
   );
 
+  it.effect("persists the adapter's resume cursor when a turn settles", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const runtimeRepository = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
+      const threadId = asThreadId("thread-settled-cursor");
+      const session = yield* provider.startSession(threadId, {
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId: codexInstanceId,
+        threadId,
+        runtimeMode: "full-access",
+      });
+
+      const consumer = yield* Stream.runForEach(provider.streamEvents, () => Effect.void).pipe(
+        Effect.forkChild,
+      );
+      yield* advanceTestClock(50);
+
+      // The adapter moved its cursor while the turn ran and reports it on the
+      // settled-turn event; nothing else has written it to the directory.
+      const advancedCursor = { opaque: "resume-thread-settled-cursor", resumeSessionAt: "a1" };
+      const beforeSettle = yield* runtimeRepository.getByThreadId({ threadId });
+      assert.deepEqual(Option.getOrThrow(beforeSettle).resumeCursor, session.resumeCursor);
+
+      fanout.codex.emit({
+        type: "turn.completed",
+        eventId: asEventId("evt-settled-cursor"),
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        threadId,
+        turnId: asTurnId("turn-1"),
+        payload: { state: "completed", resumeCursor: advancedCursor },
+      });
+      yield* advanceTestClock(50);
+      yield* Fiber.interrupt(consumer);
+
+      const afterSettle = yield* runtimeRepository.getByThreadId({ threadId });
+      assert.deepEqual(Option.getOrThrow(afterSettle).resumeCursor, advancedCursor);
+    }),
+  );
+
   it.effect("fans out canonical runtime events in emission order", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;

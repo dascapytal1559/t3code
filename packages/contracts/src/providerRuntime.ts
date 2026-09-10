@@ -405,12 +405,17 @@ const TurnCompletedPayload = Schema.Struct({
   totalCostUsd: Schema.optional(Schema.Number),
   errorMessage: Schema.optional(TrimmedNonEmptyStringSchema),
   tokenUsage: Schema.optional(TurnTokenUsage),
+  // The adapter's resume cursor as of this settled turn, for adapters whose
+  // cursor moves with each reply. ProviderService persists it from the event
+  // so the directory never settles a turn with a stale cursor.
+  resumeCursor: Schema.optional(Schema.Unknown),
 });
 export type TurnCompletedPayload = typeof TurnCompletedPayload.Type;
 
 const TurnAbortedPayload = Schema.Struct({
   reason: TrimmedNonEmptyStringSchema,
   tokenUsage: Schema.optional(TurnTokenUsage),
+  resumeCursor: Schema.optional(Schema.Unknown),
 });
 export type TurnAbortedPayload = typeof TurnAbortedPayload.Type;
 

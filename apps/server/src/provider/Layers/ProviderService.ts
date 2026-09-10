@@ -881,6 +881,30 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       });
     });
 
+  // Adapters whose resume cursor moves with each reply (Claude records the
+  // reply UUID it resumes and forks from) put the cursor on their settled-turn
+  // event. Nothing else wrote it back until the next sendTurn, a session
+  // restart, or stopAll, so a session that idled out after a reply left the
+  // directory one reply behind. Persist it before the event is published, so
+  // no turn is ever settled downstream with a stale cursor on disk. Only the
+  // instance that owns the binding may write it: a stale session's late
+  // completion must not clobber a rebound thread.
+  const persistSettledTurnCursor = Effect.fn("persistSettledTurnCursor")(function* (
+    source: { readonly instanceId: ProviderInstanceId; readonly provider: ProviderDriverKind },
+    event: Extract<ProviderRuntimeEvent, { readonly type: "turn.completed" | "turn.aborted" }>,
+  ) {
+    const resumeCursor = event.payload.resumeCursor;
+    if (resumeCursor === undefined) return;
+    const binding = Option.getOrUndefined(yield* directory.getBinding(event.threadId));
+    if (binding === undefined || binding.providerInstanceId !== source.instanceId) return;
+    yield* directory.upsert({
+      threadId: event.threadId,
+      provider: binding.provider,
+      providerInstanceId: source.instanceId,
+      resumeCursor,
+    });
+  });
+
   const processRuntimeEvent = (
     source: {
       readonly instanceId: ProviderInstanceId;
@@ -904,6 +928,15 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         canonicalEvent.type === "turn.completed" ||
         canonicalEvent.type === "turn.aborted"
       ) {
+        yield* persistSettledTurnCursor(source, canonicalEvent).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("provider.session.persist-settled-cursor-failed", {
+              threadId: canonicalEvent.threadId,
+              provider: source.provider,
+              cause,
+            }),
+          ),
+        );
         yield* recordTurnCompletedAnalytics(source, canonicalEvent);
       } else if (canonicalEvent.type === "session.exited") {
         yield* clearTurnAnalyticsSession(source.instanceId, canonicalEvent.threadId);

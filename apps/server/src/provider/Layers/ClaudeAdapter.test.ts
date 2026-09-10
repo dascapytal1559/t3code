@@ -1246,6 +1246,15 @@ describe("ClaudeAdapterLive", () => {
       if (turnCompleted?.type === "turn.completed") {
         assert.equal(String(turnCompleted.turnId), String(turn.turnId));
         assert.equal(turnCompleted.payload.state, "completed");
+        // The settled turn carries the cursor with its own anchor, so the
+        // directory can be brought up to date before the event is published.
+        assert.deepEqual(turnCompleted.payload.resumeCursor, {
+          threadId: session.threadId,
+          resume: "sdk-session-1",
+          resumeSessionAt: "assistant-1",
+          turnCount: 1,
+          turnAnchors: [{ turnId: String(turn.turnId), uuid: "assistant-1" }],
+        });
       }
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),

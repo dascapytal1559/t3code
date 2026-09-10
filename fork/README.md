@@ -490,9 +490,20 @@ runs at fork time and a fork that never sends stays free. Codex seeds
 session id with `forkSession` and `resumeSessionAt`; to anchor older turns the
 adapter now records each completed turn's final assistant uuid in the cursor
 (`turnAnchors`), which also lets rollback point the resume anchor at the
-surviving turn instead of the newest message. Turns recorded before anchors
-existed can only be forked from the latest reply. OpenCode seeds the source
-session with the assistant ordinal and calls `session.fork` at that message.
+surviving turn instead of the newest message. The adapter advances that
+cursor in memory, and until 2026-09-10 nothing wrote it back to the session
+directory except the next `sendTurn`, a session restart, or a clean
+shutdown, so the persisted cursor sat one reply behind: a thread that idled
+out after its first reply could not be forked at all, and longer threads
+forked from the previous reply while showing the latest one. The Claude
+adapter now puts its cursor on the `turn.completed` event (an optional
+`resumeCursor` payload field on the settled-turn events in
+`packages/contracts/src/providerRuntime.ts`), and `ProviderService` persists
+it before publishing the event, so a turn is never settled downstream with a
+stale cursor on disk. Turns whose cursor was never persisted, like turns
+recorded before anchors existed, can only be forked from the latest reply.
+OpenCode seeds the source session with the assistant ordinal and calls
+`session.fork` at that message.
 
 Implementation: `packages/contracts/src/orchestration.ts` (`ThreadForkSource`),
 `apps/server/src/orchestration/threadFork.ts` (cutoff and id rules),
@@ -515,7 +526,10 @@ deterministic ids), `decider.threadFork.fork.test.ts` (fork-point checks),
 refs, shell summary; both projector tests cover imported history surviving a
 fork and subsequent revert), `apps/server/src/provider/Layers/CodexSessionRuntime.fork.test.ts`
 (`thread/fork` open path, no fallback), `ClaudeAdapter.fork.test.ts` (seed
-cursor and anchors), `OpenCodeAdapter.fork.test.ts` (seed cursor),
+cursor, anchors, and the fork-point error wording), `ClaudeAdapter.test.ts`
+(the settled turn's `turn.completed` carries the anchored cursor),
+`ProviderService.test.ts` (that cursor is persisted when the turn settles),
+`OpenCodeAdapter.fork.test.ts` (seed cursor),
 `apps/server/src/environment/ServerEnvironment.fork.test.ts` (capability),
 `packages/client-runtime/src/state/thread-fork.fork.test.ts` (client gating),
 `apps/web/src/components/threadActionMenu.logic.fork.test.ts`, and
