@@ -56,10 +56,21 @@ Working tree must be clean. Daily-driver branch is
 
 ## 2. Fetch and measure
 
+Is a sync due at all? This answers in one command; "already current"
+means stop here and say so, there is nothing to merge or reassess:
+
 ```bash
 git -C ~/Projects/t3code-fork fetch upstream
+git -C ~/Projects/t3code-fork merge-base --is-ancestor upstream/main HEAD && echo "already current"
+```
+
+Otherwise measure (`rev-parse --short` takes one revision per call on this
+git):
+
+```bash
 git -C ~/Projects/t3code-fork fetch origin
-git -C ~/Projects/t3code-fork rev-parse --short HEAD upstream/main
+git -C ~/Projects/t3code-fork rev-parse --short HEAD
+git -C ~/Projects/t3code-fork rev-parse --short upstream/main
 git -C ~/Projects/t3code-fork merge-base HEAD upstream/main
 git -C ~/Projects/t3code-fork log --oneline <last-sync-sha>..upstream/main
 ```

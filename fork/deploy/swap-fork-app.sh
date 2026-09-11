@@ -6,9 +6,13 @@
 # dmg. Server, web, and mobile changes are swap-fork-payload.sh — the app
 # stays up.
 #
-# Usage: swap-fork-app.sh [version] [--force]
+# Usage: swap-fork-app.sh [version] [--local-only] [--force]
 #   version defaults to apps/desktop/package.json. --force DMG-swaps even
 #   when choose-deploy-path prints payload.
+#
+# --local-only skips the forced remote restart. Unlike the payload script's
+# flag, nothing converges lazily here unless the tarball was also shipped:
+# the remotes keep whatever build their spec names until the next deploy.
 # Detaches itself (lib.sh detach_self): quitting the app kills every session
 # it hosts, including the agent running this. Progress and the final
 # "deploy complete" line land in ~/.t3/fork/deploy.log.
@@ -17,8 +21,10 @@ source "$(dirname "$0")/lib.sh"
 
 VERSION="$(node -p "require('$REPO/apps/desktop/package.json').version")"
 FORCE=""
+LOCAL_ONLY=""
 for arg in "$@"; do
   case "$arg" in
+    --local-only) LOCAL_ONLY=1 ;;
     --force) FORCE=1 ;;
     *) VERSION="$arg" ;;
   esac
@@ -107,8 +113,12 @@ echo "app swapped: binary mtime $(stat -f '%Sm' "$APP_BINARY"); backend pid $PID
 git -C "$REPO" rev-parse HEAD > "$REPO/release/.last-deployed-sha"
 git -C "$REPO" rev-parse HEAD > "$REPO/release/.last-dmg-sha"
 
-sleep 20 # let the new app finish launching so it owns the reconnects
-"$DEPLOY_DIR/restart-remote-servers.sh"
+if [ -z "$LOCAL_ONLY" ]; then
+  sleep 20 # let the new app finish launching so it owns the reconnects
+  "$DEPLOY_DIR/restart-remote-servers.sh"
+else
+  echo "local-only: remote servers left on their current build"
+fi
 
 prune_builds
 echo "deploy complete"

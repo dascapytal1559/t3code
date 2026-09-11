@@ -95,14 +95,24 @@ decide_deploy_path() {
 
 # macOS pgrep -f cannot read the argv of the hardened-runtime app processes
 # (it matches nothing even while they run), so process checks go through ps.
-app_running() { ps -axo command | grep -v grep | grep -Eq "$APP_PROC_PATTERN"; }
+# ps is captured before it is searched: a grep that exits on its first match
+# would otherwise SIGPIPE ps, and under the scripts' pipefail that status 141
+# made app_running false precisely while the app was running (2026-09-11: the
+# DMG swap deleted the bundle mid-quit and then waited ten minutes for an app
+# that was already up).
+app_running() {
+  local procs
+  procs="$(ps -axo command)"
+  grep -Eq "$APP_PROC_PATTERN" <<<"$procs"
+}
 
 # PID of the desktop's primary backend child, identified by the symlink entry
 # path in its argv. Empty when nothing runs from ~/.t3/fork/current: the app
 # is down, or it is an older build that reads the bundled tree.
 backend_pid() {
-  ps -axo pid,command | grep -v grep | grep -F "$BACKEND_ENTRY --bootstrap-fd" \
-    | awk '{print $1}' | head -1
+  local procs
+  procs="$(ps -axo pid,command)"
+  grep -F "$BACKEND_ENTRY --bootstrap-fd" <<<"$procs" | awk 'NR == 1 { print $1 }'
 }
 
 # The TCP port pid listens on, or empty while it has not bound yet.
@@ -150,14 +160,21 @@ prune_builds() {
 # Re-executes the calling script detached — its own session, stdio on the
 # deploy log — and exits the caller. Deploys terminate the backend (or the
 # whole app), which kills every session it hosts including the agent running
-# the script; only a detached process outlives that. Callers read $DEPLOY_LOG
-# afterwards: it ends in "deploy complete" on success and holds the error
-# otherwise.
+# the script; only a detached process outlives that. The log is appended, one
+# "=== " header per run, every line timestamped, so earlier runs stay
+# readable. A run ends in "deploy complete" on success; a set -e failure ends
+# in "deploy aborted: ..." naming the command, and explicit exits print their
+# own reason. deploy-status.sh shows the last run.
 detach_self() {
-  if [ "${T3_FORK_DEPLOY_DETACHED:-}" = 1 ]; then return 0; fi
+  if [ "${T3_FORK_DEPLOY_DETACHED:-}" = 1 ]; then
+    exec > >(while IFS= read -r line; do printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$line"; done >>"$DEPLOY_LOG") 2>&1
+    trap 'echo "deploy aborted: \"$BASH_COMMAND\" failed at line $LINENO"' ERR
+    echo "=== $(basename "$0") $* (HEAD $(head_sha))"
+    return 0
+  fi
   T3_FORK_DEPLOY_DETACHED=1 nohup perl -MPOSIX \
     -e 'POSIX::setsid() or die "setsid: $!"; exec @ARGV or die "exec: $!"' -- "$0" "$@" \
-    >"$DEPLOY_LOG" 2>&1 </dev/null &
+    >>"$DEPLOY_LOG" 2>&1 </dev/null &
   echo "deploy detached (pid $!); progress in $DEPLOY_LOG"
   exit 0
 }

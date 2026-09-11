@@ -12,10 +12,20 @@ holds this runbook, the `fork/deploy/` scripts, and the maintained fork
 feature record, `fork/README.md`. All git and build commands below run
 against the repo root.
 
-A deploy covers **both ends**: the local desktop app and the fork server on
-each remote host listed in `~/Projects/t3code-fork/fork/deploy/remote-hosts`.
-The user wants all of them on the same commit so server-side behavior (file
-explorer, skills) matches everywhere. Never ship one end without the others.
+A deploy normally covers **both ends**: the local desktop app and the fork
+server on each remote host listed in
+`~/Projects/t3code-fork/fork/deploy/remote-hosts`. Same commit everywhere is
+the default, so server-side behavior (file explorer, skills) matches
+everywhere. The explicit exception is `--local-only` on either swap script:
+the desktop moves and the remotes stay where they are. `deploy-status.sh`
+shows that skew as the remote spec's distance from HEAD, and the next full
+deploy clears it. Do not ship remotes without the desktop.
+
+`fork/deploy/deploy-status.sh` is the one-call picture of what is deployed
+where: HEAD and the markers, the deploy path, the payload symlink and staged
+builds, the installed app, the running backend and its build, the remote
+spec, any swap in flight, and the last deploy-log run. Open and close every
+deploy with it.
 
 The local end runs its backend from `~/.t3/fork/current`, a symlink into
 `~/.t3/fork/builds/<sha>/` (fork feature: desktop server payload override).
@@ -56,13 +66,13 @@ branches cannot fast-forward it from elsewhere — drive it with
 ## 2. Migration gate (the one-way door)
 
 This gate applies to BOTH deploy paths — a restarted backend migrates
-databases exactly like a relaunched app. Before building, diff
-`apps/server/src/persistence/Migrations.ts` between the previously deployed
-commit and the new tip. Read `<last-deployed-sha>` from
-`~/Projects/t3code-fork/release/.last-deployed-sha` (written by the
-swap scripts on a successful swap, so a staged-but-never-swapped build does
-not move it). If missing, derive it from the live payload:
-`readlink ~/.t3/fork/current` names `builds/<sha>`.
+databases exactly like a relaunched app. Before building, run
+`fork/deploy/deploy-status.sh`: it prints `<last-deployed-sha>` (from
+`release/.last-deployed-sha`, written by the swap scripts on a successful
+swap, so a staged-but-never-swapped build does not move it) and warns when a
+previous deploy left the markers behind the live payload. Then diff
+`apps/server/src/persistence/Migrations.ts` between that commit and the new
+tip:
 
 ```bash
 git -C ~/Projects/t3code-fork log --oneline <last-deployed-sha>..<branch> -- apps/server/src/persistence/Migrations.ts
@@ -181,9 +191,11 @@ immediately; the caller's shell can die without harm. Run them directly:
 
 Both default to HEAD: the payload script takes an optional `<sha>`, the DMG
 script an optional `<version>` (default: `apps/desktop/package.json`).
-`swap-fork-payload.sh` also takes `--local-only` to skip the forced remote
-restart; remotes then converge on their next reconnect via the runner shim's
-embedded package spec.
+Both scripts take `--local-only` to skip the forced remote restart. On the
+payload path the remotes still converge on their next reconnect via the
+runner shim's embedded package spec, because the tarball was shipped. On the
+DMG path nothing converges: the remotes keep the build their spec names
+until the next deploy that ships a tarball.
 
 Each script validates its inputs, detaches, sleeps 8 seconds (a head start to
 finish the current turn), then acts. `swap-fork-payload.sh` retargets
@@ -203,8 +215,10 @@ the app by hand, then carries on. Both then run
 recorded ssh-launch port after confirming its cmdline is a `t3 serve`
 process, waits for the app to auto-restart it from the new tarball spec, and
 prunes the host's other fork npx installs and tarballs. Finally they prune
-local builds. All progress goes to `~/.t3/fork/deploy.log`, which ends in
-`deploy complete` on success and holds the error otherwise.
+local builds. All progress is appended to `~/.t3/fork/deploy.log`, one
+timestamped `=== <script>` header per run; a run ends in `deploy complete`
+on success, `deploy aborted: ...` on a silent failure, or the explicit
+reason the script printed before exiting.
 
 **Make the swap call the last tool call of the turn**, then immediately send
 a short wrap-up telling the user the deploy is running and to hit `Cmd+R`
@@ -213,15 +227,14 @@ after it — the turn dies with the backend.
 
 ## 6. After the swap (next turn)
 
-- `tail ~/.t3/fork/deploy.log` must end in `deploy complete`; otherwise it
-  shows where the script stopped.
-- `readlink ~/.t3/fork/current` names `builds/<sha>` for the deployed sha.
-- The backend runs from the symlink: `ps -axo command | grep "[b]in.mjs"`
-  shows the `~/.t3/fork/current/apps/server/dist/bin.mjs` entry path. Use
-  ps, not pgrep: macOS pgrep cannot read the hardened-runtime app processes'
-  argv and matches nothing even while they run. A bundled `app.asar` path
-  instead means the app fell back to the bundled server — inspect the symlink
-  and the payload layout.
+- `fork/deploy/deploy-status.sh` answers most of this in one call: the last
+  log run must end in `deploy complete`, the markers must name the deployed
+  sha, `current` must point at `builds/<sha>`, and the backend line must
+  show a pid running from that build. A backend line reading "none" means
+  the app fell back to the bundled server — inspect the symlink and the
+  payload layout. (The helpers use ps, not pgrep: macOS pgrep cannot read
+  the hardened-runtime app processes' argv and matches nothing even while
+  they run.)
 - Deployed builds serve `index.html` with `no-cache` (fork feature:
   `staticResponseCacheControl`), so the new frontend loads on the next
   natural reload; a `Cmd+R` costs nothing when in doubt.

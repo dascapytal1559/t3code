@@ -5,15 +5,33 @@ This file tracks the behavior this fork adds on top of
 **T3 Code (Alpha)** desktop identity; the differences below are product
 behavior, not parallel-app branding.
 
-This directory holds everything fork-specific that is not code:
+## How the fork is wired
 
-- `README.md` (this file): the fork feature record.
-- `DEPLOY_FORK.md`: deploying the fork to the local desktop app and the
-  remote hosts.
-- `SYNC_UPSTREAM.md`: merging upstream T3 Code into the fork.
-- `deploy/`: the scripts the deploy runbook drives.
-- `SHARED_CODEX.md` and `restart-codex-backend.sh`: the shared Codex desktop
-  backend setup on this Mac.
+Top to bottom. Keep this map current when a layer, command, or doc is
+added, removed, or moved; a new thing states which layer it belongs to.
+
+- **Purpose.** Run this fork as the daily driver on the desktop and on the
+  remote hosts in `deploy/remote-hosts`, tracking upstream T3 Code.
+- **Feature ledger** (this file, the `##` entries below). What the fork adds
+  and the tests that prove each entry. Every sync reassesses it.
+- **Sync** (`SYNC_UPSTREAM.md`). Merging `upstream/main` into `main`:
+  backup branch, merge, audit, reassess, and the migration-id rule (the fork
+  owns id 50; upstream ids from 50 up shift by one). Sits on git and the
+  Effect migrator.
+- **Deploy** (`DEPLOY_FORK.md`, driven by `deploy/*.sh`). Landing a commit
+  on the desktop and the remotes: migration gate, payload-or-DMG choice,
+  build, stage, ship, swap. `deploy/deploy-status.sh` is the one-call
+  picture of what is live where. Sits on the desktop payload override and
+  the SSH package-spec override (both entries below), the Electron backend
+  supervisor, and npm tarballs.
+- **Deploy state**, all outside git: `release/.last-deployed-sha` and
+  `release/.last-dmg-sha` (markers the swap scripts write on success),
+  `~/.t3/fork/current` and `~/.t3/fork/builds/` (payload symlink and staged
+  builds), `~/.t3/fork/deploy.log` (appended, timestamped, one header per
+  run), `~/.t3/fork/ssh-t3-package-spec` (what the remotes run).
+- **Shared Codex backend** (`SHARED_CODEX.md`, `restart-codex-backend.sh`).
+  The shared Codex desktop backend setup on this Mac; independent of the
+  layers above.
 
 This file is the canonical fork-feature record. Update it when a feature's
 behavior changes, not merely when syncing with upstream. Syncing from
