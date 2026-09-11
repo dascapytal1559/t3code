@@ -56,7 +56,11 @@ vi.mock("../state/session", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../state/session")>()),
   usePreparedConnection: () => ({ _tag: "Loading" }),
 }));
-vi.mock("../state/entities", () => ({ readThreadShell: () => null, useProjects: () => [] }));
+vi.mock("../state/entities", () => ({
+  readThreadShell: () => null,
+  useProjects: () => [],
+  useServerConfigs: () => new Map(),
+}));
 vi.mock("../remoteOpen", () => ({
   useRemoteOpenResolution: () => ({ state: { mode: "local-exec" }, isResolved: true }),
 }));

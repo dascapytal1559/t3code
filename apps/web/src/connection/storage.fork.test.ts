@@ -36,6 +36,7 @@ const snapshot: OrchestrationThreadDetailSnapshot = {
     proposedPlans: [],
     activities: [],
     checkpoints: [],
+    pullRequests: [],
     session: null,
   },
 };

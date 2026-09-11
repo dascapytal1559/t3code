@@ -432,8 +432,9 @@ idle again. The queue is client-persisted (survives reload, capped at 10) and
 does not drain while the app is closed.
 
 On mobile, Send still steers. A queue button next to Send holds the message
-until the thread is idle (`holdUntilIdle` on the existing outbox). The same
-list sits above the composer.
+until the thread is idle (`holdUntilIdle` on the existing outbox). Held
+messages show in the timeline as pending rows, like every other outbox
+message, and can be edited back into the composer from there.
 
 Implementation: `apps/web/src/queuedFollowUpStore.ts`,
 `apps/web/src/components/chat/ComposerQueuedFollowUps.tsx`,
@@ -564,7 +565,9 @@ edit it.
 
 Implementation: `vcsRoot` on the project contract and the meta-update
 command (`packages/contracts/src/orchestration.ts`), migration
-`050_ProjectionProjectsVcsRoot`, the resolver in
+`050_ProjectionProjectsVcsRoot` (live databases have applied id 50 under this
+name, so upstream migrations numbered 50 and above are renumbered one higher
+in the fork; see `fork/SYNC_UPSTREAM.md`), the resolver in
 `packages/shared/src/projectVcs.ts` with the server twin
 `resolveThreadVcsCwd` in `apps/server/src/checkpointing/Utils.ts`, and the
 settings row in `apps/web/src/components/settings/ProjectSettingsPanel.tsx`.
@@ -579,12 +582,14 @@ workspace and checkpoints land in the child repository.
 
 ## Sync status
 
-Last synced on 2026-09-07 against upstream `6abdf37a5`
-(v0.0.39-nightly.20260907.1325). The pre-sync fork is preserved at
-`backup/upstream-test-drive-pre-sync-20260907` (`9b3ad29b0`). All eleven
-features remain needed. This sync adapted queued sends and prompt restoration
-to the new composer and timeline, adopted direct CLI execution for SSH while
-keeping the package override, moved fork checkpoint copying onto upstream’s
-repository detector, and preserved imported-history markers through forks and
-reverts. Obsolete mobile tree helpers were removed. The previous sync point
-is preserved at `backup/upstream-test-drive-pre-sync-20260905` (`63b7242d3`).
+Last synced on 2026-09-11 against upstream `211618fd9`
+(v0.0.41-nightly.20260911.1520 plus 17 commits). The pre-sync fork is preserved
+at `backup/upstream-test-drive-pre-sync-20260911` (`741cb2aae`). Every
+feature entry remains needed. This sync renumbered upstream's migration 050 to
+051 behind the fork's VCS-root migration, dropped the fork's mobile queued
+list in favour of upstream's pending rows in the timeline, moved the sidebar
+rows and the mobile branch checkout onto upstream's project-record helpers,
+routed upstream's new pull-request stack read through the VCS root, and
+renamed the fork's tagged errors for the Effect rc.112 upgrade. The previous
+sync point is preserved at `backup/upstream-test-drive-pre-sync-20260907`
+(`9b3ad29b0`).

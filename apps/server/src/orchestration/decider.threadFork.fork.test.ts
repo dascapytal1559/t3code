@@ -42,6 +42,7 @@ function makeThread(overrides: Partial<OrchestrationThread> = {}): Orchestration
     deletedAt: null,
     messages: [],
     proposedPlans: [],
+    pullRequests: [],
     activities: [],
     checkpoints: [],
     session: null,

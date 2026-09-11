@@ -26,7 +26,7 @@ export interface WorkspaceChangedEvent {
   readonly cwd: string;
 }
 
-export class WorkspaceWatchStartFailed extends Schema.TaggedErrorClass<WorkspaceWatchStartFailed>()(
+export class WorkspaceWatchStartFailed extends Schema.TaggedError<WorkspaceWatchStartFailed>()(
   "WorkspaceWatchStartFailed",
   { cwd: Schema.String, cause: Schema.Defect() },
 ) {

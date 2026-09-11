@@ -94,6 +94,7 @@ function sourceThread(): OrchestrationThread {
       message("a3", "assistant", "t3", "2026-01-01T00:00:06.000Z"),
     ],
     proposedPlans: [],
+    pullRequests: [],
     activities: [activity("act-1", "t1", 1), activity("act-3", "t3", 3)],
     checkpoints: [checkpoint("t1", 1, "a1"), checkpoint("t2", 2, "a2"), checkpoint("t3", 3, "a3")],
     session: {

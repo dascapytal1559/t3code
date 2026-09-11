@@ -99,6 +99,14 @@ Record each resolution in the merge commit body. Previous merges named
 the files and the choice (adopt upstream X, keep fork Y, adapt Z onto
 upstream's new hook).
 
+Migration ids: the fork owns `050_ProjectionProjectsVcsRoot`, and the
+live databases (daily driver and remote hosts) have recorded id 50 under
+that name. The Effect migrator skips every id at or below the highest
+applied one, so upstream migrations numbered 50 and above are renumbered
+one higher on merge: rename the file and its test, and shift the test's
+`toMigrationInclusive` values and the `Migrations.ts` entry. Do not
+renumber the fork's migration and do not edit live migration tables.
+
 ## 6. Audit auto-merged overlapping files
 
 A clean merge is not a correct merge. For every implementation path

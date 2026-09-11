@@ -1,3 +1,4 @@
+import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { createThreadMovePlanner } from "./threadOrder";
 import type {
   EnvironmentProject,
@@ -79,6 +80,7 @@ import {
   ThreadListV2SettledShelfHeader,
   ThreadListV2SnoozedShelfHeader,
 } from "./thread-list-v2-items";
+import { resolveThreadProviderInstance } from "./thread-provider-instance";
 import {
   buildThreadListV2Items,
   getThreadListV2OrderedSection,
@@ -104,6 +106,7 @@ interface ThreadNavigationSidebarProps {
   readonly selectedThreadKey: string | null;
   readonly onOpenSettings: () => void;
   readonly onOpenEnvironmentSettings: () => void;
+  readonly onNewThreadOnBranch: (thread: EnvironmentThreadShell) => void;
   readonly onNewThreadInProject: (project: EnvironmentProject) => void;
   readonly onSearchQueryChange: (query: string) => void;
   readonly onSelectThread: (thread: EnvironmentThreadShell) => void;
@@ -144,6 +147,11 @@ function NativeSidebarContainer(props: ThreadNavigationSidebarProps) {
 function ThreadNavigationSidebarPane(
   props: ThreadNavigationSidebarProps & { readonly nativeChrome: boolean },
 ) {
+  const { materialYouStyleLayoutActive, themeVariables: materialTheme } =
+    useAppearancePreferences();
+  const screenColor = materialTheme["--color-screen"];
+  const mutedColor = materialTheme["--color-foreground-muted"];
+
   const insets = useSafeAreaInsets();
   const projects = useProjects();
   const threads = useThreadShells();
@@ -909,6 +917,7 @@ function ThreadNavigationSidebarPane(
           const scopeKey = scopedProjectKey(thread.environmentId, thread.projectId);
           return (
             <ThreadListV2Row
+              onNewThreadOnBranch={props.onNewThreadOnBranch}
               thread={thread}
               variant={item.item.variant}
               hasQueuedMessages={queuedThreadKeys.has(`${thread.environmentId}:${thread.id}`)}
@@ -918,15 +927,7 @@ function ThreadNavigationSidebarPane(
               snoozeWakeLabelText={item.snoozeWakeLabelText}
               project={projectByKey.get(scopeKey) ?? null}
               projectTitle={projectTitleByProjectKey.get(scopeKey)}
-              providerDriver={
-                serverConfigs
-                  .get(thread.environmentId)
-                  ?.providers.find(
-                    (provider) =>
-                      provider.instanceId ===
-                      (thread.session?.providerInstanceId ?? thread.modelSelection.instanceId),
-                  )?.driver ?? null
-              }
+              providerInstance={resolveThreadProviderInstance(serverConfigs, thread)}
               environmentLabel={
                 Object.keys(savedConnectionsById).length > 1
                   ? (savedConnectionsById[thread.environmentId]?.environmentLabel ?? null)
@@ -940,7 +941,7 @@ function ThreadNavigationSidebarPane(
                 }),
               )}
               searchQuery={props.searchQuery}
-              pane="sidebar"
+              pane={materialYouStyleLayoutActive ? "screen" : "sidebar"}
               selected={
                 scopedThreadKey(thread.environmentId, thread.id) === props.selectedThreadKey
               }
@@ -985,7 +986,7 @@ function ThreadNavigationSidebarPane(
               disabled={!shelfPreferencesLoaded}
               expanded={item.expanded}
               onToggle={toggleSnoozedShelf}
-              pane="sidebar"
+              pane={materialYouStyleLayoutActive ? "screen" : "sidebar"}
             />
           );
         case "v2-settled-shelf":
@@ -995,7 +996,7 @@ function ThreadNavigationSidebarPane(
               disabled={!shelfPreferencesLoaded}
               expanded={item.expanded}
               onToggle={toggleSettledShelf}
-              pane="sidebar"
+              pane={materialYouStyleLayoutActive ? "screen" : "sidebar"}
             />
           );
         case "v2-show-more":
@@ -1015,7 +1016,7 @@ function ThreadNavigationSidebarPane(
         case "header":
           return (
             <ThreadListGroupHeader
-              variant="sidebar"
+              variant={materialYouStyleLayoutActive ? "compact" : "sidebar"}
               collapsed={item.collapsed}
               isFirst={item.isFirst}
               groupKey={item.group.key}
@@ -1033,7 +1034,7 @@ function ThreadNavigationSidebarPane(
         case "pending-task":
           return (
             <PendingTaskListRow
-              variant="sidebar"
+              variant={materialYouStyleLayoutActive ? "compact" : "sidebar"}
               pendingTask={item.pendingTask}
               environmentLabel={
                 savedConnectionsById[item.pendingTask.environmentId]?.environmentLabel ?? null
@@ -1048,6 +1049,7 @@ function ThreadNavigationSidebarPane(
           const thread = item.thread;
           return (
             <ThreadListRow
+              onNewThreadOnBranch={props.onNewThreadOnBranch}
               variant="sidebar"
               thread={thread}
               hasQueuedMessages={queuedThreadKeys.has(`${thread.environmentId}:${thread.id}`)}
@@ -1086,7 +1088,7 @@ function ThreadNavigationSidebarPane(
         case "show-more":
           return (
             <ThreadListShowMoreRow
-              variant="sidebar"
+              variant={materialYouStyleLayoutActive ? "compact" : "sidebar"}
               hiddenCount={item.hiddenCount}
               canShowLess={item.canShowLess}
               groupKey={item.groupKey}
@@ -1096,6 +1098,7 @@ function ThreadNavigationSidebarPane(
       }
     },
     [
+      materialYouStyleLayoutActive,
       archiveThread,
       activeReorderEnvironmentIds,
       threadMovePlanners,
@@ -1118,6 +1121,7 @@ function ThreadNavigationSidebarPane(
       projectTitleByProjectKey,
       regenerateThreadTitle,
       props.onNewThreadInProject,
+      props.onNewThreadOnBranch,
       props.searchQuery,
       props.selectedThreadKey,
       props.width,
@@ -1253,6 +1257,7 @@ function ThreadNavigationSidebarPane(
                 }
                 contentContainerStyle={[
                   styles.threadListContent,
+                  materialYouStyleLayoutActive ? { paddingHorizontal: 0 } : null,
                   {
                     paddingBottom: Math.max(insets.bottom, 16) + 16,
                     paddingTop: 6,
@@ -1280,7 +1285,21 @@ function ThreadNavigationSidebarPane(
       className="flex-1 border-r border-border bg-drawer"
       style={{ width: props.width }}
     >
-      <View className="flex-1" style={{ paddingBottom: insets.bottom }}>
+      <View
+        className="flex-1"
+        style={
+          materialYouStyleLayoutActive
+            ? {
+                marginTop: stickyHeaderHeight,
+                paddingBottom: insets.bottom,
+                backgroundColor: screenColor,
+                borderTopLeftRadius: 28,
+                borderTopRightRadius: 28,
+                overflow: "hidden",
+              }
+            : { paddingBottom: insets.bottom }
+        }
+      >
         <SwipeableScrollGateProvider enabled={swipeEnabled}>
           <GestureDetector gesture={sidebarScrollGesture}>
             <LegendList
@@ -1294,12 +1313,13 @@ function ThreadNavigationSidebarPane(
               renderItem={renderListItem}
               contentContainerStyle={[
                 styles.threadListContent,
+                materialYouStyleLayoutActive ? { paddingHorizontal: 0 } : null,
                 {
                   paddingBottom:
                     Platform.OS === "android"
                       ? Math.max(insets.bottom, 16) + 88 - insets.bottom
                       : 16 + insets.bottom,
-                  paddingTop: topListInset,
+                  paddingTop: materialYouStyleLayoutActive ? 6 : topListInset,
                 },
               ]}
               keyboardDismissMode="on-drag"
@@ -1344,7 +1364,13 @@ function ThreadNavigationSidebarPane(
           </View>
         </View>
 
-        <View className="mx-4 mt-[9px] h-[38px] flex-row items-center gap-1.5 rounded-xl bg-sidebar-search pr-2.5 pl-[11px]">
+        <View
+          className={
+            materialYouStyleLayoutActive
+              ? "mx-4 mt-[9px] min-h-12 flex-row items-center gap-2.5 rounded-full border border-input-border bg-input px-3.5"
+              : "mx-4 mt-[9px] h-[38px] flex-row items-center gap-1.5 rounded-xl bg-sidebar-search pr-2.5 pl-[11px]"
+          }
+        >
           <SymbolView
             name="magnifyingglass"
             size={15}
@@ -1356,14 +1382,32 @@ function ThreadNavigationSidebarPane(
             accessibilityLabel="Search threads"
             autoCapitalize="none"
             autoCorrect={false}
-            clearButtonMode="while-editing"
+            clearButtonMode={materialYouStyleLayoutActive ? "never" : "while-editing"}
             onChangeText={props.onSearchQueryChange}
             placeholder="Search"
             placeholderTextColorClassName={"accent-placeholder"}
             returnKeyType="search"
-            className="h-[34px] flex-1 px-0 py-0 font-sans text-base text-foreground"
+            className={
+              materialYouStyleLayoutActive
+                ? "flex-1 px-0 py-2.5 font-sans text-base text-foreground"
+                : "h-[34px] flex-1 px-0 py-0 font-sans text-base text-foreground"
+            }
             value={props.searchQuery}
           />
+          {materialYouStyleLayoutActive && props.searchQuery.length > 0 ? (
+            <Pressable
+              accessibilityLabel="Clear search"
+              hitSlop={10}
+              onPress={() => props.onSearchQueryChange("")}
+            >
+              <SymbolView
+                name="xmark.circle.fill"
+                size={17}
+                tintColor={mutedColor}
+                type="monochrome"
+              />
+            </Pressable>
+          ) : null}
         </View>
       </View>
     </View>
