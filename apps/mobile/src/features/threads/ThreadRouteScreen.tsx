@@ -218,7 +218,7 @@ function ThreadRouteContent(
       },
     };
   }, [selectedThread, selectedThreadDetailState]);
-  const { selectedThreadCwd } = useSelectedThreadWorktree();
+  const { selectedThreadCwd, selectedThreadVcsCwd } = useSelectedThreadWorktree();
   const composer = useThreadComposerState();
   const gitState = useSelectedThreadGitState();
   const gitActions = useSelectedThreadGitActions();
@@ -316,10 +316,10 @@ function ThreadRouteContent(
     .join(" · ");
   /* ─── Git status for native header trigger ───────────────────────── */
   const gitStatus = useEnvironmentQuery(
-    selectedThread !== null && selectedThreadCwd !== null
+    selectedThread !== null && selectedThreadVcsCwd !== null
       ? vcsEnvironment.status({
           environmentId: selectedThread.environmentId,
-          input: { cwd: selectedThreadCwd },
+          input: { cwd: selectedThreadVcsCwd },
         })
       : null,
   );
@@ -347,9 +347,9 @@ function ThreadRouteContent(
   const gitActionProgressTarget = useMemo(
     () => ({
       environmentId: selectedThread?.environmentId ?? null,
-      cwd: selectedThreadCwd,
+      cwd: selectedThreadVcsCwd,
     }),
-    [selectedThread?.environmentId, selectedThreadCwd],
+    [selectedThread?.environmentId, selectedThreadVcsCwd],
   );
   const gitActionProgress = useGitActionProgress(gitActionProgressTarget);
 

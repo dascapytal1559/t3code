@@ -18,6 +18,7 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import { projectVcsRoot } from "@t3tools/shared/projectVcs";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -752,7 +753,7 @@ export const autoPullProjects = Effect.fn("autoPullProjects")(function* (
     ...new Set(
       projects
         .filter((project) => resolveProjectAutoPull(settings, project.id, project.autoPull))
-        .map((project) => project.workspaceRoot),
+        .map(projectVcsRoot),
     ),
   ];
 

@@ -20,6 +20,7 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import { projectVcsRoot } from "@t3tools/shared/projectVcs";
 import * as Equal from "effect/Equal";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -508,7 +509,7 @@ const make = Effect.gen(function* () {
     if (!project) {
       return;
     }
-    const cwd = project.workspaceRoot;
+    const cwd = projectVcsRoot(project);
     yield* Effect.logWarning("provider command reactor recreating missing worktree", {
       threadId: thread.id,
       worktreePath,

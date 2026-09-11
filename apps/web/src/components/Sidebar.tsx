@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { projectVcsRoot } from "@t3tools/shared/projectVcs";
 import * as Schema from "effect/Schema";
 import {
   DndContext,
@@ -998,6 +999,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   environmentLabel: string | null;
   environmentMachine: EnvironmentMachineKind;
   projectCwd: string | null;
+  projectVcsCwd: string | null;
   projectFaviconPath: string | null;
   projectIcon: ProjectIconOverride | null;
   projectTitle: string | null;
@@ -1071,7 +1073,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     [clearComposerContent, threadRef],
   );
 
-  const gitCwd = thread.worktreePath ?? props.projectCwd;
+  const gitCwd = thread.worktreePath ?? props.projectVcsCwd;
   const linkedPullRequestStatus = useLinkedThreadPullRequest(
     thread.environmentId,
     thread.linkedPullRequest ?? thread.branchPullRequest,
@@ -1967,6 +1969,7 @@ function latestTurnDiff(
 const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   thread: SidebarThreadSummary;
   projectCwd: string | null;
+  projectVcsCwd: string | null;
   projectFaviconPath: string | null;
   projectIcon: ProjectIconOverride | null;
   projectTitle: string | null;
@@ -1986,7 +1989,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   );
   // Same details tooltip as the regular rows: a search hit is still a thread,
   // and the hover card is how you disambiguate identically-titled results.
-  const gitCwd = thread.worktreePath ?? props.projectCwd;
+  const gitCwd = thread.worktreePath ?? props.projectVcsCwd;
   const gitStatus = useEnvironmentQuery(
     leaseLiveStatus && (thread.branch != null || thread.worktreePath !== null) && gitCwd !== null
       ? vcsEnvironment.status({
@@ -2302,6 +2305,18 @@ export default function Sidebar() {
         projects.map((project) => [
           `${project.environmentId}:${project.id}`,
           project.workspaceRoot,
+        ]),
+      ),
+    [projects],
+  );
+  // Git status per thread runs where the project's repository is, which is
+  // not the workspace root when the project sets a VCS root.
+  const projectVcsCwdByKey = useMemo(
+    () =>
+      new Map(
+        projects.map((project) => [
+          `${project.environmentId}:${project.id}`,
+          projectVcsRoot(project),
         ]),
       ),
     [projects],
@@ -4579,6 +4594,10 @@ export default function Sidebar() {
                         projectCwd={
                           projectCwdByKey.get(`${thread.environmentId}:${thread.projectId}`) ?? null
                         }
+                        projectVcsCwd={
+                          projectVcsCwdByKey.get(`${thread.environmentId}:${thread.projectId}`) ??
+                          null
+                        }
                         projectFaviconPath={
                           projectFaviconPathByKey.get(
                             `${thread.environmentId}:${thread.projectId}`,
@@ -4731,6 +4750,11 @@ export default function Sidebar() {
                             projectCwd={
                               projectCwdByKey.get(`${thread.environmentId}:${thread.projectId}`) ??
                               null
+                            }
+                            projectVcsCwd={
+                              projectVcsCwdByKey.get(
+                                `${thread.environmentId}:${thread.projectId}`,
+                              ) ?? null
                             }
                             projectFaviconPath={
                               projectFaviconPathByKey.get(

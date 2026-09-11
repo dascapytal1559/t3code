@@ -159,13 +159,13 @@ describe("where a pull request can be acted on", () => {
       {
         environmentId: "env-2",
         projectId: "a2",
-        workspaceRoot: "/srv/env-2/a2",
+        cwd: "/srv/env-2/a2",
         label: "Server env-2",
       },
       {
         environmentId: "env-1",
         projectId: "a1",
-        workspaceRoot: "/srv/env-1/a1",
+        cwd: "/srv/env-1/a1",
         label: "Server env-1",
       },
     ]);
@@ -252,7 +252,7 @@ describe("where a pull request can be acted on", () => {
     expect(pickable[0]).toEqual({
       environmentId: "env-1",
       projectId: "a1-wt",
-      workspaceRoot: "/srv/env-1/a1-wt",
+      cwd: "/srv/env-1/a1-wt",
       label: "Server env-1",
     });
   });

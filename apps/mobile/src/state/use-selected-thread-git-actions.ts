@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo } from "react";
+import { projectVcsRoot } from "@t3tools/shared/projectVcs";
 
 import { EnvironmentProject, EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
@@ -36,16 +37,18 @@ export function useSelectedThreadGitActions() {
   const createWorktree = useAtomCommand(vcsEnvironment.createWorktree, { reportFailure: false });
   const pull = useAtomCommand(vcsEnvironment.pull, { reportFailure: false });
   const { selectedThread, selectedThreadProject } = useThreadSelection();
-  const { selectedThreadCwd, selectedThreadWorktreePath } = useSelectedThreadWorktree();
+  const { selectedThreadVcsCwd, selectedThreadWorktreePath } = useSelectedThreadWorktree();
   const runStackedAction = useAtomCommand(
     vcsActionManager.runStackedAction({
       environmentId: selectedThread?.environmentId ?? null,
-      cwd: selectedThreadCwd,
+      cwd: selectedThreadVcsCwd,
     }),
     { reportFailure: false },
   );
 
-  const selectedThreadGitRootCwd = selectedThreadProject?.workspaceRoot ?? null;
+  const selectedThreadGitRootCwd = selectedThreadProject
+    ? projectVcsRoot(selectedThreadProject)
+    : null;
   const branchTarget = useMemo(
     () => ({
       environmentId: selectedThread?.environmentId ?? null,
@@ -81,7 +84,7 @@ export function useSelectedThreadGitActions() {
         return null;
       }
 
-      const cwd = options?.cwd ?? selectedThreadCwd;
+      const cwd = options?.cwd ?? selectedThreadVcsCwd;
       if (!cwd) {
         return null;
       }
@@ -112,7 +115,7 @@ export function useSelectedThreadGitActions() {
       setPendingConnectionError(null);
       return result.value;
     },
-    [refreshStatus, selectedThread, selectedThreadCwd, selectedThreadProject],
+    [refreshStatus, selectedThread, selectedThreadVcsCwd, selectedThreadProject],
   );
 
   useEffect(() => {
@@ -133,20 +136,20 @@ export function useSelectedThreadGitActions() {
       }) => Promise<AtomCommandResult<T, E>>,
       options?: { readonly managedExternally?: boolean },
     ): Promise<T | null> => {
-      if (!selectedThread || !selectedThreadProject || !selectedThreadCwd) {
+      if (!selectedThread || !selectedThreadProject || !selectedThreadVcsCwd) {
         return null;
       }
 
       const target = {
         environmentId: selectedThread.environmentId,
-        cwd: selectedThreadCwd,
+        cwd: selectedThreadVcsCwd,
       };
       setPendingConnectionError(null);
       const run = () =>
         execute({
           thread: selectedThread,
           project: selectedThreadProject,
-          cwd: selectedThreadCwd,
+          cwd: selectedThreadVcsCwd,
         });
       const result =
         options?.managedExternally === true
@@ -161,7 +164,7 @@ export function useSelectedThreadGitActions() {
       }
       return result.value;
     },
-    [selectedThread, selectedThreadCwd, selectedThreadProject],
+    [selectedThread, selectedThreadVcsCwd, selectedThreadProject],
   );
 
   const refreshSelectedThreadBranches = useCallback(async (): Promise<ReadonlyArray<VcsRef>> => {
@@ -268,7 +271,7 @@ export function useSelectedThreadGitActions() {
           const result = await createWorktree({
             environmentId: thread.environmentId,
             input: {
-              cwd: project.workspaceRoot,
+              cwd: projectVcsRoot(project),
               refName: nextWorktree.baseBranch,
               newRefName: sanitizeFeatureBranchName(nextWorktree.newBranch),
               path: null,

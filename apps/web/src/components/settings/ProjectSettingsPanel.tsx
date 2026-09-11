@@ -36,7 +36,7 @@ import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { useNavigate } from "@tanstack/react-router";
 import * as Equal from "effect/Equal";
 import * as Cause from "effect/Cause";
-import { ChevronDownIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { ChevronDownIcon, FolderOpenIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
@@ -58,6 +58,7 @@ import {
   nextProjectScriptId,
 } from "../../projectScripts";
 import { releaseProjectDraftUploads } from "../../lib/composerDraftUploads";
+import { resolveProjectVcsRootInput } from "../../lib/projectPaths";
 import { readLocalApi } from "../../localApi";
 import {
   applyProviderInstanceSettings,
@@ -703,6 +704,43 @@ function ProjectDetail({
     (member) => member.physicalProjectKey === selectedCheckoutKey,
   );
   const selectedCheckout = selectedCheckoutMatch ?? representative;
+  // The repository directory is per checkout and never fans out over the
+  // group: a meta workspace's repo is a fact about one directory on one machine.
+  const selectedCheckoutVcsRoot = selectedCheckout.vcsRoot ?? null;
+  const setVcsRoot = useCallback(
+    async (vcsRoot: string | null) => {
+      if (vcsRoot === selectedCheckoutVcsRoot) return;
+      const result = mapAtomCommandResult(
+        await updateProject({
+          environmentId: selectedCheckout.environmentId,
+          input: { projectId: selectedCheckout.id, vcsRoot },
+        }),
+        () => undefined,
+      );
+      reportFailure("Failed to update repository directory", result);
+    },
+    [
+      reportFailure,
+      selectedCheckout.environmentId,
+      selectedCheckout.id,
+      selectedCheckoutVcsRoot,
+      updateProject,
+    ],
+  );
+  // The native folder dialog only sees this machine's filesystem.
+  const canBrowseVcsRoot = isElectron && selectedCheckout.environmentId === primaryEnvironmentId;
+  const browseVcsRoot = useCallback(async () => {
+    const picked = await readLocalApi()?.dialogs.pickFolder({
+      initialPath: selectedCheckoutVcsRoot ?? selectedCheckout.workspaceRoot,
+      targetEnvironmentId: selectedCheckout.environmentId,
+    });
+    if (picked) await setVcsRoot(picked);
+  }, [
+    selectedCheckout.environmentId,
+    selectedCheckout.workspaceRoot,
+    selectedCheckoutVcsRoot,
+    setVcsRoot,
+  ]);
   const selectedServerConfig = useAtomValue(
     serverEnvironment.configValueAtom(selectedCheckout.environmentId),
   );
@@ -1200,7 +1238,7 @@ function ProjectDetail({
           {hasMultipleCheckouts ? (
             <SettingsRow
               title="Checkout"
-              description="Actions and grouping belong to this checkout."
+              description="Actions, grouping, and the repository directory belong to this checkout."
               control={
                 <Select
                   value={selectedCheckout.physicalProjectKey}
@@ -1224,6 +1262,49 @@ function ProjectDetail({
               }
             />
           ) : null}
+          <SettingsRow
+            title="Repository directory"
+            description="Where source control runs for this checkout. Set it when the repository is a child of the project root, such as a workspace of symlinks. Relative paths resolve against the project root."
+            status={selectedCheckoutVcsRoot ? "Overridden" : "Project root"}
+            resetAction={
+              selectedCheckoutVcsRoot ? (
+                <SettingResetButton
+                  label="repository directory"
+                  tooltip="Use the project root"
+                  onClick={() => void setVcsRoot(null)}
+                />
+              ) : null
+            }
+            control={
+              <div className="flex w-full items-center gap-2 sm:w-96">
+                <Input
+                  key={`${selectedCheckout.physicalProjectKey}:${selectedCheckoutVcsRoot ?? ""}`}
+                  size="sm"
+                  className="w-full"
+                  aria-label="Repository directory"
+                  placeholder={selectedCheckout.workspaceRoot}
+                  defaultValue={selectedCheckoutVcsRoot ?? ""}
+                  onBlur={(event) => {
+                    void setVcsRoot(
+                      resolveProjectVcsRootInput(
+                        event.currentTarget.value,
+                        selectedCheckout.workspaceRoot,
+                      ),
+                    );
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") event.currentTarget.blur();
+                  }}
+                />
+                {canBrowseVcsRoot ? (
+                  <Button size="sm" variant="outline" onClick={() => void browseVcsRoot()}>
+                    <FolderOpenIcon className="size-3.5" />
+                    Browse
+                  </Button>
+                ) : null}
+              </div>
+            }
+          />
           <SettingsRow
             title="Project grouping"
             description="How this checkout joins project groups in the sidebar. Changing it can move you to a different project group."

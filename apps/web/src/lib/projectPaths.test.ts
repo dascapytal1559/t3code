@@ -15,6 +15,7 @@ import {
   normalizeProjectPathForDispatch,
   isUnsupportedWindowsProjectPath,
   resolveProjectPathForDispatch,
+  resolveProjectVcsRootInput,
 } from "./projectPaths";
 
 describe("projectPaths", () => {
@@ -105,6 +106,17 @@ describe("projectPaths", () => {
     expect(getBrowseLeafPathSegment("C:\\Work\\Repo\\Docs")).toBe("Docs");
     expect(getBrowseDirectoryPath("/home/user\\project/docs")).toBe("/home/user\\project/");
     expect(getBrowseLeafPathSegment("/home/user\\project/docs")).toBe("docs");
+  });
+
+  it("resolves repository directory input against the project root", () => {
+    expect(resolveProjectVcsRootInput("", "/repo")).toBeNull();
+    expect(resolveProjectVcsRootInput("   ", "/repo")).toBeNull();
+    expect(resolveProjectVcsRootInput("packages/app", "/repo")).toBe("/repo/packages/app");
+    expect(resolveProjectVcsRootInput("./packages/app", "/repo")).toBe("/repo/packages/app");
+    expect(resolveProjectVcsRootInput("../sibling", "/repo/meta")).toBe("/repo/sibling");
+    expect(resolveProjectVcsRootInput("/elsewhere/repo", "/repo")).toBe("/elsewhere/repo");
+    expect(resolveProjectVcsRootInput("~/repo", "/repo")).toBe("~/repo");
+    expect(resolveProjectVcsRootInput("app", "C:\\Work\\Meta")).toBe("C:\\Work\\Meta\\app");
   });
 
   it("only allows browse-up after entering a directory", () => {

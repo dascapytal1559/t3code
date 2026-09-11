@@ -10,6 +10,7 @@ import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import { projectVcsRoot } from "@t3tools/shared/projectVcs";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
@@ -144,7 +145,7 @@ export const make = Effect.gen(function* () {
           const cwd =
             worktreeExists && first.worktreePath !== null
               ? first.worktreePath
-              : project.workspaceRoot;
+              : projectVcsRoot(project);
           const detected =
             first.branch === null
               ? null
@@ -230,7 +231,7 @@ export const make = Effect.gen(function* () {
             // Summary reads can outlast a remote edit. Recheck the branch and
             // the project's primary remote before saving the group's links.
             const current = yield* git.branchPullRequest({ cwd, branch: first.branch });
-            const currentIdentity = yield* repositoryIdentities.resolve(project.workspaceRoot, {
+            const currentIdentity = yield* repositoryIdentities.resolve(projectVcsRoot(project), {
               refresh: true,
             });
             if (
@@ -340,7 +341,7 @@ export const make = Effect.gen(function* () {
       case "thread.unsettled":
         return worker.enqueue({ threadId: event.payload.threadId, refresh: true });
       case "project.meta-updated":
-        if (event.payload.workspaceRoot !== undefined) {
+        if (event.payload.workspaceRoot !== undefined || event.payload.vcsRoot !== undefined) {
           return worker.enqueue({ threadId: null, refresh: false });
         }
         break;

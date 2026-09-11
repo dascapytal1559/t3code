@@ -1,4 +1,5 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
+import { projectVcsRoot } from "@t3tools/shared/projectVcs";
 import { scopedThreadKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
@@ -674,13 +675,24 @@ export function PullRequestDetailPanel({
         detail.headRepositoryNameWithOwner,
       )
     : null;
+  const { environments } = useEnvironments();
+  const projects = useProjects();
+  // Git runs at the project's VCS root, which the detail's workspace root is
+  // not when the project sets one. The detail is the fallback for a project
+  // this client has not loaded.
+  const ownVcsCwd = useMemo(() => {
+    const own = projects.find(
+      (project) => project.id === reference.projectId && project.environmentId === environmentId,
+    );
+    return own ? projectVcsRoot(own) : (detail?.workspaceRoot ?? null);
+  }, [detail?.workspaceRoot, environmentId, projects, reference.projectId]);
   const branchRefsQuery = useEnvironmentQuery(
-    detail === null
+    detail === null || ownVcsCwd === null
       ? null
       : vcsEnvironment.listRefs({
           environmentId,
           input: {
-            cwd: detail.workspaceRoot,
+            cwd: ownVcsCwd,
             includeMatchingRemoteRefs: true,
             // listRefs keeps the current ref first and a known default second.
             limit: 2,
@@ -758,8 +770,6 @@ export function PullRequestDetailPanel({
   const titleDraft = titleScope?.pullRequestKey === pullRequestKey ? titleScope.text : null;
   const [titleSaving, setTitleSaving] = useState(false);
   const newThread = useNewThreadHandler();
-  const { environments } = useEnvironments();
-  const projects = useProjects();
   const unavailableGitHubUrl = useMemo(() => {
     const identity = projects.find(
       (project) => project.id === reference.projectId && project.environmentId === environmentId,
@@ -798,7 +808,7 @@ export function PullRequestDetailPanel({
   const actingEnvironmentId = acting?.environmentId ?? environmentId;
   const prepareThread = usePreparePullRequestThreadAction({
     environmentId: actingEnvironmentId,
-    cwd: acting?.workspaceRoot ?? detail?.workspaceRoot ?? null,
+    cwd: acting?.cwd ?? ownVcsCwd,
   });
 
   const finishAction = async (

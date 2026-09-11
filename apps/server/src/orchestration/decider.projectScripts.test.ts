@@ -141,6 +141,70 @@ it.layer(NodeServices.layer)("decider project scripts", (it) => {
     }),
   );
 
+  it.effect("propagates the VCS root in project.meta.update, including clearing it", () =>
+    Effect.gen(function* () {
+      const now = "2026-01-01T00:00:00.000Z";
+      const readModel = yield* projectEvent(createEmptyReadModel(now), {
+        sequence: 1,
+        eventId: asEventId("evt-project-create-vcs-root"),
+        aggregateKind: "project",
+        aggregateId: asProjectId("project-vcs-root"),
+        type: "project.created",
+        occurredAt: now,
+        commandId: CommandId.make("cmd-project-create-vcs-root"),
+        causationEventId: null,
+        correlationId: CommandId.make("cmd-project-create-vcs-root"),
+        metadata: {},
+        payload: {
+          projectId: asProjectId("project-vcs-root"),
+          title: "Meta workspace",
+          workspaceRoot: "/tmp/meta",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+
+      const set = yield* decideOrchestrationCommand({
+        command: {
+          type: "project.meta.update",
+          commandId: CommandId.make("cmd-project-set-vcs-root"),
+          projectId: asProjectId("project-vcs-root"),
+          vcsRoot: "/tmp/meta/repo",
+        },
+        readModel,
+      });
+      const setEvent = Array.isArray(set) ? set[0] : set;
+      expect(setEvent.type).toBe("project.meta-updated");
+      expect((setEvent.payload as { vcsRoot?: string | null }).vcsRoot).toBe("/tmp/meta/repo");
+
+      const clear = yield* decideOrchestrationCommand({
+        command: {
+          type: "project.meta.update",
+          commandId: CommandId.make("cmd-project-clear-vcs-root"),
+          projectId: asProjectId("project-vcs-root"),
+          vcsRoot: null,
+        },
+        readModel,
+      });
+      const clearEvent = Array.isArray(clear) ? clear[0] : clear;
+      expect((clearEvent.payload as { vcsRoot?: string | null }).vcsRoot).toBeNull();
+
+      const untouched = yield* decideOrchestrationCommand({
+        command: {
+          type: "project.meta.update",
+          commandId: CommandId.make("cmd-project-rename-only"),
+          projectId: asProjectId("project-vcs-root"),
+          title: "Renamed",
+        },
+        readModel,
+      });
+      const untouchedEvent = Array.isArray(untouched) ? untouched[0] : untouched;
+      expect("vcsRoot" in untouchedEvent.payload).toBe(false);
+    }),
+  );
+
   it.effect("rejects project.create for an active workspace root that already exists", () =>
     Effect.gen(function* () {
       const now = "2026-01-01T00:00:00.000Z";

@@ -22,10 +22,7 @@ import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import { isTemporaryWorktreeBranch } from "@t3tools/shared/git";
 
 import { parseTurnDiffFilesFromNumstat } from "../../checkpointing/Diffs.ts";
-import {
-  checkpointRefForThreadTurn,
-  resolveThreadWorkspaceCwd,
-} from "../../checkpointing/Utils.ts";
+import { checkpointRefForThreadTurn, resolveThreadVcsCwd } from "../../checkpointing/Utils.ts";
 import * as CheckpointStore from "../../checkpointing/CheckpointStore.ts";
 import { ProviderService } from "../../provider/Services/ProviderService.ts";
 import { CheckpointReactor, type CheckpointReactorShape } from "../Services/CheckpointReactor.ts";
@@ -180,32 +177,40 @@ const make = Effect.gen(function* () {
     return project ? [project] : [];
   });
 
-  // Resolves the workspace CWD for checkpoint operations, preferring the
-  // active provider session CWD and falling back to the thread/project config.
-  // Returns undefined when no CWD can be determined or the workspace is not
-  // a git repository.
+  // Resolves the git CWD for checkpoint operations, preferring the active
+  // provider session CWD and falling back to the thread's VCS root (worktree,
+  // else the project's VCS root, else its workspace root). Returns undefined
+  // when no CWD can be determined or the chosen directory is not a git
+  // repository.
   const resolveCheckpointCwd = Effect.fn("resolveCheckpointCwd")(function* (input: {
     readonly threadId: ThreadId;
     readonly thread: { readonly projectId: ProjectId; readonly worktreePath: string | null };
-    readonly projects: ReadonlyArray<{ readonly id: ProjectId; readonly workspaceRoot: string }>;
+    readonly projects: ReadonlyArray<{
+      readonly id: ProjectId;
+      readonly workspaceRoot: string;
+      readonly vcsRoot?: string | null | undefined;
+    }>;
     readonly preferSessionRuntime: boolean;
   }): Effect.fn.Return<string | undefined, CheckpointStoreError> {
     const fromSession = yield* resolveSessionRuntimeForThread(input.threadId);
-    const fromThread = resolveThreadWorkspaceCwd({
+    const fromThread = resolveThreadVcsCwd({
       thread: input.thread,
       projects: input.projects,
     });
 
-    const cwd = input.preferSessionRuntime
-      ? (Option.match(fromSession, {
-          onNone: () => undefined,
-          onSome: (runtime) => runtime.cwd,
-        }) ?? fromThread)
-      : (fromThread ??
-        Option.match(fromSession, {
-          onNone: () => undefined,
-          onSome: (runtime) => runtime.cwd,
-        }));
+    const sessionCwd = Option.match(fromSession, {
+      onNone: () => undefined,
+      onSome: (runtime) => runtime.cwd,
+    });
+    // With a VCS root the session cwd is the agent's workspace and never the
+    // repository, so the thread's VCS cwd wins even when the caller would
+    // otherwise trust the live session.
+    const hasVcsRoot =
+      input.projects.find((project) => project.id === input.thread.projectId)?.vcsRoot != null;
+    const cwd =
+      input.preferSessionRuntime && !hasVcsRoot
+        ? (sessionCwd ?? fromThread)
+        : (fromThread ?? sessionCwd);
 
     if (!cwd) {
       return undefined;
@@ -482,13 +487,25 @@ const make = Effect.gen(function* () {
     if (Option.isNone(sessionRuntime)) {
       return;
     }
+    // The session cwd is the agent's workspace; git lives at the thread's VCS
+    // root when the project sets one.
+    const threadShell = yield* projectionSnapshotQuery
+      .getThreadShellById(event.threadId)
+      .pipe(Effect.map(Option.getOrUndefined));
+    const cwd =
+      (threadShell
+        ? resolveThreadVcsCwd({
+            thread: threadShell,
+            projects: yield* resolveThreadProjects(threadShell.projectId),
+          })
+        : undefined) ?? sessionRuntime.value.cwd;
 
-    const local = yield* vcsStatusBroadcaster.refreshLocalStatus(sessionRuntime.value.cwd).pipe(
+    const local = yield* vcsStatusBroadcaster.refreshLocalStatus(cwd).pipe(
       Effect.catch((error) =>
         Effect.logWarning("failed to refresh local git status after turn completion", {
           threadId: event.threadId,
           turnId: event.turnId ?? null,
-          cwd: sessionRuntime.value.cwd,
+          cwd,
           detail: error.message,
         }).pipe(Effect.as(null)),
       ),
@@ -496,13 +513,13 @@ const make = Effect.gen(function* () {
     if (local !== null) {
       yield* followWorktreeBranchDrift({
         threadId: event.threadId,
-        cwd: sessionRuntime.value.cwd,
+        cwd,
         local,
       });
       yield* refreshPullRequestAfterTurn({
         threadId: event.threadId,
         turnId: toTurnId(event.turnId),
-        cwd: sessionRuntime.value.cwd,
+        cwd,
         local,
       });
     }
@@ -709,7 +726,15 @@ const make = Effect.gen(function* () {
       }).pipe(Effect.catch(() => Effect.void));
       return;
     }
-    if (!(yield* checkpointStore.isGitRepository(sessionRuntime.value.cwd))) {
+    // The session cwd is the agent's workspace, which is not the repository
+    // when the project sets a VCS root; restore where the checkpoint was taken.
+    const checkpointCwd = yield* resolveCheckpointCwd({
+      threadId: thread.id,
+      thread,
+      projects: yield* resolveThreadProjects(thread.projectId),
+      preferSessionRuntime: false,
+    });
+    if (!checkpointCwd) {
       yield* appendRevertFailureActivity({
         threadId: event.payload.threadId,
         turnCount: event.payload.turnCount,
@@ -754,7 +779,7 @@ const make = Effect.gen(function* () {
     yield* providerService.assertConversationRollbackSupported(event.payload.threadId);
 
     const restored = yield* checkpointStore.restoreCheckpoint({
-      cwd: sessionRuntime.value.cwd,
+      cwd: checkpointCwd,
       checkpointRef: targetCheckpointRef,
       fallbackToHead: event.payload.turnCount === 0,
     });
@@ -789,7 +814,7 @@ const make = Effect.gen(function* () {
 
     if (staleCheckpointRefs.length > 0) {
       yield* checkpointStore.deleteCheckpointRefs({
-        cwd: sessionRuntime.value.cwd,
+        cwd: checkpointCwd,
         checkpointRefs: staleCheckpointRefs,
       });
     }

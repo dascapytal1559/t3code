@@ -51,6 +51,7 @@ export interface ProjectionThreadCheckpointContext {
   readonly threadId: ThreadId;
   readonly projectId: ProjectId;
   readonly workspaceRoot: string;
+  readonly vcsRoot: string | null;
   readonly worktreePath: string | null;
   readonly checkpoints: ReadonlyArray<OrchestrationCheckpointSummary>;
 }
@@ -59,6 +60,7 @@ export interface ProjectionFullThreadDiffContext {
   readonly threadId: ThreadId;
   readonly projectId: ProjectId;
   readonly workspaceRoot: string;
+  readonly vcsRoot: string | null;
   readonly worktreePath: string | null;
   readonly latestCheckpointTurnCount: number;
   readonly toCheckpointRef: CheckpointRef | null;
@@ -153,7 +155,9 @@ export interface ProjectionSnapshotQueryShape {
   }) => Effect.Effect<ProjectionEventReplayStats, ProjectionRepositoryError>;
 
   /**
-   * Read the active project for an exact workspace root match.
+   * Read the active project whose workspace root or VCS root exactly matches
+   * the given directory. Git-facing callers only know the cwd they ran in,
+   * which is the VCS root when a project sets one.
    */
   readonly getActiveProjectByWorkspaceRoot: (
     workspaceRoot: string,

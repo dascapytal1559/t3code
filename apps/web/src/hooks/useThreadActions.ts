@@ -5,6 +5,7 @@ import {
   scopedThreadKey,
 } from "@t3tools/client-runtime/environment";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { projectVcsRoot } from "@t3tools/shared/projectVcs";
 import { canSnooze, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
 import { EnvironmentId, type ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -437,7 +438,7 @@ export function useThreadActions() {
       const removeResult = await removeWorktree({
         environmentId: threadRef.environmentId,
         input: {
-          cwd: threadProject.workspaceRoot,
+          cwd: projectVcsRoot(threadProject),
           path: orphanedWorktreePath,
           force: true,
         },
@@ -446,7 +447,7 @@ export function useThreadActions() {
         removeResult._tag === "Success"
           ? await refreshVcsStatus({
               environmentId: threadRef.environmentId,
-              input: { cwd: threadProject.workspaceRoot },
+              input: { cwd: projectVcsRoot(threadProject) },
             })
           : null;
       const cleanupFailure =

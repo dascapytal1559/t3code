@@ -357,6 +357,7 @@ export function projectEvent(
             id: payload.projectId,
             title: payload.title,
             workspaceRoot: payload.workspaceRoot,
+            vcsRoot: null,
             defaultModelSelection: payload.defaultModelSelection,
             defaultThreadEnvMode: null,
             autoPull: false,
@@ -391,6 +392,7 @@ export function projectEvent(
                   ...(payload.workspaceRoot !== undefined
                     ? { workspaceRoot: payload.workspaceRoot }
                     : {}),
+                  ...(payload.vcsRoot !== undefined ? { vcsRoot: payload.vcsRoot } : {}),
                   ...(payload.defaultModelSelection !== undefined
                     ? { defaultModelSelection: payload.defaultModelSelection }
                     : {}),

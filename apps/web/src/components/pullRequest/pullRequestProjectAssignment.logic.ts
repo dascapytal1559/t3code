@@ -1,4 +1,5 @@
 import type { EnvironmentId, EnvironmentMachineKind, ProjectId } from "@t3tools/contracts";
+import { projectVcsRoot } from "@t3tools/shared/projectVcs";
 
 /** The little of a project this needs: who holds it, and which repository it is a copy of. */
 export interface AssignableProject {
@@ -67,7 +68,8 @@ export function assignProjectsToEnvironments(
 export interface PickableEnvironment {
   readonly environmentId: EnvironmentId;
   readonly projectId: ProjectId;
-  readonly workspaceRoot: string;
+  /** Where git runs for that server's checkout. */
+  readonly cwd: string;
   readonly label: string;
   readonly machine?: EnvironmentMachineKind;
 }
@@ -85,7 +87,12 @@ export interface PickableEnvironment {
  */
 export function resolvePickableEnvironments(
   current: { readonly environmentId: EnvironmentId; readonly projectId: ProjectId },
-  projects: ReadonlyArray<AssignableProject & { readonly workspaceRoot: string }>,
+  projects: ReadonlyArray<
+    AssignableProject & {
+      readonly workspaceRoot: string;
+      readonly vcsRoot?: string | null | undefined;
+    }
+  >,
   environments: ReadonlyArray<{
     readonly environmentId: EnvironmentId;
     readonly label: string;
@@ -115,7 +122,7 @@ export function resolvePickableEnvironments(
           {
             environmentId: environment.environmentId,
             projectId: copy.id,
-            workspaceRoot: copy.workspaceRoot,
+            cwd: projectVcsRoot(copy),
             label: environment.label,
             ...(environment.machine === undefined ? {} : { machine: environment.machine }),
           },
@@ -128,7 +135,7 @@ export function resolvePickableEnvironments(
     {
       environmentId: current.environmentId,
       projectId: own.id,
-      workspaceRoot: own.workspaceRoot,
+      cwd: projectVcsRoot(own),
       label: ownEnvironment.label,
       ...(ownEnvironment.machine === undefined ? {} : { machine: ownEnvironment.machine }),
     },

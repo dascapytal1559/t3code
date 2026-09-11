@@ -23,6 +23,7 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import { threadVcsCwd } from "@t3tools/shared/projectVcs";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
@@ -1961,8 +1962,12 @@ const make = Effect.gen(function* () {
               .getThreadCheckpointContext(thread.id)
               .pipe(Effect.map(Option.getOrUndefined))
           : undefined;
-        const workspaceCwd =
-          checkpointContext?.worktreePath ?? checkpointContext?.workspaceRoot ?? undefined;
+        const workspaceCwd = checkpointContext
+          ? threadVcsCwd({
+              project: checkpointContext,
+              worktreePath: checkpointContext.worktreePath,
+            })
+          : undefined;
         if (
           turnId &&
           checkpointContext &&

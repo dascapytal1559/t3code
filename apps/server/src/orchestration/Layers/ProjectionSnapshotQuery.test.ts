@@ -295,6 +295,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           id: asProjectId("project-1"),
           title: "Project 1",
           workspaceRoot: "/tmp/project-1",
+          vcsRoot: null,
           repositoryIdentity: null,
           defaultModelSelection: {
             instanceId: ProviderInstanceId.make("codex"),
@@ -426,6 +427,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           id: asProjectId("project-1"),
           title: "Project 1",
           workspaceRoot: "/tmp/project-1",
+          vcsRoot: null,
           repositoryIdentity: null,
           defaultModelSelection: {
             instanceId: ProviderInstanceId.make("codex"),
@@ -1042,6 +1044,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           project_id,
           title,
           workspace_root,
+          vcs_root,
           default_model_selection_json,
           scripts_json,
           created_at,
@@ -1053,6 +1056,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             'project-active',
             'Active Project',
             '/tmp/workspace',
+            '/tmp/workspace/repo',
             '{"provider":"codex","model":"gpt-5-codex"}',
             '[]',
             '2026-03-01T00:00:00.000Z',
@@ -1063,6 +1067,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
             'project-deleted',
             'Deleted Project',
             '/tmp/deleted',
+            NULL,
             NULL,
             '[]',
             '2026-03-01T00:00:02.000Z',
@@ -1149,6 +1154,16 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
 
         const missingProject = yield* snapshotQuery.getActiveProjectByWorkspaceRoot("/tmp/missing");
         assert.equal(missingProject._tag, "None");
+
+        // Git-facing callers only know the cwd they ran in, which is the VCS
+        // root when a project sets one.
+        const projectByVcsRoot =
+          yield* snapshotQuery.getActiveProjectByWorkspaceRoot("/tmp/workspace/repo");
+        assert.equal(projectByVcsRoot._tag, "Some");
+        if (projectByVcsRoot._tag === "Some") {
+          assert.equal(projectByVcsRoot.value.id, asProjectId("project-active"));
+          assert.equal(projectByVcsRoot.value.vcsRoot, "/tmp/workspace/repo");
+        }
 
         const firstThreadId = yield* snapshotQuery.getFirstActiveThreadIdByProjectId(
           asProjectId("project-active"),
@@ -1332,6 +1347,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           threadId: ThreadId.make("thread-context"),
           projectId: asProjectId("project-context"),
           workspaceRoot: "/tmp/context-workspace",
+          vcsRoot: null,
           worktreePath: "/tmp/context-worktree",
           checkpoints: [
             {

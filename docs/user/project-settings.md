@@ -19,6 +19,15 @@ Reset that list to use shared actions again. Existing project actions are preser
 Project names, icons, removal, and importing actions from a checkout remain project-specific.
 When there are several checkouts, the checkout picker selects which actions and grouping to edit.
 
+## Repository directory
+
+By default T3 Code runs source control in the project root. If the repository lives in a child
+directory instead, for example when the project root is a workspace of symlinks that points at
+several sources, set **Repository directory** under the checkout section of the project's settings.
+Commits, branches, pull requests, worktrees, and checkpoints then use that directory, while agents,
+file search, and actions keep running from the project root. Relative paths resolve against the
+project root. Reset the row to use the project root again.
+
 ## Project icons
 
 Choose an icon, emoji, or image from the project to make it easier to recognize. The choice applies

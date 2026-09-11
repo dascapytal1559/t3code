@@ -296,6 +296,7 @@ describe("CheckpointReactor", () => {
     readonly seedFilesystemCheckpoints?: boolean;
     readonly initializeGit?: boolean;
     readonly projectWorkspaceRoot?: string;
+    readonly projectVcsRoot?: string;
     readonly threadWorktreePath?: string | null;
     readonly threadBranch?: string | null;
     readonly secondThreadSharingWorktree?: boolean;
@@ -423,6 +424,16 @@ describe("CheckpointReactor", () => {
         createdAt,
       }),
     );
+    if (options?.projectVcsRoot !== undefined) {
+      await Effect.runPromise(
+        engine.dispatch({
+          type: "project.meta.update",
+          commandId: CommandId.make("cmd-project-set-vcs-root"),
+          projectId: asProjectId("project-1"),
+          vcsRoot: options.projectVcsRoot,
+        }),
+      );
+    }
     await Effect.runPromise(
       engine
         .dispatch({
@@ -438,7 +449,9 @@ describe("CheckpointReactor", () => {
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
           runtimeMode: "approval-required",
           branch: options?.threadBranch ?? null,
-          worktreePath: options?.threadWorktreePath ?? cwd,
+          // Explicit null means no worktree; only an omitted option defaults to the repo.
+          worktreePath:
+            options?.threadWorktreePath === undefined ? cwd : options.threadWorktreePath,
           createdAt,
         })
         .pipe(
@@ -457,7 +470,9 @@ describe("CheckpointReactor", () => {
                   interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
                   runtimeMode: "approval-required",
                   branch: null,
-                  worktreePath: options?.threadWorktreePath ?? cwd,
+                  // Explicit null means no worktree; only an omitted option defaults to the repo.
+                  worktreePath:
+                    options?.threadWorktreePath === undefined ? cwd : options.threadWorktreePath,
                   createdAt,
                 }),
               )
@@ -1540,6 +1555,79 @@ describe("CheckpointReactor", () => {
     expect(thread?.checkpoints.some((checkpoint) => checkpoint.checkpointTurnCount === 3)).toBe(
       false,
     );
+  });
+
+  it("captures checkpoints at the project's VCS root when the agent works elsewhere", async () => {
+    // A meta workspace of symlinks: the agent and its session run there, but
+    // the repository is one child directory registered as the VCS root.
+    const metaWorkspace = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-checkpoint-meta-workspace-"),
+    );
+    tempDirs.push(metaWorkspace);
+    const repository = createGitRepository();
+    tempDirs.push(repository);
+
+    const harness = await createHarness({
+      seedFilesystemCheckpoints: false,
+      projectWorkspaceRoot: metaWorkspace,
+      projectVcsRoot: repository,
+      threadWorktreePath: null,
+      providerSessionCwd: metaWorkspace,
+    });
+    const createdAt = "2026-01-01T00:00:00.000Z";
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-session-set-meta-workspace"),
+        threadId: ThreadId.make("thread-1"),
+        session: {
+          threadId: ThreadId.make("thread-1"),
+          status: "ready",
+          providerName: "codex",
+          runtimeMode: "approval-required",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: createdAt,
+        },
+        createdAt,
+      }),
+    );
+
+    harness.provider.emit({
+      type: "turn.started",
+      eventId: EventId.make("evt-turn-started-meta-workspace"),
+      provider: ProviderDriverKind.make("codex"),
+
+      createdAt,
+      threadId: ThreadId.make("thread-1"),
+      turnId: asTurnId("turn-meta-1"),
+    });
+    await waitForGitRefExists(repository, checkpointRefForThreadTurn(ThreadId.make("thread-1"), 0));
+
+    NodeFS.writeFileSync(NodePath.join(repository, "meta-turn.txt"), "edited via symlink\n");
+    harness.provider.emit({
+      type: "turn.completed",
+      eventId: EventId.make("evt-turn-completed-meta-workspace"),
+      provider: ProviderDriverKind.make("codex"),
+
+      createdAt,
+      threadId: ThreadId.make("thread-1"),
+      turnId: asTurnId("turn-meta-1"),
+      payload: { state: "completed" },
+    });
+    await waitForGitRefExists(repository, checkpointRefForThreadTurn(ThreadId.make("thread-1"), 1));
+    await harness.drain();
+
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    expect(thread?.checkpoints.some((checkpoint) => checkpoint.checkpointTurnCount === 1)).toBe(
+      true,
+    );
+    expect(
+      NodeFS.existsSync(NodePath.join(metaWorkspace, ".git")),
+      "the meta workspace must stay a plain directory",
+    ).toBe(false);
   });
 
   it("continues processing runtime events after a single checkpoint runtime failure", async () => {

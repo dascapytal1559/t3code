@@ -5,6 +5,7 @@ import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import { projectVcsRoot } from "@t3tools/shared/projectVcs";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Schedule from "effect/Schedule";
@@ -119,7 +120,7 @@ export const make = Effect.gen(function* () {
             thread.id,
             worktreeExists && thread.worktreePath !== null
               ? thread.worktreePath
-              : project.workspaceRoot,
+              : projectVcsRoot(project),
           );
         }),
       { concurrency: 8, discard: true },

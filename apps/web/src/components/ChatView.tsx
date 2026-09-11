@@ -62,6 +62,7 @@ import {
   resolveProjectScripts,
 } from "@t3tools/shared/projectScripts";
 import { truncate } from "@t3tools/shared/String";
+import { projectVcsRoot, threadVcsCwd } from "@t3tools/shared/projectVcs";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
 import {
   getTerminalLabel,
@@ -3101,26 +3102,31 @@ export default function ChatView(props: ChatViewProps) {
     captureDraftHeroComposerRect,
   ] = useDraftHeroLayoutTransition(isDraftHeroState);
 
-  const gitCwd = activeProject
+  // Where the agent works: the worktree, else the workspace root. Open uses it.
+  const workspaceCwd = activeProject
     ? projectScriptCwd({
         project: { cwd: activeProject.workspaceRoot },
         worktreePath: activeThread?.worktreePath ?? null,
       })
     : null;
-  const gitStatusCwd = activeThread?.worktreePath ?? gitCwd;
+  // Where git runs: the worktree, else the project's VCS root, else the
+  // workspace root. Every source-control surface in the header keys off this.
+  const gitCwd = activeProject
+    ? threadVcsCwd({ project: activeProject, worktreePath: activeThread?.worktreePath ?? null })
+    : null;
   const gitStatusQuery = useEnvironmentQuery(
-    gitStatusCwd === null
+    gitCwd === null
       ? null
       : vcsEnvironment.status({
           environmentId,
-          input: { cwd: gitStatusCwd },
+          input: { cwd: gitCwd },
         }),
   );
   useWorkspaceMutationRefresh({
-    enabled: gitStatusCwd !== null,
+    enabled: gitCwd !== null,
     mutationId: workspaceMutationId,
     refresh: gitStatusQuery.refresh,
-    resourceKey: `git-status:${activeThreadKey ?? ""}:${gitStatusCwd ?? ""}`,
+    resourceKey: `git-status:${activeThreadKey ?? ""}:${gitCwd ?? ""}`,
   });
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const availableEditors = useAtomValue(primaryServerAvailableEditorsAtom);
@@ -6893,7 +6899,7 @@ export default function ChatView(props: ChatViewProps) {
               ...(baseBranchForWorktree
                 ? {
                     prepareWorktree: {
-                      projectCwd: activeProject.workspaceRoot,
+                      projectCwd: projectVcsRoot(activeProject),
                       baseBranch: baseBranchForWorktree,
                       branch: buildTemporaryWorktreeBranchName(randomHex),
                       ...(startFromOrigin ? { startFromOrigin: true } : {}),
@@ -8044,7 +8050,7 @@ export default function ChatView(props: ChatViewProps) {
             activeProjectCwd={activeProject?.workspaceRoot ?? null}
             activeProjectFaviconPath={activeProject?.faviconPath ?? null}
             activeProjectIcon={activeProject?.projectIcon ?? null}
-            openInCwd={gitCwd}
+            openInCwd={workspaceCwd}
             activeProjectScripts={activeProjectScripts}
             preferredScriptId={
               activeProject ? (lastInvokedScriptByProjectId[activeProject.id] ?? null) : null
@@ -8446,7 +8452,7 @@ export default function ChatView(props: ChatViewProps) {
                 open
                 environmentId={activeThread.environmentId}
                 threadId={activeThread.id}
-                cwd={activeProject?.workspaceRoot ?? null}
+                cwd={activeProject ? projectVcsRoot(activeProject) : null}
                 initialReference={pullRequestDialogState.initialReference}
                 onOpenChange={(open) => {
                   if (!open) {

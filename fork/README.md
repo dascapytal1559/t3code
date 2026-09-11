@@ -549,6 +549,34 @@ The end-to-end dispatch path (`Layers/ThreadFork.ts`) and the adapters'
 session-start consumption of the seeded cursors spawn real providers and are
 not unit-tested.
 
+## Repository directory per checkout
+
+A project can name a **Repository directory** other than its root, under the
+Checkout section of Settings → Projects. The motivating layout is a meta
+workspace: a directory of symlinks that gathers several sources, whose real
+repository is one child. Commits, branches, pull requests, worktrees,
+checkpoints, repository identity, and auto-pull run there; agents, file
+search, the Open button, and project actions keep the project root. The
+setting is per checkout and never fans out over a project group. Relative
+input resolves against the project root on the client; the server stores
+only an absolute, existing directory. Mobile follows the setting but cannot
+edit it.
+
+Implementation: `vcsRoot` on the project contract and the meta-update
+command (`packages/contracts/src/orchestration.ts`), migration
+`050_ProjectionProjectsVcsRoot`, the resolver in
+`packages/shared/src/projectVcs.ts` with the server twin
+`resolveThreadVcsCwd` in `apps/server/src/checkpointing/Utils.ts`, and the
+settings row in `apps/web/src/components/settings/ProjectSettingsPanel.tsx`.
+`getActiveProjectByWorkspaceRoot` matches either root because git-facing
+callers only know the cwd they ran in. The checkpoint reactor prefers the
+thread's VCS cwd over the live session cwd only when a VCS root is set.
+
+Tests: decider, projection pipeline, snapshot lookup, normalizer
+(`Normalizer.vcsRoot.test.ts`), migration, shared resolver, the web path
+input, and a `CheckpointReactor` case where the agent runs in a meta
+workspace and checkpoints land in the child repository.
+
 ## Sync status
 
 Last synced on 2026-09-07 against upstream `6abdf37a5`

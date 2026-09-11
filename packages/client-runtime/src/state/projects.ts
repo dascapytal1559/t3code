@@ -94,6 +94,25 @@ export function isUnsupportedWindowsProjectPath(value: string, platform: string)
   return isWindowsAbsolutePath(value) && !isWindowsPlatform(platform);
 }
 
+/**
+ * Turns what a user typed into the Repository directory field into the
+ * absolute path the server stores. Anything not absolute or home-relative is
+ * taken relative to the workspace root, so "packages/app" and "./packages/app"
+ * both mean the same child directory. Empty input clears the override.
+ */
+export function resolveProjectVcsRootInput(value: string, workspaceRoot: string): string | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  if (
+    trimmed.startsWith("~") ||
+    getAbsolutePathKind(trimmed) !== null ||
+    isExplicitRelativePath(trimmed)
+  ) {
+    return resolveProjectPathForDispatch(trimmed, workspaceRoot);
+  }
+  return resolveProjectPathForDispatch(`./${trimmed}`, workspaceRoot);
+}
+
 export function resolveProjectPathForDispatch(value: string, cwd?: string | null): string {
   const trimmedValue = value.trim();
   if (!isExplicitRelativePath(trimmedValue) || !cwd) {

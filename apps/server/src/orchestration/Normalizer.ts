@@ -18,6 +18,7 @@ import {
   resolveAttachmentPath,
 } from "../attachmentStore.ts";
 import { ServerConfig } from "../config.ts";
+import { expandHomePathWith } from "../pathExpansion.ts";
 import { parseBase64DataUrl } from "../imageMime.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 
@@ -91,6 +92,20 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
         ),
       );
 
+    // A VCS root is stored absolute. Clients resolve relative input against
+    // the workspace root before sending; the server has no project context
+    // here, so a relative path would silently resolve against process.cwd().
+    const normalizeProjectVcsRoot = (vcsRoot: string) =>
+      Effect.gen(function* () {
+        const expanded = expandHomePathWith(vcsRoot.trim(), path);
+        if (!path.isAbsolute(expanded)) {
+          return yield* new OrchestrationDispatchCommandError({
+            message: `Repository directory must be an absolute path: ${vcsRoot}`,
+          });
+        }
+        return yield* normalizeProjectWorkspaceRoot(expanded);
+      });
+
     const normalizeProjectWorkspaceRootForCreate = (
       workspaceRoot: string,
       createIfMissing: boolean | undefined,
@@ -119,13 +134,15 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
       } satisfies OrchestrationCommand;
     }
 
-    if (
-      canonicalCommand.type === "project.meta.update" &&
-      canonicalCommand.workspaceRoot !== undefined
-    ) {
+    if (canonicalCommand.type === "project.meta.update") {
       return {
         ...canonicalCommand,
-        workspaceRoot: yield* normalizeProjectWorkspaceRoot(canonicalCommand.workspaceRoot),
+        ...(canonicalCommand.workspaceRoot !== undefined
+          ? { workspaceRoot: yield* normalizeProjectWorkspaceRoot(canonicalCommand.workspaceRoot) }
+          : {}),
+        ...(typeof canonicalCommand.vcsRoot === "string"
+          ? { vcsRoot: yield* normalizeProjectVcsRoot(canonicalCommand.vcsRoot) }
+          : {}),
       } satisfies OrchestrationCommand;
     }
 

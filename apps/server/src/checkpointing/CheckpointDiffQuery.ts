@@ -17,6 +17,7 @@ import {
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import { threadVcsCwd } from "@t3tools/shared/projectVcs";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -129,7 +130,10 @@ export const make = Effect.gen(function* () {
         });
       }
 
-      const workspaceCwd = threadContext.value.worktreePath ?? threadContext.value.workspaceRoot;
+      const workspaceCwd = threadVcsCwd({
+        project: threadContext.value,
+        worktreePath: threadContext.value.worktreePath,
+      });
       if (!workspaceCwd) {
         return yield* new CheckpointWorkspacePathMissingError({
           operation,
@@ -237,7 +241,10 @@ export const make = Effect.gen(function* () {
       });
     }
 
-    const workspaceCwd = threadContext.value.worktreePath ?? threadContext.value.workspaceRoot;
+    const workspaceCwd = threadVcsCwd({
+      project: threadContext.value,
+      worktreePath: threadContext.value.worktreePath,
+    });
     if (!workspaceCwd) {
       return yield* new CheckpointWorkspacePathMissingError({
         operation,

@@ -31,12 +31,12 @@ export function useReviewSections(input: {
   const { environmentId, reviewCache, threadId } = input;
   const enabled = input.enabled ?? true;
   const selectedThread = useSelectedThreadDetail();
-  const { selectedThreadCwd } = useSelectedThreadWorktree();
+  const { selectedThreadVcsCwd } = useSelectedThreadWorktree();
   const diffPreview = useEnvironmentQuery(
-    enabled && environmentId !== undefined && selectedThreadCwd !== null
+    enabled && environmentId !== undefined && selectedThreadVcsCwd !== null
       ? reviewEnvironment.diffPreview({
           environmentId,
-          input: { cwd: selectedThreadCwd },
+          input: { cwd: selectedThreadVcsCwd },
         })
       : null,
   );

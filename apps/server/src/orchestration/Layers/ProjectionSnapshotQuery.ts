@@ -32,6 +32,7 @@ import {
 } from "@t3tools/contracts";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
+import { projectVcsRoot } from "@t3tools/shared/projectVcs";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
@@ -236,6 +237,7 @@ const ProjectionThreadCheckpointContextThreadRowSchema = Schema.Struct({
   threadId: ThreadId,
   projectId: ProjectId,
   workspaceRoot: Schema.String,
+  vcsRoot: Schema.NullOr(Schema.String),
   worktreePath: Schema.NullOr(Schema.String),
 });
 const FullThreadDiffContextLookupInput = Schema.Struct({
@@ -246,6 +248,7 @@ const ProjectionFullThreadDiffContextRowSchema = Schema.Struct({
   threadId: ThreadId,
   projectId: ProjectId,
   workspaceRoot: Schema.String,
+  vcsRoot: Schema.NullOr(Schema.String),
   worktreePath: Schema.NullOr(Schema.String),
   latestCheckpointTurnCount: Schema.NullOr(NonNegativeInt),
   toCheckpointRef: Schema.NullOr(CheckpointRef),
@@ -377,6 +380,7 @@ function mapProjectShellRow(
     id: row.projectId,
     title: row.title,
     workspaceRoot: row.workspaceRoot,
+    vcsRoot: row.vcsRoot ?? null,
     repositoryIdentity,
     defaultModelSelection: row.defaultModelSelection,
     defaultThreadEnvMode: row.defaultThreadEnvMode,
@@ -443,14 +447,16 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       options?.includeDeleted === true
         ? projectRows
         : projectRows.filter((row) => row.deletedAt === null);
-    const uniqueWorkspaceRoots = [...new Set(filteredProjectRows.map((row) => row.workspaceRoot))];
-    const repositoryIdentityByWorkspaceRoot = new Map(
+    // Identity comes from the directory git actually runs in, so a project
+    // whose VCS root is a child of its workspace groups with that repository.
+    const uniqueVcsRoots = [...new Set(filteredProjectRows.map(projectVcsRoot))];
+    const repositoryIdentityByVcsRoot = new Map(
       yield* Effect.forEach(
-        uniqueWorkspaceRoots,
-        (workspaceRoot) =>
+        uniqueVcsRoots,
+        (vcsRoot) =>
           repositoryIdentityResolver
-            .resolve(workspaceRoot)
-            .pipe(Effect.map((identity) => [workspaceRoot, identity] as const)),
+            .resolve(vcsRoot)
+            .pipe(Effect.map((identity) => [vcsRoot, identity] as const)),
         { concurrency: repositoryIdentityResolutionConcurrency },
       ),
     );
@@ -458,7 +464,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     return new Map(
       filteredProjectRows.map((row) => [
         row.projectId,
-        repositoryIdentityByWorkspaceRoot.get(row.workspaceRoot) ?? null,
+        repositoryIdentityByVcsRoot.get(projectVcsRoot(row)) ?? null,
       ]),
     );
   });
@@ -472,6 +478,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           project_id AS "projectId",
           title,
           workspace_root AS "workspaceRoot",
+          vcs_root AS "vcsRoot",
           default_model_selection_json AS "defaultModelSelection",
           default_thread_env_mode AS "defaultThreadEnvMode",
           auto_pull AS "autoPull",
@@ -955,6 +962,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           project_id AS "projectId",
           title,
           workspace_root AS "workspaceRoot",
+          vcs_root AS "vcsRoot",
           default_model_selection_json AS "defaultModelSelection",
           default_thread_env_mode AS "defaultThreadEnvMode",
           auto_pull AS "autoPull",
@@ -965,7 +973,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           updated_at AS "updatedAt",
           deleted_at AS "deletedAt"
         FROM projection_projects
-        WHERE workspace_root = ${workspaceRoot}
+        WHERE (workspace_root = ${workspaceRoot} OR vcs_root = ${workspaceRoot})
           AND deleted_at IS NULL
         ORDER BY created_at ASC, project_id ASC
         LIMIT 1
@@ -981,6 +989,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           project_id AS "projectId",
           title,
           workspace_root AS "workspaceRoot",
+          vcs_root AS "vcsRoot",
           default_model_selection_json AS "defaultModelSelection",
           default_thread_env_mode AS "defaultThreadEnvMode",
           auto_pull AS "autoPull",
@@ -1049,6 +1058,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           threads.thread_id AS "threadId",
           threads.project_id AS "projectId",
           projects.workspace_root AS "workspaceRoot",
+          projects.vcs_root AS "vcsRoot",
           threads.worktree_path AS "worktreePath"
         FROM projection_threads AS threads
         INNER JOIN projection_projects AS projects
@@ -1793,6 +1803,7 @@ pending_approval_requests AS (
           threads.thread_id AS "threadId",
           threads.project_id AS "projectId",
           projects.workspace_root AS "workspaceRoot",
+          projects.vcs_root AS "vcsRoot",
           threads.worktree_path AS "worktreePath",
           (
             SELECT MAX(turns.checkpoint_turn_count)
@@ -2050,6 +2061,7 @@ pending_approval_requests AS (
                 id: row.projectId,
                 title: row.title,
                 workspaceRoot: row.workspaceRoot,
+                vcsRoot: row.vcsRoot ?? null,
                 repositoryIdentity: repositoryIdentities.get(row.projectId) ?? null,
                 defaultModelSelection: row.defaultModelSelection,
                 defaultThreadEnvMode: row.defaultThreadEnvMode,
@@ -2190,6 +2202,7 @@ pending_approval_requests AS (
                   id: row.projectId,
                   title: row.title,
                   workspaceRoot: row.workspaceRoot,
+                  vcsRoot: row.vcsRoot ?? null,
                   defaultModelSelection: row.defaultModelSelection,
                   defaultThreadEnvMode: row.defaultThreadEnvMode,
                   autoPull: row.autoPull === 1,
@@ -2706,12 +2719,13 @@ pending_approval_requests AS (
         Effect.flatMap((option) =>
           Option.isNone(option)
             ? Effect.succeed(Option.none<OrchestrationProject>())
-            : repositoryIdentityResolver.resolve(option.value.workspaceRoot).pipe(
+            : repositoryIdentityResolver.resolve(projectVcsRoot(option.value)).pipe(
                 Effect.map((repositoryIdentity) =>
                   Option.some({
                     id: option.value.projectId,
                     title: option.value.title,
                     workspaceRoot: option.value.workspaceRoot,
+                    vcsRoot: option.value.vcsRoot ?? null,
                     repositoryIdentity,
                     defaultModelSelection: option.value.defaultModelSelection,
                     defaultThreadEnvMode: option.value.defaultThreadEnvMode,
@@ -2740,7 +2754,7 @@ pending_approval_requests AS (
         Option.isNone(option)
           ? Effect.succeed(Option.none<OrchestrationProjectShell>())
           : repositoryIdentityResolver
-              .resolve(option.value.workspaceRoot)
+              .resolve(projectVcsRoot(option.value))
               .pipe(
                 Effect.map((repositoryIdentity) =>
                   Option.some(mapProjectShellRow(option.value, repositoryIdentity)),
@@ -2817,6 +2831,7 @@ pending_approval_requests AS (
         threadId: threadRow.value.threadId,
         projectId: threadRow.value.projectId,
         workspaceRoot: threadRow.value.workspaceRoot,
+        vcsRoot: threadRow.value.vcsRoot,
         worktreePath: threadRow.value.worktreePath,
         checkpoints: checkpointRows.map((row): OrchestrationCheckpointSummary => ({
           turnId: row.turnId,
@@ -2853,6 +2868,7 @@ pending_approval_requests AS (
         threadId: row.value.threadId,
         projectId: row.value.projectId,
         workspaceRoot: row.value.workspaceRoot,
+        vcsRoot: row.value.vcsRoot,
         worktreePath: row.value.worktreePath,
         latestCheckpointTurnCount: row.value.latestCheckpointTurnCount ?? 0,
         toCheckpointRef: row.value.toCheckpointRef,

@@ -1,4 +1,5 @@
 import { RefreshIcon } from "~/components/ui/refresh-icon";
+import { projectVcsRoot } from "@t3tools/shared/projectVcs";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
@@ -136,7 +137,7 @@ export function BranchToolbarBranchSelector({
       ? activeThreadBranchOverride
       : (serverThread?.branch ?? draftThread?.branch ?? null);
   const activeWorktreePath = serverThread?.worktreePath ?? draftThread?.worktreePath ?? null;
-  const activeProjectCwd = activeProject?.workspaceRoot ?? null;
+  const activeProjectCwd = activeProject ? projectVcsRoot(activeProject) : null;
   const branchCwd = activeWorktreePath ?? activeProjectCwd;
   const hasServerThread = serverThread !== null;
   const effectiveEnvMode =

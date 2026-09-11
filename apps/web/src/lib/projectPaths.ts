@@ -14,4 +14,5 @@ export {
   normalizeProjectPathForComparison,
   normalizeProjectPathForDispatch,
   resolveProjectPathForDispatch,
+  resolveProjectVcsRootInput,
 } from "@t3tools/client-runtime/state/projects";

@@ -1,4 +1,5 @@
 import type { VcsRef } from "@t3tools/client-runtime/state/vcs";
+import { projectVcsRoot } from "@t3tools/shared/projectVcs";
 import { resolveEnvironmentMachineKind } from "@t3tools/contracts";
 import { LegendList } from "@legendapp/list/react-native";
 import {
@@ -268,7 +269,7 @@ export function NewTaskBranchPickerRouteScreen() {
           const result = await switchRef({
             environmentId: flow.selectedProject.environmentId,
             input: {
-              cwd: flow.selectedProject.workspaceRoot,
+              cwd: projectVcsRoot(flow.selectedProject),
               refName: branch.name,
             },
           });
