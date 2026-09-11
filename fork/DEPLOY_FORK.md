@@ -146,6 +146,12 @@ the staged one.
 ~/Projects/t3code-fork/fork/deploy/stage-server-payload.sh <tarball-path>  # prints the payload dir
 ```
 
+Staging seeds `npm install` with the live build's `package-lock.json`, so a
+transitive prerelease that appeared on the registry since the last deploy
+cannot break the install (it did on 2026-09-11). A dependency you actually
+bumped still resolves fresh. If the live build has no lockfile, the install
+resolves from scratch as before.
+
 **Ship the tarball to remote hosts** and point the spec override at it:
 
 ```bash

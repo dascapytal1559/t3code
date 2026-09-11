@@ -30,6 +30,15 @@ tar -xzf "$TARBALL" -C "$DIR"
 mv "$DIR/package/dist" "$DIR/apps/server/dist"
 mv "$DIR/package/package.json" "$DIR/package.json"
 rm -rf "$DIR/package"
+# A fresh resolution drifts with the registry: on 2026-09-11 it picked
+# @effect/platform-node-shared rc.114, whose own range wants an unpublished
+# effect rc.114, and staging died. Carry the live build's lockfile forward so
+# unchanged dependencies stay where they are; npm reconciles whatever the
+# manifest changed since.
+LIVE_DIR="$BUILDS_DIR/$(basename "$(readlink "$CURRENT_LINK" 2>/dev/null || echo none)")"
+if [ -f "$LIVE_DIR/package-lock.json" ]; then
+  cp "$LIVE_DIR/package-lock.json" "$DIR/package-lock.json"
+fi
 (cd "$DIR" && npm install --omit=dev --no-audit --no-fund --loglevel=error >&2)
 
 [ -f "$DIR/apps/server/dist/bin.mjs" ] || { echo "staging failed: bin.mjs missing" >&2; exit 1; }
