@@ -16,8 +16,6 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useComposerHandleContext } from "~/composerHandleContext";
 import { useTheme } from "~/hooks/useTheme";
-import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
-import { useServerConfigs } from "~/state/entities";
 import { cn } from "~/lib/utils";
 import { isAbsolutePath } from "~/terminal-links";
 
@@ -85,21 +83,7 @@ function BreadcrumbMenuContent(props: {
   readonly rootPath: string;
   readonly workspaceMutationId: string | null;
 }) {
-  const entriesQuery = useProjectEntriesQuery(props.environmentId, props.cwd);
-  // Fork: servers with the lazy explorer also run the filesystem watcher, which
-  // already invalidates this listing after agent edits; a mutation-driven
-  // refresh here would force a redundant full index rescan on every turn
-  // (FORK_FEATURES.md: Live filesystem updates).
-  const serverConfigs = useServerConfigs();
-  const watcherMode =
-    serverConfigs.get(props.environmentId)?.environment.capabilities.workspaceDirectoryListing ===
-    true;
-  useWorkspaceMutationRefresh({
-    enabled: !watcherMode,
-    mutationId: props.workspaceMutationId,
-    refresh: entriesQuery.refresh,
-    resourceKey: `files:${props.environmentId}:${props.cwd}`,
-  });
+  const entriesQuery = useProjectEntriesQuery(props.environmentId, props.cwd, props.directoryPath);
   const { resolvedTheme } = useTheme();
   const entries = entriesQuery.data?.entries ?? [];
   const entriesTruncated = entriesQuery.data?.truncated ?? false;
@@ -107,9 +91,7 @@ function BreadcrumbMenuContent(props: {
     () => fileBreadcrumbChildren(entries, props.directoryPath),
     [entries, props.directoryPath],
   );
-  const directoryAvailable =
-    props.directoryPath === "" ||
-    entries.some((entry) => entry.kind === "directory" && entry.path === props.directoryPath);
+  const directoryAvailable = entriesQuery.data !== null;
   const parentPath = fileBreadcrumbParent(props.directoryPath);
   const canGoBack =
     props.directoryPath !== props.rootPath &&
@@ -166,7 +148,10 @@ function BreadcrumbMenuContent(props: {
                 key={entry.path}
                 closeOnClick={entry.kind === "file"}
                 aria-current={isCurrentFile ? "page" : undefined}
-                className={cn(isCurrentFile && "bg-foreground/[0.08]")}
+                className={cn(
+                  isCurrentFile && "bg-foreground/[0.08]",
+                  entry.ignored && "text-muted-foreground",
+                )}
                 onClick={() => {
                   if (entry.kind === "directory") {
                     props.onDirectoryChange(entry.path);

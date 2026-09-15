@@ -44,9 +44,8 @@ deltas that are no longer needed.
 Every feature below ends with a **Tests:** paragraph naming the tests that
 prove it still works. Fork-only test files end in `.fork.test.ts` and sit
 next to the module they cover, so they never collide with upstream test
-files during a merge; the two tests that need a large upstream harness stay
-inside `server.test.ts` and `ClaudeAdapter.test.ts` with a `fork: ` name
-prefix. Run the whole fork suite from the repo root with
+files during a merge; auth-recovery tests that need the upstream harness stay
+inside `ClaudeAdapter.test.ts` with a `fork: ` name prefix. Run the whole fork suite from the repo root with
 
 ```
 vp run test:fork
@@ -69,7 +68,8 @@ Diagrams follow light/dark mode; wide diagrams scroll horizontally.
 The Source/Diagram toggle and existing Copy code action
 keep the original text available. Streaming responses show source until the
 response finishes, and invalid or oversized diagrams fall back to source.
-Native mobile continues to show Mermaid source using its separate native
+Mermaid dependency notices are registered in `third-party-licenses.config.json`
+for the generated web license manifest. Native mobile continues to show Mermaid source using its separate native
 Markdown renderer. This works with every provider and connection mode without
 server or protocol changes.
 
@@ -139,7 +139,7 @@ Tests: `apps/server/src/workspace/WorkspaceSearchIndex.fork.test.ts`
 truncation), `apps/server/src/workspace/WorkspaceFileSystem.fork.test.ts`
 (reading through links that resolve outside the root),
 `apps/server/src/workspace/WorkspaceEntries.fork.test.ts` (link kinds in
-`listDirectory`; search stays up when `git check-ignore` rejects a pathspec
+`listEntries({ directoryPath })`; search stays up when `git check-ignore` rejects a pathspec
 beyond a link), and `apps/mobile/src/features/files/fileTree.fork.test.ts`
 (the `symlink` flag stays on the linked node). The badge rendering itself
 is not unit-tested.
@@ -151,8 +151,9 @@ arrow badge:
 
 ## Hidden-root visibility
 
-The same supplemental walk exposes root-level dotfiles and dot-directories that
-the native index omits. `.git`, `.DS_Store`, and upstream's `.convex` cache
+The same supplemental walk exposes root-level dotfiles and dot-directories in
+path search and the legacy whole-tree listing, where the native index omits
+them. Upstream now includes those entries in its per-directory explorer. `.git`, `.DS_Store`, and upstream's `.convex` cache
 exclusion remain hidden, as do paths ignored by the active VCS.
 
 Implementation: `apps/server/src/workspace/WorkspaceSearchIndex.ts`.
@@ -162,80 +163,11 @@ Tests: `apps/server/src/workspace/WorkspaceSearchIndex.fork.test.ts`
 
 ![File explorer showing hidden root entries](./assets/hidden-root.png)
 
-## Lazy per-directory file explorer
-
-Upstream's explorer fetches the whole workspace as one flat listing through
-`projects.listEntries`, silently capped at 25,000 entries (directories count),
-so large repos lose everything past the alphabetical cutoff. The fork loads the
-explorer VS Code-style instead: a new `projects.listDirectory` RPC returns one
-directory's direct children from a plain `readdir` (no search-index dependency,
-no entry cap), and both the web tree and the mobile tree fetch a directory the
-first time it is expanded. The tree opens fully collapsed (the VS Code
-default), so only the root listing is fetched up front. Listings obey the
-same hard exclusions as search: `.git`, `.DS_Store`, and `.convex` stay hidden.
-All other direct children are shown even when the active VCS ignores them; an
-optional `ProjectEntry.ignored` marker lets web and mobile render those rows in
-a muted color without making them less interactive. A failed ignore probe
-leaves rows visible and undecorated. Symlinks resolve to their target kind, and
-broken links are skipped. The legacy whole-tree listing and search remain
-VCS-ignore-aware; their supplemental symlink walk fails open when
-`git check-ignore` rejects pathspecs beyond a symbolic link. This deliberately
-follows VS Code's default split: ignored paths remain visible in the Explorer
-but are omitted from path and content search. The `.git` and `.DS_Store`
-exclusions also match VS Code defaults; `.convex` is a T3-specific cache
-exclusion.
-
-Watcher events and manual refresh refetch every loaded directory and diff the
-results into the tree, so expansion and selection state survive. Because the
-in-tree search only sees loaded rows, a bounded server path search (limit 200)
-merges its matches — with synthesized ancestor directories — into the tree
-while a search query is active.
-
-Upstream's expand/collapse-all control (#8889) is adapted to lazy loading: in
-lazy mode it toggles only the workspace root's direct child directories — one
-bounded listing fetch per directory instead of a cascade through the whole
-workspace — while legacy servers keep upstream's full-tree toggle. Collapsing
-leaves nested expansion state intact, so re-expanding a folder restores the
-subtree the user had open. Upstream's workspace-mutation refresh (#8803) is
-disabled in lazy mode because the filesystem watcher already converges the
-tree after agent edits; the same gate applies to upstream's file-preview
-breadcrumbs menu (#8910), which still reads the legacy capped listing but no
-longer forces a full index rescan on every agent turn.
-
-Version skew: the server advertises the `workspaceDirectoryListing` capability;
-clients fall back to the legacy capped `listEntries` flow against servers that
-lack it. `projects.listEntries` itself is unchanged for old clients.
-
-Implementation: `apps/server/src/workspace/WorkspaceEntries.ts`,
-`packages/contracts/src/project.ts`,
-`apps/web/src/components/files/useLazyFileTree.ts`,
-`apps/mobile/src/features/files/useLazyProjectEntries.ts`, and
-`apps/mobile/src/features/files/lazyEntriesStore.ts`.
-
-Tests: `apps/server/src/workspace/WorkspaceEntries.fork.test.ts`
-(`listDirectory` children, hard exclusions, escape rejection, ignored
-markers, fail-open probe),
-`apps/server/src/environment/ServerEnvironment.fork.test.ts` (the
-`workspaceDirectoryListing` capability is advertised), the `fork:` seam test
-in `apps/server/src/server.test.ts` (`projects.listDirectory` over the
-websocket RPC), `apps/web/src/components/files/useLazyFileTree.fork.test.ts`
-(listing diffs into the tree model), and
-`apps/mobile/src/features/files/lazyEntriesStore.fork.test.ts` (listing
-diffs and search merging) plus `fileTree.fork.test.ts` (the `ignored`
-flag).
-
-The initial root listing is collapsed, and ignored entries such as
-`node_modules` remain usable but muted:
-
-![Collapsed lazy file explorer with muted ignored entries](./assets/file-explorer.png)
-
 ## Copy absolute path from the explorer and breadcrumbs
 
 Right-clicking a row in the file explorer or a crumb in the file-preview
 breadcrumbs offers **Copy absolute path** alongside upstream's **Copy
-mention** and **Add to chat**. The breadcrumbs previously had no menu of their
-own (the desktop shell showed its generic Cut/Copy/Paste menu), so they now
-share the explorer's menu through one helper; the project-root crumb and
+mention** and **Add to chat**. Both surfaces share a context-menu helper; the project-root crumb and
 host-path crumbs for files outside the workspace offer only the absolute path,
 since a mention cannot address either. The path is joined from the workspace
 root with the entry's relative path, using backslashes under a Windows root.
@@ -264,7 +196,9 @@ index from disk and then emits a change event so every subscribed client
 refetches, instead of merely re-reading the possibly stale index.
 
 Implementation: `apps/server/src/workspace/WorkspaceWatcher.ts`, with client
-query invalidation in the web and mobile `state/queries.ts` modules.
+query invalidation in web `useDirectoryEntries.ts`, `projectFilesQueryState.ts`,
+mobile `useFileTreeEntries.ts`, and both clients’ `state/queries.ts` modules.
+Loaded directories refresh without losing expansion state.
 
 Tests: `apps/server/src/workspace/WorkspaceWatcher.fork.test.ts` (external
 change refresh, cwd stream events, symlink-target watching, `notifyChanged`,
@@ -341,8 +275,9 @@ This payload selection has no distinct client UI state to capture.
 When `~/.t3/fork/ssh-t3-package-spec` exists on the desktop machine, its first
 non-empty, non-comment line is used as the npm package spec for the remote T3
 runner. An explicit override is authoritative even when a global `t3` binary is
-already installed remotely. Remove the file to restore upstream's normal
-channel-derived package selection and global-binary preference.
+already installed remotely. Remove the file to restore upstream's pinned
+standalone release archive. Development SSH commands still take precedence
+when explicitly configured.
 
 Deploys are covered by `fork/DEPLOY_FORK.md`.
 `fork/deploy/pack-server-tarball.sh` builds a SHA-versioned package for the remote
@@ -358,10 +293,10 @@ Implementation: `packages/ssh/src/command.ts`, `packages/ssh/src/tunnel.ts`,
 `apps/desktop/src/app/DesktopForkOverrides.ts` (`readSshPackageSpecOverride`),
 and `apps/desktop/src/main.ts`.
 
-Tests: `packages/ssh/src/command.fork.test.ts` (override precedence and
-file parsing), `packages/ssh/src/tunnel.fork.test.ts` (the runner script
-tries the explicit spec before a global `t3`, and disables npm audit and
-fund for the install), and
+Tests: `packages/ssh/src/command.fork.test.ts` (file parsing),
+`packages/ssh/src/tunnel.fork.test.ts` (executes the generated runner with a
+fake npm installer, preserving quoted package paths and disabling audit and
+fund; blank overrides use the release archive), and
 `apps/desktop/src/app/DesktopForkOverrides.fork.test.ts` (reading the
 override file).
 
@@ -391,84 +326,46 @@ turn id, the turn completes, the runtime exits and the session is gone).
 Recovery is a transient provider-process lifecycle, so there is no stable UI
 state that honestly demonstrates it in a screenshot.
 
-## Checkpoint revert returns the prompt to the composer
+## Reverted messages stay removed after reload
 
-Upstream's "Revert to this message" discards the target prompt outright, and a
-client-side retention bug made it linger in the timeline as a ghost: user
-prompts are stored with a null `turnId`, the client reducer kept all
-turn-less messages after `thread.reverted` while the server projector capped
-them at the reverted turn count, so the displayed prompt no longer existed in
-the server read model or the provider's rolled-back context. Worse, the ghost
-was durable: the client persists thread snapshots (IndexedDB on web/desktop)
-and resumes subscriptions with `afterSequence`, so a cached ghost was never
-corrected by a fresh snapshot — it survived app restarts indefinitely.
+User prompts have a null `turnId`. After a revert, the shared client reducer
+keeps turn-less messages only when they predate the last retained checkpoint's
+`completedAt`. Upstream's count-based fallback can retain the wrong prompts
+because `thread.messages` is a paginated window while turn counts cover the
+whole thread. Timestamp comparisons account for time-zone offsets, and
+imported history remains intact.
 
-The fork fixes retention in the shared client reducer: turn-less messages
-(user prompts carry a null `turnId`) are kept only when they predate the last
-retained checkpoint's `completedAt`; anything newer sits past the revert cut.
-A count-based rescue, including upstream’s current fallback, is deliberately
-avoided because `thread.messages` is a paginated window while turn counts are
-whole-thread. Timestamp comparisons account for time-zone offsets. Imported
-conversation history stays intact when reverting, matching upstream’s boundary. The thread snapshot
-cache schema version is bumped (web v4, mobile v4) so caches written before
-the fix are discarded once and refetched. On the web client, the reverted
-prompt's text is placed back into the composer after a successful revert for
-edit-and-resend — matching the rewind UX of the Codex and Claude desktop
-apps. An unsent composer draft is never overwritten, and the confirm dialog
-states that the prompt will be returned.
+Web and mobile snapshot caches use schema v4 so older cached ghost messages
+are discarded once and refetched. Upstream now restores the selected prompt
+and attachments through **Edit from here**; the fork's old prompt-restoration
+UI has been removed.
 
 Implementation: `packages/client-runtime/src/state/threadReducer.ts`
-(`retainMessagesAfterRevert`), `apps/web/src/components/ChatView.tsx`
-(`onRevertToTurnCount`, `onRevertTimelineTurn`),
-`apps/web/src/components/chat/MessagesTimeline.tsx` (`RevertUserMessageButton`),
-`apps/web/src/connection/storage.ts`, and
+(`retainMessagesAfterRevert`), `apps/web/src/connection/storage.ts`, and
 `apps/mobile/src/connection/environment-cache-store.ts`.
 
 Tests: `packages/client-runtime/src/state/threadReducer.fork.test.ts`
 (retention after `thread.reverted`, including paginated windows),
 `apps/web/src/connection/storage.fork.test.ts` and
 `apps/mobile/src/connection/environment-cache-store.fork.test.ts` (v3 cache
-records are rejected, v4 round-trips). Returning the prompt to the composer
-is `ChatView` glue and is not unit-tested; the screenshot below is its
-evidence.
+records are rejected, v4 round-trips).
 
-![Checkpoint revert confirmation explaining that the prompt returns to the composer](./assets/checkpoint-revert.png)
+## Queue until idle on mobile
 
-## Queue follow-ups while a turn is running
+Mobile Send steers the running turn. The explicit Queue button holds a message
+until the whole turn finishes, using `holdUntilIdle` on the existing outbox.
+Held messages appear in the timeline as pending rows and can be returned to the
+composer for editing.
 
-Upstream send while a turn is running always steers: the follow-up is injected
-into the live run. The fork keeps that as the default for Enter and Send, and
-adds an explicit queue for work that should wait until the current turn
-finishes.
+Web and desktop use upstream's queue: it sends at a tool boundary and clears
+on reload. The fork's separate persisted web queue has been removed.
 
-On web and desktop, **Queue** appears next to Stop when the composer has
-content during a running turn. `Cmd+Enter` on macOS / `Ctrl+Enter` on Windows
-and Linux queues on an existing running thread; the same shortcut on a new
-thread still starts it in the background. Queued messages render above the
-composer and can be removed. The oldest item auto-sends when the thread is
-idle again. The queue is client-persisted (survives reload, capped at 10) and
-does not drain while the app is closed.
+Implementation: `apps/mobile/src/state/thread-outbox-model.ts`,
+`use-thread-outbox-drain.ts`, `use-thread-composer-state.ts`, and
+`apps/mobile/src/features/threads/ThreadComposer.tsx`.
 
-On mobile, Send still steers. A queue button next to Send holds the message
-until the thread is idle (`holdUntilIdle` on the existing outbox). Held
-messages show in the timeline as pending rows, like every other outbox
-message, and can be edited back into the composer from there.
-
-Implementation: `apps/web/src/queuedFollowUpStore.ts`,
-`apps/web/src/components/chat/ComposerQueuedFollowUps.tsx`,
-`apps/web/src/composer-logic.ts` (`resolveFollowUpSendIntent`),
-`apps/web/src/components/ChatView.tsx` (enqueue + drain),
-`apps/mobile/src/state/thread-outbox-model.ts` (`holdUntilIdle`).
-
-Tests: `apps/web/src/queuedFollowUpStore.test.ts` (enqueue, cap, environment
-clear, preview text), `apps/web/src/composer-logic.test.ts` (Mod+Enter queues
-on an existing thread, falls back to send when idle, background start on a
-new thread is unchanged), `apps/web/src/components/ChatView.logic.test.ts`
-(drain only when idle and sendable),
-`apps/web/src/components/chat/ComposerPrimaryActions.test.tsx` (Queue next to
-Stop while running), `apps/mobile/src/state/thread-outbox.test.ts`
-(`holdUntilIdle` waits while the thread is busy; unmarked messages still
-steer).
+Tests: `apps/mobile/src/state/thread-outbox.test.ts` (`holdUntilIdle` waits
+while the thread is busy; unmarked messages still steer).
 
 ## Fork a thread
 
@@ -518,8 +415,9 @@ runs at fork time and a fork that never sends stays free. Codex seeds
 (inclusive, never falling back to a fresh thread). Claude seeds the source
 session id with `forkSession` and `resumeSessionAt`; to anchor older turns the
 adapter now records each completed turn's final assistant uuid in the cursor
-(`turnAnchors`), which also lets rollback point the resume anchor at the
-surviving turn instead of the newest message. The adapter advances that
+(`turnAnchors`). Upstream rollback now forks the native transcript and
+replaces its message UUIDs; the fork remaps retained assistant anchors to those
+new UUIDs so later conversation forks still target the surviving reply. The adapter advances that
 cursor in memory, and until 2026-09-10 nothing wrote it back to the session
 directory except the next `sendTurn`, a session restart, or a clean
 shutdown, so the persisted cursor sat one reply behind: a thread that idled
@@ -528,8 +426,9 @@ forked from the previous reply while showing the latest one. The Claude
 adapter now puts its cursor on the `turn.completed` event (an optional
 `resumeCursor` payload field on the settled-turn events in
 `packages/contracts/src/providerRuntime.ts`), and `ProviderService` persists
-it before publishing the event, so a turn is never settled downstream with a
-stale cursor on disk. Turns whose cursor was never persisted, like turns
+it before publishing the event, including when auth recovery has already
+removed the runtime. Events without that payload use upstream’s live-session
+cursor persistence. Turns whose cursor was never persisted, like turns
 recorded before anchors existed, can only be forked from the latest reply.
 OpenCode seeds the source session with the assistant ordinal and calls
 `session.fork` at that message.
@@ -571,7 +470,7 @@ not unit-tested.
 ## Repository directory per checkout
 
 A project can name a **Repository directory** other than its root, under the
-Checkout section of Settings → Projects. The motivating layout is a meta
+Repository directory section of Settings → Project. The motivating layout is a meta
 workspace: a directory of symlinks that gathers several sources, whose real
 repository is one child. Commits, branches, pull requests, worktrees,
 checkpoints, repository identity, and auto-pull run there; agents, file
@@ -595,19 +494,16 @@ thread's VCS cwd over the live session cwd only when a VCS root is set.
 
 Tests: decider, projection pipeline, snapshot lookup, normalizer
 (`Normalizer.vcsRoot.test.ts`), migration, shared resolver, the web path
-input, and a `CheckpointReactor` case where the agent runs in a meta
-workspace and checkpoints land in the child repository.
+input, a `CheckpointReactor` case where the agent runs in a meta workspace and
+checkpoints land in the child repository, and `PullRequestService.test.ts`
+cases where GitHub credential routing uses the repository directory.
 
 ## Sync status
 
-Last synced on 2026-09-11 against upstream `211618fd9`
-(v0.0.41-nightly.20260911.1520 plus 17 commits). The pre-sync fork is preserved
-at `backup/upstream-test-drive-pre-sync-20260911` (`741cb2aae`). Every
-feature entry remains needed. This sync renumbered upstream's migration 050 to
-051 behind the fork's VCS-root migration, dropped the fork's mobile queued
-list in favour of upstream's pending rows in the timeline, moved the sidebar
-rows and the mobile branch checkout onto upstream's project-record helpers,
-routed upstream's new pull-request stack read through the VCS root, and
-renamed the fork's tagged errors for the Effect rc.112 upgrade. The previous
-sync point is preserved at `backup/upstream-test-drive-pre-sync-20260907`
-(`9b3ad29b0`).
+Last synced on 2026-09-15 against upstream `9ea892e3b3`
+(v0.0.41-nightly.20260915.1735 plus 16 commits). The pre-sync fork is preserved
+at `backup/upstream-test-drive-pre-sync-20260915` (`a51895ee5`). This sync
+adopted upstream's lazy explorer, web queue and rewind UI, adapted the watcher,
+SSH override, Claude fork anchors and repository settings to upstream's new
+paths, and shifted upstream migrations 051–052 to 052–053 behind the fork's
+existing migration sequence.

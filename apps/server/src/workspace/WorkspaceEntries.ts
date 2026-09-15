@@ -14,8 +14,6 @@ import type {
   FilesystemBrowseResult,
   ProjectEntry,
   ProjectEntryKind,
-  ProjectListDirectoryInput,
-  ProjectListDirectoryResult,
   ProjectListEntriesInput,
   ProjectListEntriesResult,
   ProjectSearchContentsInput,
@@ -28,6 +26,7 @@ import { isExplicitRelativePath, isWindowsAbsolutePath } from "@t3tools/shared/p
 import { normalizeSearchQuery } from "@t3tools/shared/searchRanking";
 
 import { expandHomePathWith } from "../pathExpansion.ts";
+import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
 
@@ -78,31 +77,8 @@ export const WorkspaceEntriesBrowseError = Schema.Union([
 ]);
 export type WorkspaceEntriesBrowseError = typeof WorkspaceEntriesBrowseError.Type;
 
-export class WorkspaceEntriesListDirectoryReadError extends Schema.TaggedError<WorkspaceEntriesListDirectoryReadError>()(
-  "WorkspaceEntriesListDirectoryReadError",
-  {
-    cwd: Schema.String,
-    path: Schema.String,
-    resolvedPath: Schema.String,
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return `Failed to read workspace directory '${this.path}' in '${this.cwd}'.`;
-  }
-}
-
-export const WorkspaceEntriesListDirectoryError = Schema.Union([
-  WorkspacePaths.WorkspaceRootNotExistsError,
-  WorkspacePaths.WorkspaceRootCreateFailedError,
-  WorkspacePaths.WorkspaceRootStatFailedError,
-  WorkspacePaths.WorkspaceRootNotDirectoryError,
-  WorkspacePaths.WorkspacePathOutsideRootError,
-  WorkspaceEntriesListDirectoryReadError,
-]);
-export type WorkspaceEntriesListDirectoryError = typeof WorkspaceEntriesListDirectoryError.Type;
-
 export const WorkspaceEntriesError = Schema.Union([
+  WorkspaceEntriesReadDirectoryError,
   WorkspacePaths.WorkspaceRootNotExistsError,
   WorkspacePaths.WorkspaceRootCreateFailedError,
   WorkspacePaths.WorkspaceRootStatFailedError,
@@ -122,9 +98,6 @@ export class WorkspaceEntries extends Context.Service<
     readonly list: (
       input: ProjectListEntriesInput,
     ) => Effect.Effect<ProjectListEntriesResult, WorkspaceEntriesError>;
-    readonly listDirectory: (
-      input: ProjectListDirectoryInput,
-    ) => Effect.Effect<ProjectListDirectoryResult, WorkspaceEntriesListDirectoryError>;
     readonly search: (
       input: ProjectSearchEntriesInput,
     ) => Effect.Effect<ProjectSearchEntriesResult, WorkspaceEntriesError>;
@@ -203,7 +176,7 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   const workspaceSearchIndexes = yield* WorkspaceSearchIndex.WorkspaceSearchIndexMap;
-  const filterSupplementalPaths = yield* WorkspaceSearchIndex.WorkspaceSupplementalPathFilter;
+  const vcsProcess = yield* VcsProcess.VcsProcess;
 
   const normalizeWorkspaceRoot = Effect.fn("WorkspaceEntries.normalizeWorkspaceRoot")(function* (
     cwd: string,
@@ -337,6 +310,66 @@ export const make = Effect.gen(function* () {
   const list: WorkspaceEntries["Service"]["list"] = Effect.fn("WorkspaceEntries.list")(
     function* (input) {
       const normalizedCwd = yield* normalizeWorkspaceRoot(input.cwd);
+      if (input.directoryPath !== undefined) {
+        const directoryPath = input.directoryPath;
+        const toError = (cause: unknown) =>
+          new WorkspaceEntriesReadDirectoryError({
+            cwd: normalizedCwd,
+            partialPath: directoryPath,
+            parentPath: path.resolve(normalizedCwd, directoryPath),
+            cause,
+          });
+        const target =
+          directoryPath === ""
+            ? { absolutePath: normalizedCwd, relativePath: "" }
+            : yield* workspacePaths
+                .resolveRelativePathWithinRoot({
+                  workspaceRoot: normalizedCwd,
+                  relativePath: directoryPath,
+                })
+                .pipe(Effect.mapError(toError));
+        const entries = yield* Effect.tryPromise({
+          try: async () => {
+            // The workspace-relative path is already checked above. Meta workspaces
+            // deliberately expose symlink targets outside that root.
+            if (
+              target.relativePath
+                .split("/")
+                .some((part) => WorkspaceSearchIndex.WALK_EXCLUDED_NAMES.has(part))
+            ) {
+              throw new Error("Directory is excluded from the workspace explorer.");
+            }
+            return readDirectoryChildren(target.absolutePath, target.relativePath);
+          },
+          catch: toError,
+        });
+        // Use stdin so large directories cannot exceed the command-line argument limit.
+        // Ignore classification is optional in non-git workspaces or when git is unavailable.
+        const ignored = new Set<string>();
+        for (let offset = 0; offset < entries.length; offset += 1000) {
+          const chunk = entries.slice(offset, offset + 1000);
+          const result = yield* vcsProcess
+            .run({
+              operation: "WorkspaceEntries.list",
+              command: "git",
+              args: ["-c", "core.fsmonitor=false", "check-ignore", "-z", "--stdin"],
+              cwd: normalizedCwd,
+              stdin: `${chunk.map((entry) => entry.path).join("\0")}\0`,
+              allowNonZeroExit: true,
+              timeoutMs: 10_000,
+              maxOutputBytes: 16 * 1024 * 1024,
+            })
+            .pipe(Effect.orElseSucceed(() => undefined));
+          if (!result || (result.exitCode !== 0 && result.exitCode !== 1)) break;
+          for (const ignoredPath of result.stdout.split("\0")) ignored.add(ignoredPath);
+        }
+        return {
+          entries: entries.map((entry) =>
+            ignored.has(entry.path) ? { ...entry, ignored: true } : entry,
+          ),
+          truncated: false,
+        };
+      }
       return yield* Effect.gen(function* () {
         const searchIndex = yield* WorkspaceSearchIndex.WorkspaceSearchIndex;
         return yield* searchIndex.list();
@@ -350,55 +383,10 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  const listDirectory: WorkspaceEntries["Service"]["listDirectory"] = Effect.fn(
-    "WorkspaceEntries.listDirectory",
-  )(function* (input) {
-    const normalizedCwd = yield* workspacePaths.normalizeWorkspaceRoot(input.cwd);
-    const target =
-      input.path === ""
-        ? { absolutePath: normalizedCwd, relativePath: "" }
-        : yield* workspacePaths.resolveRelativePathWithinRoot({
-            workspaceRoot: normalizedCwd,
-            relativePath: input.path,
-          });
-
-    const entries = yield* Effect.tryPromise({
-      try: () => readDirectoryChildren(target.absolutePath, target.relativePath),
-      catch: (cause) =>
-        new WorkspaceEntriesListDirectoryReadError({
-          cwd: input.cwd,
-          path: input.path,
-          resolvedPath: target.absolutePath,
-          cause,
-        }),
-    });
-
-    const childName = (entry: ProjectEntry) =>
-      target.relativePath ? entry.path.slice(target.relativePath.length + 1) : entry.path;
-    const unignoredNames = yield* filterSupplementalPaths(
-      target.absolutePath,
-      entries.map(childName),
-    ).pipe(
-      Effect.tapError((cause) =>
-        Effect.logWarning("Failed to decorate ignored paths for directory listing", {
-          cwd: input.cwd,
-          path: input.path,
-          cause,
-        }),
-      ),
-      Effect.orElseSucceed(() => entries.map(childName)),
-    );
-    const unignoredNameSet = new Set(unignoredNames);
-    return {
-      entries: entries.map((entry) =>
-        unignoredNameSet.has(childName(entry)) ? entry : { ...entry, ignored: true },
-      ),
-    };
-  });
-
-  return WorkspaceEntries.of({ browse, list, listDirectory, refresh, search, searchContents });
+  return WorkspaceEntries.of({ browse, list, refresh, search, searchContents });
 });
 
 export const layer = Layer.effect(WorkspaceEntries, make).pipe(
   Layer.provide(WorkspaceSearchIndex.WorkspaceSearchIndexMap.layer),
+  Layer.provide(VcsProcess.layer),
 );

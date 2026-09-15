@@ -1,10 +1,10 @@
+import { filterComposerPullRequestMatches } from "@t3tools/shared/composerPullRequestMatches";
 import type { VcsRefTarget } from "@t3tools/client-runtime/state/vcs";
 import type {
   EnvironmentId,
+  ProjectId,
   OrchestrationThread,
   ProjectEntryKind,
-  ProjectListEntriesResult,
-  ProviderInstanceId,
   ThreadId,
   VcsListRefsResult,
   VcsRef,
@@ -24,10 +24,9 @@ import { appAtomRegistry } from "./atom-registry";
 import { orchestrationEnvironment } from "./orchestration";
 import { projectEnvironment } from "./projects";
 import { useEnvironmentQuery } from "./query";
-import { useAtomCommand } from "./use-atom-command";
-import { serverEnvironment } from "./server";
 import { useEnvironmentThread } from "./threads";
 import { vcsEnvironment } from "./vcs";
+import { composerPullRequests } from "./pull-requests";
 import {
   buildCheckpointDiffTargets,
   normalizeComposerPathSearchQuery,
@@ -81,17 +80,6 @@ const projectPathSearchSyncAtom = Atom.family((key: string) => {
   }).pipe(Atom.setIdleTTL(60_000), Atom.withLabel(`mobile:project-path-search-sync:${key}`));
 });
 
-const projectEntriesSyncAtom = Atom.family((key: string) => {
-  const [environmentId, cwd] = JSON.parse(key) as [EnvironmentId, string];
-  const listAtom = projectEnvironment.listEntries({ environmentId, input: { cwd } });
-  const eventsAtom = projectEnvironment.entriesEvents({ environmentId, input: { cwd } });
-  return Atom.make((get) => {
-    get.subscribe(eventsAtom, () => {
-      appAtomRegistry.refresh(listAtom);
-    });
-  }).pipe(Atom.setIdleTTL(60_000), Atom.withLabel(`mobile:project-entries-sync:${key}`));
-});
-
 const threadSearchResultsAtom = createThreadSearchResultsAtomFamily({
   getSearchAtom: (environmentId, query) =>
     orchestrationEnvironment.threadSearch({
@@ -127,6 +115,79 @@ export function useDebouncedValue<A>(value: A, delayMs: number): A {
   }, [delayMs, value]);
 
   return debounced;
+}
+
+export function useComposerPullRequestSearch(input: {
+  environmentId: EnvironmentId | null;
+  projectId: ProjectId | null;
+  repository: string | null;
+  query: string | null;
+}) {
+  const query = useDebouncedValue(input.query, 180);
+  const ready =
+    query === input.query &&
+    query !== null &&
+    input.environmentId !== null &&
+    input.projectId !== null &&
+    input.repository !== null;
+  const numeric = query !== null && /^\d*$/.test(query);
+  const list = useEnvironmentQuery(
+    ready
+      ? composerPullRequests.list({
+          environmentId: input.environmentId!,
+          input: {
+            projectId: input.projectId!,
+            state: "all",
+            limit: 200,
+            ...(!numeric && query ? { query } : {}),
+          },
+        })
+      : null,
+  );
+  const number = numeric && query ? Number(query) : null;
+  const hasExact = list.data?.entries.some(
+    (entry) =>
+      entry.number === number && entry.repository.toLowerCase() === input.repository?.toLowerCase(),
+  );
+  const exact = useEnvironmentQuery(
+    ready && number !== null && Number.isSafeInteger(number) && number > 0 && !hasExact
+      ? composerPullRequests.detail({
+          environmentId: input.environmentId!,
+          input: { projectId: input.projectId!, repository: input.repository!, number },
+        })
+      : null,
+  );
+  const entries = useMemo(() => {
+    if (!ready) return [];
+    if (numeric) {
+      return filterComposerPullRequestMatches({
+        entries: [...(exact.data ? [exact.data] : []), ...(list.data?.entries ?? [])],
+        projectId: input.projectId!,
+        repository: input.repository!,
+        query: query ?? "",
+        limit: 20,
+      });
+    }
+    const words = (query ?? "").toLowerCase().split(/\s+/).filter(Boolean);
+    const found = [...(exact.data ? [exact.data] : []), ...(list.data?.entries ?? [])].filter(
+      (entry) =>
+        entry.projectId === input.projectId &&
+        entry.repository.toLowerCase() === input.repository?.toLowerCase() &&
+        words.every((word) =>
+          `${entry.title} ${entry.headBranch} ${entry.baseBranch}`.toLowerCase().includes(word),
+        ),
+    );
+    const unique = new Map<number, (typeof found)[number]>();
+    for (const entry of found) if (!unique.has(entry.number)) unique.set(entry.number, entry);
+    return [...unique.values()]
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      .slice(0, 20);
+  }, [ready, exact.data, list.data, input.projectId, input.repository, numeric, query]);
+  return {
+    entries,
+    isPending: input.query !== null && (query !== input.query || list.isPending || exact.isPending),
+    error: list.error ?? list.data?.errors[0]?.message ?? exact.error,
+  };
 }
 
 export function useThreadSearch(
@@ -338,42 +399,6 @@ export function useComposerPathSearch(target: ComposerPathSearchTarget) {
     isPending: normalizedTarget.query !== debouncedTarget.query || result.isPending,
     refresh: result.refresh,
   };
-}
-
-export function useProjectEntriesQuery(
-  environmentId: EnvironmentId | null,
-  cwd: string | null,
-  enabled = true,
-) {
-  const target = enabled && environmentId !== null && cwd !== null ? { environmentId, cwd } : null;
-  const key = target === null ? null : JSON.stringify([target.environmentId, target.cwd]);
-  useAtomValue(key === null ? EMPTY_PROJECT_PATH_SEARCH_SYNC_ATOM : projectEntriesSyncAtom(key));
-  const query = useEnvironmentQuery<ProjectListEntriesResult, unknown>(
-    target === null
-      ? null
-      : projectEnvironment.listEntries({
-          environmentId: target.environmentId,
-          input: { cwd: target.cwd },
-        }),
-  );
-  const rescan = useAtomCommand(projectEnvironment.refreshEntries);
-  const [isRescanning, setIsRescanning] = useState(false);
-  const queryRefresh = query.refresh;
-  // Manual refresh (pull-to-refresh) forces a server-side rescan before
-  // refetching: the watcher can miss changes, and re-reading the index alone
-  // would return the same stale entries.
-  const refresh = useCallback(() => {
-    if (environmentId === null || cwd === null || !enabled) {
-      queryRefresh();
-      return;
-    }
-    setIsRescanning(true);
-    void rescan({ environmentId, input: { cwd } }).then(() => {
-      setIsRescanning(false);
-      queryRefresh();
-    });
-  }, [cwd, enabled, environmentId, queryRefresh, rescan]);
-  return { ...query, isPending: query.isPending || isRescanning, refresh };
 }
 
 export function useCheckpointDiff(target: CheckpointDiffTarget) {

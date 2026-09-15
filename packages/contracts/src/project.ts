@@ -10,7 +10,6 @@ const PROJECT_SEARCH_ENTRIES_MAX_LIMIT = 200;
 const PROJECT_SEARCH_CONTENTS_MAX_LIMIT = 500;
 const PROJECT_WRITE_FILE_PATH_MAX_LENGTH = 512;
 const PROJECT_READ_FILE_PATH_MAX_LENGTH = 512;
-const PROJECT_LIST_DIRECTORY_PATH_MAX_LENGTH = 512;
 
 export const ProjectEntryKind = Schema.Literals(["file", "directory"]);
 export type ProjectEntryKind = typeof ProjectEntryKind.Type;
@@ -80,6 +79,9 @@ export type ProjectSearchContentsResult = typeof ProjectSearchContentsResult.Typ
 
 export const ProjectListEntriesInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
+  // Present for immediate filesystem children, including ignored entries; empty means root.
+  // Omitted preserves the indexed recursive listing used by older clients.
+  directoryPath: Schema.optional(TrimmedString),
 });
 export type ProjectListEntriesInput = typeof ProjectListEntriesInput.Type;
 
@@ -94,31 +96,6 @@ export const ProjectListEntriesResult = Schema.Struct({
 });
 export type ProjectListEntriesResult = typeof ProjectListEntriesResult.Type;
 
-export const ProjectListDirectoryInput = Schema.Struct({
-  cwd: TrimmedNonEmptyString,
-  // Workspace-relative directory path; the empty string lists the workspace
-  // root. Explorers fetch one level at a time (VS Code style), so no depth or
-  // pagination knobs exist.
-  path: TrimmedString.check(Schema.isMaxLength(PROJECT_LIST_DIRECTORY_PATH_MAX_LENGTH)),
-});
-export type ProjectListDirectoryInput = typeof ProjectListDirectoryInput.Type;
-
-export const ProjectListDirectoryResult = Schema.Struct({
-  // Direct children only, each in workspace-relative form (`${path}/${name}`).
-  entries: Schema.Array(ProjectEntry),
-});
-export type ProjectListDirectoryResult = typeof ProjectListDirectoryResult.Type;
-
-export const ProjectListDirectoryFailure = Schema.Literals([
-  "workspace_root_not_found",
-  "workspace_root_create_failed",
-  "workspace_root_stat_failed",
-  "workspace_root_not_directory",
-  "path_outside_root",
-  "read_directory_failed",
-]);
-export type ProjectListDirectoryFailure = typeof ProjectListDirectoryFailure.Type;
-
 export const ProjectEntriesFailure = Schema.Literals([
   "workspace_root_not_found",
   "workspace_root_create_failed",
@@ -127,6 +104,7 @@ export const ProjectEntriesFailure = Schema.Literals([
   "search_index_create_failed",
   "search_index_scan_timed_out",
   "search_index_search_failed",
+  "directory_list_failed",
 ]);
 export type ProjectEntriesFailure = typeof ProjectEntriesFailure.Type;
 
@@ -225,40 +203,6 @@ export class ProjectListEntriesError extends Schema.TaggedError<ProjectListEntri
       ...props,
       message:
         decodedProjectErrorMessage(props) ?? `Failed to list workspace entries in '${props.cwd}'.`,
-    } as any);
-  }
-}
-
-type ProjectListDirectoryFailureContext = {
-  readonly failure: ProjectListDirectoryFailure;
-  readonly normalizedCwd?: string;
-  readonly detail?: string;
-  readonly cause?: unknown;
-};
-
-export class ProjectListDirectoryError extends Schema.TaggedError<ProjectListDirectoryError>()(
-  "ProjectListDirectoryError",
-  {
-    cwd: Schema.optional(TrimmedNonEmptyString),
-    path: Schema.optional(TrimmedString),
-    failure: Schema.optional(ProjectListDirectoryFailure),
-    normalizedCwd: Schema.optional(TrimmedNonEmptyString),
-    detail: Schema.optional(TrimmedNonEmptyString),
-    message: TrimmedNonEmptyString,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {
-  // The structured fields are optional on the wire so newer peers can decode legacy message-only
-  // failures. New application code must provide them through this constructor.
-  // @effect-diagnostics-next-line overriddenSchemaConstructor:off
-  constructor(
-    props: ProjectListDirectoryFailureContext & { readonly cwd: string; readonly path: string },
-  ) {
-    super({
-      ...props,
-      message:
-        decodedProjectErrorMessage(props) ??
-        `Failed to list workspace directory '${props.path}' in '${props.cwd}'.`,
     } as any);
   }
 }

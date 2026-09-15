@@ -1,6 +1,4 @@
-// Fork: lazy per-directory file explorer (FORK_FEATURES.md). Clients gate the
-// lazy explorer on this capability and silently fall back to upstream's capped
-// listEntries flow without it, so a merge that drops the flag must fail here.
+// Fork: advertise native conversation forking to clients.
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -18,22 +16,6 @@ const makeServerEnvironmentLayer = (baseDir: string) =>
   );
 
 it.layer(NodeServices.layer)("ServerEnvironmentLive (fork)", (it) => {
-  it.effect("advertises the workspaceDirectoryListing capability", () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "t3-server-environment-fork-test-",
-      });
-
-      const descriptor = yield* Effect.gen(function* () {
-        const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
-        return yield* serverEnvironment.getDescriptor;
-      }).pipe(Effect.provide(makeServerEnvironmentLayer(baseDir)));
-
-      expect(descriptor.capabilities.workspaceDirectoryListing).toBe(true);
-    }),
-  );
-
   it.effect("advertises the threadFork capability", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

@@ -124,6 +124,7 @@ export function buildFileTree(entries: ReadonlyArray<ProjectEntry>): ReadonlyArr
         child.symlink = symlink;
         child.ignored = ignored;
       }
+      if (isLeaf && entry.ignored) child.ignored = true;
       current = child;
     }
   }

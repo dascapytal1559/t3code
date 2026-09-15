@@ -1,3 +1,4 @@
+import { showFileEntryContextMenu } from "./fileEntryContextMenu";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import type {
   ContextMenuItem as TreeContextMenuItem,
@@ -6,25 +7,21 @@ import type {
 import type { EnvironmentId, ProjectEntry } from "@t3tools/contracts";
 import { FileTree, useFileTree, useFileTreeSearch, useFileTreeSelector } from "@pierre/trees/react";
 import { ChevronsDownUpIcon, ChevronsUpDownIcon } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useComposerHandleContext } from "~/composerHandleContext";
 import { useTheme } from "~/hooks/useTheme";
-import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
 import { PIERRE_TREE_UNSAFE_CSS, pierreTreeStyle } from "~/pierre-tree-theme";
 
-import { useServerConfigs } from "~/state/entities";
-
-import { showFileEntryContextMenu } from "./fileEntryContextMenu";
 import { createFileTreeDragMentionController } from "./fileTreeDragMention";
 import { areAllDirectoriesExpanded, setAllDirectoriesExpanded } from "./fileTreeExpansion";
 import { buildFileTreePathUpdates } from "./fileTreePathReconciliation";
-import { useProjectEntriesQuery } from "./projectFilesQueryState";
-import { useLazyFileTree } from "./useLazyFileTree";
+import { useDirectoryEntries } from "./useDirectoryEntries";
+import { useProjectPathSearch } from "~/state/queries";
 
 interface FileBrowserPanelProps {
   environmentId: EnvironmentId;
@@ -107,17 +104,34 @@ export default function FileBrowserPanel({
   selectedPathRevealId,
   onOpenFile,
   onRefreshSelectedFile,
-  workspaceMutationId,
 }: FileBrowserPanelProps) {
   const { resolvedTheme } = useTheme();
   const composerRef = useComposerHandleContext();
-  const serverConfigs = useServerConfigs();
-  // Older servers lack projects.listDirectory; they keep the capped
-  // whole-tree listing until updated.
-  const lazyMode =
-    serverConfigs.get(environmentId)?.environment.capabilities.workspaceDirectoryListing === true;
-  const entriesQuery = useProjectEntriesQuery(environmentId, cwd, !lazyMode);
-  const entries = entriesQuery.data?.entries ?? [];
+  const {
+    entries: directoryEntries,
+    load,
+    refresh,
+    ready,
+    error,
+    isPending,
+  } = useDirectoryEntries(environmentId, cwd);
+  const [query, setQuery] = useState("");
+  const [expandAll, setExpandAll] = useState(false);
+  const pathSearch = useProjectPathSearch({ environmentId, cwd, query: query.slice(0, 256) }, 200);
+  const entries = useMemo(() => {
+    const result = new Map(directoryEntries.map((entry) => [entry.path, entry]));
+    if (query.trim() && !pathSearch.isPending) {
+      for (const entry of pathSearch.entries) {
+        if (!result.has(entry.path)) result.set(entry.path, entry);
+        const segments = entry.path.split("/");
+        for (let index = 1; index < segments.length; index++) {
+          const path = segments.slice(0, index).join("/");
+          if (!result.has(path)) result.set(path, { path, kind: "directory" });
+        }
+      }
+    }
+    return [...result.values()];
+  }, [directoryEntries, pathSearch.entries, pathSearch.isPending, query]);
   const entryKinds = useMemo(
     () => new Map(entries.map((entry) => [entry.path, entry.kind] as const)),
     [entries],
@@ -127,14 +141,10 @@ export default function FileBrowserPanel({
     () => new Set(entries.filter((entry) => entry.symlink).map(treePath)),
     [entries],
   );
-  const symlinkTreePathsRef = useRef<ReadonlySet<string>>(symlinkTreePaths);
-  const ignoredGitStatus = useMemo(
-    () =>
-      entries
-        .filter((entry) => entry.ignored)
-        .map((entry) => ({ path: treePath(entry), status: "ignored" as const })),
-    [entries],
-  );
+  const symlinkTreePathsRef = useRef(symlinkTreePaths);
+  useEffect(() => {
+    symlinkTreePathsRef.current = symlinkTreePaths;
+  }, [symlinkTreePaths]);
   const treePaths = useMemo(() => entries.map(treePath), [entries]);
   const directoryPaths = useMemo(
     () => entries.filter((entry) => entry.kind === "directory").map(treePath),
@@ -201,8 +211,6 @@ export default function FileBrowserPanel({
     density: "compact",
     fileTreeSearchMode: "hide-non-matches",
     flattenEmptyDirectories: true,
-    // VS Code default: the tree opens fully collapsed, so the lazy loader
-    // fetches nothing beyond the root listing until a folder is expanded.
     initialExpansion: "closed",
     icons: T3_PIERRE_ICONS,
     onSelectionChange: (selectedPaths) => {
@@ -224,8 +232,6 @@ export default function FileBrowserPanel({
       }
     },
     paths: [],
-    // Rows are registered in treePath form (directories keep their trailing
-    // slash), so the decoration lookup uses item.path as-is.
     renderRowDecoration: ({ item }) =>
       symlinkTreePathsRef.current.has(item.path)
         ? {
@@ -234,29 +240,71 @@ export default function FileBrowserPanel({
           }
         : null,
     search: false,
+    onSearchChange: (value) => setQuery(value ?? ""),
     unsafeCSS: PIERRE_TREE_UNSAFE_CSS + SYMLINK_DECORATION_UNSAFE_CSS,
   });
   const search = useFileTreeSearch(model);
-  const lazyTree = useLazyFileTree({
-    model,
-    environmentId,
-    cwd,
-    enabled: lazyMode,
-    searchValue: search.value,
-    entryKindsRef,
-    symlinkTreePathsRef,
-  });
-  // The lazy tree only knows loaded directories, so the toggle works on the
-  // root's direct children: expanding them fetches exactly one listing each
-  // instead of cascading loads through the whole workspace.
-  const toggleDirectoryPaths = lazyMode ? lazyTree.rootDirectoryPaths : directoryPaths;
   const allDirectoriesExpanded = useFileTreeSelector(model, (currentModel) =>
-    areAllDirectoriesExpanded(currentModel, toggleDirectoryPaths),
+    areAllDirectoriesExpanded(currentModel, directoryPaths),
   );
   const toggleAllDirectories = () => {
-    setAllDirectoriesExpanded(model, toggleDirectoryPaths, !allDirectoriesExpanded);
+    const expanded = !(expandAll || allDirectoriesExpanded);
+    setExpandAll(expanded);
+    setAllDirectoriesExpanded(model, directoryPaths, expanded);
   };
+  const closeSearch = () => {
+    setQuery("");
+    search.close();
+  };
+  const expandedPathsRef = useRef(new Set<string>());
+  useEffect(() => {
+    const currentPaths = new Set(directoryPaths);
+    for (const path of expandedPathsRef.current) {
+      if (!currentPaths.has(path)) expandedPathsRef.current.delete(path);
+    }
+    const loadExpanded = () => {
+      if (model.isSearchOpen()) return;
+      for (const path of directoryPaths) {
+        const item = model.getItem(path);
+        if (item?.isDirectory() && "isExpanded" in item && item.isExpanded()) {
+          if (!expandedPathsRef.current.has(path)) {
+            expandedPathsRef.current.add(path);
+            void load(path.replace(/\/$/, ""));
+          }
+        } else {
+          if (item?.isDirectory() && expandedPathsRef.current.has(path)) setExpandAll(false);
+          expandedPathsRef.current.delete(path);
+        }
+      }
+    };
+    loadExpanded();
+    return model.subscribe(loadExpanded);
+  }, [directoryPaths, load, model]);
+  useEffect(() => {
+    model.setGitStatus(
+      entries
+        .filter((entry) => entry.ignored)
+        .map((entry) => ({
+          path: treePath(entry),
+          status: "ignored",
+        })),
+    );
+  }, [entries, model]);
+  useEffect(() => {
+    if (!selectedPath) return;
+    const controller = new AbortController();
+    void (async () => {
+      const segments = selectedPath.split("/");
+      for (let index = 0; index < segments.length && !controller.signal.aborted; index++) {
+        await load(segments.slice(0, index).join("/"));
+      }
+    })();
+    return () => {
+      controller.abort();
+    };
+  }, [load, selectedPath]);
   const handleSearchValueChange = (value: string) => {
+    setQuery(value);
     if (value.trim().length === 0) {
       search.close();
       return;
@@ -264,55 +312,35 @@ export default function FileBrowserPanel({
     search.setValue(value);
   };
   const handleRefresh = () => {
-    if (lazyMode) {
-      lazyTree.refresh();
-    } else {
-      entriesQuery.refresh();
-    }
+    refresh();
+    if (query.trim()) pathSearch.refresh();
     onRefreshSelectedFile?.();
   };
-  const filesPending = lazyMode ? lazyTree.isPending : entriesQuery.isPending;
-  const filesError = lazyMode ? lazyTree.error : entriesQuery.error;
-  const showFilesError = lazyMode
-    ? lazyTree.error !== null
-    : entriesQuery.error !== null && entriesQuery.data === null;
-  // In lazy mode the filesystem watcher already converges the tree after
-  // agent edits, so mutation-driven refreshes would only duplicate fetches.
-  useWorkspaceMutationRefresh({
-    enabled: !lazyMode,
-    mutationId: workspaceMutationId,
-    refresh: entriesQuery.refresh,
-    resourceKey: `files:${environmentId}:${cwd}`,
-  });
 
   useEffect(() => {
-    if (lazyMode) return;
-    if (entriesQuery.data === null) return;
+    if (!ready) return;
     if (previousTreePathsRef.current === treePaths) return;
     entryKindsRef.current = entryKinds;
-    symlinkTreePathsRef.current = symlinkTreePaths;
     const previousTreePaths = previousTreePathsRef.current;
     previousTreePathsRef.current = treePaths;
     if (previousTreePaths === null) {
       model.resetPaths(treePaths);
-      model.setGitStatus(ignoredGitStatus);
       return;
     }
     const updates = buildFileTreePathUpdates(previousTreePaths, treePaths);
     if (updates.length > 0) model.batch(updates);
-    model.setGitStatus(ignoredGitStatus);
-  }, [
-    entriesQuery.data,
-    entryKinds,
-    ignoredGitStatus,
-    lazyMode,
-    model,
-    symlinkTreePaths,
-    treePaths,
-  ]);
+  }, [ready, entryKinds, model, treePaths]);
+
+  useEffect(() => {
+    if (expandAll && !query.trim()) setAllDirectoriesExpanded(model, directoryPaths, true);
+  }, [directoryPaths, expandAll, model, query]);
 
   useEffect(() => {
     if (!selectedPath) {
+      handledRevealRef.current = null;
+      return;
+    }
+    if (entryKinds.get(selectedPath) !== "file") {
       handledRevealRef.current = null;
       return;
     }
@@ -326,71 +354,47 @@ export default function FileBrowserPanel({
     ) {
       return;
     }
+    const selectedItem = model.getItem(selectedPath);
+    if (!selectedItem) return;
 
-    let cancelled = false;
-    const reveal = () => {
-      if (cancelled) return;
-      if (entryKindsRef.current.get(selectedPath) !== "file") return;
-      const selectedItem = model.getItem(selectedPath);
-      if (!selectedItem) return;
-
-      // A selection that originated inside the tree (clicking a row, possibly
-      // in an active tree search) is already visible; re-revealing it would
-      // close the search and clobber the user's context. Only sync external
-      // opens (file picker, content search, chat links).
-      const selectedInTree = model
-        .getSelectedPaths()
-        .some((path) => path.replace(/\/$/, "") === selectedPath);
-      if (selectedInTree && treeSelectionPathRef.current === selectedPath) {
-        treeSelectionPathRef.current = null;
-        handledRevealRef.current = revealRequest;
-        return;
-      }
+    // A selection that originated inside the tree (clicking a row, possibly
+    // in an active tree search) is already visible; re-revealing it would
+    // close the search and clobber the user's context. Only sync external
+    // opens (file picker, content search, chat links).
+    const selectedInTree = model
+      .getSelectedPaths()
+      .some((path) => path.replace(/\/$/, "") === selectedPath);
+    if (selectedInTree && treeSelectionPathRef.current === selectedPath) {
       treeSelectionPathRef.current = null;
       handledRevealRef.current = revealRequest;
-
-      syncingSelectionRef.current = true;
-      model.closeSearch();
-      for (const path of model.getSelectedPaths()) {
-        model.getItem(path)?.deselect();
-      }
-
-      // Directory rows are registered with a trailing slash (see treePath), so
-      // ancestor lookups must use the same form to expand them.
-      const segments = selectedPath.split("/");
-      let ancestorPath = "";
-      for (const segment of segments.slice(0, -1)) {
-        ancestorPath = ancestorPath ? `${ancestorPath}/${segment}` : segment;
-        const item = model.getItem(`${ancestorPath}/`) ?? model.getItem(ancestorPath);
-        if (item && "expand" in item) item.expand();
-      }
-
-      selectedItem.select();
-      model.scrollToPath(selectedPath, { focus: true, offset: "center" });
-      queueMicrotask(() => {
-        syncingSelectionRef.current = false;
-      });
-    };
-
-    if (lazyMode) {
-      // The file may sit in a directory the lazy tree never expanded; load
-      // its ancestors first, then run the same reveal as the legacy path.
-      void lazyTree.ensurePathLoaded(selectedPath).then((loaded) => {
-        if (loaded) {
-          reveal();
-        } else if (!cancelled) {
-          // Give up on paths the workspace no longer contains; a new reveal
-          // id retries after refresh.
-          handledRevealRef.current = revealRequest;
-        }
-      });
-    } else {
-      reveal();
+      return;
     }
-    return () => {
-      cancelled = true;
-    };
-  }, [entryKinds, lazyMode, lazyTree, model, selectedPath, selectedPathRevealId, treePaths]);
+    treeSelectionPathRef.current = null;
+    handledRevealRef.current = revealRequest;
+
+    syncingSelectionRef.current = true;
+    setQuery("");
+    model.closeSearch();
+    for (const path of model.getSelectedPaths()) {
+      model.getItem(path)?.deselect();
+    }
+
+    // Directory rows are registered with a trailing slash (see treePath), so
+    // ancestor lookups must use the same form to expand them.
+    const segments = selectedPath.split("/");
+    let ancestorPath = "";
+    for (const segment of segments.slice(0, -1)) {
+      ancestorPath = ancestorPath ? `${ancestorPath}/${segment}` : segment;
+      const item = model.getItem(`${ancestorPath}/`) ?? model.getItem(ancestorPath);
+      if (item && "expand" in item) item.expand();
+    }
+
+    selectedItem.select();
+    model.scrollToPath(selectedPath, { focus: true, offset: "center" });
+    queueMicrotask(() => {
+      syncingSelectionRef.current = false;
+    });
+  }, [entryKinds, model, selectedPath, selectedPathRevealId]);
 
   // Tag tree drags with the composer mention payload. The row is read from
   // the composed event path (the tree's shadow root is open), so this does
@@ -427,15 +431,15 @@ export default function FileBrowserPanel({
         className="flex h-10 min-h-10 shrink-0 items-center gap-1 border-b border-border/60 bg-background px-2 in-data-[preview-panel-mode=inline]:mb-1 in-data-[preview-panel-mode=inline]:h-9 in-data-[preview-panel-mode=inline]:min-h-9 in-data-[preview-panel-mode=inline]:border-b-transparent"
         data-surface-subheader
       >
-        <RefreshFilesButton isPending={filesPending} onRefresh={handleRefresh} />
+        <RefreshFilesButton isPending={isPending} onRefresh={handleRefresh} />
         <FileSearchField
           name="project-files-search"
           ariaLabel={`Search ${projectName} files`}
           value={search.value}
           onValueChange={handleSearchValueChange}
-          onClose={search.close}
+          onClose={closeSearch}
         />
-        {toggleDirectoryPaths.length > 0 ? (
+        {directoryPaths.length > 0 ? (
           <Tooltip>
             <TooltipTrigger
               render={
@@ -444,7 +448,9 @@ export default function FileBrowserPanel({
                   size="icon-xs"
                   variant="ghost"
                   aria-label={
-                    allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"
+                    expandAll || allDirectoriesExpanded
+                      ? "Collapse all folders"
+                      : "Expand all folders"
                   }
                   onClick={toggleAllDirectories}
                 />
@@ -457,21 +463,36 @@ export default function FileBrowserPanel({
               )}
             </TooltipTrigger>
             <TooltipPopup>
-              {allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"}
+              {expandAll || allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"}
             </TooltipPopup>
           </Tooltip>
         ) : null}
       </div>
-      {showFilesError ? (
-        <div className="p-4 text-xs leading-relaxed text-destructive">{filesError}</div>
-      ) : (
-        <FileTree
-          model={model}
-          aria-label={`${projectName} files`}
-          className="min-h-0 flex-1 overflow-hidden"
-          style={pierreTreeStyle(resolvedTheme)}
-        />
+      {error || pathSearch.error ? (
+        <button
+          type="button"
+          onClick={handleRefresh}
+          className="p-4 text-left text-xs leading-relaxed text-destructive"
+        >
+          {error ?? pathSearch.error} Click to retry.
+        </button>
+      ) : null}
+      {query.trim() && pathSearch.truncated && !pathSearch.isPending ? (
+        <div className="px-3 py-1 text-xs text-muted-foreground">
+          More matches available. Refine your search.
+        </div>
+      ) : null}
+      {(isPending || pathSearch.isPending) && (
+        <div role="status" className="px-3 py-1 text-xs text-muted-foreground">
+          Loading files…
+        </div>
       )}
+      <FileTree
+        model={model}
+        aria-label={`${projectName} files`}
+        className="min-h-0 flex-1 overflow-hidden"
+        style={pierreTreeStyle(resolvedTheme)}
+      />
     </div>
   );
 }

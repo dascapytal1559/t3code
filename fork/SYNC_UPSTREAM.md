@@ -144,7 +144,7 @@ cd ~/Projects/t3code-fork && vp run test:fork
 ```
 
 That is every `*.fork.test.ts` file plus the `fork: `-prefixed tests
-inside `server.test.ts` and `ClaudeAdapter.test.ts` (the **Reality
+inside `ClaudeAdapter.test.ts` (the **Reality
 check** section of `fork/README.md`). Red means the merge is not
 finished: either the fork code regressed, or the entry should have been
 retired in step 7 and its tests deleted with it. No repo-wide `vp check`.

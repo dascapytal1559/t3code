@@ -1,7 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-// Fork: lazy per-directory file explorer (projects.listDirectory) and the
-// fail-open supplemental path filter behind the symlink-aware search
-// (FORK_FEATURES.md).
+// Fork: symlink-aware directory entries and supplemental path search.
 import * as NodeFSP from "node:fs/promises";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it, describe, expect } from "@effect/vitest";
@@ -13,7 +11,6 @@ import * as PlatformError from "effect/PlatformError";
 
 import * as ServerConfig from "../config.ts";
 import { VcsProcessExitError } from "@t3tools/contracts";
-import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
@@ -72,7 +69,7 @@ const git = (cwd: string, args: ReadonlyArray<string>) =>
 const listDirectory = (input: { cwd: string; path: string }) =>
   Effect.gen(function* () {
     const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
-    return yield* workspaceEntries.listDirectory(input);
+    return yield* workspaceEntries.list({ cwd: input.cwd, directoryPath: input.path });
   });
 
 const searchWorkspaceEntries = (input: { cwd: string; query: string; limit: number }) =>
@@ -91,17 +88,6 @@ const entriesLayerWithFilter = (filter: WorkspaceSearchIndex.SupplementalPathFil
     Layer.provide(WorkspacePaths.layer),
   );
 
-const realFilterEntriesLayer = Layer.effect(
-  WorkspaceEntries.WorkspaceEntries,
-  WorkspaceEntries.make,
-).pipe(
-  Layer.provide(WorkspaceSearchIndex.WorkspaceSearchIndexMap.layer),
-  Layer.provide(
-    WorkspaceSearchIndex.supplementalPathFilterLayer.pipe(Layer.provide(VcsDriverRegistry.layer)),
-  ),
-  Layer.provide(WorkspacePaths.layer),
-);
-
 const failingIgnoreProbe =
   (cwd: string, detail: string): WorkspaceSearchIndex.SupplementalPathFilter =>
   () =>
@@ -110,39 +96,7 @@ const failingIgnoreProbe =
     );
 
 it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries (fork)", (it) => {
-  describe("listDirectory", () => {
-    it.effect("lists only direct children of the workspace root", () =>
-      Effect.gen(function* () {
-        const cwd = yield* makeTempDir();
-        yield* writeTextFile(cwd, "src/components/Composer.tsx");
-        yield* writeTextFile(cwd, "README.md");
-        yield* writeTextFile(cwd, ".env.local");
-
-        const result = yield* listDirectory({ cwd, path: "" });
-
-        expect(result.entries).toEqual([
-          { path: ".env.local", kind: "file" },
-          { path: "README.md", kind: "file" },
-          { path: "src", kind: "directory" },
-        ]);
-      }),
-    );
-
-    it.effect("lists a subdirectory with workspace-relative paths", () =>
-      Effect.gen(function* () {
-        const cwd = yield* makeTempDir();
-        yield* writeTextFile(cwd, "src/components/Composer.tsx");
-        yield* writeTextFile(cwd, "src/index.ts");
-
-        const result = yield* listDirectory({ cwd, path: "src" });
-
-        expect(result.entries).toEqual([
-          { path: "src/components", kind: "directory" },
-          { path: "src/index.ts", kind: "file" },
-        ]);
-      }),
-    );
-
+  describe("directory entries", () => {
     it.effect("excludes the always-hidden entry names", () =>
       Effect.gen(function* () {
         const cwd = yield* makeTempDir();
@@ -184,54 +138,6 @@ it.layer(TestLayer, { excludeTestServices: true })("WorkspaceEntries (fork)", (i
 
         const linked = yield* listDirectory({ cwd, path: "linked-dir" });
         expect(linked.entries).toEqual([{ path: "linked-dir/inner.ts", kind: "file" }]);
-      }),
-    );
-
-    it.effect("rejects paths that escape the workspace root", () =>
-      Effect.gen(function* () {
-        const cwd = yield* makeTempDir();
-        const result = yield* listDirectory({ cwd, path: "../outside" }).pipe(Effect.flip);
-        expect(result._tag).toBe("WorkspacePathOutsideRootError");
-      }),
-    );
-
-    it.effect("includes gitignored files and directories", () =>
-      Effect.gen(function* () {
-        const cwd = yield* makeTempDir({ prefix: "t3code-workspace-show-ignored-", git: true });
-        yield* writeTextFile(cwd, ".gitignore", "ignored.txt\nignored-dir/\n");
-        yield* writeTextFile(cwd, "keep.ts");
-        yield* writeTextFile(cwd, "ignored.txt");
-        yield* writeTextFile(cwd, "ignored-dir/nested.txt");
-
-        const root = yield* listDirectory({ cwd, path: "" }).pipe(
-          Effect.provide(realFilterEntriesLayer),
-        );
-        expect(root.entries).toEqual([
-          { path: ".gitignore", kind: "file" },
-          { path: "ignored-dir", kind: "directory", ignored: true },
-          { path: "ignored.txt", kind: "file", ignored: true },
-          { path: "keep.ts", kind: "file" },
-        ]);
-
-        const nested = yield* listDirectory({ cwd, path: "ignored-dir" }).pipe(
-          Effect.provide(realFilterEntriesLayer),
-        );
-        expect(nested.entries).toEqual([
-          { path: "ignored-dir/nested.txt", kind: "file", ignored: true },
-        ]);
-      }),
-    );
-
-    it.effect("keeps entries undecorated when the ignore probe fails", () =>
-      Effect.gen(function* () {
-        const cwd = yield* makeTempDir();
-        yield* writeTextFile(cwd, "keep.ts");
-
-        const result = yield* listDirectory({ cwd, path: "" }).pipe(
-          Effect.provide(entriesLayerWithFilter(failingIgnoreProbe(cwd, "boom"))),
-        );
-
-        expect(result.entries).toEqual([{ path: "keep.ts", kind: "file" }]);
       }),
     );
   });

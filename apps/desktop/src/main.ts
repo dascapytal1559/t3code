@@ -1,3 +1,4 @@
+import * as MacPermissions from "./permissions/MacPermissions.ts";
 for (const stream of [process.stdout, process.stderr]) {
   stream.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code !== "EPIPE") throw err;
@@ -17,7 +18,6 @@ import * as Electron from "electron";
 
 import * as NetService from "@t3tools/shared/Net";
 import { HostProcessArchitecture, HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { resolveRemoteT3CliPackageSpec } from "@t3tools/ssh/command";
 import type { RemoteT3RunnerOptions } from "@t3tools/ssh/tunnel";
 import serverPackageJson from "../../server/package.json" with { type: "json" };
 
@@ -93,9 +93,11 @@ const desktopEnvironmentLayer = Layer.unwrap(
   }),
 );
 
+// The remote runs the exact release this app is on, from its self-contained
+// archive, so it needs neither Node nor npm. Development points the remote at
+// a source checkout instead so the two sides can be iterated together.
 const resolveDesktopSshCliRunner = (
   environment: DesktopEnvironment.DesktopEnvironment["Service"],
-  settings: DesktopAppSettings.DesktopSettings,
   overrideSpec: string | null,
 ): RemoteT3RunnerOptions => {
   const devRemoteEntryPath = Option.getOrUndefined(environment.devRemoteT3ServerEntryPath);
@@ -105,29 +107,19 @@ const resolveDesktopSshCliRunner = (
       nodeEngineRange: serverPackageJson.engines.node,
     };
   }
-  return {
-    packageSpec: resolveRemoteT3CliPackageSpec({
-      appVersion: environment.appVersion,
-      updateChannel: settings.updateChannel,
-      isDevelopment: environment.isDevelopment,
-      overrideSpec,
-    }),
-    preferPackageSpec: overrideSpec !== null && overrideSpec.trim().length > 0,
-    nodeEngineRange: serverPackageJson.engines.node,
-  };
+  return overrideSpec?.trim()
+    ? { packageSpec: overrideSpec.trim(), nodeEngineRange: serverPackageJson.engines.node }
+    : { archiveVersion: environment.appVersion };
 };
 
 const desktopSshEnvironmentLayer = Layer.unwrap(
   Effect.gen(function* () {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
-    const settings = yield* DesktopAppSettings.DesktopAppSettings;
     const fileSystem = yield* FileSystem.FileSystem;
     return DesktopSshEnvironment.layer({
       resolveCliRunner: Effect.gen(function* () {
-        const currentSettings = yield* settings.get;
-        // Fork: package spec override, see DesktopForkOverrides.ts.
         const overrideSpec = yield* readSshPackageSpecOverride(NodeOS.homedir());
-        return resolveDesktopSshCliRunner(environment, currentSettings, overrideSpec);
+        return resolveDesktopSshCliRunner(environment, overrideSpec);
       }).pipe(Effect.provideService(FileSystem.FileSystem, fileSystem)),
     });
   }),
@@ -148,6 +140,7 @@ const electronLayer = Layer.mergeAll(
 );
 
 const desktopFoundationLayer = Layer.mergeAll(
+  MacPermissions.layer,
   DesktopState.layer,
   DesktopShutdown.layer,
   DesktopAppSettings.layer,

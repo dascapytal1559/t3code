@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import type { AsyncSubscription } from "@parcel/watcher";
-import * as ParcelWatcher from "@parcel/watcher";
+import * as NodeModule from "node:module";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -16,6 +16,11 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
+
+// Native modules stay on disk when the server is a single executable.
+const ParcelWatcher = NodeModule.createRequire(import.meta.url)(
+  "@parcel/watcher",
+) as typeof import("@parcel/watcher");
 
 const WATCHER_DEBOUNCE = Duration.millis(300);
 const WATCHER_IGNORE = ["**/.git/**"];
