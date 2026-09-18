@@ -48,6 +48,11 @@ fi
 
 [ -f "$DIR/apps/server/dist/bin.mjs" ] || { echo "staging failed: bin.mjs missing" >&2; exit 1; }
 [ -f "$DIR/apps/server/dist/client/index.html" ] || { echo "staging failed: web client missing" >&2; exit 1; }
+# Boot the payload from where the app will run it. This is the lockfile-seeded
+# tree, not the pack script's scratch install, so it can fail differently; a
+# payload that cannot import is caught here instead of after the swap.
+(cd "$DIR" && node apps/server/dist/bin.mjs --version >&2) \
+  || { echo "staging failed: payload does not boot" >&2; rm -rf "$DIR"; exit 1; }
 
 echo "staged; live payload is still $(readlink "$CURRENT_LINK" 2>/dev/null || echo '<none>')" >&2
 echo "$DIR"

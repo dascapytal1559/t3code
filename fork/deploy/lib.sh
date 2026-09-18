@@ -2,6 +2,9 @@
 # Shared helpers for the deploy scripts. Source it; do not execute it.
 
 export PATH="$HOME/.vite-plus/bin:$HOME/.cargo/bin:$PATH"
+# Agent shells inside the desktop app inherit this from Electron; it makes
+# any electron binary the builds spawn behave as plain node.
+unset ELECTRON_RUN_AS_NODE
 
 FORK_DIR="$HOME/.t3/fork"
 BUILDS_DIR="$FORK_DIR/builds"

@@ -1,10 +1,12 @@
 #!/bin/bash
 # Ships the fork server tarball to every host in remote-hosts under a
 # sha-versioned name (npx caches installs by spec string — reusing a path can
-# serve a stale extraction), then points ~/.t3/fork/ssh-t3-package-spec at it.
-# The spec is one global path, so every host must expose the tarball at the
-# same absolute location (user must be `ubuntu`). The spec is read at server
-# (re)launch, so the new bits apply when the swap script forces the restarts.
+# serve a stale extraction) and pre-installs it into each host's npx cache.
+# The pre-warm runs `t3 --version` from that install, which boots the server
+# bundle and loads its external dependencies, so it doubles as the remote
+# boot test: a host that fails it fails the ship. Nothing here changes what
+# the remotes run; restart-remote-servers.sh (called by the swap scripts)
+# points ~/.t3/fork/ssh-t3-package-spec at the shipped tarball and restarts.
 #
 # Usage: ship-server-tarball.sh <tarball-path>
 set -euo pipefail
@@ -24,10 +26,12 @@ for host in $(remote_hosts); do
   # from the launcher piled up behind one stalled npm process on both hosts
   # and neither server came back for 20 minutes.
   echo "installing t3-fork-$SHA.tgz into the npx cache on $host" >&2
-  ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" \
-    "cd ~ && timeout 600 npm exec --yes --no-audit --no-fund --package /home/ubuntu/.t3/fork/t3-fork-$SHA.tgz -- t3 --version" >&2 \
-    || echo "$host: pre-warm failed; the launcher will install on next connect" >&2
+  if ! ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" \
+    "cd ~ && timeout 600 npm exec --yes --no-audit --no-fund --package /home/ubuntu/.t3/fork/t3-fork-$SHA.tgz -- t3 --version" >&2; then
+    # 2026-09-18: an unpatched dependency made the server crash on import;
+    # this is the last check before a swap would restart the remotes onto it.
+    echo "$host: t3-fork-$SHA.tgz does not boot there; not shipped" >&2
+    exit 1
+  fi
 done
-
-printf '# fork server tarball on the remote hosts (see fork/README.md)\n/home/ubuntu/.t3/fork/t3-fork-%s.tgz\n' "$SHA" > "$REMOTE_SPEC_FILE"
-echo "spec updated: $(tail -1 "$REMOTE_SPEC_FILE")" >&2
+echo "shipped t3-fork-$SHA.tgz to $(remote_hosts | tr '\n' ' ')" >&2

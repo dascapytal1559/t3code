@@ -18,8 +18,10 @@ server on each remote host listed in
 the default, so server-side behavior (file explorer, skills) matches
 everywhere. The explicit exception is `--local-only` on either swap script:
 the desktop moves and the remotes stay where they are. `deploy-status.sh`
-shows that skew as the remote spec's distance from HEAD, and the next full
-deploy clears it. Do not ship remotes without the desktop.
+shows that skew as the remote spec's distance from HEAD;
+`fork/deploy/restart-remote-servers.sh <sha>` clears it once the tarball
+for that sha has been shipped, as does the next full deploy. Do not move
+remotes ahead of the desktop.
 
 `fork/deploy/deploy-status.sh` is the one-call picture of what is deployed
 where: HEAD and the markers, the deploy path, the payload symlink and staged
@@ -126,6 +128,11 @@ path unless you pass `--force`.
 All paths need the server tarball; only the DMG path builds the DMG. Each
 takes ~1–2 minutes; run in the background. Build scripts need node on PATH
 (`~/.vite-plus/bin`) and the DMG additionally needs cargo (`~/.cargo/bin`).
+If the DMG preflight reports clang, make, or iconutil missing while
+`xcode-select -p` points at Xcode.app, the Xcode license has not been
+accepted since an Xcode update; the user fixes it with
+`sudo xcodebuild -license accept`, and until then
+`DEVELOPER_DIR=/Library/Developer/CommandLineTools` builds the DMG fine.
 
 ```bash
 ~/Projects/t3code-fork/fork/deploy/pack-server-tarball.sh   # prints the tarball path
@@ -169,18 +176,21 @@ cannot break the install (it did on 2026-09-11). A dependency you actually
 bumped still resolves fresh. If the live build has no lockfile, the install
 resolves from scratch as before.
 
-**Ship the tarball to remote hosts** and point the spec override at it:
+**Ship the tarball to remote hosts:**
 
 ```bash
 ~/Projects/t3code-fork/fork/deploy/ship-server-tarball.sh <tarball-path>
 ```
 
-The spec is read on every remote (re)launch, so the new bits apply when step
-5 forces the restarts. Shipping also pre-installs the tarball into each
-host's npx cache, so the relaunch starts the server in seconds; without it,
-cold launcher installs have piled up behind one stalled npm process and left
-both hosts down for 20 minutes. The swap scripts record the deployed sha on
-success — nothing to record here.
+Shipping copies the tarball and pre-installs it into each host's npx cache,
+so the later relaunch starts the server in seconds; without it, cold
+launcher installs have piled up behind one stalled npm process and left both
+hosts down for 20 minutes. The pre-install runs `t3 --version` from the new
+tarball, which boots the server bundle, so a host where it does not boot
+fails the ship. Shipping is inert: the remotes keep running what
+`~/.t3/fork/ssh-t3-package-spec` names until the swap in step 5 points the
+spec at the new tarball and restarts them. The swap scripts record the
+deployed sha on success — nothing to record here.
 
 ## 5. Autonomous swap
 
@@ -198,11 +208,9 @@ immediately; the caller's shell can die without harm. Run them directly:
 
 Both default to HEAD: the payload script takes an optional `<sha>`, the DMG
 script an optional `<version>` (default: `apps/desktop/package.json`).
-Both scripts take `--local-only` to skip the forced remote restart. On the
-payload path the remotes still converge on their next reconnect via the
-runner shim's embedded package spec, because the tarball was shipped. On the
-DMG path nothing converges: the remotes keep the build their spec names
-until the next deploy that ships a tarball.
+Both scripts take `--local-only` to skip the remote step. The remotes then
+stay on the build the spec already names, on either path, until
+`restart-remote-servers.sh <sha>` or the next full deploy moves them.
 
 Each script validates its inputs, detaches, sleeps 8 seconds (a head start to
 finish the current turn), then acts. `swap-fork-payload.sh` retargets
@@ -218,10 +226,11 @@ resumes the process `open` spawns), retargets the symlink, opens the app,
 and verifies a backend runs from the symlink. If no app process appears
 within 15s it says so and keeps waiting up to 10 minutes for the user to open
 the app by hand, then carries on. Both then run
-`fork/deploy/restart-remote-servers.sh`, which kills only the PID owning each
-recorded ssh-launch port after confirming its cmdline is a `t3 serve`
-process, waits for the app to auto-restart it from the new tarball spec, and
-prunes the host's other fork npx installs and tarballs. Finally they prune
+`fork/deploy/restart-remote-servers.sh <sha>`, which confirms every host has
+the shipped tarball, points `~/.t3/fork/ssh-t3-package-spec` at it, kills
+only the PID owning each recorded ssh-launch port after confirming its
+cmdline is a `t3 serve` process, waits for the app to auto-restart it from
+the new spec, and prunes the host's other fork npx installs and tarballs. Finally they prune
 local builds. All progress is appended to `~/.t3/fork/deploy.log`, one
 timestamped `=== <script>` header per run; a run ends in `deploy complete`
 on success, `deploy aborted: ...` on a silent failure, or the explicit

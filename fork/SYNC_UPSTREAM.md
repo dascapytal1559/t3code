@@ -83,6 +83,21 @@ Map upstream commits onto the implementation paths from step 1. Those
 overlaps are the conflict surface, including files that will
 auto-merge.
 
+Also diff the pnpm-only mechanisms the fork's server tarball has to
+translate for npm (`fork/deploy/pack-server-tarball.sh`):
+
+```bash
+git -C ~/Projects/t3code-fork diff <last-sync-sha> upstream/main -- pnpm-workspace.yaml apps/server/package.json patches/
+```
+
+A new or changed pnpm patch on a server runtime dependency, or a new
+server dependency that carries one, needs a packing decision in that
+script's `BUNDLED` or `UNPATCHED` set; the pack in step 8 refuses to
+emit a tarball until it has one. (2026-09-18: upstream started loading
+`@ff-labs/fff-node` through an export condition only its patch adds;
+the merge was green everywhere and the deployed server crashed on
+import.)
+
 ## 3. Backup
 
 ```bash
@@ -148,6 +163,19 @@ inside `ClaudeAdapter.test.ts` (the **Reality
 check** section of `fork/README.md`). Red means the merge is not
 finished: either the fork code regressed, or the entry should have been
 retired in step 7 and its tests deleted with it. No repo-wide `vp check`.
+
+Then pack the server tarball:
+
+```bash
+~/Projects/t3code-fork/fork/deploy/pack-server-tarball.sh
+```
+
+Every other check runs against the pnpm workspace. The pack is the one
+step that crosses into the fork's npm distribution: it builds the
+server, installs the tarball the way the remote hosts' npx does, and
+boots it, so it fails on anything upstream changed in how the server is
+bundled or which pnpm-only mechanisms its runtime dependencies lean on.
+Do not stage or ship the tarball — that is `fork/DEPLOY_FORK.md`.
 
 ## 9. Update `fork/README.md`
 

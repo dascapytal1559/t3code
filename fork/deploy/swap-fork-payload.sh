@@ -12,9 +12,9 @@
 # session it hosts, including the agent running this. Progress and the final
 # "deploy complete" line land in ~/.t3/fork/deploy.log.
 #
-# --local-only skips the forced remote restart; remotes still converge lazily
-# because the ssh-launch runner shim embeds the package spec, and a changed
-# shim restarts the server on the next reconnect.
+# --local-only leaves the remotes exactly where they are: the spec only
+# moves inside restart-remote-servers.sh, so run that by hand with the sha
+# to catch them up later.
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
@@ -100,9 +100,9 @@ git -C "$REPO" rev-parse "$SHA" > "$REPO/release/.last-deployed-sha"
 if [ -z "$LOCAL_ONLY" ]; then
   # Let the new backend settle before remotes cycle.
   sleep 10
-  "$DEPLOY_DIR/restart-remote-servers.sh"
+  "$DEPLOY_DIR/restart-remote-servers.sh" "$SHA"
 else
-  echo "local-only: remotes restart onto the new spec on their next reconnect"
+  echo "local-only: remotes stay on $(tail -1 "$REMOTE_SPEC_FILE" 2>/dev/null || echo '<no spec>'); restart-remote-servers.sh $SHA moves them"
 fi
 
 prune_builds

@@ -96,5 +96,20 @@ fs.writeFileSync(path.join(stage, "package.json"), JSON.stringify(out, null, 2) 
 ' -- "$STAGE")
 
 TARBALL="$(cd "$STAGE" && npm pack --silent | tail -1)"
+
+# Install the tarball the way the remotes' npx does (fresh registry
+# resolution, package nested under node_modules/t3) and boot it. Everything
+# the bundle loads at import time runs here, so a dependency npm cannot
+# reproduce from pnpm (2026-09-18: an unapplied patch) fails the pack, not a
+# remote host after the swap.
+echo "booting $TARBALL from a scratch npm install" >&2
+mkdir "$STAGE/install"
+# Its own manifest, or npm walks up to the tarball manifest in $STAGE and
+# installs there instead.
+echo "{\"private\": true}" > "$STAGE/install/package.json"
+(cd "$STAGE/install" && npm install --omit=dev --no-audit --no-fund --loglevel=error "$STAGE/$TARBALL" >&2)
+node "$STAGE/install/node_modules/t3/dist/bin.mjs" --version >&2 \
+  || { echo "tarball does not boot from an npm install; not emitting it" >&2; exit 1; }
+
 mv "$STAGE/$TARBALL" "$SERVER_DIR/$TARBALL"
 echo "$SERVER_DIR/$TARBALL"

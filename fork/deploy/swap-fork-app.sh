@@ -10,9 +10,9 @@
 #   version defaults to apps/desktop/package.json. --force DMG-swaps even
 #   when choose-deploy-path prints payload.
 #
-# --local-only skips the forced remote restart. Unlike the payload script's
-# flag, nothing converges lazily here unless the tarball was also shipped:
-# the remotes keep whatever build their spec names until the next deploy.
+# --local-only leaves the remotes exactly where they are: the spec only
+# moves inside restart-remote-servers.sh, so run that by hand with the sha
+# to catch them up later.
 # Detaches itself (lib.sh detach_self): quitting the app kills every session
 # it hosts, including the agent running this. Progress and the final
 # "deploy complete" line land in ~/.t3/fork/deploy.log.
@@ -115,9 +115,9 @@ git -C "$REPO" rev-parse HEAD > "$REPO/release/.last-dmg-sha"
 
 if [ -z "$LOCAL_ONLY" ]; then
   sleep 20 # let the new app finish launching so it owns the reconnects
-  "$DEPLOY_DIR/restart-remote-servers.sh"
+  "$DEPLOY_DIR/restart-remote-servers.sh" "$SHA"
 else
-  echo "local-only: remote servers left on their current build"
+  echo "local-only: remotes stay on $(tail -1 "$REMOTE_SPEC_FILE" 2>/dev/null || echo '<no spec>'); restart-remote-servers.sh $SHA moves them"
 fi
 
 prune_builds
