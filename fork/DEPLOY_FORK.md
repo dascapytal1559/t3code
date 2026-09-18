@@ -133,6 +133,13 @@ takes ~1–2 minutes; run in the background. Build scripts need node on PATH
 node scripts/build-desktop-artifact.ts --platform mac --target dmg --arch arm64
 ```
 
+The tarball's dependencies are installed by npm, which never applies pnpm
+patches, so `pack-server-tarball.sh` copies each patched runtime dependency
+out of the pnpm store into the tarball as a bundled dependency. A patched
+runtime dependency the script has no decision for fails the pack; add it to
+the script's `BUNDLED` or `UNPATCHED` set (2026-09-18: an unpatched
+`@ff-labs/fff-node` crashed the server on both remotes at startup).
+
 The tarball is built from the working tree, so uncommitted work rides along.
 When the main checkout carries work that must not ship, build from a clean
 worktree of the commit instead: `git worktree add --detach /tmp/t3-clean

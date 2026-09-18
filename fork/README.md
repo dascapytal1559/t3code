@@ -285,7 +285,9 @@ when explicitly configured.
 
 Deploys are covered by `fork/DEPLOY_FORK.md`.
 `fork/deploy/pack-server-tarball.sh` builds a SHA-versioned package for the remote
-host, and `fork/deploy/swap-fork-app.sh` replaces the stock-named desktop app.
+host, carrying pnpm-patched runtime dependencies inside it as bundled
+dependencies since npm never applies the patches, and
+`fork/deploy/swap-fork-app.sh` replaces the desktop app.
 
 The generated runner script also turns npm's audit and fund calls off for the
 package-spec install (`npm_config_audit=false npm_config_fund=false`). The

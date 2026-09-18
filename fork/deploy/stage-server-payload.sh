@@ -29,6 +29,11 @@ mkdir -p "$DIR/apps/server"
 tar -xzf "$TARBALL" -C "$DIR"
 mv "$DIR/package/dist" "$DIR/apps/server/dist"
 mv "$DIR/package/package.json" "$DIR/package.json"
+# Patched dependencies travel inside the tarball (pack-server-tarball.sh);
+# npm install below keeps them in place and resolves their own dependencies.
+if [ -d "$DIR/package/node_modules" ]; then
+  mv "$DIR/package/node_modules" "$DIR/node_modules"
+fi
 rm -rf "$DIR/package"
 # A fresh resolution drifts with the registry: on 2026-09-11 it picked
 # @effect/platform-node-shared rc.114, whose own range wants an unpublished
