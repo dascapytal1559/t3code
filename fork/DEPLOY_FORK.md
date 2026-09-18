@@ -204,7 +204,7 @@ for the supervisor's replacement to appear with a different pid, answer HTTP
 on its listening port, and be mapped (per lsof) from the new build, and
 aborts before touching remotes if any of that fails. `swap-fork-app.sh`
 refuses a DMG older than the HEAD commit, quits the app (up to 60s — draining
-sessions and tunnels takes ~35s), swaps `/Applications/T3 Code (Alpha).app`
+sessions and tunnels takes ~35s), swaps `/Applications/T3 Code (Fork).app`
 from the DMG, ad-hoc signs the copied bundle (the unsigned build has no
 resource seal, so Gatekeeper's re-assessment fails and Launch Services never
 resumes the process `open` spawns), retargets the symlink, opens the app,
@@ -240,7 +240,7 @@ after it — the turn dies with the backend.
   natural reload; a `Cmd+R` costs nothing when in doubt.
 - DMG deploy: verify the installed binary's mtime is within the DMG build's
   window or later —
-  `stat -f '%Sm' "/Applications/T3 Code (Alpha).app/Contents/MacOS/T3 Code (Alpha)"`.
+  `stat -f '%Sm' "/Applications/T3 Code (Fork).app/Contents/MacOS/T3 Code (Fork)"`.
 - If a host reports "server not back after 60s", look for stacked
   `npm exec` processes on it (`ps -eo pid,etime,args | awk '$2=="npm"'`).
   2026-09-04: npm's audit request hung indefinitely on both hosts, every
@@ -260,9 +260,13 @@ after it — the turn dies with the backend.
   `restart-remote-servers.sh`) and let the app relaunch it.
 - Builds and remote npx installs are pruned by the swap scripts; nothing to
   clean by hand. If a swap aborted early, the next successful one prunes.
-- The fork intentionally uses the stock `T3 Code (Alpha)` app identity. Do
-  not install a separate upstream build over the daily-driver app when its
-  schema may be ahead of the fork.
+- The app is named `T3 Code (Fork)` after `productName` in
+  `apps/desktop/package.json`; `lib.sh` reads that field for the bundle path,
+  the executable, and the DMG volume, so a rename there flows into the deploy
+  without editing the scripts. The bundle id and profile directory are still
+  the stock ones, so never install an upstream build over the daily-driver
+  app: its schema may run ahead of the fork's. A stock upstream copy runs
+  separately per `LAUNCH_UPSTREAM.md`.
 
 ## Manual fallback
 
@@ -277,5 +281,5 @@ ln -sfh builds/<sha> ~/.t3/fork/current && kill <backend-pid>
 DMG deploy:
 
 ```bash
-osascript -e 'tell application "T3 Code (Alpha)" to quit' && sleep 40 && hdiutil attach -nobrowse ~/Projects/t3code-fork/release/T3-Code-<version>-arm64.dmg && rm -rf "/Applications/T3 Code (Alpha).app" && ditto "/Volumes/T3 Code (Alpha) <version> Installer/T3 Code (Alpha).app" "/Applications/T3 Code (Alpha).app" && hdiutil detach "/Volumes/T3 Code (Alpha) <version> Installer" && codesign --force --deep --sign - "/Applications/T3 Code (Alpha).app" && ln -sfh builds/<sha> ~/.t3/fork/current && open "/Applications/T3 Code (Alpha).app"
+osascript -e 'tell application "T3 Code (Fork)" to quit' && sleep 40 && hdiutil attach -nobrowse ~/Projects/t3code-fork/release/T3-Code-<version>-arm64.dmg && rm -rf "/Applications/T3 Code (Fork).app" && ditto "/Volumes/T3 Code (Fork) <version> Installer/T3 Code (Fork).app" "/Applications/T3 Code (Fork).app" && hdiutil detach "/Volumes/T3 Code (Fork) <version> Installer" && codesign --force --deep --sign - "/Applications/T3 Code (Fork).app" && ln -sfh builds/<sha> ~/.t3/fork/current && open "/Applications/T3 Code (Fork).app"
 ```

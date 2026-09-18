@@ -14,9 +14,13 @@ DEPLOY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"   # <repo>/fork/d
 # uncommitted work that must not ride along in the tarball.
 REPO="${T3_FORK_REPO:-$(cd "$DEPLOY_DIR/../.." && pwd)}"
 REMOTE_HOSTS_FILE="$DEPLOY_DIR/remote-hosts"
-APP="/Applications/T3 Code (Alpha).app"
-APP_BINARY="$APP/Contents/MacOS/T3 Code (Alpha)"
-APP_PROC_PATTERN='T3 Code \(Alpha\)\.app/Contents/MacOS'
+# The bundle, its executable, and the DMG volume are all named after the
+# desktop productName ("T3 Code (Fork)"), so read it from the checkout being
+# shipped instead of repeating the name here.
+APP_NAME="$(node -p "require('$REPO/apps/desktop/package.json').productName")"
+APP="/Applications/$APP_NAME.app"
+APP_BINARY="$APP/Contents/MacOS/$APP_NAME"
+APP_PROC_MATCH="$APP_NAME.app/Contents/MacOS"
 BACKEND_ENTRY="$CURRENT_LINK/apps/server/dist/bin.mjs"
 
 head_sha() { git -C "$REPO" rev-parse --short HEAD; }
@@ -103,7 +107,7 @@ decide_deploy_path() {
 app_running() {
   local procs
   procs="$(ps -axo command)"
-  grep -Eq "$APP_PROC_PATTERN" <<<"$procs"
+  grep -Fq "$APP_PROC_MATCH" <<<"$procs"
 }
 
 # PID of the desktop's primary backend child, identified by the symlink entry

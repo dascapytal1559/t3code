@@ -1,5 +1,5 @@
 #!/bin/bash
-# DMG deploy: swaps /Applications/T3 Code (Alpha).app for the fork DMG built
+# DMG deploy: swaps the installed fork app (lib.sh APP) for the fork DMG built
 # from HEAD, retargets ~/.t3/fork/current at the staged payload for HEAD so
 # the relaunched app runs it, relaunches the app, then restarts the fork t3
 # server on each remote host. Needed only when choose-deploy-path.sh prints
@@ -30,7 +30,7 @@ for arg in "$@"; do
   esac
 done
 DMG="$REPO/release/T3-Code-${VERSION}-arm64.dmg"
-VOL="/Volumes/T3 Code (Alpha) ${VERSION} Installer"
+VOL="/Volumes/$APP_NAME ${VERSION} Installer"
 SHA="$(head_sha)"
 
 [ -f "$DMG" ] || { echo "missing DMG: $DMG" >&2; exit 1; }
@@ -46,12 +46,12 @@ if [ "$PATH_KIND" = payload ] && [ -z "$FORCE" ]; then
 fi
 detach_self "$@"
 
-echo "deploying the fork as T3 Code (Alpha) $VERSION from $DMG with payload $SHA"
+echo "deploying the fork as $APP_NAME $VERSION from $DMG with payload $SHA"
 # Head start: let the agent that launched us finish its turn before its host dies.
 sleep 8
 
 # Draining hosted sessions and ssh tunnels takes the app ~35s.
-osascript -e 'tell application "T3 Code (Alpha)" to quit' || true
+osascript -e "tell application \"$APP_NAME\" to quit" || true
 for _ in $(seq 1 60); do
   app_running || break
   sleep 1
@@ -64,7 +64,7 @@ fi
 hdiutil attach -nobrowse -quiet "$DMG"
 trap 'hdiutil detach "$VOL" >/dev/null 2>&1 || true' EXIT
 rm -rf "$APP"
-ditto "$VOL/T3 Code (Alpha).app" "$APP"
+ditto "$VOL/$APP_NAME.app" "$APP"
 hdiutil detach -quiet "$VOL"
 trap - EXIT
 
@@ -84,7 +84,7 @@ open "$APP"
 # hand and this script carries on with the rest of the deploy.
 for i in $(seq 1 600); do
   app_running && break
-  [ "$i" -eq 15 ] && echo "no app process after 15s; open T3 Code (Alpha) by hand — waiting up to 10 minutes"
+  [ "$i" -eq 15 ] && echo "no app process after 15s; open $APP_NAME by hand — waiting up to 10 minutes"
   sleep 1
 done
 if ! app_running; then

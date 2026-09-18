@@ -522,7 +522,9 @@ Implementation: `productName` in `apps/desktop/package.json` (read by
 `apps/desktop/scripts/electron-launcher.mjs`), `resolveDesktopAppBranding` in
 `apps/desktop/src/app/DesktopEnvironment.ts`, the `Fork` and `Fork Dev` stage
 labels in `packages/contracts/src/ipc.ts`, and
-`resolveServerBackedAppStageLabel` in `apps/web/src/branding.logic.ts`.
+`resolveServerBackedAppStageLabel` in `apps/web/src/branding.logic.ts`. The
+deploy scripts read the same `productName` (`fork/deploy/lib.sh`) for the
+installed bundle path, its executable, and the DMG volume name.
 
 Tests: `apps/desktop/src/app/DesktopEnvironment.test.ts`,
 `DesktopAppIdentity.test.ts`, `DesktopPreReadyPlatform.test.ts`,
