@@ -63,8 +63,8 @@ if (undecided.length > 0) {
 const bundleDependencies = patchedRuntime.filter((name) => BUNDLED.has(name));
 const optionalDependencies = {};
 // npm takes a bundled package as a complete subtree and fetches nothing for
-// it, so each bundled package's own dependencies are declared on the tarball
-// and install beside it, where Node's lookup walks up to them.
+// it, so the dependencies of each bundled package are declared on the tarball
+// and install beside it, where the Node lookup walks up to them.
 const hoist = (target, name, spec) => {
   if (target[name] !== undefined && target[name] !== spec) {
     throw new Error(`${name} wanted as ${target[name]} and ${spec}; cannot hoist`);
