@@ -61,13 +61,27 @@ if (undecided.length > 0) {
   );
 }
 const bundleDependencies = patchedRuntime.filter((name) => BUNDLED.has(name));
+const optionalDependencies = {};
+// npm takes a bundled package as a complete subtree and fetches nothing for
+// it, so each bundled package's own dependencies are declared on the tarball
+// and install beside it, where Node's lookup walks up to them.
+const hoist = (target, name, spec) => {
+  if (target[name] !== undefined && target[name] !== spec) {
+    throw new Error(`${name} wanted as ${target[name]} and ${spec}; cannot hoist`);
+  }
+  target[name] = spec;
+};
 for (const name of bundleDependencies) {
+  const source = fs.realpathSync(path.join("node_modules", name));
   // The store directory holds the package alone; its dependencies are pnpm
-  // siblings, not children, and npm resolves them from the registry.
-  fs.cpSync(fs.realpathSync(path.join("node_modules", name)), path.join(stage, "node_modules", name), {
+  // siblings, not children.
+  fs.cpSync(source, path.join(stage, "node_modules", name), {
     recursive: true,
-    filter: (source) => path.basename(source) !== "node_modules",
+    filter: (entry) => path.basename(entry) !== "node_modules",
   });
+  const manifest = JSON.parse(fs.readFileSync(path.join(source, "package.json"), "utf8"));
+  for (const [dep, spec] of Object.entries(manifest.dependencies ?? {})) hoist(dependencies, dep, spec);
+  for (const [dep, spec] of Object.entries(manifest.optionalDependencies ?? {})) hoist(optionalDependencies, dep, spec);
 }
 console.error("bundled patched dependencies: " + (bundleDependencies.join(", ") || "none"));
 
@@ -75,6 +89,7 @@ const out = {
   name: pkg.name, repository: pkg.repository, bin: pkg.bin, type: pkg.type,
   version: pkg.version, engines: pkg.engines, files: pkg.files,
   dependencies,
+  ...(Object.keys(optionalDependencies).length > 0 ? { optionalDependencies } : {}),
   ...(bundleDependencies.length > 0 ? { bundleDependencies } : {}),
 };
 fs.writeFileSync(path.join(stage, "package.json"), JSON.stringify(out, null, 2) + "\n");
