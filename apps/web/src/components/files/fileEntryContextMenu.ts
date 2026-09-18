@@ -1,7 +1,9 @@
+import type { ContextMenuItem } from "@t3tools/contracts";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 
 import { toastManager } from "~/components/ui/toast";
 import type { ComposerHandleRef } from "~/composerHandleContext";
+import type { FileContextMenuAction } from "~/fileContextMenu";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { readLocalApi } from "~/localApi";
 import { isAbsolutePath } from "~/terminal-links";
@@ -20,6 +22,11 @@ interface ShowFileEntryContextMenuOptions {
   readonly path: string;
   readonly composerRef: ComposerHandleRef | null;
   readonly position: { x: number; y: number };
+  /** Open, reveal, and "Open with" from `useFileContextMenu`; listed first when provided. */
+  readonly fileActions?: {
+    readonly items: ReadonlyArray<ContextMenuItem<FileContextMenuAction>>;
+    readonly activate: (action: FileContextMenuAction) => Promise<void>;
+  };
 }
 
 async function copyWithToast(title: string, value: string): Promise<void> {
@@ -48,14 +55,26 @@ export async function showFileEntryContextMenu(
   const path = options.path.replace(/\/$/, "");
   const mentionable = path !== "" && !isAbsolutePath(path);
   const absolutePath = workspaceAbsolutePath(options.cwd, path);
-  const clicked = await api.contextMenu.show<FileEntryContextMenuItemId>(
+  const fileItems = options.fileActions?.items ?? [];
+  const clicked = await api.contextMenu.show<FileEntryContextMenuItemId | FileContextMenuAction>(
     [
+      ...fileItems,
       ...(mentionable ? [{ id: "copy-mention" as const, label: "Copy mention" }] : []),
       { id: "copy-absolute-path", label: "Copy absolute path" },
       ...(mentionable ? [{ id: "add-to-chat" as const, label: "Add to chat" }] : []),
     ],
     options.position,
   );
+  if (clicked === null) return;
+  // "Open with" submenu selections report the child id ("editor:<id>"),
+  // which is not present in the top-level item list.
+  if (
+    options.fileActions &&
+    (fileItems.some((item) => item.id === clicked) || clicked.startsWith("editor:"))
+  ) {
+    await options.fileActions.activate(clicked as FileContextMenuAction);
+    return;
+  }
   if (clicked === "copy-mention") {
     await copyWithToast("Mention copied", serializeComposerFileLink(path));
     return;

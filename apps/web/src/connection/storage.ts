@@ -52,7 +52,7 @@ const SERVER_CONFIG_STORE_NAME = "server-config";
 const VCS_REFS_STORE_NAME = "vcs-refs";
 const CATALOG_KEY = "document";
 const SHELL_SNAPSHOT_CACHE_SCHEMA_VERSION = 1;
-const THREAD_SNAPSHOT_CACHE_SCHEMA_VERSION = 4;
+const THREAD_SNAPSHOT_CACHE_SCHEMA_VERSION = 5;
 
 const StoredShellSnapshot = Schema.Struct({
   schemaVersion: Schema.Literal(SHELL_SNAPSHOT_CACHE_SCHEMA_VERSION),
@@ -66,9 +66,11 @@ const StoredShellSnapshotJson = Schema.fromJsonString(StoredShellSnapshot);
 // exists for rollback safety: a pre-pagination client would decode a windowed
 // v2 record, silently drop the unknown `page` field, and treat the partial
 // thread as complete forever. Older entries fail to decode → cold cache.
-// v4 discards caches written before the revert-retention fix: they can hold
+// v4 discarded caches written before the revert-retention fix: they can hold
 // reverted (ghost) messages, and the afterSequence resume would trust them
-// forever without refetching a correcting snapshot.
+// forever without refetching a correcting snapshot. v5 reloads pre-thinking
+// caches (upstream's own v4 bump): their fallback system roles cannot recover
+// settled reasoning messages by resuming afterSequence.
 const StoredThreadSnapshot = Schema.Struct({
   schemaVersion: Schema.Literal(THREAD_SNAPSHOT_CACHE_SCHEMA_VERSION),
   environmentId: EnvironmentId,

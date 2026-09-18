@@ -5,6 +5,7 @@ import { buildThreadActionMenuItems, type ThreadActionMenuState } from "./thread
 
 const baseState: ThreadActionMenuState = {
   branch: null,
+  projectFilter: null,
   isPinned: false,
   isSettled: false,
   isSnoozed: false,

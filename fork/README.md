@@ -176,6 +176,9 @@ root with the entry's relative path, using backslashes under a Windows root.
 Implementation: `apps/web/src/components/files/fileEntryContextMenu.ts`,
 `workspaceAbsolutePath` in `apps/web/src/components/files/filePath.ts`, and
 the right-click wiring in `FileBrowserPanel.tsx` and `FileBreadcrumbs.tsx`.
+Upstream's own file actions (Open, reveal, and the **Open with** submenu from
+`useFileContextMenu`) are handed to the helper by the explorer rows, so one
+menu carries both sets.
 
 Tests: `apps/web/src/components/files/filePath.test.ts` (`workspaceAbsolutePath`
 joining, root handling, absolute pass-through, Windows separators).
@@ -336,8 +339,10 @@ because `thread.messages` is a paginated window while turn counts cover the
 whole thread. Timestamp comparisons account for time-zone offsets, and
 imported history remains intact.
 
-Web and mobile snapshot caches use schema v4 so older cached ghost messages
-are discarded once and refetched. Upstream now restores the selected prompt
+Web and mobile snapshot caches use schema v5 so older cached ghost messages
+are discarded once and refetched: the fork's revert fix took v4, and upstream
+later used v4 for its own thinking-trace reload, so the fork moved one past
+it to keep both invalidations. Upstream now restores the selected prompt
 and attachments through **Edit from here**; the fork's old prompt-restoration
 UI has been removed.
 
@@ -491,7 +496,9 @@ in the fork; see `fork/SYNC_UPSTREAM.md`), the resolver in
 settings row in `apps/web/src/components/settings/ProjectSettingsPanel.tsx`.
 `getActiveProjectByWorkspaceRoot` matches either root because git-facing
 callers only know the cwd they ran in. The checkpoint reactor prefers the
-thread's VCS cwd over the live session cwd only when a VCS root is set.
+thread's VCS cwd over the live session cwd only when a VCS root is set, and
+provider-diff repository detection in `ProviderRuntimeIngestion.ts` resolves
+the same cwd.
 
 Tests: decider, projection pipeline, snapshot lookup, normalizer
 (`Normalizer.vcsRoot.test.ts`), migration, shared resolver, the web path
@@ -524,10 +531,12 @@ Tests: `apps/desktop/src/app/DesktopEnvironment.test.ts`,
 
 ## Sync status
 
-Last synced on 2026-09-15 against upstream `9ea892e3b3`
-(v0.0.41-nightly.20260915.1735 plus 16 commits). The pre-sync fork is preserved
-at `backup/upstream-test-drive-pre-sync-20260915` (`a51895ee5`). This sync
-adopted upstream's lazy explorer, web queue and rewind UI, adapted the watcher,
-SSH override, Claude fork anchors and repository settings to upstream's new
-paths, and shifted upstream migrations 051–052 to 052–053 behind the fork's
-existing migration sequence.
+Last synced on 2026-09-18 against upstream `243e94470f`
+(v0.0.43-nightly.20260918.1895, 140 commits after the previous sync). The
+pre-sync fork is preserved at `backup/upstream-test-drive-pre-sync-20260918`
+(`5affd436b1`). This sync kept every entry: it folded upstream's file actions
+into the explorer context-menu helper, moved the thread-fork anchors onto
+upstream's new Claude rollback remap, pointed upstream's relocated
+provider-diff detection and the mobile review diff at the repository
+directory, moved the snapshot caches to schema v5 behind upstream's v4, and
+shifted upstream migration 053 to 054 behind the fork's migration sequence.

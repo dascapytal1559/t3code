@@ -21,9 +21,12 @@ const SHELL_SNAPSHOT_CACHE_SCHEMA_VERSION = 1;
 // v3 adds windowed (paginated) snapshots carrying `page` metadata; the bump
 // makes pre-pagination clients discard the record instead of decoding a
 // partial thread as complete (rollback safety).
-// v4 discards caches written before the revert-retention fix, which can hold
+// v4 discarded caches written before the revert-retention fix, which can hold
 // reverted (ghost) messages the afterSequence resume would never correct.
-const THREAD_SNAPSHOT_CACHE_SCHEMA_VERSION = 4;
+// v5 reloads pre-thinking caches (upstream's own v4 bump) whose system-role
+// fallback would otherwise survive afterSequence resume and hide settled
+// reasoning messages.
+const THREAD_SNAPSHOT_CACHE_SCHEMA_VERSION = 5;
 const SERVER_CONFIG_CACHE_SCHEMA_VERSION = 1;
 const VCS_REFS_CACHE_SCHEMA_VERSION = 1;
 

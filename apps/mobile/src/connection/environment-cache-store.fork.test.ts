@@ -1,7 +1,9 @@
 // Fork: checkpoint revert returns the prompt to the composer
 // (FORK_FEATURES.md) — the mobile cache half. Thread snapshots cached before
 // the revert-retention fix can hold ghost messages, so records written under
-// schema v3 must be treated as misses and discarded.
+// schema v3 must be treated as misses and discarded. Upstream later bumped its
+// own schema to v4 for thinking traces, so the fork sits at v5 and v4 is a
+// miss too.
 import {
   EnvironmentId,
   type OrchestrationThreadDetailSnapshot,
@@ -88,11 +90,11 @@ describe("mobile thread snapshot cache (fork)", () => {
       yield* store.saveThread(ENVIRONMENT_ID, snapshot);
 
       expect(yield* store.loadThread(ENVIRONMENT_ID, THREAD_ID)).toEqual(Option.some(snapshot));
-      expect(memory.savedSchemaVersions).toEqual([4]);
+      expect(memory.savedSchemaVersions).toEqual([5]);
     }),
   );
 
-  it.effect("discards thread snapshots cached before the revert-retention fix", () =>
+  it.effect.each([3, 4])("discards thread snapshots cached under schema v%s", (schemaVersion) =>
     Effect.gen(function* () {
       const memory = makeDatabase();
       const store = yield* make().pipe(Effect.provideService(MobileDatabase, memory.database));
@@ -100,7 +102,7 @@ describe("mobile thread snapshot cache (fork)", () => {
       memory.values.set(
         id,
         JSON.stringify({
-          schemaVersion: 3,
+          schemaVersion,
           environmentId: ENVIRONMENT_ID,
           threadId: THREAD_ID,
           snapshot,
