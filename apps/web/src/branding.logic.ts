@@ -15,6 +15,9 @@ export function resolveServerBackedAppStageLabel(input: {
   readonly primaryServerVersion: string | null | undefined;
   readonly fallbackStageLabel: string;
 }): string {
+  if (input.fallbackStageLabel === "Fork" || input.fallbackStageLabel === "Fork Dev") {
+    return input.fallbackStageLabel;
+  }
   return input.primaryServerVersion &&
     NIGHTLY_SERVER_VERSION_PATTERN.test(input.primaryServerVersion)
     ? "Nightly"

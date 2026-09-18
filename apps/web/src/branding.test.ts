@@ -72,6 +72,17 @@ describe("branding", () => {
 });
 
 describe("branding logic", () => {
+  it.each(["Fork", "Fork Dev"])("keeps %s branding with a nightly primary server", (stageLabel) => {
+    expect(
+      resolveServerBackedAppDisplayName({
+        baseName: "T3 Code",
+        fallbackDisplayName: `T3 Code (${stageLabel})`,
+        fallbackStageLabel: stageLabel,
+        primaryServerVersion: "0.0.28-nightly.20260616.12",
+      }),
+    ).toBe(`T3 Code (${stageLabel})`);
+  });
+
   it("returns Nightly for nightly primary server versions", () => {
     expect(
       resolveServerBackedAppStageLabel({

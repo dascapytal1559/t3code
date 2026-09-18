@@ -1,9 +1,10 @@
 # T3 Code fork
 
 This file tracks the behavior this fork adds on top of
-[upstream T3 Code](../README.md). The fork uses the stock
-**T3 Code (Alpha)** desktop identity; the differences below are product
-behavior, not parallel-app branding.
+[upstream T3 Code](../README.md). The fork's desktop app is named
+**T3 Code (Fork)**; upstream remains **T3 Code (Alpha)**.
+See [Launch upstream](LAUNCH_UPSTREAM.md) for the separate upstream test copy
+on this Mac.
 
 ## How the fork is wired
 
@@ -497,6 +498,29 @@ Tests: decider, projection pipeline, snapshot lookup, normalizer
 input, a `CheckpointReactor` case where the agent runs in a meta workspace and
 checkpoints land in the child repository, and `PullRequestService.test.ts`
 cases where GitHub credential routing uses the repository directory.
+
+## Desktop app named T3 Code (Fork)
+
+The packaged desktop app is named **T3 Code (Fork)** and a development launch
+**T3 Code (Fork Dev)**, instead of upstream's Alpha, Nightly, and Dev stage
+labels, so the fork and a stock upstream build can sit side by side on one Mac
+(see [Launch upstream](LAUNCH_UPSTREAM.md)). The name is fixed: a nightly-style
+version does not switch it to Nightly, and a nightly primary server does not
+relabel the web title. The bundle id, URL scheme, and the legacy
+`T3 Code (Alpha)` profile directory names are unchanged, so the renamed app
+keeps its existing Electron profile and data.
+
+Implementation: `productName` in `apps/desktop/package.json` (read by
+`scripts/build-desktop-artifact.ts` and
+`apps/desktop/scripts/electron-launcher.mjs`), `resolveDesktopAppBranding` in
+`apps/desktop/src/app/DesktopEnvironment.ts`, the `Fork` and `Fork Dev` stage
+labels in `packages/contracts/src/ipc.ts`, and
+`resolveServerBackedAppStageLabel` in `apps/web/src/branding.logic.ts`.
+
+Tests: `apps/desktop/src/app/DesktopEnvironment.test.ts`,
+`DesktopAppIdentity.test.ts`, `DesktopPreReadyPlatform.test.ts`,
+`apps/web/src/branding.test.ts`, and `scripts/build-desktop-artifact.test.ts`
+(product name and DMG title).
 
 ## Sync status
 

@@ -1,6 +1,5 @@
 import type {
   DesktopAppBranding,
-  DesktopAppStageLabel,
   DesktopRuntimeArch,
   DesktopRuntimeInfo,
 } from "@t3tools/contracts";
@@ -15,7 +14,6 @@ import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopConfig from "./DesktopConfig.ts";
 import { resolveLinuxDesktopEntryName } from "./DesktopEarlyElectronStartup.ts";
 import { resolveDesktopBaseDir, resolveDesktopStateDir } from "./DesktopStatePaths.ts";
-import { isNightlyDesktopVersion } from "../updates/updateChannels.ts";
 import type { OtlpProtocol } from "@t3tools/shared/observability";
 
 export interface MakeDesktopEnvironmentInput {
@@ -98,22 +96,10 @@ export class DesktopEnvironment extends Context.Service<
 
 const APP_BASE_NAME = "T3 Code";
 
-function resolveDesktopAppStageLabel(input: {
-  readonly isDevelopment: boolean;
-  readonly appVersion: string;
-}): DesktopAppStageLabel {
-  if (input.isDevelopment) {
-    return "Dev";
-  }
-
-  return isNightlyDesktopVersion(input.appVersion) ? "Nightly" : "Alpha";
-}
-
 export function resolveDesktopAppBranding(input: {
   readonly isDevelopment: boolean;
-  readonly appVersion: string;
 }): DesktopAppBranding {
-  const stageLabel = resolveDesktopAppStageLabel(input);
+  const stageLabel = input.isDevelopment ? "Fork Dev" : "Fork";
   return {
     baseName: APP_BASE_NAME,
     stageLabel,
@@ -184,7 +170,6 @@ const make = Effect.fn("desktop.environment.make")(function* (
       : bundledServerRoot;
   const branding = resolveDesktopAppBranding({
     isDevelopment,
-    appVersion: input.appVersion,
   });
   const displayName = branding.displayName;
   const stateDir = resolveDesktopStateDir({
@@ -194,6 +179,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     t3Home: config.t3Home,
   });
   const userDataDirName = isDevelopment ? "t3code-dev" : "t3code";
+  // Profile directory names are persistent storage identities, separate from app branding.
   const legacyUserDataDirName = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";
   const linuxApplicationsDir = path.join(
     Option.getOrElse(config.xdgDataHome, () => path.join(homeDirectory, ".local", "share")),
