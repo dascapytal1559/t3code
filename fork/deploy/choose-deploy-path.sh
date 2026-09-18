@@ -15,7 +15,7 @@ fi
 PATH_KIND="$(decide_deploy_path)"
 {
   echo "deploy path: $PATH_KIND"
-  echo "HEAD: $(git -C "$REPO" rev-parse --short HEAD)"
+  echo "HEAD: $(git -C "$REPO" rev-parse --short=9 HEAD)"
   echo "last payload swap: ${FROM:-none}"
   echo "last DMG swap: ${LAST_DMG:-none}"
   echo

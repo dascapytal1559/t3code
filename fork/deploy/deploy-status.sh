@@ -6,7 +6,7 @@
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"
 
-short() { git -C "$REPO" rev-parse --short "$1" 2>/dev/null || printf '%s' "${1:-none}"; }
+short() { git -C "$REPO" rev-parse --short=9 "$1" 2>/dev/null || printf '%s' "${1:-none}"; }
 behind() { git -C "$REPO" rev-list --count "$1..HEAD" 2>/dev/null || printf '?'; }
 
 head="$(git -C "$REPO" rev-parse HEAD)"

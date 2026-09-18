@@ -23,7 +23,9 @@ APP_BINARY="$APP/Contents/MacOS/$APP_NAME"
 APP_PROC_MATCH="$APP_NAME.app/Contents/MacOS"
 BACKEND_ENTRY="$CURRENT_LINK/apps/server/dist/bin.mjs"
 
-head_sha() { git -C "$REPO" rev-parse --short HEAD; }
+# Pinned to 9: git widens the default abbreviation as the repo grows, which
+# would rename new build directories out from under the symlink comparison.
+head_sha() { git -C "$REPO" rev-parse --short=9 HEAD; }
 remote_hosts() { grep -v '^[[:space:]]*#' "$REMOTE_HOSTS_FILE" | grep -v '^[[:space:]]*$' || true; }
 
 LAST_DEPLOYED_SHA_FILE="$REPO/release/.last-deployed-sha"
