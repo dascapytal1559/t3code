@@ -36,6 +36,30 @@ usage for 182 days instead of 92, so usage stays after Claude Code deletes old
 transcripts. History older than what is on disk today cannot be recovered; six
 months builds up from when this build first scans.
 
+## Archived usage
+
+Usage includes copies of history from machines and accounts that no longer run
+T3. The server setting `usageArchiveDirs` lists the archive folders. It
+defaults to `["~/.t3-usage-archive"]` and can be changed in
+`~/.t3-fork/userdata/settings.json`. Code: `apps/server/src/usage/usageArchive.ts`.
+
+- Each folder directly under an archive folder is one host, and its name is
+  the host label. Inside it, the copy keeps the original machine's layout, such
+  as `<host>/home/.claude/projects`.
+- These are read: Claude `projects/`, Codex `sessions/`, Grok
+  `.grok/sessions/`, and a T3 server's saved usage
+  (the newest of `usage-scan-cache-v9.json` down to `usage-scan-cache.json`,
+  version 3 on).
+  Saved usage still has usage whose transcripts were deleted. Version 3 caches
+  are priced at standard speed. OpenCode, Pi and Antigravity copies are not
+  read.
+- Archived usage is parsed and deduplicated like live history. Live
+  directories are read first, so usage that is both live and archived counts
+  once and stays credited to the live source. The archived part of the total
+  is shown on the Usage page by host and instance.
+- A remote that still runs T3 and is connected would be counted again next to
+  its archive copy. Archive a host after T3 is removed from it.
+
 ## Build
 
 ```sh

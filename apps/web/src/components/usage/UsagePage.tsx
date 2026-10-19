@@ -84,6 +84,7 @@ import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { UsageLimitsSection } from "./UsageLimits";
 import { UsagePriceOverrides } from "./UsagePriceOverrides";
 import { UsageProviderChart } from "./UsageProviderChart";
+import { archivedUsageRows } from "./usageArchive";
 import { SpeedPremium, UsageModelDialog } from "./UsageModelDialog";
 import { UsageShareBar } from "./UsageShareBar";
 import {
@@ -667,6 +668,12 @@ function UsageOverview({
       ),
     ),
   ];
+  const archivedRows = archivedUsageRows(
+    selectedEnvironments.flatMap((environment) =>
+      environment.summary ? [environment.summary] : [],
+    ),
+    hiddenProviders,
+  );
   const breakdownPeriods: readonly (DailyTotals | HourlyTotals)[] = (
     shownHourly ? merged.hourly : merged.daily
   ).toReversed();
@@ -700,6 +707,19 @@ function UsageOverview({
           {message}
         </p>
       ))}
+      {archivedRows.length > 0 && (
+        <p className="mb-4 text-sm text-muted-foreground">
+          Includes archived usage:{" "}
+          {archivedRows
+            .map(
+              (row) =>
+                `${row.host}${row.instance === "." ? "" : ` (${row.instance})`} ${
+                  metric === "cost" ? formatUsd(row.costUsd) : formatTokens(row.totalTokens)
+                }`,
+            )
+            .join(" · ")}
+        </p>
+      )}
       <section className="grid gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
         <div className="flex min-w-0 flex-col gap-5">
           <div className="flex flex-col gap-1">

@@ -157,7 +157,8 @@ const layerService = (input: {
     ),
     Layer.provideMerge(NodeServices.layer),
     Layer.provideMerge(Layer.succeed(HostProcess.Platform, input.platform ?? "linux")),
-    Layer.provideMerge(ServerSettings.layerTest(input.settings)),
+    // The default archive root is in the real home directory.
+    Layer.provideMerge(ServerSettings.layerTest({ usageArchiveDirs: [], ...input.settings })),
     Layer.provideMerge(
       Layer.succeed(
         HttpClient.HttpClient,
@@ -2504,6 +2505,89 @@ describe("UsageService", () => {
         Effect.provide(layerService({ prefix: "usage-service-six-months-test", home, settings })),
       );
     }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
+  );
+
+  it.live("adds archived usage, labelled by host and instance, without counting copies twice", () =>
+    Effect.gen(function* () {
+      const { transcript, settings, home } = yield* setup;
+      const archiveRoot = NodePath.join(home, "usage-archive");
+      const archivedProjects = NodePath.join(archiveRoot, "remote-a", ".claude", "projects");
+      const archivedUserdata = NodePath.join(archiveRoot, "remote-a", ".t3", "userdata");
+      const cachedRecord = (id: number, outputTokens: number): UsageRecord => ({
+        provider: "claude",
+        timestampMs: Date.parse("2026-08-01T11:00:00Z"),
+        model: "claude-fable-5",
+        sessionId: "remote-session",
+        totals: {
+          uncachedInputTokens: 10,
+          cachedInputTokens: 0,
+          cacheCreationTokens: 0,
+          outputTokens,
+          reasoningTokens: 0,
+        },
+        reportedCostUsd: null,
+        speed: "standard",
+        dedupeKey: `msg_${id}:req_${id}`,
+      });
+      yield* Effect.promise(async () => {
+        await NodeFSP.writeFile(transcript, claudeLine(1, 5));
+        await NodeFSP.mkdir(NodePath.join(archivedProjects, "proj"), { recursive: true });
+        // Record 1 is also live; record 2 exists only in the archive.
+        await NodeFSP.writeFile(
+          NodePath.join(archivedProjects, "proj", "old.jsonl"),
+          claudeLine(1, 5) + claudeLine(2, 7),
+        );
+        await NodeFSP.mkdir(archivedUserdata, { recursive: true });
+        // The remote server saved record 2 too, and record 9 from a transcript it no longer has.
+        const saved = encodeScanCache(
+          new Map([
+            [
+              "/home/remote/.claude/projects/proj/gone.jsonl",
+              {
+                size: 100,
+                mtimeMs: Date.parse("2026-08-01T12:00:00Z"),
+                provider: "claude",
+                records: [cachedRecord(2, 7), cachedRecord(9, 11)],
+                tailRecords: [],
+                malformedRecords: 0,
+                position: { resumeOffset: 100, guardLength: 0, guardHash: 0, state: null },
+              },
+            ],
+          ]),
+        );
+        await NodeFSP.writeFile(
+          NodePath.join(archivedUserdata, SCAN_CACHE_FILE_NAME),
+          JSON.stringify(saved),
+        );
+      });
+      const service = yield* UsageService.make.pipe(
+        Effect.provide(
+          layerService({
+            prefix: "usage-service-archive-test",
+            home,
+            settings: { ...settings, usageArchiveDirs: [archiveRoot] },
+          }),
+        ),
+      );
+
+      const summary = yield* service.readSummary(WINDOW);
+      assert.strictEqual(totalOutputTokens(summary), 5 + 7 + 11);
+      const archived = summary.sources.filter((source) => source.archive !== undefined);
+      assert.deepStrictEqual(
+        archived.map((source) => [source.fingerprint.hostId, source.archive]),
+        [
+          ["remote-a", { host: "remote-a", instance: ".claude" }],
+          ["remote-a", { host: "remote-a", instance: ".t3/userdata" }],
+        ],
+      );
+      const live = summary.sources.find(
+        (source) => source.fingerprint.provider === "claude" && source.archive === undefined,
+      );
+      const liveBuckets = summary.buckets.filter(
+        (bucket) => bucket.sourcePath === live?.fingerprint.resolvedHomePath,
+      );
+      assert.strictEqual(totalOutputTokens({ buckets: liveBuckets }), 5);
+    }).pipe(Effect.scoped),
   );
 
   it.live("does not share an in-flight scan after custom prices change", () =>

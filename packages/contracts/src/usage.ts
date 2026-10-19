@@ -94,6 +94,14 @@ export const UsageSource = Schema.Struct({
   action: Schema.optionalKey(Schema.Literal("enableCursorKeychain")),
   /** Cached response during refresh; repeat with awaitRefresh for fresh data. */
   refreshing: Schema.optionalKey(Schema.Literal(true)),
+  /**
+   * Fork feature: present when this source is a copy read from a usage archive
+   * rather than a live history directory. `host` is the archive folder,
+   * `instance` the copy's place inside it.
+   */
+  archive: Schema.optionalKey(
+    Schema.Struct({ host: TrimmedNonEmptyString, instance: TrimmedNonEmptyString }),
+  ),
 });
 export type UsageSource = typeof UsageSource.Type;
 

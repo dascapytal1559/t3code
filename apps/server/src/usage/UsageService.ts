@@ -40,7 +40,14 @@ import type {
   TranscriptUsageFormat,
   UsageRecord,
 } from "@t3tools/provider-core/server/usage";
+import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import { resolveModelAliases, UsageAggregator } from "./usageAggregation.ts";
+import {
+  discoverUsageArchive,
+  upgradeArchivedScanCache,
+  type ArchivedScanCache,
+  type UsageArchiveLabel,
+} from "./usageArchive.ts";
 import { createOverrideRateTable, parseRateTable, type RateTable } from "./usagePricing.ts";
 import {
   listTranscriptFiles,
@@ -98,6 +105,7 @@ interface TranscriptSource {
   readonly dir: string;
   readonly volumeId: string;
   readonly fileName?: string;
+  readonly archive?: UsageArchiveLabel;
 }
 
 const RatesCacheFile = Schema.Struct({
@@ -528,17 +536,22 @@ export const make = Effect.gen(function* () {
         }[]
       | null;
     readonly refreshing?: true;
+    readonly archive?: UsageArchiveLabel;
   }
+
+  const archiveFields = (archive: UsageArchiveLabel | undefined) =>
+    archive === undefined ? {} : { archive, hostId: archive.host };
 
   const scanTranscriptDir = Effect.fn("UsageService.scanTranscriptDir")(function* (
     source: TranscriptSource,
     windowStartMs: number,
   ) {
     const { provider, format, dir, volumeId, fileName } = source;
+    const label = archiveFields(source.archive);
     const exists = yield* fileSystem
       .exists(dir)
       .pipe(Effect.catchCause(() => Effect.succeed(false)));
-    if (!exists) return { provider, dir, volumeId, files: null } satisfies ScannedDir;
+    if (!exists) return { provider, dir, volumeId, files: null, ...label } satisfies ScannedDir;
     const { files, failedPaths } = yield* Effect.promise(() =>
       listTranscriptFiles(dir, windowStartMs, fileName === undefined ? undefined : { fileName }),
     );
@@ -576,6 +589,7 @@ export const make = Effect.gen(function* () {
       dir,
       volumeId,
       files: parsedFiles,
+      ...label,
       ...(unread > 0
         ? {
             status: "partial",
@@ -585,15 +599,95 @@ export const make = Effect.gen(function* () {
     } satisfies ScannedDir;
   });
 
+  // Archived caches do not change once copied; decode each one once per file version.
+  const archivedCacheEntries = new Map<
+    string,
+    { readonly size: number; readonly mtimeMs: number; readonly cache: ScanCache }
+  >();
+  const readArchivedCache = Effect.fn("UsageService.readArchivedCache")(function* (
+    archived: ArchivedScanCache,
+    windowStartMs: number,
+  ) {
+    const info = yield* fileSystem.stat(archived.file).pipe(Effect.option);
+    if (Option.isNone(info)) return [];
+    const size = Number(info.value.size);
+    const mtimeMs = Option.match(info.value.mtime, { onNone: () => 0, onSome: (d) => d.getTime() });
+    let entry = archivedCacheEntries.get(archived.file);
+    if (entry === undefined || entry.size !== size || entry.mtimeMs !== mtimeMs) {
+      const document = yield* fileSystem.readFileString(archived.file).pipe(
+        Effect.flatMap((raw) => decodeScanCacheFile(raw)),
+        Effect.catchCause(() => Effect.succeed(null)),
+      );
+      entry = {
+        size,
+        mtimeMs,
+        cache: decodeScanCache(upgradeArchivedScanCache(document), transcriptFormats),
+      };
+      archivedCacheEntries.set(archived.file, entry);
+    }
+    const dir = path.dirname(archived.file);
+    const volumeId = yield* Effect.promise(() => readDirectoryVolumeId(dir));
+    const byProvider = new Map<
+      UsageProviderKind,
+      Array<{ path: string; records: UsageRecord[]; malformedRecords: number }>
+    >();
+    for (const [filePath, file] of entry.cache) {
+      if (file.mtimeMs < windowStartMs) continue;
+      const files = byProvider.get(file.provider) ?? [];
+      files.push({
+        path: filePath,
+        records: [...file.records, ...file.tailRecords],
+        malformedRecords: file.malformedRecords,
+      });
+      byProvider.set(file.provider, files);
+    }
+    return [...byProvider].map(([provider, files]): ScannedDir => ({
+      provider,
+      dir,
+      volumeId,
+      files,
+      ...archiveFields({ host: archived.host, instance: archived.instance }),
+    }));
+  });
+
   const collectDirs = Effect.fn("UsageService.collectDirs")(function* (
     windowStartMs: number,
     settings: ServerSettingsValue,
     retentionCutoffMs: number,
     awaitRefresh: boolean,
   ) {
-    const dirs = yield* resolveTranscriptDirs(settings, retentionCutoffMs).pipe(
+    const liveDirs = yield* resolveTranscriptDirs(settings, retentionCutoffMs).pipe(
       Effect.provideContext(readerContext),
     );
+    const homeDirectory = yield* HostProcess.HomeDirectory;
+    const archive = yield* Effect.promise(() =>
+      discoverUsageArchive(
+        settings.usageArchiveDirs.map((root) => path.resolve(expandHomePath(root, homeDirectory))),
+      ),
+    );
+    // Archived copies come after live directories: the aggregator keeps the
+    // first copy of a duplicate, so usage still on disk stays credited live.
+    const archivedDirs: TranscriptSource[] = [];
+    const seenDirs = new Set(liveDirs.map(({ provider, dir }) => `${provider}\0${dir}`));
+    for (const archived of archive.transcripts) {
+      const format = transcriptFormats.get(archived.provider);
+      if (format === undefined) continue;
+      const dir = yield* fileSystem
+        .realPath(archived.dir)
+        .pipe(Effect.orElseSucceed(() => archived.dir));
+      const key = `${archived.provider}\0${dir}`;
+      if (seenDirs.has(key)) continue;
+      seenDirs.add(key);
+      archivedDirs.push({
+        provider: archived.provider,
+        format,
+        dir,
+        volumeId: yield* Effect.promise(() => readDirectoryVolumeId(dir)),
+        ...(archived.fileName === undefined ? {} : { fileName: archived.fileName }),
+        archive: { host: archived.host, instance: archived.instance },
+      });
+    }
+    const dirs = [...liveDirs, ...archivedDirs];
 
     const scans = Effect.forEach(
       scanReaders,
@@ -623,11 +717,19 @@ export const make = Effect.gen(function* () {
     );
 
     // Scan independent sources together, directories sequentially to bound open files; preserve order for first-copy dedupe.
-    const [transcripts, scanDirs] = yield* Effect.all(
-      [Effect.forEach(dirs, (dir) => scanTranscriptDir(dir, windowStartMs)), scans],
+    const [transcripts, scanDirs, archivedCaches] = yield* Effect.all(
+      [
+        Effect.forEach(dirs, (dir) => scanTranscriptDir(dir, windowStartMs)),
+        scans,
+        Effect.forEach(archive.caches, (cache) => readArchivedCache(cache, windowStartMs)),
+      ],
       { concurrency: "unbounded" },
     );
-    const scanned: readonly ScannedDir[] = [...transcripts, ...scanDirs.flat()];
+    const scanned: readonly ScannedDir[] = [
+      ...transcripts,
+      ...scanDirs.flat(),
+      ...archivedCaches.flat(),
+    ];
     return scanned;
   });
 
@@ -771,7 +873,18 @@ export const make = Effect.gen(function* () {
 
     for (const [
       index,
-      { provider, dir, volumeId, files, status, message, action, refreshing, hostId: sourceHostId },
+      {
+        provider,
+        dir,
+        volumeId,
+        files,
+        status,
+        message,
+        action,
+        refreshing,
+        archive,
+        hostId: sourceHostId,
+      },
     ] of scannedDirs.entries()) {
       let scannedFiles = 0;
       let skippedFiles = 0;
@@ -840,6 +953,7 @@ export const make = Effect.gen(function* () {
             : sourceMessage,
         ...(action ? { action } : {}),
         ...(refreshing ? { refreshing } : {}),
+        ...(archive ? { archive } : {}),
       });
     }
 

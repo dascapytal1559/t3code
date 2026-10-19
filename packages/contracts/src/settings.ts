@@ -1314,6 +1314,12 @@ export const ServerSettings = Schema.Struct({
   usageModelAliases: Schema.Record(TrimmedNonEmptyString, TrimmedNonEmptyString).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+
+  // Fork feature: folders of usage copied from machines and accounts that no
+  // longer run T3. `~/` paths expand on the server.
+  usageArchiveDirs: Schema.Array(TrimmedNonEmptyString).pipe(
+    Schema.withDecodingDefault(Effect.succeed(["~/.t3-usage-archive"])),
+  ),
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -1622,6 +1628,7 @@ export const ServerSettingsPatch = Schema.Struct({
   usageModelAliases: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, Schema.NullOr(TrimmedNonEmptyString)),
   ),
+  usageArchiveDirs: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 
