@@ -2480,6 +2480,32 @@ describe("UsageService", () => {
     }).pipe(Effect.scoped),
   );
 
+  it.live("keeps six months of saved usage after its transcripts are deleted", () =>
+    Effect.gen(function* () {
+      const { transcript, settings, home } = yield* setup;
+      yield* TestClock.setTime(Date.parse("2026-12-20T12:00:00Z"));
+      yield* Effect.promise(async () => {
+        await NodeFSP.writeFile(transcript, claudeLine(1, 5));
+        const lastWrite = Date.parse("2026-08-01T10:00:00Z") / 1000;
+        await NodeFSP.utimes(transcript, lastWrite, lastWrite);
+      });
+      const sixMonths: UsageSummaryInput = {
+        timeZone: "UTC",
+        sinceDay: UsageDay.make("2026-06-24"),
+        untilDay: UsageDay.make("2026-12-20"),
+      };
+      yield* Effect.gen(function* () {
+        const service = yield* UsageService.make;
+        assert.strictEqual(totalOutputTokens(yield* service.readSummary(sixMonths)), 5);
+
+        yield* Effect.promise(() => NodeFSP.rm(transcript));
+        assert.strictEqual(totalOutputTokens(yield* service.readSummary(sixMonths)), 5);
+      }).pipe(
+        Effect.provide(layerService({ prefix: "usage-service-six-months-test", home, settings })),
+      );
+    }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
+  );
+
   it.live("does not share an in-flight scan after custom prices change", () =>
     Effect.gen(function* () {
       const { transcript, settings, home } = yield* setup;

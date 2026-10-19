@@ -14,6 +14,7 @@ export const WINDOW_OPTIONS = [
   { days: 7, label: "7 days", command: "usage.period.week" },
   { days: 30, label: "30 days", command: "usage.period.month" },
   { days: 90, label: "90 days", command: "usage.period.quarter" },
+  { days: 180, label: "6 months", command: "usage.period.halfYear" },
 ] as const;
 
 export function resolveUsageShortcut(

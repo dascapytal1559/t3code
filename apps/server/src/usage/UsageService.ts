@@ -71,7 +71,12 @@ const RATES_REFRESH_FLOOR_MS = 60 * 1000;
 const MTIME_SLACK_MS = 36 * 60 * 60 * 1000;
 const MAX_HOURLY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-const CACHE_RETENTION_DAYS = 92;
+/**
+ * Parsed usage outlives its transcripts (Claude Code deletes old sessions), so
+ * this bounds how far back Usage can reach. It covers the longest window, six
+ * months, with two days of slack.
+ */
+const CACHE_RETENTION_DAYS = 182;
 
 const TRANSCRIPT_READ_CONCURRENCY = 4;
 
