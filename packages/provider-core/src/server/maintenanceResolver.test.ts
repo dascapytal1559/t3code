@@ -550,6 +550,53 @@ it.layer(NodeServices.layer)("providerMaintenance", (it) => {
     }),
   );
 
+  const codexUpdate = {
+    provider: driver("codex"),
+    npmPackageName: "@openai/codex",
+    nativeUpdate: {
+      args: ["update"],
+      isCommandPath: isNativeTestCommandPath("/packages/standalone/"),
+    },
+  };
+  const chatGptCodex = "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex";
+
+  it.effect.each([
+    { name: "the app's own path", resolved: chatGptCodex, real: chatGptCodex },
+    { name: "a link to it", resolved: "/Users/me/.local/bin/codex", real: chatGptCodex },
+  ] as const)("leaves a Codex bundled in a macOS app to that app through $name", (fixture) =>
+    Effect.gen(function* () {
+      const capabilities = yield* resolveInstall({
+        definition: codexUpdate,
+        platform: "darwin",
+        ...fixture,
+      });
+
+      expect(capabilities.update).toBeNull();
+      expect(
+        createProviderVersionAdvisory({
+          driver: driver("codex"),
+          currentVersion: "0.163.0-alpha.10.2",
+          latestVersion: "0.164.0",
+          maintenanceCapabilities: capabilities,
+        }),
+      ).toMatchObject({ canUpdate: false, updateCommand: null });
+    }),
+  );
+
+  it.effect("keeps the native updater for a standalone Codex on macOS", () =>
+    Effect.gen(function* () {
+      const standalone = "/Users/me/.codex/packages/standalone/current/bin/codex";
+      const capabilities = yield* resolveInstall({
+        definition: codexUpdate,
+        platform: "darwin",
+        resolved: "/Users/me/.local/bin/codex",
+        real: standalone,
+      });
+
+      expect(capabilities.update).toMatchObject({ args: ["update"], lockKey: "codex-native" });
+    }),
+  );
+
   it.effect("proves Windows npm ownership from the package manifest beside the shim", () =>
     Effect.gen(function* () {
       const tempDir = yield* makeTempDir("t3-npm-windows-capabilities");

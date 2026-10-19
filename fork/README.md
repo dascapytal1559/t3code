@@ -60,6 +60,16 @@ defaults to `["~/.t3-usage-archive"]` and can be changed in
 - A remote that still runs T3 and is connected would be counted again next to
   its archive copy. Archive a host after T3 is removed from it.
 
+## App-bundled CLIs are updated by their app
+
+On macOS, a provider CLI whose real path is inside an app bundle
+(`*.app/Contents/...`) is left to that app. An example is ChatGPT.app's Codex,
+which `~/.local/bin/codex` links to. T3 shows no Update button for it and never
+runs its updater. Without this, Codex offers an update that fails, because
+`codex update` cannot update ChatGPT's copy and exits 1. This works like
+upstream's handling of WinGet's Claude, in
+`packages/provider-core/src/server/maintenanceResolver.ts`.
+
 ## Build
 
 ```sh

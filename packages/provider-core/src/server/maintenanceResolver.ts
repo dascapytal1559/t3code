@@ -245,6 +245,10 @@ function isWinGetClaudeCommandPath(commandPath: string): boolean {
   return winGetClaudeCommandPath.test(normalizeCommandPath(commandPath));
 }
 
+function isMacAppBundleCommandPath(commandPath: string): boolean {
+  return normalizeCommandPath(commandPath).includes(".app/contents/");
+}
+
 function isPnpmGlobalCommandPath(commandPath: string): boolean {
   const normalized = normalizeCommandPath(commandPath);
   return (
@@ -442,6 +446,12 @@ export const resolvePackageManagedProviderMaintenance = Effect.fn(
     context.platform === "win32" &&
     commandPaths.some(isWinGetClaudeCommandPath)
   ) {
+    return manual;
+  }
+  // Fork feature: the app that bundles a CLI updates it. ChatGPT's Codex
+  // cannot update itself (`codex update` exits 1), and npm would install a
+  // second copy beside the app's.
+  if (context.platform === "darwin" && commandPaths.some(isMacAppBundleCommandPath)) {
     return manual;
   }
 
