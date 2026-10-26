@@ -1,8 +1,9 @@
 # Fork changes
 
 This fork tracks `pingdotgg/t3code` `main`. Keep this list current so each upstream
-sync knows what to carry forward. Earlier fork work lives on the stale branch
-`fork-legacy-2026-10-19`; take from it only on request.
+sync knows what to carry forward. Earlier fork work is archived on the local
+branch `archive/fork-legacy-2026-10-19` and is out of scope for syncs; take
+from it only on request.
 
 ## Desktop identity
 
