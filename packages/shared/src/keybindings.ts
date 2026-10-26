@@ -237,6 +237,7 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+shift+3", command: "usage.period.month", when: "usagePageOpen" },
   { key: "mod+shift+4", command: "usage.period.quarter", when: "usagePageOpen" },
   { key: "mod+shift+5", command: "usage.period.halfYear", when: "usagePageOpen" },
+  { key: "mod+shift+6", command: "usage.period.year", when: "usagePageOpen" },
 ];
 
 function normalizeKeyToken(token: string): string {

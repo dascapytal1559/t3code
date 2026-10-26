@@ -29,13 +29,14 @@ Two things are still shared with the official app:
 - The default Tailscale Serve port, 443. Do not turn on Tailscale Serve in both
   apps at the same port.
 
-## Usage reaches six months
+## Usage reaches twelve months
 
-The Usage page on web and desktop has a 6 months period (`Cmd+Shift+5`). The
-mobile app still stops at 90 days. The server keeps parsed
-usage for 182 days instead of 92, so usage stays after Claude Code deletes old
-transcripts. History older than what is on disk today cannot be recovered; six
-months builds up from when this build first scans.
+The Usage page on web and desktop has 6 months (`Cmd+Shift+5`) and 12 months
+(`Cmd+Shift+6`) periods, drawn as stacked daily bars. The mobile app still
+stops at 90 days. The server keeps parsed usage for 367 days instead of 92, so
+usage stays after Claude Code deletes old transcripts. History older than what
+is on disk or in the saved usage today cannot be recovered; twelve months builds
+up from when this build first scans.
 
 ## Archived usage
 

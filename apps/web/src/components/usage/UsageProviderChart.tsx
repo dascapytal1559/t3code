@@ -18,6 +18,8 @@ const VIEW_WIDTH = 960;
 const VIEW_HEIGHT = 260;
 const TICK_COUNT = 4;
 const PLOT_TOP = 8;
+const MAX_BAR_WIDTH = 64;
+const MAX_AXIS_LABELS = 5;
 const NONE_LOADING: ReadonlySet<UsageProviderKind> = new Set();
 
 export type UsageChartMetric = "tokens" | "cost";
@@ -42,11 +44,6 @@ export interface DayColumn {
     readonly value: number;
   }[];
   readonly total: number;
-}
-
-interface Point {
-  readonly x: number;
-  readonly y: number;
 }
 
 function valueFor(
@@ -74,87 +71,6 @@ export function buildPeriodColumns(
   });
 }
 
-function monotoneTangents(points: readonly Point[]): readonly number[] {
-  const count = points.length;
-  if (count < 2) return [0];
-
-  const slopes: number[] = [];
-  for (let index = 0; index < count - 1; index += 1) {
-    const dx = (points[index + 1]?.x ?? 0) - (points[index]?.x ?? 0);
-    const dy = (points[index + 1]?.y ?? 0) - (points[index]?.y ?? 0);
-    slopes.push(dx === 0 ? 0 : dy / dx);
-  }
-
-  const tangents: number[] = Array.from({ length: count }, () => 0);
-  tangents[0] = slopes[0] ?? 0;
-  tangents[count - 1] = slopes[count - 2] ?? 0;
-  for (let index = 1; index < count - 1; index += 1) {
-    const previous = slopes[index - 1] ?? 0;
-    const next = slopes[index] ?? 0;
-    tangents[index] = previous * next <= 0 ? 0 : (previous + next) / 2;
-  }
-
-  for (let index = 0; index < count - 1; index += 1) {
-    const slope = slopes[index] ?? 0;
-    if (slope === 0) {
-      tangents[index] = 0;
-      tangents[index + 1] = 0;
-      continue;
-    }
-    const a = (tangents[index] ?? 0) / slope;
-    const b = (tangents[index + 1] ?? 0) / slope;
-    const magnitude = a * a + b * b;
-    if (magnitude > 9) {
-      const scale = 3 / Math.sqrt(magnitude);
-      tangents[index] = scale * a * slope;
-      tangents[index + 1] = scale * b * slope;
-    }
-  }
-
-  return tangents;
-}
-
-interface CurveSegment {
-  readonly from: Point;
-  readonly c1: Point;
-  readonly c2: Point;
-  readonly to: Point;
-}
-
-function smoothCurve(points: readonly Point[]): readonly CurveSegment[] {
-  if (points.length < 2) return [];
-  const tangents = monotoneTangents(points);
-  const segments: CurveSegment[] = [];
-
-  for (let index = 0; index < points.length - 1; index += 1) {
-    const from = points[index];
-    const to = points[index + 1];
-    if (from === undefined || to === undefined) continue;
-    const dx = to.x - from.x;
-    segments.push({
-      from,
-      c1: { x: from.x + dx / 3, y: from.y + ((tangents[index] ?? 0) * dx) / 3 },
-      c2: { x: to.x - dx / 3, y: to.y - ((tangents[index + 1] ?? 0) * dx) / 3 },
-      to,
-    });
-  }
-  return segments;
-}
-
-function curvePath(segments: readonly CurveSegment[]): string {
-  const first = segments[0];
-  if (first === undefined) return "";
-  let path = `M${first.from.x.toFixed(2)},${first.from.y.toFixed(2)}`;
-  for (const segment of segments) {
-    path += ` C${segment.c1.x.toFixed(2)},${segment.c1.y.toFixed(2)} ${segment.c2.x.toFixed(2)},${segment.c2.y.toFixed(2)} ${segment.to.x.toFixed(2)},${segment.to.y.toFixed(2)}`;
-  }
-  return path;
-}
-
-function areaPath(line: string) {
-  return line === "" ? "" : `${line} L${VIEW_WIDTH},${VIEW_HEIGHT} L0,${VIEW_HEIGHT} Z`;
-}
-
 function niceScale(peak: number, count: number): { max: number; ticks: readonly number[] } {
   if (peak <= 0) return { max: 0, ticks: [0] };
 
@@ -171,15 +87,27 @@ function niceScale(peak: number, count: number): { max: number; ticks: readonly 
 
 const PLACEHOLDER_TICKS = Array.from({ length: TICK_COUNT + 1 }, (_, index) => index);
 
-function chartScale(
+export function stackedPeak(
   columns: readonly DayColumn[],
-  loadingProviders: ReadonlySet<UsageProviderKind>,
+  providers: readonly UsageProviderKind[],
 ) {
-  // Layered series each start at zero; summing peaks would waste plot height.
-  const peak = columns.reduce(
-    (max, column) => column.bands.reduce((inner, band) => Math.max(inner, band.value), max),
+  const slots = providers.map((provider) => PROVIDER_ORDER.indexOf(provider));
+  return columns.reduce(
+    (max, column) =>
+      Math.max(
+        max,
+        slots.reduce((sum, slot) => sum + (column.bands[slot]?.value ?? 0), 0),
+      ),
     0,
   );
+}
+
+function chartScale(
+  columns: readonly DayColumn[],
+  providers: readonly UsageProviderKind[],
+  loadingProviders: ReadonlySet<UsageProviderKind>,
+) {
+  const peak = stackedPeak(columns, providers);
   return peak === 0 && loadingProviders.size > 0
     ? { max: TICK_COUNT, ticks: PLACEHOLDER_TICKS, labeled: false }
     : { ...niceScale(peak, TICK_COUNT), labeled: true };
@@ -187,6 +115,23 @@ function chartScale(
 
 function valueToY(value: number, max: number) {
   return max === 0 ? VIEW_HEIGHT : VIEW_HEIGHT - (value / max) * (VIEW_HEIGHT - PLOT_TOP);
+}
+
+// Sub-pixel gaps between a year of daily bars only add antialiasing seams.
+export function barGeometry(count: number) {
+  const step = VIEW_WIDTH / Math.max(1, count);
+  const gap = step < 4 ? 0 : Math.max(1, step * 0.2);
+  const width = Math.min(step - gap, MAX_BAR_WIDTH);
+  return { step, width, inset: (step - width) / 2 };
+}
+
+/** Evenly spaced buckets to label, counted back from the latest so it is always labelled. */
+export function axisLabelIndices(count: number): readonly number[] {
+  if (count === 0) return [];
+  const stride = Math.max(1, Math.ceil((count - 1) / (MAX_AXIS_LABELS - 1)));
+  const indices: number[] = [];
+  for (let index = count - 1; index >= 0; index -= stride) indices.unshift(index);
+  return indices;
 }
 
 function buildChart(
@@ -197,28 +142,38 @@ function buildChart(
   loadingProviders: ReadonlySet<UsageProviderKind>,
 ) {
   const columns = buildPeriodColumns(periods, byPeriod, metric);
-  const scale = chartScale(columns, loadingProviders);
-  const stepX = periods.length < 2 ? 0 : VIEW_WIDTH / (periods.length - 1);
-  const paths = providers.map((provider) => {
-    const slot = PROVIDER_ORDER.indexOf(provider);
-    const line = curvePath(
-      smoothCurve(
-        columns.map((column, periodIndex) => ({
-          x: periodIndex * stepX,
-          y: valueToY(column.bands[slot]?.value ?? 0, scale.max),
-        })),
-      ),
-    );
-    return {
-      provider,
-      loading: loadingProviders.has(provider),
-      total: columns.reduce((sum, column) => sum + (column.bands[slot]?.value ?? 0), 0),
-      line,
-      area: areaPath(line),
-    };
-  });
+  const scale = chartScale(columns, providers, loadingProviders);
+  const bar = barGeometry(periods.length);
+  const series = providers
+    .map((provider) => {
+      const slot = PROVIDER_ORDER.indexOf(provider);
+      return {
+        provider,
+        slot,
+        loading: loadingProviders.has(provider),
+        total: columns.reduce((sum, column) => sum + (column.bands[slot]?.value ?? 0), 0),
+      };
+    })
+    .toSorted((a, b) => b.total - a.total);
 
-  return { columns, scale, stepX, paths: paths.toSorted((a, b) => b.total - a.total) };
+  // The largest provider sits at the bottom of every bar; each provider is one path.
+  const paths = series.map(({ provider, loading }) => ({ provider, loading, d: "" }));
+  for (const [periodIndex, column] of columns.entries()) {
+    const x = (periodIndex * bar.step + bar.inset).toFixed(2);
+    let base = 0;
+    for (const [seriesIndex, { slot }] of series.entries()) {
+      const value = column.bands[slot]?.value ?? 0;
+      if (value <= 0) continue;
+      const bottom = valueToY(base, scale.max);
+      base += value;
+      const top = valueToY(base, scale.max);
+      const path = paths[seriesIndex];
+      if (path === undefined) continue;
+      path.d += `M${x},${top.toFixed(2)}h${bar.width.toFixed(2)}V${bottom.toFixed(2)}h-${bar.width.toFixed(2)}Z`;
+    }
+  }
+
+  return { columns, scale, bar, paths };
 }
 
 function UsageChartTooltip({
@@ -283,7 +238,7 @@ function UsageChartTooltip({
 function UsageChartPlot({
   periods,
   columns,
-  stepX,
+  step,
   providers,
   loadingProviders,
   format,
@@ -293,7 +248,7 @@ function UsageChartPlot({
 }: {
   readonly periods: readonly string[];
   readonly columns: readonly DayColumn[];
-  readonly stepX: number;
+  readonly step: number;
   readonly providers: readonly UsageProviderKind[];
   readonly loadingProviders: ReadonlySet<UsageProviderKind>;
   readonly format: (value: number) => string;
@@ -350,8 +305,7 @@ function UsageChartPlot({
     if (bounds.width === 0) return;
     const localX = Math.min(bounds.width, Math.max(0, event.clientX - bounds.left));
     const localY = Math.min(bounds.height, Math.max(0, event.clientY - bounds.top));
-    const fraction = localX / bounds.width;
-    const index = Math.round(fraction * (periods.length - 1));
+    const index = Math.floor((localX / bounds.width) * periods.length);
     hoverPositionRef.current = { x: localX, y: localY };
     positionTooltip();
     setHoverIndex(Math.min(periods.length - 1, Math.max(0, index)));
@@ -376,19 +330,18 @@ function UsageChartPlot({
         role="img"
         aria-label={ariaLabel}
       >
-        {children}
         {hoverIndex === null ? null : (
-          <line
-            x1={hoverIndex * stepX}
-            x2={hoverIndex * stepX}
-            y1={PLOT_TOP}
-            y2={VIEW_HEIGHT}
-            stroke="currentColor"
-            strokeWidth={1}
-            className="text-muted-foreground"
-            vectorEffect="non-scaling-stroke"
+          <rect
+            x={hoverIndex * step}
+            y={0}
+            width={step}
+            height={VIEW_HEIGHT}
+            fill="currentColor"
+            fillOpacity={0.08}
+            className="text-foreground"
           />
         )}
+        {children}
       </svg>
 
       {hoverIndex === null || hoveredPeriod === undefined ? null : (
@@ -423,7 +376,7 @@ export function UsageProviderChart({
   const byPeriod = new Map(
     totals.map((entry) => ["hourStart" in entry ? entry.hourStart : entry.day, entry]),
   );
-  const { columns, scale, paths, stepX } = buildChart(
+  const { columns, scale, bar, paths } = buildChart(
     periods,
     byPeriod,
     metric,
@@ -462,7 +415,7 @@ export function UsageProviderChart({
         <UsageChartPlot
           periods={periods}
           columns={columns}
-          stepX={stepX}
+          step={bar.step}
           providers={providers}
           loadingProviders={loadingProviders}
           format={format}
@@ -486,41 +439,33 @@ export function UsageProviderChart({
             );
           })}
 
-          {paths.map(({ provider, loading, area }) => (
+          {paths.map(({ provider, loading, d }) => (
             <path
               key={provider}
-              d={area}
+              d={d}
               className={seriesClassName(loading)}
               fill={PROVIDER_PRESENTATION[provider].color}
-              fillOpacity={0.12}
-            />
-          ))}
-          {paths.map(({ provider, loading, line }) => (
-            <path
-              key={provider}
-              d={line}
-              className={seriesClassName(loading)}
-              fill="none"
-              stroke={PROVIDER_PRESENTATION[provider].color}
-              strokeWidth={2}
-              vectorEffect="non-scaling-stroke"
             />
           ))}
         </UsageChartPlot>
       </div>
 
-      <div className="flex justify-between pl-16 text-3xs text-muted-foreground uppercase">
-        <span>{periods[0] === undefined ? "" : formatPeriod(periods[0])}</span>
-        <span>
-          {periods[Math.floor(periods.length / 2)] === undefined
-            ? ""
-            : formatPeriod(periods[Math.floor(periods.length / 2)] ?? "")}
-        </span>
-        <span>
-          {periods[periods.length - 1] === undefined
-            ? ""
-            : formatPeriod(periods[periods.length - 1] ?? "")}
-        </span>
+      <div className="relative ml-16 h-4 text-3xs whitespace-nowrap text-muted-foreground uppercase">
+        {axisLabelIndices(periods.length).map((index) => {
+          // Past a week the edge bars hug the plot's sides, so their labels align to the sides.
+          const pinned = periods.length > 7;
+          const style =
+            pinned && index === 0
+              ? { left: 0 }
+              : pinned && index === periods.length - 1
+                ? { right: 0 }
+                : { left: `${((index + 0.5) / periods.length) * 100}%`, translate: "-50% 0" };
+          return (
+            <span key={periods[index]} className="absolute" style={style}>
+              {formatPeriod(periods[index] ?? "")}
+            </span>
+          );
+        })}
       </div>
     </div>
   );

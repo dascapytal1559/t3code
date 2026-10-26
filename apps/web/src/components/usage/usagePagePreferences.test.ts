@@ -28,6 +28,9 @@ describe("Usage page preferences", () => {
     saveUsagePagePreferences({ metric: "cost", windowDays: 7, hiddenProviders: ["codex"] });
     expect(readUsagePagePreferences().hiddenProviders).toEqual(["codex"]);
 
+    saveUsagePagePreferences({ metric: "tokens", windowDays: 365 });
+    expect(readUsagePagePreferences().windowDays).toBe(365);
+
     values.set(key, '{"metric":"tokens","windowDays":30}');
     expect(readUsagePagePreferences()).toEqual({ metric: "tokens", windowDays: 30 });
   });
@@ -36,7 +39,7 @@ describe("Usage page preferences", () => {
   it.each([
     "not-json",
     '{"metric":"unknown","windowDays":7}',
-    '{"metric":"cost","windowDays":365}',
+    '{"metric":"cost","windowDays":400}',
   ])("replaces invalid preferences on the next save: %s", (value) => {
     values.set(key, value);
     expect(readUsagePagePreferences()).toEqual({ metric: "limits", windowDays: 30 });

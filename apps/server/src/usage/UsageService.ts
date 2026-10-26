@@ -80,10 +80,10 @@ const MAX_HOURLY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Parsed usage outlives its transcripts (Claude Code deletes old sessions), so
- * this bounds how far back Usage can reach. It covers the longest window, six
+ * this bounds how far back Usage can reach. It covers the longest window, twelve
  * months, with two days of slack.
  */
-const CACHE_RETENTION_DAYS = 182;
+const CACHE_RETENTION_DAYS = 367;
 
 const TRANSCRIPT_READ_CONCURRENCY = 4;
 
