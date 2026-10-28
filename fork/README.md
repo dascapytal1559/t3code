@@ -72,6 +72,14 @@ runs its updater. Without this, Codex offers an update that fails, because
 upstream's handling of WinGet's Claude, in
 `packages/provider-core/src/server/maintenanceResolver.ts`.
 
+## Version
+
+The fork keeps upstream's version number. The desktop app sets up an SSH or
+WSL remote by downloading upstream's `t3` release for its own version
+(`apps/desktop/src/main.ts`), so a version upstream never released, such as
+`0.1.4` or `0.1.3-fork.1`, has nothing to download. The app name, bundle id and
+data folder tell the fork apart.
+
 ## Build
 
 ```sh
