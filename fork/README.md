@@ -72,6 +72,15 @@ runs its updater. Without this, Codex offers an update that fails, because
 upstream's handling of WinGet's Claude, in
 `packages/provider-core/src/server/maintenanceResolver.ts`.
 
+## Idle agent release is a setting (carried upstream PR)
+
+This carries upstream https://github.com/pingdotgg/t3code/pull/25624 unchanged:
+the server setting `providerSessionIdleTimeoutMinutes` (default 30, `null` is
+Never) replaces the hardcoded 30-minute idle release, shown under Settings →
+Threads → Agent memory. Firstmate's environment sets it to Never. When a sync
+finds the PR merged, or an upstream equivalent, drop this copy and keep
+upstream's.
+
 ## Version
 
 The fork keeps upstream's version number. The desktop app sets up an SSH or
