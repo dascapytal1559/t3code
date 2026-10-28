@@ -1158,6 +1158,30 @@ describe("Working shelf (beta)", () => {
       expect(resolveSidebarDropVerb("active", "working")).toBeNull();
     });
 
+    it("never drops into the crew rows above Pinned, and keeps them out of every order", () => {
+      const withCrew = [row("lead", "crew"), marker("crew-header"), row("c1", "crew"), ...items];
+      expect(resolveSidebarDropTarget(withCrew, "a1", "lead")).toBeNull();
+      expect(resolveSidebarDropTarget(withCrew, "a1", "c1")).toBeNull();
+      expect(resolveSidebarDropTarget(withCrew, "a1", "pinned-header")).toBeNull();
+      expect(resolveSidebarDropTarget(withCrew, "a1", "p1")).toEqual({
+        section: "pinned",
+        pinnedOrder: ["a1", "p1"],
+        activeOrder: ["a2"],
+      });
+      expect(resolveSidebarDropVerb("active", "crew")).toBeNull();
+      expect(
+        planSidebarThreadDrop({
+          activeKey: "c1",
+          activeSection: "crew",
+          target: resolveSidebarDropTarget(withCrew, "c1", "a2")!,
+          pinnedOrder: ["p1"],
+          pinnedKeysById: new Map([["p1", "m"]]),
+          activeOrder: ["a1", "a2"],
+          activeKeysById: new Map(),
+        }),
+      ).toEqual({ kind: "none" });
+    });
+
     it.each([
       ["pinned", "p1"],
       ["active", "a2"],

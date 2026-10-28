@@ -37,7 +37,7 @@ function layout(
   const rects = items.map((item) => {
     const height =
       item.kind === "thread"
-        ? (item.section === "pinned" || item.section === "active" ? cardHeight : 36) * scale
+        ? (["crew", "pinned", "active"].includes(item.section) ? cardHeight : 36) * scale
         : item.marker === "pinned-header" || item.marker === "pinned-divider"
           ? 0
           : (item.marker.endsWith("placeholder") ? 0 : 32) * scale;
@@ -295,6 +295,22 @@ describe("sidebar drag projection", () => {
     settledHeader,
     thread("s1", "settled"),
   ];
+
+  it("keeps the crew rows above Pinned in place while an inbox row moves", () => {
+    const result = preview(
+      {
+        items: [thread("lead", "crew"), marker("crew-header"), thread("c1", "crew"), ...pinned],
+        settledOrder: [],
+        settledExpanded: true,
+      },
+      "a1",
+      "p1",
+    );
+    for (const key of ["lead", sidebarMarkerId("crew-header"), "c1"]) {
+      expect(result.get(key)).toEqual(stationary);
+    }
+    expect(result.get("p1")).toEqual({ ...stationary, y: 83 });
+  });
 
   it("keeps the pinned header above the gap when a lower pin moves to the top", () => {
     const result = preview(

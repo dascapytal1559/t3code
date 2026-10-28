@@ -44,6 +44,7 @@ import { foldSearchQuery, rankMessageMatches } from "@t3tools/shared/paletteSear
 import { findForMessageMatch, openThreadFindOnQuery } from "./chat/threadFindStore";
 import {
   threadRuntimeCanArchive,
+  type EnvironmentProject,
   type EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/models";
 import {
@@ -235,6 +236,12 @@ import {
 } from "./ui/combobox";
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
+import {
+  coordinatorGroupSlot,
+  inferFirstMateCoordinatorOf,
+  resolveCoordinatorGroup,
+  type CoordinatorGroup,
+} from "./sidebar/coordinatorGroup.logic";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { TooltipProvider } from "./ui/tooltip";
 import { composerDraftHasUserContent, DraftId, useComposerDraftStore } from "../composerDraftStore";
@@ -309,6 +316,7 @@ const SETTLED_TAIL_PAGE_COUNT = 25;
 const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar:settled-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar:snoozed-expanded";
 const WORKING_SHELF_EXPANDED_KEY = "t3code:sidebar:working-expanded";
+const CREW_SHELF_EXPANDED_KEY = "t3code:sidebar:crew-expanded";
 
 const inboxReturns = createInboxReturnTracker();
 
@@ -331,6 +339,7 @@ interface SidebarThreadPartitionInput {
   readonly serverConfigs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>;
   readonly optimisticDrop: SidebarOptimisticDrop | null;
   readonly workingShelfEnabled: boolean;
+  readonly coordinatorGroup: CoordinatorGroup<EnvironmentThreadShell>;
   // Snooze wakes, the queued-turn grace and the Working shelf's exit grace depend
   // on the clock, so the minute tick, the precise snooze-wake tick and the inbox
   // tracker's expiry version are inputs: a new key repartitions.
@@ -391,6 +400,7 @@ function useSidebarThreads(input: {
   readonly threads: readonly EnvironmentThreadShell[];
   readonly delegatedUnderParent: ReadonlySet<string>;
   readonly routeRowThreadKey: string | null;
+  readonly projects: readonly EnvironmentProject[];
 }) {
   const {
     projectScopeKey,
@@ -400,6 +410,7 @@ function useSidebarThreads(input: {
     threads,
     delegatedUnderParent,
     routeRowThreadKey,
+    projects,
   } = input;
   const workingShelfEnabled = useClientSettings((s) => s.sidebarWorkingShelfEnabled);
   const inboxReturnsVersion = useSyncExternalStore(
@@ -424,6 +435,11 @@ function useSidebarThreads(input: {
     false,
     Schema.Boolean,
   );
+  const [crewShelfExpanded, setCrewShelfExpanded] = useLocalStorage(
+    CREW_SHELF_EXPANDED_KEY,
+    false,
+    Schema.Boolean,
+  );
   const [settledTail, setSettledTail] = useState({
     scopeKey: projectScopeKey,
     count: SETTLED_TAIL_INITIAL_COUNT,
@@ -441,11 +457,23 @@ function useSidebarThreads(input: {
     serverConfigs,
     optimisticDrop,
     workingShelfEnabled,
+    // Becomes `(thread) => thread.coordinatorThreadId` once threads record their coordinator.
+    coordinatorGroup: resolveCoordinatorGroup(
+      threads,
+      inferFirstMateCoordinatorOf(threads, projects),
+    ),
     clockKey: `${nowMinute}:${snoozeWakeClock}:${inboxReturnsVersion}`,
   });
 
-  const { pinnedThreads, activeThreads, workingThreads, snoozedThreads, settledThreads } =
-    partition;
+  const {
+    coordinatorThreads,
+    crewThreads,
+    pinnedThreads,
+    activeThreads,
+    workingThreads,
+    snoozedThreads,
+    settledThreads,
+  } = partition;
   // Older settled threads load in pages; the shelf lists them only as far as they are loaded.
   const olderSettledShelf = useOlderSettledShelf({
     scopes: olderSettledScopes([...serverConfigs.keys()], scopedProjectKeys),
@@ -478,7 +506,12 @@ function useSidebarThreads(input: {
   const visibleWorkingThreads = workingShelfExpanded
     ? workingThreads
     : routeThreadOnly(workingThreads, routeRowThreadKey);
+  const visibleCrewThreads = crewShelfExpanded
+    ? crewThreads
+    : routeThreadOnly(crewThreads, routeRowThreadKey);
   const orderedThreads = [
+    ...coordinatorThreads,
+    ...visibleCrewThreads,
     ...pinnedThreads,
     ...activeThreads,
     ...visibleWorkingThreads,
@@ -487,6 +520,8 @@ function useSidebarThreads(input: {
   ];
   const sectionByThreadKey = new Map<string, SidebarSection>();
   for (const [list, section] of [
+    [coordinatorThreads, "crew"],
+    [crewThreads, "crew"],
     [pinnedThreads, "pinned"],
     [activeThreads, "active"],
     [workingThreads, "working"],
@@ -500,6 +535,8 @@ function useSidebarThreads(input: {
     threads,
     workingShelfEnabled,
     searchableThreads: [
+      ...coordinatorThreads,
+      ...crewThreads,
       ...pinnedThreads,
       ...activeThreads,
       ...workingThreads,
@@ -521,6 +558,9 @@ function useSidebarThreads(input: {
     toggleSnoozedShelf: () => setSnoozedShelfExpanded((value) => !value),
     workingShelfExpanded,
     toggleWorkingShelf: () => setWorkingShelfExpanded((value) => !value),
+    crewShelfExpanded,
+    toggleCrewShelf: () => setCrewShelfExpanded((value) => !value),
+    visibleCrewThreads,
     renderedSettledThreads,
     visibleSnoozedThreads,
     visibleWorkingThreads,
@@ -540,6 +580,9 @@ function useSidebarThreads(input: {
   };
 }
 
+const newestFirst = (left: EnvironmentThreadShell, right: EnvironmentThreadShell) =>
+  right.createdAt.localeCompare(left.createdAt);
+
 function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
   const {
     threads,
@@ -548,6 +591,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
     serverConfigs,
     optimisticDrop,
     workingShelfEnabled,
+    coordinatorGroup,
   } = input;
   const preciseNow = new Date().toISOString();
   const visible = filterSidebarV2VisibleThreads(threads, scopedProjectKeys, delegatedUnderParent);
@@ -562,6 +606,12 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
       : active;
   const snoozed: EnvironmentThreadShell[] = [];
   const settled: EnvironmentThreadShell[] = [];
+  const coordinators: EnvironmentThreadShell[] = [];
+  const crew: EnvironmentThreadShell[] = [];
+  const crewList = (thread: EnvironmentThreadShell, section: SidebarSection) => {
+    const slot = coordinatorGroupSlot(coordinatorGroup, thread, section);
+    return slot === "coordinator" ? coordinators : slot === "crew" ? crew : null;
+  };
   const draggable = new Set<string>();
   const activeReorderable = new Set<string>();
   for (const thread of visible) {
@@ -582,7 +632,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
         ? pinned
         : optimisticDrop.section === "settled"
           ? settled
-          : inbox(projected, true)
+          : (crewList(thread, optimisticDrop.section) ?? inbox(projected, true))
       ).push(
         optimisticDrop.clearsSnooze
           ? projected
@@ -594,13 +644,15 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
         settled: configLoaded && thread.settledOverride === "settled",
         pinned: thread.pinnedAt != null,
       });
-      (section === "snoozed"
-        ? snoozed
-        : section === "settled"
-          ? settled
-          : section === "pinned"
-            ? pinned
-            : inbox(thread)
+      (
+        crewList(thread, section) ??
+        (section === "snoozed"
+          ? snoozed
+          : section === "settled"
+            ? settled
+            : section === "pinned"
+              ? pinned
+              : inbox(thread))
       ).push(thread);
     }
   }
@@ -610,6 +662,8 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
     ? sortInboxThreadsByReturn(active, inboxObservation.returnedAt)
     : sortThreadsForSidebar(active);
   return {
+    coordinatorThreads: coordinators.toSorted(newestFirst),
+    crewThreads: crew.toSorted(newestFirst),
     pinnedThreads:
       optimisticDrop?.section !== "pinned" || optimisticDrop.order === null
         ? sortedPinned
@@ -1148,6 +1202,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
 
   const {
     workingShelfEnabled,
+    coordinatorThreads,
+    crewThreads,
+    crewShelfExpanded,
+    toggleCrewShelf,
+    visibleCrewThreads,
     pinnedThreads,
     draggableThreadKeys,
     activeReorderableThreadKeys,
@@ -1188,6 +1247,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     threads,
     delegatedUnderParent,
     routeRowThreadKey,
+    projects,
   });
 
   // Ranked across environments as the palette ranks them, so one
@@ -1553,7 +1613,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     };
   };
 
-  const isContextDrag = dragState?.contextDrag === true || dragState?.activeSection === "working";
+  const isContextDrag =
+    dragState?.contextDrag === true ||
+    dragState?.activeSection === "working" ||
+    dragState?.activeSection === "crew";
   const dragTargetSection = isContextDrag ? null : (dragState?.targetSection ?? null);
   const finishThreadDrag = (started: boolean) => {
     dragSensorRef.current = null;
@@ -1758,7 +1821,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         return { kind: "thread", key, section };
       });
     if (
-      pinnedThreads.length +
+      coordinatorThreads.length +
+        crewThreads.length +
+        pinnedThreads.length +
         activeThreads.length +
         workingThreads.length +
         snoozedThreads.length +
@@ -1767,7 +1832,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     ) {
       return [];
     }
-    const items: SidebarListItem[] = [{ kind: "marker", marker: "pinned-header" }];
+    const items: SidebarListItem[] = rowsOf(coordinatorThreads, "crew");
+    if (crewThreads.length > 0) {
+      items.push({ kind: "marker", marker: "crew-header" });
+      items.push(...rowsOf(visibleCrewThreads, "crew"));
+    }
+    items.push({ kind: "marker", marker: "pinned-header" });
     const pinnedRows = rowsOf(pinnedThreads, "pinned");
     items.push(...pinnedRows);
     items.push({ kind: "marker", marker: "pinned-divider" });
@@ -3063,7 +3133,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           scopeThreadRef(thread.environmentId, thread.id),
                         );
                         const isCard =
-                          section === "active" || section === "pinned" || section === "working";
+                          section === "crew" ||
+                          section === "active" ||
+                          section === "pinned" ||
+                          section === "working";
                         const rowVariant = isCard ? "card" : "slim";
                         return (
                           <SortableThreadRow
@@ -3080,7 +3153,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             navigationParent={
                               section === "working" ||
                               section === "snoozed" ||
-                              section === "settled"
+                              section === "settled" ||
+                              (section === "crew" && !coordinatorThreads.includes(thread))
                                 ? `shelf:${section}`
                                 : undefined
                             }
@@ -3183,6 +3257,17 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           continue;
                         }
                         switch (item.marker) {
+                          case "crew-header":
+                            items.push(
+                              <SidebarSectionHeader
+                                key="crew-shelf-header"
+                                marker="crew-header"
+                                label="Crewmates"
+                                count={crewThreads.length}
+                                toggle={{ expanded: crewShelfExpanded, onToggle: toggleCrewShelf }}
+                              />,
+                            );
+                            break;
                           case "pinned-header":
                             items.push(
                               <SidebarDragBoundary
