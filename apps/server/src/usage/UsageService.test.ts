@@ -2541,7 +2541,7 @@ describe("UsageService", () => {
         );
         await NodeFSP.mkdir(archivedUserdata, { recursive: true });
         // The remote server saved record 2 too, and record 9 from a transcript it no longer has.
-        const saved = encodeScanCache(
+        const saved = makeScanCacheWriter()(
           new Map([
             [
               "/home/remote/.claude/projects/proj/gone.jsonl",
@@ -2556,11 +2556,9 @@ describe("UsageService", () => {
               },
             ],
           ]),
+          {},
         );
-        await NodeFSP.writeFile(
-          NodePath.join(archivedUserdata, SCAN_CACHE_FILE_NAME),
-          JSON.stringify(saved),
-        );
+        await NodeFSP.writeFile(NodePath.join(archivedUserdata, SCAN_CACHE_FILE_NAME), saved);
       });
       const service = yield* UsageService.make.pipe(
         Effect.provide(
