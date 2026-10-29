@@ -55,7 +55,7 @@ function IndexDraftLanding() {
   const launchCoordinator = resolveLaunchCoordinator(resolveAppCoordinatorGroup(threads, projects));
   const attempt = startState.retryRequest;
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens a live coordinator on launch, else starts a draft in the most recent project, while still on the index
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens a coordinator on launch, else starts a draft in the most recent project, while still on the index
   useEffect(() => {
     // Starting a draft after the user has left would replace the page they picked.
     if (mostRecentProject === null || startedAttemptRef.current === attempt || !isStillOnIndex()) {
