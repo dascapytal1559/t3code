@@ -1699,7 +1699,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         return (
           thread !== undefined &&
           sectionByThreadKeyRef.current.get(key) === originSection &&
-          serverConfigs.has(thread.environmentId)
+          serverConfigs.has(thread.environmentId) &&
+          // A coordinator card offers no Settle, so a sweep from its crew passes over it.
+          !coordinatorThreads.includes(thread)
         );
       };
       let targetKey: string | null = null;
@@ -3140,6 +3142,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           section === "pinned" ||
                           section === "working";
                         const rowVariant = isCard ? "card" : "slim";
+                        const isCoordinator =
+                          section === "crew" && coordinatorThreads.includes(thread);
                         return (
                           <SortableThreadRow
                             key={threadKey}
@@ -3153,8 +3157,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             thread={thread}
                             variant={rowVariant}
                             hideTitle={section === "crew" && thread === soleCoordinatorThread}
+                            coordinator={isCoordinator}
                             crewTree={
-                              section !== "crew" || coordinatorThreads.includes(thread)
+                              section !== "crew" || isCoordinator
                                 ? undefined
                                 : !crewShelfExpanded
                                   ? "indent"
@@ -3167,7 +3172,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               section === "working" ||
                               section === "snoozed" ||
                               section === "settled" ||
-                              (section === "crew" && !coordinatorThreads.includes(thread))
+                              (section === "crew" && !isCoordinator)
                                 ? `shelf:${section}`
                                 : undefined
                             }

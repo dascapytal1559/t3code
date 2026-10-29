@@ -9,7 +9,11 @@ import {
   sidebarMarkerId,
   type SidebarListMarker,
 } from "../Sidebar.logic";
-import { CREW_TREE_LINE_CLASS_NAME } from "./SidebarCrewTree";
+import {
+  CREW_TREE_GUTTER_WIDTH_CLASS_NAME,
+  CREW_TREE_LINE_CLASS_NAME,
+  CREW_TREE_LINE_START_CLASS_NAME,
+} from "./SidebarCrewTree";
 import { SIDEBAR_SORTABLE_DRAG_DISABLED } from "./SidebarThreadRow";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 
@@ -128,19 +132,28 @@ export function SidebarCrewToggle(props: {
         onClick={props.onToggle}
         className={
           props.expanded
-            ? // Bridges the card's bottom padding and the list gap above the first crewmate row.
-              "absolute -top-[3px] start-0 h-6 w-4 cursor-pointer outline-none"
-            : "flex h-6 cursor-pointer items-center gap-1 rounded-md pe-1.5 text-xs tabular-nums text-sidebar-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+            ? cn(
+                "absolute -top-[3px] start-0 h-6 cursor-pointer outline-none",
+                CREW_TREE_GUTTER_WIDTH_CLASS_NAME,
+              )
+            : "flex h-6 cursor-pointer items-center gap-1 rounded-md ps-(--sidebar-row-content-inset) pe-1.5 text-xs tabular-nums text-sidebar-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
         }
       >
         {props.expanded ? (
+          // Drops from just under the coordinator's icon, through the card's bottom padding and
+          // the list gap, to the first crewmate row.
           <span
             aria-hidden
-            className={cn(CREW_TREE_LINE_CLASS_NAME, "start-[7px] top-0 h-[3px] w-px")}
+            className={cn(
+              CREW_TREE_LINE_CLASS_NAME,
+              CREW_TREE_LINE_START_CLASS_NAME,
+              "-top-2 h-[11px] w-px",
+            )}
           />
         ) : (
           <>
-            <ChevronRightIcon aria-hidden className="size-3.5 shrink-0" />
+            {/* Centred on the guide line, like the coordinator's icon. */}
+            <ChevronRightIcon aria-hidden className="mx-px size-3.5 shrink-0" />
             {props.count}
           </>
         )}

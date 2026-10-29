@@ -102,7 +102,7 @@ import {
 import { pickSnoozePreset, resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
 import { useThreadShell } from "../../state/entities";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
-import { CrewTreeGutter, type CrewTreePlace } from "./SidebarCrewTree";
+import { CREW_TREE_INDENT_CLASS_NAME, CrewTreeGutter, type CrewTreePlace } from "./SidebarCrewTree";
 import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
@@ -224,6 +224,33 @@ function SidebarProviderStack(props: {
       })}
       <span className="relative z-10 inline-flex items-center">{current}</span>
     </span>
+  );
+}
+
+/** A coordinator card leads with its provider's mark where other cards show their project. */
+function SidebarCoordinatorIcon(props: {
+  thread: SidebarThreadSummary;
+  project: ProjectFaviconProject | null;
+  providerEntryByInstanceId: ReadonlyMap<string, SidebarProviderEntry>;
+}) {
+  const stack = resolveThreadProviderStack(props.thread);
+  const entry = props.providerEntryByInstanceId.get(stack[stack.length - 1]!);
+  if (entry === undefined) {
+    return props.project ? (
+      <ProjectFavicon project={props.project} className="size-4 shrink-0" />
+    ) : null;
+  }
+  return (
+    <ProviderInstanceIcon
+      driverKind={entry.driverKind}
+      displayName={entry.displayName}
+      accentColor={entry.accentColor}
+      acpRegistryAgentId={entry.acpRegistryAgentId}
+      acpRegistryIconUrl={entry.acpRegistryIconUrl}
+      showBadge={shouldShowInstanceBadge(entry, props.providerEntryByInstanceId.values())}
+      size="compact"
+      iconClassName="size-4"
+    />
   );
 }
 
@@ -521,6 +548,8 @@ type SidebarThreadRowProps = {
   variant: "card" | "slim";
   // A card that needs no title, such as the only coordinator, keeps every other line.
   hideTitle?: boolean | undefined;
+  // The FirstMate main session: led by its provider's mark, with no hover snooze or settle.
+  coordinator?: boolean | undefined;
   crewTree?: CrewTreePlace | undefined;
   onCrewTreeToggle?: (() => void) | undefined;
   navigationParent?: string | undefined;
@@ -914,7 +943,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     setSnoozeGateClock({ thread, now: new Date(snoozeGateOpensAt).toISOString() });
   }
   const showSnoozeButton =
-    canOperateThread && props.snoozeSupported && canSnooze(thread, { now: snoozeGateNow });
+    props.coordinator !== true &&
+    canOperateThread &&
+    props.snoozeSupported &&
+    canSnooze(thread, { now: snoozeGateNow });
+  const showSettleButton = props.coordinator !== true && props.settlementSupported;
+  const hasHoverControls = showSettleButton || showSnoozeButton || hasUnsentDraft;
   // Closing here, not just masking, keeps the menu from reopening when the button returns.
   if (snoozeMenuOpenRaw && !showSnoozeButton) setSnoozeMenuOpen(false);
   const snoozeMenuOpen = snoozeMenuOpenRaw && showSnoozeButton;
@@ -1289,7 +1323,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       className={cn(
         "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_78px]",
         (metaLineEmpty || titleHidden) && "[contain-intrinsic-size:auto_58px]",
-        props.crewTree !== undefined && "relative ps-4",
+        props.crewTree !== undefined && cn("relative", CREW_TREE_INDENT_CLASS_NAME),
         // Joins this row's guide line to the next one's across the list gap.
         props.crewTree === "branch" && "-mb-px",
         sortable?.isDragging && "relative z-20",
@@ -1329,8 +1363,16 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             )}
           >
             <div className="flex h-5 min-w-0 items-center gap-1.5">
+              {/* First, so the crew tree's guide line stays under it. */}
+              {props.coordinator ? (
+                <SidebarCoordinatorIcon
+                  thread={thread}
+                  project={props.project}
+                  providerEntryByInstanceId={props.providerEntryByInstanceId}
+                />
+              ) : null}
               {draftIndicator}
-              {props.project ? (
+              {props.project && !props.coordinator ? (
                 <ProjectFavicon project={props.project} className="size-4 shrink-0" />
               ) : null}
               {/* Left of the status slot, the pin would slide when hover swaps the
@@ -1358,7 +1400,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     className={cn(
                       isWokeStatus
                         ? "pointer-events-auto"
-                        : "pointer-events-none group-has-[:focus-visible]/sidebar-status-slot:absolute group-has-[:focus-visible]/sidebar-status-slot:right-0 group-has-[:focus-visible]/sidebar-status-slot:opacity-0 group-any-hover/sidebar-row:absolute group-any-hover/sidebar-row:right-0 group-any-hover/sidebar-row:opacity-0",
+                        : !hasHoverControls
+                          ? "pointer-events-none"
+                          : "pointer-events-none group-has-[:focus-visible]/sidebar-status-slot:absolute group-has-[:focus-visible]/sidebar-status-slot:right-0 group-has-[:focus-visible]/sidebar-status-slot:opacity-0 group-any-hover/sidebar-row:absolute group-any-hover/sidebar-row:right-0 group-any-hover/sidebar-row:opacity-0",
                       "flex items-center self-center justify-self-end tabular-nums text-secondary-label",
                       snoozeMenuOpen && "pointer-events-none absolute right-0 opacity-0",
                     )}
@@ -1425,7 +1469,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       <RelativeTimeLabel timestamp={threadTimeTimestamp(thread)} />
                     )}
                   </span>
-                  {props.settlementSupported || showSnoozeButton || hasUnsentDraft ? (
+                  {hasHoverControls ? (
                     <span
                       className={cn(
                         // Mouse clicks leave Settle focused; focus-within would pin controls over
@@ -1460,7 +1504,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           environmentId={thread.environmentId}
                         />
                       ) : null}
-                      {props.settlementSupported ? (
+                      {showSettleButton ? (
                         <Tooltip>
                           <TooltipTrigger
                             render={
@@ -1485,7 +1529,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               )}
               {props.sweepAction !== null ? dragDestination : null}
             </div>
-            {titleHidden && !metaLineEmpty ? null : (
+            {titleHidden && (props.coordinator || !metaLineEmpty) ? null : (
               <div className="mt-1 flex min-w-0 items-center gap-1.5">
                 {titleHidden ? <span className="flex-1" /> : title}
                 {isRegeneratingTitle ? (
@@ -1493,7 +1537,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     Regenerating title
                   </span>
                 ) : null}
-                {metaLineEmpty ? (
+                {metaLineEmpty && !props.coordinator ? (
                   <span aria-hidden className="inline-flex shrink-0">
                     <SidebarProviderStack
                       thread={thread}
@@ -1549,10 +1593,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       />
                     </span>
                   ) : null}
-                  <SidebarProviderStack
-                    thread={thread}
-                    providerEntryByInstanceId={props.providerEntryByInstanceId}
-                  />
+                  {props.coordinator ? null : (
+                    <SidebarProviderStack
+                      thread={thread}
+                      providerEntryByInstanceId={props.providerEntryByInstanceId}
+                    />
+                  )}
                 </span>
               </div>
             )}
