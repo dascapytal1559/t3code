@@ -303,6 +303,11 @@ export function resolveSidebarDropVerb(
   return "wake";
 }
 
+// Crew cards keep their context menu but offer no hover Snooze or Settle.
+export function sidebarSectionHasHoverActions(section: SidebarSection): boolean {
+  return section !== "crew";
+}
+
 export function resolveSidebarSweepKeys(
   orderedKeys: readonly string[],
   originKey: string,

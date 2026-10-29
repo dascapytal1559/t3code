@@ -548,8 +548,10 @@ type SidebarThreadRowProps = {
   variant: "card" | "slim";
   // A card that needs no title, such as the only coordinator, keeps every other line.
   hideTitle?: boolean | undefined;
-  // The FirstMate main session: led by its provider's mark, with no hover snooze or settle.
+  // The FirstMate main session: led by its provider's mark.
   coordinator?: boolean | undefined;
+  // Hides hover Snooze and Settle; the context menu still offers both.
+  hideHoverActions?: boolean | undefined;
   crewTree?: CrewTreePlace | undefined;
   onCrewTreeToggle?: (() => void) | undefined;
   navigationParent?: string | undefined;
@@ -943,11 +945,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     setSnoozeGateClock({ thread, now: new Date(snoozeGateOpensAt).toISOString() });
   }
   const showSnoozeButton =
-    props.coordinator !== true &&
+    props.hideHoverActions !== true &&
     canOperateThread &&
     props.snoozeSupported &&
     canSnooze(thread, { now: snoozeGateNow });
-  const showSettleButton = props.coordinator !== true && props.settlementSupported;
+  const showSettleButton = props.hideHoverActions !== true && props.settlementSupported;
   const hasHoverControls = showSettleButton || showSnoozeButton || hasUnsentDraft;
   // Closing here, not just masking, keeps the menu from reopening when the button returns.
   if (snoozeMenuOpenRaw && !showSnoozeButton) setSnoozeMenuOpen(false);

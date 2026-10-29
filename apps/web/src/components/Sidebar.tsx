@@ -183,6 +183,7 @@ import {
   resolveSidebarSweepKeys,
   resolveSidebarDropTarget,
   resolveSidebarDropVerb,
+  sidebarSectionHasHoverActions,
   resolveSidebarThreadSection,
   searchSidebarThreads,
   shouldCreateNewThreadInCurrentProject,
@@ -1699,9 +1700,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         return (
           thread !== undefined &&
           sectionByThreadKeyRef.current.get(key) === originSection &&
-          serverConfigs.has(thread.environmentId) &&
-          // A coordinator card offers no Settle, so a sweep from its crew passes over it.
-          !coordinatorThreads.includes(thread)
+          serverConfigs.has(thread.environmentId)
         );
       };
       let targetKey: string | null = null;
@@ -3158,6 +3157,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             variant={rowVariant}
                             hideTitle={section === "crew" && thread === soleCoordinatorThread}
                             coordinator={isCoordinator}
+                            hideHoverActions={!sidebarSectionHasHoverActions(section)}
                             crewTree={
                               section !== "crew" || isCoordinator
                                 ? undefined

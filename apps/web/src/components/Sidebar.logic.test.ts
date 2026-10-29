@@ -15,6 +15,7 @@ import {
   pinOrderKeyBetween,
   resolveProjectStatusIndicator,
   resolveSidebarSweepKeys,
+  sidebarSectionHasHoverActions,
   resolveSidebarThreadStatus,
   resolveThreadStatusPill,
   resolveWorkingStartedAt,
@@ -1180,6 +1181,13 @@ describe("Working shelf (beta)", () => {
           activeKeysById: new Map(),
         }),
       ).toEqual({ kind: "none" });
+    });
+
+    it("leaves hover Snooze and Settle off crew cards only", () => {
+      expect(sidebarSectionHasHoverActions("crew")).toBe(false);
+      for (const section of ["pinned", "active", "working", "snoozed", "settled"] as const) {
+        expect(sidebarSectionHasHoverActions(section)).toBe(true);
+      }
     });
 
     it.each([
