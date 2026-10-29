@@ -81,6 +81,19 @@ Threads → Agent memory. Firstmate's environment sets it to Never. When a sync
 finds the PR merged, or an upstream equivalent, drop this copy and keep
 upstream's.
 
+## Upstream release indicator
+
+The fork has no update feed, so it never hears about upstream releases. When
+`pingdotgg/t3code` publishes a stable release newer than this build, the
+sidebar update icon shows "T3 Code vX.Y.Z is out", with links to the release
+notes on GitHub and a Dismiss that holds until the next newer release. Nothing
+downloads or installs; the captain asks FirstMate to sync the fork. It checks
+at start-up and every 6 hours, keeps the last result when GitHub is
+unreachable, and stays off whenever an update feed is configured or the
+desktop updater is running. Code: `apps/web/src/state/upstreamRelease.ts` and
+`apps/web/src/components/sidebar/SidebarUpstreamRelease.tsx`; a later "Ask
+FirstMate to update" button belongs in that popover.
+
 ## Version
 
 The fork keeps upstream's version number. The desktop app sets up an SSH or

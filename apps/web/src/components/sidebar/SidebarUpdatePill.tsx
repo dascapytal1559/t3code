@@ -8,6 +8,7 @@ import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { cn } from "../../lib/utils";
 import { ensureLocalApi } from "../../localApi";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
+import { useUpstreamReleaseNotice } from "../../state/upstreamRelease";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
   canCheckForUpdate,
@@ -35,6 +36,7 @@ import {
 } from "./DesktopUpdateStatusIcon";
 import { SidebarUpdateReleaseNotes } from "./SidebarUpdateReleaseNotes";
 import { SidebarUpdateCapsule } from "./SidebarUpdateCapsule";
+import { SidebarUpstreamRelease } from "./SidebarUpstreamRelease";
 import { UpdateEverythingDialog } from "./UpdateEverythingDialog";
 import type { UpdateEverythingRun, UpdateRunLocalState } from "./updateEverything.logic";
 import {
@@ -222,6 +224,7 @@ function SidebarUpdateControl() {
   const localUpdateVersion =
     state && action !== "none" ? getDesktopUpdateDownloadedVersion(state) : null;
   const everything = useUpdateEverything(localUpdateVersion);
+  const upstreamRelease = useUpstreamReleaseNotice(state);
   const runsEverything = everything.hasUpdates && !isDownloading;
   const run = useUpdateEverythingRun();
   const isRunningEverything = run !== null;
@@ -437,6 +440,10 @@ function SidebarUpdateControl() {
         {confirmDialog}
       </SidebarMenuItem>
     );
+  }
+
+  if (upstreamRelease && !showUpdateDetails && !showCheckIcon) {
+    return <SidebarUpstreamRelease notice={upstreamRelease} />;
   }
 
   const updateButton = (
