@@ -7,6 +7,7 @@ import {
   resolveAppCoordinatorGroup,
   resolveCoordinatorGroup,
   resolveLaunchCoordinator,
+  soleCoordinator,
 } from "./coordinatorGroup.logic";
 
 const environmentId = EnvironmentId.make("environment-local");
@@ -268,5 +269,25 @@ describe("resolveLaunchCoordinator", () => {
     });
     const group = resolveCoordinatorGroup([quiet, recent, finished], (subject) => subject.id);
     expect(resolveLaunchCoordinator(group)).toBe(recent);
+  });
+});
+
+describe("soleCoordinator", () => {
+  it("names the only FirstMate main session, whose card drops its title", () => {
+    const main = thread("Captain's session", { viaMcp: false });
+    const crewmate = thread("fm-docs-fix", { worktreePath: "/pool/1/firstmate" });
+    expect(soleCoordinator(resolveAppCoordinatorGroup([main, crewmate], [home]))).toBe(main);
+  });
+
+  it("names none of several coordinators, so their titles tell them apart", () => {
+    const first = thread("first");
+    const second = thread("second");
+    const group = resolveCoordinatorGroup([first, second], (subject) => subject.id);
+    expect(soleCoordinator(group)).toBeNull();
+  });
+
+  it("names none without FirstMate", () => {
+    const userThread = thread("Refactor login", { projectId: appId, viaMcp: false });
+    expect(soleCoordinator(resolveAppCoordinatorGroup([userThread], [app]))).toBeNull();
   });
 });

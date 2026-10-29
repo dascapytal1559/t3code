@@ -239,6 +239,7 @@ import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrom
 import {
   coordinatorGroupSlot,
   resolveAppCoordinatorGroup,
+  soleCoordinator,
   type CoordinatorGroup,
 } from "./sidebar/coordinatorGroup.logic";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
@@ -449,6 +450,7 @@ function useSidebarThreads(input: {
   const settledVisibleCount =
     settledTail.scopeKey === projectScopeKey ? settledTail.count : SETTLED_TAIL_INITIAL_COUNT;
 
+  const coordinatorGroup = resolveAppCoordinatorGroup(threads, projects);
   const partition = partitionSidebarThreads({
     threads,
     scopedProjectKeys,
@@ -456,7 +458,7 @@ function useSidebarThreads(input: {
     serverConfigs,
     optimisticDrop,
     workingShelfEnabled,
-    coordinatorGroup: resolveAppCoordinatorGroup(threads, projects),
+    coordinatorGroup,
     clockKey: `${nowMinute}:${snoozeWakeClock}:${inboxReturnsVersion}`,
   });
 
@@ -529,6 +531,7 @@ function useSidebarThreads(input: {
     ...partition,
     threads,
     workingShelfEnabled,
+    soleCoordinator: soleCoordinator(coordinatorGroup),
     searchableThreads: [
       ...coordinatorThreads,
       ...crewThreads,
@@ -1198,6 +1201,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const {
     workingShelfEnabled,
     coordinatorThreads,
+    soleCoordinator: soleCoordinatorThread,
     crewThreads,
     crewShelfExpanded,
     toggleCrewShelf,
@@ -3145,6 +3149,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             }
                             thread={thread}
                             variant={rowVariant}
+                            hideTitle={section === "crew" && thread === soleCoordinatorThread}
                             navigationParent={
                               section === "working" ||
                               section === "snoozed" ||

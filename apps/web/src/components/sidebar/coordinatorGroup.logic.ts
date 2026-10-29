@@ -48,6 +48,13 @@ export function resolveCoordinatorGroup<T extends GroupThread>(
   return { coordinators, crew };
 }
 
+/** The only coordinator, if there is one; its card needs no title to tell it apart. */
+export function soleCoordinator<T>(group: CoordinatorGroup<T>): T | null {
+  if (group.coordinators.size !== 1) return null;
+  const [only] = group.coordinators;
+  return only ?? null;
+}
+
 /**
  * Where a thread the sidebar would otherwise list in `section` goes instead, if anywhere. It runs
  * before the Working split, so neither ever reaches Working. Snoozing or settling is the way out
