@@ -2509,7 +2509,7 @@ describe("UsageService", () => {
     }).pipe(Effect.scoped, Effect.provide(TestClock.layer())),
   );
 
-  it.live("adds archived usage, labelled by host and instance, without counting copies twice", () =>
+  it.live("adds archived usage, under the archive host, without counting copies twice", () =>
     Effect.gen(function* () {
       const { transcript, settings, home } = yield* setup;
       const archiveRoot = NodePath.join(home, "usage-archive");
@@ -2572,16 +2572,17 @@ describe("UsageService", () => {
 
       const summary = yield* service.readSummary(WINDOW);
       assert.strictEqual(totalOutputTokens(summary), 5 + 7 + 11);
-      const archived = summary.sources.filter((source) => source.archive !== undefined);
+      const archived = summary.sources.filter((source) => source.fingerprint.hostId === "remote-a");
       assert.deepStrictEqual(
-        archived.map((source) => [source.fingerprint.hostId, source.archive]),
+        archived.map((source) => source.fingerprint.resolvedHomePath.split(NodePath.sep).slice(-3)),
         [
-          ["remote-a", { host: "remote-a", instance: ".claude" }],
-          ["remote-a", { host: "remote-a", instance: ".t3/userdata" }],
+          ["remote-a", ".claude", "projects"],
+          ["remote-a", ".t3", "userdata"],
         ],
       );
       const live = summary.sources.find(
-        (source) => source.fingerprint.provider === "claude" && source.archive === undefined,
+        (source) =>
+          source.fingerprint.provider === "claude" && source.fingerprint.hostId !== "remote-a",
       );
       const liveBuckets = summary.buckets.filter(
         (bucket) => bucket.sourcePath === live?.fingerprint.resolvedHomePath,
