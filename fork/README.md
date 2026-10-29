@@ -116,6 +116,16 @@ selector in `lib/editableFocus.ts`, the Excalidraw font asset path in
 served from the app because the desktop CSP blocks the CDN Excalidraw would
 otherwise use. The mobile app has no board.
 
+## Usage statistics carry no account ids
+
+Product analytics still go to T3, but nothing sent derives from an account.
+`distinct_id` is the hashed per-install anonymous id, not the Codex workspace
+or Claude machine id (`apps/server/src/telemetry/Identify.ts`). The
+`install.owner_observed` event is gone: the server no longer reads the linked
+T3 Connect account or provider logins for it, and clients no longer send the
+`clientOwner` and `clientDevice` connection parameters. When syncing, drop any
+upstream code that reintroduces account-derived analytics ids.
+
 ## Version
 
 The fork keeps upstream's version number. The desktop app sets up an SSH or
