@@ -102,6 +102,7 @@ import {
 import { pickSnoozePreset, resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
 import { useThreadShell } from "../../state/entities";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
+import { CrewTreeGutter, type CrewTreePlace } from "./SidebarCrewTree";
 import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
@@ -520,6 +521,8 @@ type SidebarThreadRowProps = {
   variant: "card" | "slim";
   // A card that needs no title, such as the only coordinator, keeps every other line.
   hideTitle?: boolean | undefined;
+  crewTree?: CrewTreePlace | undefined;
+  onCrewTreeToggle?: (() => void) | undefined;
   navigationParent?: string | undefined;
   variantAction: SidebarSweepAction;
   settlementSupported: boolean;
@@ -1286,9 +1289,17 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       className={cn(
         "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_78px]",
         (metaLineEmpty || titleHidden) && "[contain-intrinsic-size:auto_58px]",
+        props.crewTree !== undefined && "relative ps-4",
+        // Joins this row's guide line to the next one's across the list gap.
+        props.crewTree === "branch" && "-mb-px",
         sortable?.isDragging && "relative z-20",
       )}
     >
+      {props.crewTree !== undefined &&
+      props.crewTree !== "indent" &&
+      props.onCrewTreeToggle !== undefined ? (
+        <CrewTreeGutter last={props.crewTree === "last"} onToggle={props.onCrewTreeToggle} />
+      ) : null}
       <Tooltip disabled={snoozeMenuOpen || sortable?.isDragging}>
         <TooltipTrigger
           render={

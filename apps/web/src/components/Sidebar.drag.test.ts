@@ -299,14 +299,14 @@ describe("sidebar drag projection", () => {
   it("keeps the crew rows above Pinned in place while an inbox row moves", () => {
     const result = preview(
       {
-        items: [thread("lead", "crew"), marker("crew-header"), thread("c1", "crew"), ...pinned],
+        items: [thread("lead", "crew"), marker("crew-toggle"), thread("c1", "crew"), ...pinned],
         settledOrder: [],
         settledExpanded: true,
       },
       "a1",
       "p1",
     );
-    for (const key of ["lead", sidebarMarkerId("crew-header"), "c1"]) {
+    for (const key of ["lead", sidebarMarkerId("crew-toggle"), "c1"]) {
       expect(result.get(key)).toEqual(stationary);
     }
     expect(result.get("p1")).toEqual({ ...stationary, y: 83 });

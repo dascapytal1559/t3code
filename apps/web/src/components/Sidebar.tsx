@@ -254,6 +254,7 @@ import {
 } from "./sidebar/SidebarThreadRow";
 import { SidebarDraftBlock } from "./sidebar/SidebarDraftBlock";
 import {
+  SidebarCrewToggle,
   SidebarDragBoundary,
   SidebarSectionHeader,
   SidebarSectionPlaceholder,
@@ -1248,6 +1249,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     routeRowThreadKey,
     projects,
   });
+  const toggleCrewTree = useStableCallback(toggleCrewShelf);
+  const lastCrewThread = visibleCrewThreads.at(-1);
 
   // Ranked across environments as the palette ranks them, so one
   // environment's list does not sit above another's better matches; rows
@@ -1833,7 +1836,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     }
     const items: SidebarListItem[] = rowsOf(coordinatorThreads, "crew");
     if (crewThreads.length > 0) {
-      items.push({ kind: "marker", marker: "crew-header" });
+      items.push({ kind: "marker", marker: "crew-toggle" });
       items.push(...rowsOf(visibleCrewThreads, "crew"));
     }
     items.push({ kind: "marker", marker: "pinned-header" });
@@ -3150,6 +3153,16 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             thread={thread}
                             variant={rowVariant}
                             hideTitle={section === "crew" && thread === soleCoordinatorThread}
+                            crewTree={
+                              section !== "crew" || coordinatorThreads.includes(thread)
+                                ? undefined
+                                : !crewShelfExpanded
+                                  ? "indent"
+                                  : thread === lastCrewThread
+                                    ? "last"
+                                    : "branch"
+                            }
+                            onCrewTreeToggle={toggleCrewTree}
                             navigationParent={
                               section === "working" ||
                               section === "snoozed" ||
@@ -3257,14 +3270,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           continue;
                         }
                         switch (item.marker) {
-                          case "crew-header":
+                          case "crew-toggle":
                             items.push(
-                              <SidebarSectionHeader
-                                key="crew-shelf-header"
-                                marker="crew-header"
-                                label="Crewmates"
+                              <SidebarCrewToggle
+                                key="crew-toggle"
                                 count={crewThreads.length}
-                                toggle={{ expanded: crewShelfExpanded, onToggle: toggleCrewShelf }}
+                                expanded={crewShelfExpanded}
+                                onToggle={toggleCrewTree}
                               />,
                             );
                             break;
