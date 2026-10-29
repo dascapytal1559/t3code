@@ -380,10 +380,21 @@ export default defineConfig(() => {
       rolldownOptions: {
         output: {
           // PDF.js resolves decoder modules and ICC data relative to wasmUrl.
-          assetFileNames: (asset) =>
-            asset.originalFileNames.some((path) => /[/\\]pdfjs-dist[/\\]wasm[/\\]/.test(path))
-              ? `assets/pdfjs-${pdfjsPkg.version}/[name][extname]`
-              : "assets/[name]-[hash][extname]",
+          // Excalidraw resolves canvas fonts as fonts/<Family>/<file> under one base path.
+          assetFileNames: (asset) => {
+            if (asset.originalFileNames.some((path) => /[/\\]pdfjs-dist[/\\]wasm[/\\]/.test(path)))
+              return `assets/pdfjs-${pdfjsPkg.version}/[name][extname]`;
+            const excalidrawFont = asset.originalFileNames
+              .map((path) =>
+                /[/\\]@excalidraw[/\\]excalidraw[/\\]dist[/\\]prod[/\\]fonts[/\\]([^/\\]+)[/\\]/.exec(
+                  path,
+                ),
+              )
+              .find((match) => match !== null);
+            return excalidrawFont
+              ? `assets/excalidraw-${pkg.dependencies["@excalidraw/excalidraw"]}/fonts/${excalidrawFont[1]}/[name][extname]`
+              : "assets/[name]-[hash][extname]";
+          },
         },
       },
     },

@@ -94,6 +94,21 @@ desktop updater is running. Code: `apps/web/src/state/upstreamRelease.ts` and
 `apps/web/src/components/sidebar/SidebarUpstreamRelease.tsx`; a later "Ask
 FirstMate to update" button belongs in that popover.
 
+## Board
+
+A quick annotation canvas at `/board`, opened from the sidebar footer (pencil and
+ruler icon) or "Open board" in the command palette. It is Excalidraw (MIT), loaded
+only with that route. Screenshots pasted with Cmd+V land in the middle of the view.
+The board is saved in the client's IndexedDB, one board per client. "Attach to
+chat" sends the selection, or the whole board, as a PNG to the composer of the last
+thread or draft on screen. Code: `apps/web/src/components/board/`.
+
+Shared files it touches, for syncs: the route file, the sidebar utility menu and
+`isSidebarUtilityPage`, a command palette item, one tracking call in `appInit.tsx`,
+the Excalidraw font asset path in `apps/web/vite.config.ts`, and licence notices.
+Excalidraw's canvas fonts are served from the app because the desktop CSP blocks
+the CDN Excalidraw would otherwise use. The mobile app has no board.
+
 ## Version
 
 The fork keeps upstream's version number. The desktop app sets up an SSH or

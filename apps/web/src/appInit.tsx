@@ -17,6 +17,7 @@ import { startPermissionUpdateNotices } from "./components/PermissionUpdateNotic
 import { startAgentOpenedPreviews } from "./components/preview/agentOpenedPreviews";
 import { startMainAppLocationTracking } from "./components/sidebar/mainAppLocation";
 import { startLaunchLandingTracking } from "./lib/launchLanding";
+import { startBoardAttachTargetTracking } from "./components/board/boardAttach";
 import { startDesktopUpdateLaunchNotice } from "./components/sidebar/updateEverythingRun";
 import { startSlowRpcRequestToasts } from "./components/SlowRpcRequestToastCoordinator";
 import { startThreadNotifications } from "./components/ThreadNotificationCoordinator";
@@ -194,6 +195,7 @@ export function startAppServices(): AppRouter {
   });
   startMainAppLocationTracking(router);
   startLaunchLandingTracking(router);
+  startBoardAttachTargetTracking(router);
   startWorkspaceFocus(router);
   startBackgroundThreadAnnouncements(appAtomRegistry, router);
   startThreadVisitedMigration(appAtomRegistry);
