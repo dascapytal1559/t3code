@@ -57,8 +57,7 @@ defaults to `["~/.t3-usage-archive"]` and can be changed in
   read.
 - Archived usage is parsed and deduplicated like live history. Live
   directories are read first, so usage that is both live and archived counts
-  once and stays credited to the live source. The archived part of the total
-  is shown on the Usage page by host and instance.
+  once and stays credited to the live source.
 - A remote that still runs T3 and is connected would be counted again next to
   its archive copy. Archive a host after T3 is removed from it.
 

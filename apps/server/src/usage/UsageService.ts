@@ -536,11 +536,10 @@ export const make = Effect.gen(function* () {
         }[]
       | null;
     readonly refreshing?: true;
-    readonly archive?: UsageArchiveLabel;
   }
 
   const archiveFields = (archive: UsageArchiveLabel | undefined) =>
-    archive === undefined ? {} : { archive, hostId: archive.host };
+    archive === undefined ? {} : { hostId: archive.host };
 
   const scanTranscriptDir = Effect.fn("UsageService.scanTranscriptDir")(function* (
     source: TranscriptSource,
@@ -873,18 +872,7 @@ export const make = Effect.gen(function* () {
 
     for (const [
       index,
-      {
-        provider,
-        dir,
-        volumeId,
-        files,
-        status,
-        message,
-        action,
-        refreshing,
-        archive,
-        hostId: sourceHostId,
-      },
+      { provider, dir, volumeId, files, status, message, action, refreshing, hostId: sourceHostId },
     ] of scannedDirs.entries()) {
       let scannedFiles = 0;
       let skippedFiles = 0;
@@ -953,7 +941,6 @@ export const make = Effect.gen(function* () {
             : sourceMessage,
         ...(action ? { action } : {}),
         ...(refreshing ? { refreshing } : {}),
-        ...(archive ? { archive } : {}),
       });
     }
 
