@@ -67,7 +67,10 @@ export function coordinatorGroupSlot<T>(
 }
 
 type FirstMateThread = GroupThread &
-  Pick<EnvironmentThreadShell, "projectId" | "title" | "worktreePath" | "createdAt"> & {
+  Pick<
+    EnvironmentThreadShell,
+    "projectId" | "title" | "worktreePath" | "createdAt" | "linkOrigin"
+  > & {
     readonly source: Pick<EnvironmentThreadShell["source"], "createdBy" | "creationSource">;
   };
 
@@ -96,13 +99,13 @@ function isFirstMateHome(project: FirstMateProject): boolean {
   return root.slice(Math.max(root.lastIndexOf("/"), root.lastIndexOf("\\")) + 1) === FIRSTMATE;
 }
 
-/** FirstMate launches every crewmate over MCP and titles it `fm-<task-id>`. */
+/**
+ * FirstMate launches every crewmate over MCP from its own signed-in client. Its older launches
+ * carry no client origin, only an `fm-<task-id>` title.
+ */
 function isFirstMateCrewmate(thread: FirstMateThread): boolean {
-  return (
-    thread.source.creationSource === "mcp" &&
-    thread.source.createdBy === "agent" &&
-    thread.title.startsWith("fm-")
-  );
+  if (thread.source.creationSource !== "mcp" || thread.source.createdBy !== "agent") return false;
+  return thread.linkOrigin?.label === FIRSTMATE || thread.title.startsWith("fm-");
 }
 
 /**
