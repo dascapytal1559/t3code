@@ -1252,6 +1252,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   });
   const toggleCrewTree = useStableCallback(toggleCrewShelf);
   const lastCrewThread = visibleCrewThreads.at(-1);
+  // The crew toggle, and so the guide line, follows the last coordinator card.
+  const crewTreeRootThread =
+    crewShelfExpanded && crewThreads.length > 0 ? coordinatorThreads.at(-1) : undefined;
 
   // Ranked across environments as the palette ranks them, so one
   // environment's list does not sit above another's better matches; rows
@@ -3167,6 +3170,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                     ? "last"
                                     : "branch"
                             }
+                            crewTreeRoot={thread === crewTreeRootThread}
                             onCrewTreeToggle={toggleCrewTree}
                             navigationParent={
                               section === "working" ||

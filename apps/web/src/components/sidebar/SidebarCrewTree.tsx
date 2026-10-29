@@ -12,11 +12,11 @@ const CREW_TREE_COLOR_CLASS_NAME =
 // The guide line runs down the centre of the coordinator card's size-4 leading icon, which sits
 // at the card's content inset; crewmate rows start where that icon ends.
 const CREW_TREE_LINE_START_CLASS_NAME =
-  "start-[calc(var(--sidebar-row-content-inset)_+_0.5rem_-_1px)]";
+  "start-[calc(var(--sidebar-row-content-inset)_+_0.5rem_-_0.5px)]";
 export const CREW_TREE_TRUNK_CLASS_NAME = cn(
   CREW_TREE_COLOR_CLASS_NAME,
   CREW_TREE_LINE_START_CLASS_NAME,
-  "w-0.5 bg-(--crew-tree-line)",
+  "w-px bg-(--crew-tree-line)",
 );
 export const CREW_TREE_INDENT_CLASS_NAME = "ps-[calc(var(--sidebar-row-content-inset)_+_1rem)]";
 export const CREW_TREE_GUTTER_WIDTH_CLASS_NAME =
@@ -38,7 +38,7 @@ export function CrewTreeGutter(props: { last: boolean; onToggle: () => void }) {
         className={cn(
           CREW_TREE_COLOR_CLASS_NAME,
           CREW_TREE_LINE_START_CLASS_NAME,
-          "end-0 top-0 bottom-[calc(50%_-_1px)] rounded-es-md border-s-2 border-b-2 border-(--crew-tree-line)",
+          "end-0 top-0 bottom-[calc(50%_-_0.5px)] rounded-es-md border-s border-b border-(--crew-tree-line)",
         )}
       />
     </div>

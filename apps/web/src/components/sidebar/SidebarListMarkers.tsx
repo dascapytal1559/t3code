@@ -136,9 +136,9 @@ export function SidebarCrewToggle(props: {
         }
       >
         {props.expanded ? (
-          // Drops from just under the coordinator's icon, through the card's bottom padding and
-          // the list gap, to the first crewmate row.
-          <span aria-hidden className={cn(CREW_TREE_TRUNK_CLASS_NAME, "-top-2 h-[11px]")} />
+          // Bridges the list gap from the coordinator card's bottom edge to the first crewmate
+          // row; the card draws the line inside itself.
+          <span aria-hidden className={cn(CREW_TREE_TRUNK_CLASS_NAME, "top-0 h-[3px]")} />
         ) : (
           <>
             {/* Centred on the guide line, like the coordinator's icon. */}

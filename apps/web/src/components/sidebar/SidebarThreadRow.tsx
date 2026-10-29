@@ -102,7 +102,12 @@ import {
 import { pickSnoozePreset, resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
 import { useThreadShell } from "../../state/entities";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
-import { CREW_TREE_INDENT_CLASS_NAME, CrewTreeGutter, type CrewTreePlace } from "./SidebarCrewTree";
+import {
+  CREW_TREE_INDENT_CLASS_NAME,
+  CREW_TREE_TRUNK_CLASS_NAME,
+  CrewTreeGutter,
+  type CrewTreePlace,
+} from "./SidebarCrewTree";
 import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
@@ -553,6 +558,8 @@ type SidebarThreadRowProps = {
   // Hides hover Snooze and Settle; the context menu still offers both.
   hideHoverActions?: boolean | undefined;
   crewTree?: CrewTreePlace | undefined;
+  // The coordinator card the expanded crew hangs from, which carries the top of the guide line.
+  crewTreeRoot?: boolean | undefined;
   onCrewTreeToggle?: (() => void) | undefined;
   navigationParent?: string | undefined;
   variantAction: SidebarSweepAction;
@@ -964,6 +971,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     }
   };
 
+  const surfaceFilled =
+    props.isActive ||
+    isSelected ||
+    props.sweepAction !== null ||
+    hasUnsentDraft ||
+    isFileDragOver ||
+    props.sortable?.isDragging === true;
   const rowSurfaceClassName = cn(
     "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
     variantAction === "unsettle" &&
@@ -1358,6 +1372,18 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           }
         >
           {accessibleTitle}
+          {props.crewTreeRoot ? (
+            // Runs down the card's bottom padding from under its icon; a filled card, hover
+            // included, never shows the line inside it.
+            <span
+              aria-hidden
+              className={cn(
+                CREW_TREE_TRUNK_CLASS_NAME,
+                "bottom-0 h-(--sidebar-content-inset)",
+                surfaceFilled ? "hidden" : "group-hover/sidebar-row:hidden",
+              )}
+            />
+          ) : null}
           <div
             className={cn(
               "relative z-10 h-[4.875rem] px-(--sidebar-row-content-inset) py-(--sidebar-content-inset)",
