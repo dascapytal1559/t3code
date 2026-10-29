@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   coordinatorGroupSlot,
   inferFirstMateCoordinatorOf,
+  isAppCrewmate,
   resolveAppCoordinatorGroup,
   resolveCoordinatorGroup,
   resolveLaunchCoordinator,
@@ -214,6 +215,33 @@ describe("inferFirstMateCoordinatorOf", () => {
       expect(group.coordinators.size).toBe(0);
       expect(group.crew.size).toBe(0);
     }
+  });
+});
+
+describe("isAppCrewmate", () => {
+  const crewmatesOf = (
+    threads: readonly ReturnType<typeof thread>[],
+    projects: readonly ReturnType<typeof project>[] = [home, app],
+  ) =>
+    threads
+      .filter((subject) => isAppCrewmate(threads, projects, subject.environmentId, subject.id))
+      .map((subject) => subject.title);
+
+  it("silences crewmates in any project and leaves FirstMate and other threads notifying", () => {
+    const main = thread("Captain's session", { viaMcp: false });
+    const crewInHome = thread("fm-docs-fix", { worktreePath: "/pool/1/firstmate" });
+    const crewElsewhere = thread("fm-app-login", { projectId: appId, worktreePath: "/pool/2/app" });
+    const userThread = thread("Refactor login", { projectId: appId, viaMcp: false });
+    expect(crewmatesOf([main, crewInHome, crewElsewhere, userThread])).toEqual([
+      "fm-docs-fix",
+      "fm-app-login",
+    ]);
+  });
+
+  it("silences nothing without a FirstMate main session", () => {
+    const crewLookalike = thread("fm-task", { projectId: appId });
+    const userThread = thread("Refactor login", { projectId: appId, viaMcp: false });
+    expect(crewmatesOf([crewLookalike, userThread], [app])).toEqual([]);
   });
 });
 

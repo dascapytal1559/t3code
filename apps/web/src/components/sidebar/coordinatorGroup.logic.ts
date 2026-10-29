@@ -2,7 +2,7 @@ import type {
   EnvironmentProject,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/models";
-import type { ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { SidebarSection } from "../Sidebar.logic";
 
 /**
@@ -148,6 +148,19 @@ export function resolveAppCoordinatorGroup<T extends FirstMateThread>(
 ): CoordinatorGroup<T> {
   // Becomes `(thread) => thread.coordinatorThreadId` once threads record their coordinator.
   return resolveCoordinatorGroup(threads, inferFirstMateCoordinatorOf(threads, projects));
+}
+
+/** Whether the app's coordinator group lists a thread as crew; crew stays out of notifications. */
+export function isAppCrewmate<T extends FirstMateThread>(
+  threads: readonly T[],
+  projects: readonly FirstMateProject[],
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+): boolean {
+  for (const member of resolveAppCoordinatorGroup(threads, projects).crew) {
+    if (member.environmentId === environmentId && member.id === threadId) return true;
+  }
+  return false;
 }
 
 /**

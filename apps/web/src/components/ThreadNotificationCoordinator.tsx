@@ -19,6 +19,7 @@ import {
 import { getClientSettings, subscribeClientSettings } from "../hooks/useSettings";
 import { isWindowsPlatform } from "../lib/utils";
 import { environmentSummaries } from "../state/presentation";
+import { environmentProjects } from "../state/projects";
 import { environmentShell } from "../state/shell";
 import { environmentThreadShells } from "../state/threads";
 import {
@@ -35,6 +36,7 @@ import {
   type ThreadNotificationKind,
   type ThreadNotificationObservation,
 } from "./ThreadNotificationCoordinator.logic";
+import { isAppCrewmate } from "./sidebar/coordinatorGroup.logic";
 import { toastManager } from "./ui/toast";
 
 interface NotificationState extends ThreadNotificationObservation {
@@ -167,6 +169,15 @@ export function startThreadNotifications(
     }
   };
 
+  // FirstMate's crewmates report to its main session, so only that session notifies.
+  const isCrewmate = (environmentId: EnvironmentId, threadId: ThreadId) =>
+    isAppCrewmate(
+      registry.get(environmentThreadShells.threadShellsAtom),
+      registry.get(environmentProjects.projectsAtom),
+      environmentId,
+      threadId,
+    );
+
   const observeThreads = (
     environmentId: EnvironmentId,
     entry: WatchedEnvironment,
@@ -237,7 +248,7 @@ export function startThreadNotifications(
       unsubscribe: () => {},
       gate: createThreadNotificationGate<ThreadId>((threadId, kind) => {
         const state = entry.previous.get(threadId);
-        if (state) present(environmentId, state, kind);
+        if (state && !isCrewmate(environmentId, threadId)) present(environmentId, state, kind);
       }),
     };
     let threads: ReadonlyArray<OrchestrationV2ThreadShell> | null = null;
