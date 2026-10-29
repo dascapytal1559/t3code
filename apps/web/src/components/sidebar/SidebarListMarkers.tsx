@@ -9,11 +9,7 @@ import {
   sidebarMarkerId,
   type SidebarListMarker,
 } from "../Sidebar.logic";
-import {
-  CREW_TREE_GUTTER_WIDTH_CLASS_NAME,
-  CREW_TREE_LINE_CLASS_NAME,
-  CREW_TREE_LINE_START_CLASS_NAME,
-} from "./SidebarCrewTree";
+import { CREW_TREE_GUTTER_WIDTH_CLASS_NAME, CREW_TREE_TRUNK_CLASS_NAME } from "./SidebarCrewTree";
 import { SIDEBAR_SORTABLE_DRAG_DISABLED } from "./SidebarThreadRow";
 import { SidebarThreadUndoNotice } from "./SidebarThreadUndoNotice";
 
@@ -142,14 +138,7 @@ export function SidebarCrewToggle(props: {
         {props.expanded ? (
           // Drops from just under the coordinator's icon, through the card's bottom padding and
           // the list gap, to the first crewmate row.
-          <span
-            aria-hidden
-            className={cn(
-              CREW_TREE_LINE_CLASS_NAME,
-              CREW_TREE_LINE_START_CLASS_NAME,
-              "-top-2 h-[11px] w-px",
-            )}
-          />
+          <span aria-hidden className={cn(CREW_TREE_TRUNK_CLASS_NAME, "-top-2 h-[11px]")} />
         ) : (
           <>
             {/* Centred on the guide line, like the coordinator's icon. */}
