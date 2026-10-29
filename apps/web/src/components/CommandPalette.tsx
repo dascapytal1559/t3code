@@ -1507,16 +1507,22 @@ function OpenCommandPaletteDialog(props: {
     },
   });
 
-  actionItems.push({
-    kind: "action",
-    value: "action:board",
-    searchTerms: ["board", "annotate", "draw", "sketch", "screenshot", "canvas", "whiteboard"],
-    title: "Open board",
-    icon: <PencilRulerIcon className={ITEM_ICON_CLASS} />,
-    run: async () => {
-      await navigate({ to: "/board" });
-    },
-  });
+  const boardThread = activeThread
+    ? { environmentId: activeThread.environmentId, threadId: activeThread.id }
+    : activeDraftThread;
+  if (boardThread) {
+    const threadRef = scopeThreadRef(boardThread.environmentId, boardThread.threadId);
+    actionItems.push({
+      kind: "action",
+      value: "action:board",
+      searchTerms: ["board", "annotate", "draw", "sketch", "screenshot", "canvas", "whiteboard"],
+      title: "Open board",
+      icon: <PencilRulerIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        useRightPanelStore.getState().open(threadRef, "board");
+      },
+    });
+  }
 
   for (const direction of [1, -1] as const) {
     const title = direction === 1 ? "Focus Next Workspace Area" : "Focus Previous Workspace Area";

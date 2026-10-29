@@ -6,6 +6,7 @@ const EDITABLE_SELECTOR = [
   '[contenteditable="true"]',
   '[contenteditable="plaintext-only"]',
   '[role="textbox"]',
+  "[data-editable-canvas]",
 ].join(",");
 
 /** Includes focused descendants of open shadow roots, whose key events target the host. */

@@ -18,22 +18,16 @@ import type {
   ExcalidrawImperativeAPI,
   ExcalidrawInitialDataState,
 } from "@excalidraw/excalidraw/types";
-import { useNavigate } from "@tanstack/react-router";
 import { ClipboardCopyIcon, MessageSquarePlusIcon, Trash2Icon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { isElectron } from "../../env";
-import { useHandleNewThread } from "../../hooks/useHandleNewThread";
 import { useTheme } from "../../hooks/useTheme";
 import { readFileAsDataUrl } from "../../lib/imageCompression";
 import { randomUUID } from "../../lib/utils";
 import { readLocalApi } from "../../localApi";
-import { buildThreadRouteParams } from "../../threadRoutes";
 import { Button } from "../ui/button";
-import { SidebarInset } from "../ui/sidebar";
 import { toastManager } from "../ui/toast";
-import { WorkspacePageHeader } from "../WorkspacePageHeader";
-import { attachBoardImage, type BoardAttachTarget, readBoardAttachTarget } from "./boardAttach";
+import { attachBoardImage, type BoardAttachTarget } from "./boardAttach";
 import { createBoardSaver, loadBoard, saveBoard } from "./boardStorage";
 import { configureExcalidrawAssets } from "./excalidrawAssets";
 
@@ -175,10 +169,18 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Try again.";
 }
 
-export function BoardPage() {
+/** The paste reaches the board only while focus is in the panel showing it, never the chat beside it. */
+function isPasteForBoard(board: HTMLElement, event: ClipboardEvent) {
+  if (isWritableTarget(event.target)) return false;
+  const focused = document.activeElement;
+  const panel = board.closest('[data-workspace-area="panel"]') ?? board;
+  return focused instanceof Node && panel.contains(focused);
+}
+
+export function BoardPanel(props: { readonly composerDraftTarget: BoardAttachTarget }) {
+  const { composerDraftTarget } = props;
   const { resolvedTheme } = useTheme();
-  const navigate = useNavigate();
-  const { defaultProjectRef, handleNewThread } = useHandleNewThread();
+  const boardRef = useRef<HTMLDivElement>(null);
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [hasSelection, setHasSelection] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -216,11 +218,12 @@ export function BoardPage() {
     };
   }, [saver]);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- intercepts document paste so screenshots land on the board wherever the pointer is
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- intercepts window paste so screenshots land on the board wherever the pointer is in its panel
   useEffect(() => {
-    if (!api) return;
+    const board = boardRef.current;
+    if (!api || !board) return;
     const onPaste = (event: ClipboardEvent) => {
-      if (isWritableTarget(event.target)) return;
+      if (!isPasteForBoard(board, event)) return;
       const images = [...(event.clipboardData?.files ?? [])].filter((file) =>
         file.type.startsWith("image/"),
       );
@@ -264,17 +267,11 @@ export function BoardPage() {
     if (!exporting) return emptyBoardToast();
     setBusy(true);
     try {
-      const png = await exporting;
-      let target: BoardAttachTarget | null = readBoardAttachTarget();
-      if (target) {
-        await (typeof target === "string"
-          ? navigate({ to: "/draft/$draftId", params: { draftId: target } })
-          : navigate({ to: "/$environmentId/$threadId", params: buildThreadRouteParams(target) }));
-      } else if (defaultProjectRef) {
-        target = (await handleNewThread(defaultProjectRef))?.draftId ?? null;
-      }
-      if (!target) throw new Error("Add a project, then try again.");
-      await attachBoardImage(target, png);
+      await attachBoardImage(composerDraftTarget, await exporting);
+      toastManager.add({
+        type: "success",
+        title: hasSelection ? "Attached the selection to chat" : "Attached the board to chat",
+      });
     } catch (error) {
       toastManager.add({
         type: "error",
@@ -298,62 +295,62 @@ export function BoardPage() {
   const scope = hasSelection ? "selection" : "board";
 
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
-        <WorkspacePageHeader electron={isElectron} className="border-b border-border">
-          <span className="min-w-0 flex-1 truncate text-sm font-medium">Board</span>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <Button size="xs" variant="ghost" disabled={!api} onClick={() => void copyPng()}>
-              <ClipboardCopyIcon />
-              Copy {scope}
-            </Button>
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={!api || busy}
-              onClick={() => void attachToChat()}
-            >
-              <MessageSquarePlusIcon />
-              Attach {scope} to chat
-            </Button>
-            <Button
-              size="icon-xs"
-              variant="ghost-destructive"
-              aria-label="Clear board"
-              disabled={!api}
-              onClick={() => void clear()}
-            >
-              <Trash2Icon />
-            </Button>
-          </div>
-        </WorkspacePageHeader>
-        <div className="relative min-h-0 flex-1">
-          <Excalidraw
-            excalidrawAPI={setApi}
-            initialData={loadInitialData}
-            onChange={handleChange}
-            theme={resolvedTheme}
-            autoFocus
-            UIOptions={{
-              canvasActions: { loadScene: false, saveToActiveFile: false, toggleTheme: false },
-            }}
-          >
-            <MainMenu>
-              <MainMenu.DefaultItems.SaveAsImage />
-              <MainMenu.DefaultItems.ChangeCanvasBackground />
-              <MainMenu.DefaultItems.Help />
-            </MainMenu>
-            <WelcomeScreen>
-              <WelcomeScreen.Center>
-                <WelcomeScreen.Center.Heading>
-                  Paste a screenshot or drop an image here
-                </WelcomeScreen.Center.Heading>
-              </WelcomeScreen.Center>
-              <WelcomeScreen.Hints.ToolbarHint />
-            </WelcomeScreen>
-          </Excalidraw>
-        </div>
+    <div ref={boardRef} className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+      <div className="flex shrink-0 items-center justify-end gap-1.5 border-b px-2 py-1.5">
+        <Button size="xs" variant="ghost" disabled={!api} onClick={() => void copyPng()}>
+          <ClipboardCopyIcon />
+          Copy {scope}
+        </Button>
+        <Button
+          size="xs"
+          variant="outline"
+          disabled={!api || busy}
+          onClick={() => void attachToChat()}
+        >
+          <MessageSquarePlusIcon />
+          Attach {scope} to chat
+        </Button>
+        <Button
+          size="icon-xs"
+          variant="ghost-destructive"
+          aria-label="Clear board"
+          disabled={!api}
+          onClick={() => void clear()}
+        >
+          <Trash2Icon />
+        </Button>
       </div>
-    </SidebarInset>
+      {/* The canvas owns its keys: letters pick tools, Cmd+Z undoes strokes, Delete removes. */}
+      <div
+        role="application"
+        aria-label="Board"
+        data-editable-canvas
+        className="relative min-h-0 flex-1"
+      >
+        <Excalidraw
+          excalidrawAPI={setApi}
+          initialData={loadInitialData}
+          onChange={handleChange}
+          theme={resolvedTheme}
+          UIOptions={{
+            canvasActions: { loadScene: false, saveToActiveFile: false, toggleTheme: false },
+          }}
+        >
+          <MainMenu>
+            <MainMenu.DefaultItems.SaveAsImage />
+            <MainMenu.DefaultItems.ChangeCanvasBackground />
+            <MainMenu.DefaultItems.Help />
+          </MainMenu>
+          <WelcomeScreen>
+            <WelcomeScreen.Center>
+              <WelcomeScreen.Center.Heading>
+                Paste a screenshot or drop an image here
+              </WelcomeScreen.Center.Heading>
+            </WelcomeScreen.Center>
+            <WelcomeScreen.Hints.ToolbarHint />
+          </WelcomeScreen>
+        </Excalidraw>
+      </div>
+    </div>
   );
 }

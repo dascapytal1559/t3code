@@ -96,18 +96,25 @@ FirstMate to update" button belongs in that popover.
 
 ## Board
 
-A quick annotation canvas at `/board`, opened from the sidebar footer (pencil and
-ruler icon) or "Open board" in the command palette. It is Excalidraw (MIT), loaded
-only with that route. Screenshots pasted with Cmd+V land in the middle of the view.
-The board is saved in the client's IndexedDB, one board per client. "Attach to
-chat" sends the selection, or the whole board, as a PNG to the composer of the last
-thread or draft on screen. Code: `apps/web/src/components/board/`.
+A quick annotation canvas that opens as a "Board" tab in a chat's right panel,
+from the panel's launcher or "+" menu (W) or "Open board" in the command palette.
+It is Excalidraw (MIT), loaded only when the tab shows. Screenshots pasted with
+Cmd+V while focus is in the panel land in the middle of the view. The board is
+saved in the client's IndexedDB, one board per client, shared by every chat's
+Board tab. "Attach to chat" sends the selection, or the whole board, as a PNG to
+the composer of the chat beside the panel. The canvas is marked
+`data-editable-canvas` and `role="application"` so its keys (tool letters, Cmd+Z,
+Delete) are not taken by type-to-focus or thread undo. Code:
+`apps/web/src/components/board/`.
 
-Shared files it touches, for syncs: the route file, the sidebar utility menu and
-`isSidebarUtilityPage`, a command palette item, one tracking call in `appInit.tsx`,
-the Excalidraw font asset path in `apps/web/vite.config.ts`, and licence notices.
-Excalidraw's canvas fonts are served from the app because the desktop CSP blocks
-the CDN Excalidraw would otherwise use. The mobile app has no board.
+Shared files it touches, for syncs: the `board` surface kind in `rightPanelStore.ts`
+(and `closedViewStore.ts`), the launcher and "+" menu entries and tab title and icon
+in `RightPanelTabs.tsx`, `RightPanelSurfaceContent.tsx`, `useRightPanelActions.ts`,
+the props in `ChatView.tsx` and `PullRequestsPage.tsx`, a command palette item, the
+selector in `lib/editableFocus.ts`, the Excalidraw font asset path in
+`apps/web/vite.config.ts`, and licence notices. Excalidraw's canvas fonts are
+served from the app because the desktop CSP blocks the CDN Excalidraw would
+otherwise use. The mobile app has no board.
 
 ## Version
 

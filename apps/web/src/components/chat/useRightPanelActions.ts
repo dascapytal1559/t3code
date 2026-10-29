@@ -63,7 +63,7 @@ interface RightPanelActionsInput {
 
 /**
  * Opening, closing, and arranging the right panel's surfaces: browser, diff, files, pull
- * requests, device, and terminal tabs.
+ * requests, device, terminal, and board tabs.
  */
 export function useRightPanelActions(input: RightPanelActionsInput) {
   const {
@@ -157,6 +157,10 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     useRightPanelStore.getState().open(activeThreadRef, "device");
   };
   const addDeviceSurfaceStable = useStableCallback(addDeviceSurface);
+  const addBoardSurface = () => {
+    if (activeThreadRef) useRightPanelStore.getState().open(activeThreadRef, "board");
+  };
+  const addBoardSurfaceStable = useStableCallback(addBoardSurface);
   const openFileSurface = (relativePath: string) => {
     if (!activeThreadRef || !activeProject) return;
     useRightPanelStore.getState().openFile(activeThreadRef, relativePath);
@@ -328,6 +332,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
   return {
     shortcuts,
     activateRightPanelSurfaceStable,
+    addBoardSurfaceStable,
     addDeviceSurfaceStable,
     addDiffSurfaceStable,
     addFilesSurfaceStable,
