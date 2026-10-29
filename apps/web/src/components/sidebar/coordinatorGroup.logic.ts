@@ -3,7 +3,11 @@ import type {
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/models";
 import type { ThreadId } from "@t3tools/contracts";
-import type { SidebarSection } from "../Sidebar.logic";
+import {
+  resolveSidebarThreadStatus,
+  type SidebarSection,
+  type SidebarThreadStatus,
+} from "../Sidebar.logic";
 
 /**
  * The coordinator a thread names, if any. A coordinator is an unarchived thread some thread names
@@ -132,4 +136,40 @@ export function inferFirstMateCoordinatorOf<T extends FirstMateThread>(
     (thread.environmentId === coordinator.environmentId && isFirstMateCrewmate(thread))
       ? coordinator.id
       : null;
+}
+
+/** The coordinator group the app shows and opens; the one place its coordinator link is read. */
+export function resolveAppCoordinatorGroup<T extends FirstMateThread>(
+  threads: readonly T[],
+  projects: readonly FirstMateProject[],
+): CoordinatorGroup<T> {
+  // Becomes `(thread) => thread.coordinatorThreadId` once threads record their coordinator.
+  return resolveCoordinatorGroup(threads, inferFirstMateCoordinatorOf(threads, projects));
+}
+
+type LaunchThread = Parameters<typeof resolveSidebarThreadStatus>[0] &
+  Pick<EnvironmentThreadShell, "updatedAt">;
+
+const LIVE_STATUSES: ReadonlySet<SidebarThreadStatus> = new Set([
+  "working",
+  "waiting",
+  "approval",
+  "input",
+]);
+
+/**
+ * The coordinator a fresh page load opens instead of a new draft: one that is live, meaning
+ * working, waiting on its background work or a crewmate, or asking for approval or input. One that
+ * has finished its turn stays closed, so launch is unchanged. Several live coordinators open the
+ * most recently updated.
+ */
+export function resolveLaunchCoordinator<T extends LaunchThread>(
+  group: CoordinatorGroup<T>,
+): T | null {
+  let launch: T | null = null;
+  for (const coordinator of group.coordinators) {
+    if (!LIVE_STATUSES.has(resolveSidebarThreadStatus(coordinator))) continue;
+    if (launch === null || coordinator.updatedAt > launch.updatedAt) launch = coordinator;
+  }
+  return launch;
 }

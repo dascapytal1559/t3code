@@ -1,12 +1,18 @@
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { isElectron } from "../env";
 import { NoProjectsHero } from "../components/NoProjectsHero";
 import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
+import {
+  resolveAppCoordinatorGroup,
+  resolveLaunchCoordinator,
+} from "../components/sidebar/coordinatorGroup.logic";
+import { claimLaunchLanding } from "../lib/launchLanding";
+import { buildThreadRouteParams } from "../threadRoutes";
 import { Button } from "../components/ui/button";
 import { HostedEmptyState } from "../components/HostedEmptyState";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
@@ -46,9 +52,10 @@ function IndexDraftLanding() {
 
   const mostRecentProject =
     sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null;
+  const launchCoordinator = resolveLaunchCoordinator(resolveAppCoordinatorGroup(threads, projects));
   const attempt = startState.retryRequest;
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts a draft thread in the most recent project and navigates to it while still on the index
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens a live coordinator on launch, else starts a draft in the most recent project, while still on the index
   useEffect(() => {
     // Starting a draft after the user has left would replace the page they picked.
     if (mostRecentProject === null || startedAttemptRef.current === attempt || !isStillOnIndex()) {
@@ -59,6 +66,16 @@ function IndexDraftLanding() {
       return;
     }
     startedAttemptRef.current = attempt;
+    // Only the page's first landing may open a coordinator; retries and later visits draft.
+    const landing = claimLaunchLanding() ? launchCoordinator : null;
+    if (landing !== null) {
+      void router.navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(scopeThreadRef(landing.environmentId, landing.id)),
+        replace: true,
+      });
+      return;
+    }
     void handleNewThread(projectRef, { replace: true })
       .then((opened) => {
         if (opened === null) {
@@ -68,7 +85,7 @@ function IndexDraftLanding() {
       .catch(() => {
         setStartState((state) => ({ ...state, failed: true }));
       });
-  }, [attempt, handleNewThread, mostRecentProject]);
+  }, [attempt, handleNewThread, launchCoordinator, mostRecentProject, router]);
 
   if (mostRecentProject !== null) {
     return startState.failed ? (

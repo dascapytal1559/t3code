@@ -1,10 +1,12 @@
-import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   coordinatorGroupSlot,
   inferFirstMateCoordinatorOf,
+  resolveAppCoordinatorGroup,
   resolveCoordinatorGroup,
+  resolveLaunchCoordinator,
 } from "./coordinatorGroup.logic";
 
 const environmentId = EnvironmentId.make("environment-local");
@@ -43,6 +45,10 @@ const thread = (
     createdAt?: string;
     archivedAt?: string | null;
     viaMcp?: boolean;
+    status?: "running" | "idle" | "completed" | "failed" | null;
+    updatedAt?: string;
+    hasPendingApprovals?: boolean;
+    blockedOnThreadWait?: boolean;
   } = {},
 ) => ({
   environmentId,
@@ -52,6 +58,21 @@ const thread = (
   worktreePath: overrides.worktreePath ?? null,
   createdAt: overrides.createdAt ?? "2026-10-28T10:00:00.000Z",
   archivedAt: overrides.archivedAt ?? null,
+  updatedAt: overrides.updatedAt ?? "2026-10-28T10:00:00.000Z",
+  runtime:
+    overrides.status === undefined || overrides.status === null
+      ? null
+      : {
+          status: overrides.status,
+          activeRunId: null,
+          providerInstanceId: ProviderInstanceId.make("claude"),
+          providerName: null,
+          lastError: null,
+          updatedAt: overrides.updatedAt ?? "2026-10-28T10:00:00.000Z",
+        },
+  hasPendingApprovals: overrides.hasPendingApprovals ?? false,
+  hasPendingUserInput: false,
+  blockedOnThreadWait: overrides.blockedOnThreadWait ?? false,
   source:
     overrides.viaMcp === false
       ? { createdBy: "user" as const, creationSource: "web" as const }
@@ -197,5 +218,55 @@ describe("inferFirstMateCoordinatorOf", () => {
       expect(group.coordinators.size).toBe(0);
       expect(group.crew.size).toBe(0);
     }
+  });
+});
+
+describe("resolveLaunchCoordinator", () => {
+  const launchOf = (
+    threads: readonly ReturnType<typeof thread>[],
+    projects: readonly ReturnType<typeof project>[] = [home, app],
+  ) => resolveLaunchCoordinator(resolveAppCoordinatorGroup(threads, projects));
+
+  it.each([
+    ["working", { status: "running" }],
+    ["waiting on its background work", { status: "idle" }],
+    ["waiting on a crewmate", { status: "running", blockedOnThreadWait: true }],
+    ["asking for approval", { status: "running", hasPendingApprovals: true }],
+  ] as const)("opens a FirstMate main session that is %s", (_name, state) => {
+    const main = thread("Captain's session", { viaMcp: false, ...state });
+    const crewmate = thread("fm-docs-fix", {
+      worktreePath: "/pool/1/firstmate",
+      status: "running",
+    });
+    expect(launchOf([main, crewmate])).toBe(main);
+  });
+
+  it.each([
+    ["finished its turn", "completed"],
+    ["failed", "failed"],
+    ["never run", null],
+  ] as const)("leaves a main session that has %s closed", (_name, status) => {
+    const main = thread("Captain's session", { viaMcp: false, status });
+    const crewmate = thread("fm-docs-fix", {
+      worktreePath: "/pool/1/firstmate",
+      status: "running",
+    });
+    expect(launchOf([main, crewmate])).toBeNull();
+  });
+
+  it("opens nothing without FirstMate, however busy other threads are", () => {
+    const busy = thread("Refactor login", { projectId: appId, viaMcp: false, status: "running" });
+    expect(launchOf([busy], [app])).toBeNull();
+  });
+
+  it("opens the most recently updated of several live coordinators", () => {
+    const quiet = thread("quiet", { status: "idle", updatedAt: "2026-10-28T09:00:00.000Z" });
+    const recent = thread("recent", { status: "running", updatedAt: "2026-10-28T11:00:00.000Z" });
+    const finished = thread("finished", {
+      status: "completed",
+      updatedAt: "2026-10-28T12:00:00.000Z",
+    });
+    const group = resolveCoordinatorGroup([quiet, recent, finished], (subject) => subject.id);
+    expect(resolveLaunchCoordinator(group)).toBe(recent);
   });
 });

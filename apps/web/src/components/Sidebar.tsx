@@ -238,8 +238,7 @@ import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import {
   coordinatorGroupSlot,
-  inferFirstMateCoordinatorOf,
-  resolveCoordinatorGroup,
+  resolveAppCoordinatorGroup,
   type CoordinatorGroup,
 } from "./sidebar/coordinatorGroup.logic";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
@@ -457,11 +456,7 @@ function useSidebarThreads(input: {
     serverConfigs,
     optimisticDrop,
     workingShelfEnabled,
-    // Becomes `(thread) => thread.coordinatorThreadId` once threads record their coordinator.
-    coordinatorGroup: resolveCoordinatorGroup(
-      threads,
-      inferFirstMateCoordinatorOf(threads, projects),
-    ),
+    coordinatorGroup: resolveAppCoordinatorGroup(threads, projects),
     clockKey: `${nowMinute}:${snoozeWakeClock}:${inboxReturnsVersion}`,
   });
 
