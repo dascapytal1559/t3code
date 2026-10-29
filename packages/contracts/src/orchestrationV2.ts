@@ -106,26 +106,27 @@ const OrchestrationV2CreationFields = {
 } as const;
 
 /**
- * The linked environment whose agent started this work here: the MCP client
- * session it signed in with, that session's label, and the access it was
- * paired with. Set when the thread is created and never changed; work derived
- * from it carries the same origin.
+ * The signed-in MCP client whose agent started this work, its label and access. `linked: false`
+ * marks an ordinary client; an origin without it is another environment's peer link. Set at
+ * creation and never changed; work derived from it carries the same origin.
  */
 export const OrchestrationV2LinkOrigin = Schema.Struct({
   sessionId: TrimmedNonEmptyString,
   label: Schema.String,
   access: Schema.optional(AuthMcpClientAccess),
+  linked: Schema.optional(Schema.Boolean),
 });
 export type OrchestrationV2LinkOrigin = typeof OrchestrationV2LinkOrigin.Type;
 
+export const linkOriginIsPeerLink = (origin: OrchestrationV2LinkOrigin) => origin.linked !== false;
+
 /**
- * Work from a link paired below full access may change only work from the same
- * link. A full-access link's agents already run as this environment's user,
- * so fencing T3's own tools would stop nothing they could not do anyway. An
- * origin stamped before access was recorded stays fenced.
+ * Work from a link paired below full access may change only work from the same link. A full-access
+ * link's agents already run as this environment's user, so fencing them stops nothing. An origin
+ * stamped before access was recorded stays fenced; an ordinary client's never is.
  */
 export const linkOriginIsFenced = (origin: OrchestrationV2LinkOrigin) =>
-  origin.access !== "full-access";
+  linkOriginIsPeerLink(origin) && origin.access !== "full-access";
 
 /**
  * The thread in a linked environment that delegated this one, when it did:

@@ -9,24 +9,25 @@ import * as Effect from "effect/Effect";
 import type { Caller } from "./threadAccess.ts";
 
 /**
- * Below full access, work a link starts here (all of it carries that session in `linkOrigin`)
- * may change only work from the same link: not the user's threads, projects or settings, nor
- * this environment's links. Reads are not fenced. It is a routing rule for T3's tools; agents
- * still run as this environment's user, so a full-access link is not fenced at all.
+ * Work any signed-in client starts carries its session in `linkOrigin`. Below full access, a peer
+ * link's work may change only that link's work: not the user's threads, projects or settings, nor
+ * this environment's links. Reads, ordinary clients and full-access links are not fenced.
  */
 
-/** The link a caller acts for: its own session, or the link that started its thread. */
+/** The client a caller acts for: its own session, or the client that started its thread. */
 export const callerLinkOrigin = (
   caller: Pick<Caller, "scope" | "caller">,
-): OrchestrationV2LinkOrigin | undefined =>
-  caller.caller?.linkOrigin ??
-  (caller.scope.client?.linked === true
-    ? {
-        sessionId: caller.scope.client.sessionId,
-        label: caller.scope.client.label,
-        access: caller.scope.client.access,
-      }
-    : undefined);
+): OrchestrationV2LinkOrigin | undefined => {
+  if (caller.caller?.linkOrigin !== undefined) return caller.caller.linkOrigin;
+  const client = caller.scope.client;
+  if (client === undefined) return undefined;
+  return {
+    sessionId: client.sessionId,
+    label: client.label,
+    access: client.access,
+    ...(client.linked === true ? {} : { linked: false }),
+  };
+};
 
 /** The link that fences a caller, if any: one paired below full access. */
 const fencingLinkOrigin = (caller: Pick<Caller, "scope" | "caller">) => {

@@ -47,6 +47,8 @@ const thread = (
     createdAt?: string;
     archivedAt?: string | null;
     viaMcp?: boolean;
+    /** The signed-in MCP client that launched it. */
+    from?: string;
     status?: "running" | "idle" | "completed" | "cancelled" | "failed" | null;
     updatedAt?: string;
   } = {},
@@ -58,6 +60,15 @@ const thread = (
   worktreePath: overrides.worktreePath ?? null,
   createdAt: overrides.createdAt ?? "2026-10-28T10:00:00.000Z",
   archivedAt: overrides.archivedAt ?? null,
+  linkOrigin:
+    overrides.from === undefined
+      ? null
+      : {
+          sessionId: `session-${overrides.from}`,
+          label: overrides.from,
+          access: "full-access" as const,
+          linked: false,
+        },
   updatedAt: overrides.updatedAt ?? "2026-10-28T10:00:00.000Z",
   runtime:
     overrides.status === undefined || overrides.status === null
@@ -159,8 +170,15 @@ describe("inferFirstMateCoordinatorOf", () => {
 
   it("puts the main session on top with every crewmate, in any project", () => {
     const main = thread("Captain's session", { viaMcp: false });
-    const crewInHome = thread("fm-docs-fix", { worktreePath: "/pool/1/firstmate" });
-    const crewElsewhere = thread("fm-app-login", { projectId: appId, worktreePath: "/pool/2/app" });
+    const crewInHome = thread("Fix the docs", {
+      from: "firstmate",
+      worktreePath: "/pool/1/firstmate",
+    });
+    const crewElsewhere = thread("Fix the login redirect", {
+      from: "firstmate",
+      projectId: appId,
+      worktreePath: "/pool/2/app",
+    });
     const userThread = thread("Refactor login", { projectId: appId, viaMcp: false });
     const group = groupOf([main, crewInHome, crewElsewhere, userThread], [home, app]);
     expect([...group.coordinators]).toEqual([main]);
@@ -186,17 +204,27 @@ describe("inferFirstMateCoordinatorOf", () => {
       archivedAt: "2026-10-28T12:00:00.000Z",
       createdAt: "2026-10-28T12:00:00.000Z",
     });
-    const secondmate = thread("fm-secondmate", { createdAt: "2026-10-28T13:00:00.000Z" });
+    const secondmate = thread("Secondmate", {
+      from: "firstmate",
+      createdAt: "2026-10-28T13:00:00.000Z",
+    });
     const group = groupOf([older, newer, worktree, archived, secondmate], [home]);
     expect([...group.coordinators]).toEqual([newer]);
     expect([...group.crew]).toEqual([secondmate]);
   });
 
-  it("only treats agent-launched fm- threads as crewmates", () => {
+  it("only treats FirstMate's agent launches as crewmates", () => {
     const main = thread("Captain's session", { viaMcp: false });
     const typedByUser = thread("fm-notes", { projectId: appId, viaMcp: false });
     const otherAgent = thread("Delegated review", { projectId: appId });
-    expect(groupOf([main, typedByUser, otherAgent], [home, app]).crew.size).toBe(0);
+    const otherClient = thread("Review the login", { projectId: appId, from: "claude-code" });
+    expect(groupOf([main, typedByUser, otherAgent, otherClient], [home, app]).crew.size).toBe(0);
+  });
+
+  it("still treats a launch from before client origins, titled fm-, as a crewmate", () => {
+    const main = thread("Captain's session", { viaMcp: false });
+    const legacy = thread("fm-app-login", { projectId: appId, worktreePath: "/pool/2/app" });
+    expect([...groupOf([main, legacy], [home, app]).crew]).toEqual([legacy]);
   });
 
   it("does not treat a folder inside a FirstMate checkout as a home", () => {
@@ -229,11 +257,14 @@ describe("isAppCrewmate", () => {
 
   it("silences crewmates in any project and leaves FirstMate and other threads notifying", () => {
     const main = thread("Captain's session", { viaMcp: false });
-    const crewInHome = thread("fm-docs-fix", { worktreePath: "/pool/1/firstmate" });
+    const crewInHome = thread("Fix the docs", {
+      from: "firstmate",
+      worktreePath: "/pool/1/firstmate",
+    });
     const crewElsewhere = thread("fm-app-login", { projectId: appId, worktreePath: "/pool/2/app" });
     const userThread = thread("Refactor login", { projectId: appId, viaMcp: false });
     expect(crewmatesOf([main, crewInHome, crewElsewhere, userThread])).toEqual([
-      "fm-docs-fix",
+      "Fix the docs",
       "fm-app-login",
     ]);
   });
