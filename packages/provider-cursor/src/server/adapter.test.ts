@@ -619,6 +619,7 @@ describe("CursorAdapterV2", () => {
         runtimeMode: "full-access",
         interactionMode: "default",
         cwd: workspace,
+        instructions: "The launch brief is first-party.",
       });
       const adapter = yield* makeCursorAdapterV2({
         instanceId,
@@ -721,9 +722,14 @@ describe("CursorAdapterV2", () => {
         return {
           orchestration: sent.includes("## T3 Code orchestration"),
           devices: sent.includes("## T3 Code devices"),
+          thread: sent.includes("<thread_instructions>"),
         };
       });
-      const told = (orchestration: boolean, devices: boolean) => ({ orchestration, devices });
+      const told = (orchestration: boolean, devices: boolean, thread = false) => ({
+        orchestration,
+        devices,
+        thread,
+      });
 
       yield* setDeviceAccess(true);
       assert.deepEqual(yield* send(), told(false, true));
@@ -731,7 +737,7 @@ describe("CursorAdapterV2", () => {
       yield* send(true);
       assert.deepEqual(
         yield* send(),
-        told(true, true),
+        told(true, true, true),
         "compaction drops what the conversation was told",
       );
       yield* setDeviceAccess(false);

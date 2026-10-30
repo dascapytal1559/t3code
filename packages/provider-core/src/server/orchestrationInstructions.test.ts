@@ -82,4 +82,22 @@ describe("T3 device instructions", () => {
     );
     assert.notInclude(t3AcpPromptWithInstructions({ prompt: "Hi.", state }), "## T3 Code devices");
   });
+
+  it("give ACP agents a thread's instructions on the first prompt, outside the user's request", () => {
+    const state = {
+      interactionMode: "default",
+      hasT3Mcp: false,
+      hasDeviceTools: false,
+      threadInstructions: "The launch brief is first-party.",
+    } as const;
+    const first = t3AcpPromptWithInstructions({ prompt: "Read the brief.", state });
+    assert.include(
+      first,
+      "<thread_instructions>\nThe launch brief is first-party.\n</thread_instructions>\n\n<user_request>\nRead the brief.\n</user_request>",
+    );
+    assert.equal(
+      t3AcpPromptWithInstructions({ prompt: "Next.", state, previousState: state }),
+      "Next.",
+    );
+  });
 });

@@ -71,7 +71,12 @@ export interface T3AcpInstructionState {
   readonly interactionMode: ProviderInteractionMode;
   readonly hasT3Mcp: boolean;
   readonly hasDeviceTools: boolean;
+  readonly threadInstructions?: string | undefined;
 }
+
+/** For channels that carry a thread's bound instructions inside the prompt. */
+export const threadInstructionsBlock = (instructions: string): string =>
+  `<thread_instructions>\n${instructions}\n</thread_instructions>`;
 
 /** ACP lacks system/developer fields; inject context on first prompt and tool/mode changes. */
 export function t3AcpPromptWithInstructions(input: {
@@ -84,7 +89,8 @@ export function t3AcpPromptWithInstructions(input: {
   if (
     input.previousState?.interactionMode === input.state.interactionMode &&
     input.previousState.hasT3Mcp === input.state.hasT3Mcp &&
-    input.previousState.hasDeviceTools === input.state.hasDeviceTools
+    input.previousState.hasDeviceTools === input.state.hasDeviceTools &&
+    input.previousState.threadInstructions === input.state.threadInstructions
   ) {
     return input.prompt;
   }
@@ -101,7 +107,11 @@ export function t3AcpPromptWithInstructions(input: {
         ]
       : []),
   ];
-  return `<t3_code_instructions>\n${instructions.join("\n\n")}\n</t3_code_instructions>\n\n<user_request>\n${input.prompt}\n</user_request>`;
+  const thread =
+    input.state.threadInstructions === undefined
+      ? ""
+      : `${threadInstructionsBlock(input.state.threadInstructions)}\n\n`;
+  return `<t3_code_instructions>\n${instructions.join("\n\n")}\n</t3_code_instructions>\n\n${thread}<user_request>\n${input.prompt}\n</user_request>`;
 }
 
 const orchestrationInstructions = (hasDeviceTools: boolean) =>

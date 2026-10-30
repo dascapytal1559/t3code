@@ -1455,7 +1455,13 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             ? undefined
             : yield* makeAcpClientTerminals({
                 defaultCwd: input.runtimePolicy.cwd ?? process.cwd(),
-                environment: options.clientTerminals.environment,
+                environment:
+                  input.runtimePolicy.environment === undefined
+                    ? options.clientTerminals.environment
+                    : ProviderAdapter.withThreadEnvironment(
+                        options.clientTerminals.environment ?? process.env,
+                        input.runtimePolicy,
+                      ),
                 shellCommands: options.clientTerminals.shellCommands,
                 environmentForSession: (sessionId) => {
                   const remembered = terminalEnvironmentBySessionId.get(sessionId);
@@ -7188,6 +7194,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             interactionMode: turnInput.runtimePolicy.interactionMode,
             hasT3Mcp: acpMcpContext(mcpSession, self).servers.length > 0,
             hasDeviceTools: mcpSession?.capabilities?.has("device") === true,
+            threadInstructions: turnInput.runtimePolicy.instructions,
           } satisfies T3AcpInstructionState;
           const previousInstructionState = (yield* Ref.get(promptInstructionStates)).get(sessionId);
           const compactionMarker = (yield* Ref.get(compactionMarkers)).get(sessionId);

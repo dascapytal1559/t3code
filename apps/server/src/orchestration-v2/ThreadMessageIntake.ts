@@ -254,6 +254,7 @@ export const launchThread = Effect.fn("ThreadMessageIntake.launchThread")(functi
         // Project/receipt reads precede dispatch; create-thread errors can wrap post-message reads and prove nothing alone.
         const notAccepted =
           error.operation === "resolve-project" ||
+          error.operation === "check-thread-config" ||
           error.operation === "read-receipt" ||
           ((error.operation === "create-thread" || error.operation === "dispatch-message") &&
             (isOrchestratorError(error.cause) || isThreadManagementError(error.cause)) &&

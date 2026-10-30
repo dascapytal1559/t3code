@@ -7,6 +7,8 @@ import {
   RunId,
   OrchestrationV2DelegatedFrom,
   OrchestrationV2RunStatus,
+  OrchestrationV2ThreadEnvironment,
+  OrchestrationV2ThreadInstructions,
   OrchestrationV2ThreadLaunchWorkspaceStrategy,
   RuntimeMode,
   ProviderInteractionMode,
@@ -147,6 +149,18 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
       }),
     ),
     attachments: Schema.optional(Schema.Array(McpAttachmentInput).check(Schema.isMaxLength(8))),
+    environment: Schema.optional(
+      OrchestrationV2ThreadEnvironment.annotate({
+        description:
+          "Env vars for the agent and its commands, kept with the thread, so no secrets. Providers with threadEnvironment.",
+      }),
+    ),
+    instructions: Schema.optional(
+      OrchestrationV2ThreadInstructions.annotate({
+        description:
+          "Kept in the agent's system context for the thread's life. Providers with threadInstructions.",
+      }),
+    ),
     clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
     /** Set by a linked environment launching its agent's delegated task here; ignored otherwise. */
     delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),

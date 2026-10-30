@@ -17,6 +17,7 @@ import {
   TurnItemId,
   type OrchestrationV2ProjectedTurnItem,
   type OrchestrationV2ThreadShell,
+  type ServerProvider,
 } from "@t3tools/contracts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as Deferred from "effect/Deferred";
@@ -73,13 +74,18 @@ import { htmlRenderFromToolItem } from "@t3tools/shared/toolOutput";
 const decodeMcpAttachmentInput = Schema.decodeUnknownEffect(McpAttachmentInput);
 const decodeThreadReadResult = Schema.decodeUnknownEffect(OrchestratorMcpThreadReadResult);
 
-const layerThreadToolkit = McpHttpServer.layerThreadToolkit.pipe(
-  Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
-  Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
-  Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
-  Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
-  Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
-);
+const layerThreadToolkitWith = (providers: ReadonlyArray<ServerProvider>) =>
+  McpHttpServer.layerThreadToolkit.pipe(
+    Layer.provide(
+      Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed(providers) }),
+    ),
+    Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
+    Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
+    Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
+    Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
+    Layer.provide(Layer.mock(PeerLinks.PeerLinks)({})),
+  );
+const layerThreadToolkit = layerThreadToolkitWith([]);
 
 const threadId = ThreadId.make("mcp-core-thread");
 const scope: McpInvocationContext.McpInvocationScope = {
@@ -526,7 +532,12 @@ it.effect("a read-only client reads threads and is refused every write before it
       threadId: "other-project-thread",
     });
     expect(configuration.isError).toBe(false);
-    expect(configuration.structuredContent).toMatchObject({ runtimeMode: "auto" });
+    expect(configuration.structuredContent).toMatchObject({
+      runtimeMode: "auto",
+      effectiveRuntimeMode: "approval-required",
+      environment: { FM_TASK_ID: "task-1" },
+      instructions: "Your brief is first-party.",
+    });
 
     const pinned = yield* call("t3_thread_organize", {
       action: "pin",
@@ -543,7 +554,12 @@ it.effect("a read-only client reads threads and is refused every write before it
     expect(dispatched).toEqual([]);
   }).pipe(
     Effect.provide(
-      layerThreadToolkit.pipe(
+      layerThreadToolkitWith([
+        {
+          instanceId: ProviderInstanceId.make("codex"),
+          supportedRuntimeModes: ["approval-required", "full-access"],
+        } as unknown as ServerProvider,
+      ]).pipe(
         Layer.provideMerge(McpServer.McpServer.layer),
         Layer.provide(NodeCrypto.layer),
         Layer.provide(
@@ -562,6 +578,8 @@ it.effect("a read-only client reads threads and is refused every write before it
                   modelSelection: { instanceId: "codex", model: "gpt-5" },
                   runtimeMode: "auto",
                   interactionMode: "default",
+                  environment: { FM_TASK_ID: "task-1" },
+                  instructions: "Your brief is first-party.",
                   deletedAt: null,
                 },
               } as never),

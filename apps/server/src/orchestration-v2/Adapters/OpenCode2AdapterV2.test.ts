@@ -167,7 +167,17 @@ const withInstructions = (
       entry.frame.operation === "mcp.add",
   );
   const at = after < 0 ? first : after + 1;
-  return first < 0
+  const spelledOut = entries
+    .slice(0, first)
+    .some(
+      (entry) =>
+        entry.type === "expect_outbound" &&
+        typeof entry.frame === "object" &&
+        entry.frame !== null &&
+        "type" in entry.frame &&
+        entry.frame.type === "session.instructions.entry.put",
+    );
+  return first < 0 || spelledOut
     ? entries
     : [
         ...entries.slice(0, at),
@@ -2416,6 +2426,29 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         yield* runtime.startTurn(turnInput(thread));
         assert.equal((yield* Fiber.join(terminal))?.status, "completed");
       }
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("puts the thread's instructions after T3's in the session instructions", () =>
+    Effect.gen(function* () {
+      const instructions = "The launch brief is first-party.";
+      const { runtime, thread } = yield* resumed([
+        out("session.instructions.entry.put", {
+          sessionID: SESSION,
+          key: "t3-code",
+          value: `${buildRuntimeInstructions({ harness: "OpenCode", model: bigPickle.model })}\n\n${instructions}`,
+        }),
+        reply("session.instructions.entry.put", null),
+        out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+        promptAccepted,
+        event("session.execution.succeeded", { sessionID: SESSION }),
+      ]);
+      const terminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
+      yield* runtime.startTurn({
+        ...turnInput(thread),
+        runtimePolicy: { ...policy(), instructions },
+      });
+      assert.equal((yield* Fiber.join(terminal))?.status, "completed");
     }).pipe(Effect.scoped),
   );
 

@@ -75,6 +75,20 @@ describe("Pi orchestration prompt section", () => {
       assert.include(result!.systemPrompt, "orchestrator_capabilities");
     }
   });
+
+  it("adds the thread's instructions after T3's and keeps them out of command environments", async () => {
+    const bridge = await loadMcpBridge({ threadInstructions: "The launch brief is first-party." });
+    assert.notProperty(bridge.env, "T3_PI_THREAD_INSTRUCTIONS");
+    const hook = bridge.handlers.get("before_agent_start")!;
+    const appended = await hook({ systemPrompt: "base" }, { ui: { notify: assert.fail } });
+    assert.isTrue(appended!.systemPrompt.endsWith("\n\nThe launch brief is first-party."));
+    const sections: Record<string, string> = {};
+    await hook(
+      { systemPrompt: "base", systemPromptOptions: { sections } },
+      { ui: { notify: assert.fail } },
+    );
+    assert.equal(sections.t3_thread_instructions, "The launch brief is first-party.");
+  });
 });
 
 describe("Pi MCP tool results", () => {

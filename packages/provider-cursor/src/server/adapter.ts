@@ -52,7 +52,10 @@ import {
   hasCursorSkillMention,
   rewriteCursorSkillMentions,
 } from "./skills.ts";
-import { t3OrchestrationPrompt } from "@t3tools/provider-core/server/orchestrationInstructions";
+import {
+  t3OrchestrationPrompt,
+  threadInstructionsBlock,
+} from "@t3tools/provider-core/server/orchestrationInstructions";
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
@@ -166,6 +169,8 @@ export const CursorProviderCapabilitiesV2 = {
   runtimePolicy: {
     enforcement: "native",
   },
+  // The SDK runs inside the server process, so a thread has no process of its own to carry env.
+  threadConfig: { environment: false, instructions: true },
 } satisfies OrchestrationV2ProviderCapabilities;
 
 export interface CursorRuntimeAgentPolicy {
@@ -992,6 +997,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
           readonly agent: string;
           readonly orchestration: boolean;
           readonly device: boolean;
+          readonly threadInstructions: boolean;
         } | null>(null);
         const warnedUnsupportedSandbox = yield* Ref.make(false);
         const activeTurn = yield* Ref.make<ActiveCursorTurn | null>(null);
@@ -2271,7 +2277,11 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
           turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
           mcpServers: Record<string, McpServerConfig> | undefined,
           hasDeviceTools: boolean,
-          delivered: { readonly orchestration: boolean; readonly device: boolean },
+          delivered: {
+            readonly orchestration: boolean;
+            readonly device: boolean;
+            readonly threadInstructions: boolean;
+          },
         ) {
           const rawText = turnInput.message.text;
           if (rawText.trim() === "/compress" && turnInput.message.attachments.length === 0) {
@@ -2341,7 +2351,8 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
               detail: "Cursor turn requires non-empty text or attachments.",
             });
           }
-          const text = `${userText}\n\n${buildRuntimeInstructions({ harness: "Cursor", model: turnInput.modelSelection.model })}`;
+          const instructions = turnInput.runtimePolicy.instructions;
+          const text = `${instructions === undefined || delivered.threadInstructions ? "" : `${threadInstructionsBlock(instructions)}\n\n`}${userText}\n\n${buildRuntimeInstructions({ harness: "Cursor", model: turnInput.modelSelection.model })}`;
           return images.length === 0
             ? text
             : ({
@@ -2377,7 +2388,11 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
             const delivered =
               known?.agent === agent.nativeThreadId
                 ? known
-                : { orchestration: turnInput.runOrdinal > 1, device: false };
+                : {
+                    orchestration: turnInput.runOrdinal > 1,
+                    device: false,
+                    threadInstructions: turnInput.runOrdinal > 1,
+                  };
             const message = yield* resolveUserMessage(
               turnInput,
               mcpServers,
@@ -2409,6 +2424,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
               agent: agent.nativeThreadId,
               orchestration: !compacted && (delivered.orchestration || mcpServers !== undefined),
               device: !compacted && hasDeviceTools,
+              threadInstructions: !compacted,
             });
             const startedAt = yield* DateTime.now;
             const completed = yield* Deferred.make<void, never>();

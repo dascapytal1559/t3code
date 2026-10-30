@@ -246,6 +246,34 @@ describe("CodexAdapterV2 runtime policy", () => {
       assert.isDefined(withT3.additionalContext?.["t3_code_runtime"]);
     }),
   );
+
+  it.effect("sends thread instructions as developer context split under Codex's entry cap", () =>
+    Effect.gen(function* () {
+      const instructions = `${"a".repeat(3_000)}\n${"é".repeat(1_500)}`;
+      const params = yield* CodexAdapterV2.buildCodexTurnStartParams({
+        nativeThreadId: "native-thread-instructions",
+        codexInput: [{ type: "text", text: "start" }],
+        runtimePolicy: {
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: null,
+          instructions,
+        },
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+      });
+      const entries = Object.entries(params.additionalContext ?? {});
+      assert.deepEqual(
+        entries.map(([key, entry]) => [key, entry.kind]),
+        [
+          ["t3_thread_instructions_01", "application"],
+          ["t3_thread_instructions_02", "application"],
+        ],
+      );
+      assert.equal(entries.map(([, entry]) => entry.value).join(""), instructions);
+      for (const [, entry] of entries)
+        assert.isAtMost(new TextEncoder().encode(entry.value).length, 4_000);
+    }),
+  );
 });
 
 describe("CodexAdapterV2 native protocol logging", () => {
@@ -1077,6 +1105,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       Effect.void,
     onRequest: (method: string, params: unknown) => Effect.Effect<void> = () => Effect.void,
     readChildMetadata?: Parameters<typeof withCodexReplayChildMetadata>[2],
+    runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy = CODEX_TEST_RUNTIME_POLICY,
   ) =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -1139,12 +1168,12 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         threadId,
         providerSessionId: ProviderSessionId.make(`provider-session-${transcript.scenario}`),
         modelSelection: CODEX_TEST_MODEL_SELECTION,
-        runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
+        runtimePolicy,
       });
       const providerThread = yield* runtime.ensureThread({
         threadId,
         modelSelection: CODEX_TEST_MODEL_SELECTION,
-        runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
+        runtimePolicy,
       });
       const events: Array<ProviderAdapter.ProviderAdapterV2Event> = [];
       const firstTerminal = yield* Deferred.make<void>();
@@ -1323,6 +1352,11 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         browserToolsAvailable: true,
       });
       const requests: Array<unknown> = [];
+      const threadConfig = {
+        ...CodexAdapterV2.CODEX_THREAD_CONFIG,
+        // Per-thread config, so it needs no project trust and reaches no other thread.
+        "shell_environment_policy.set.FM_TASK_ID": "task-1",
+      };
       yield* makeCodexReplayHarness(
         makeCodexReplayTranscript({
           scenario,
@@ -1330,21 +1364,31 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             nativeThreadId: "launch-mcp-thread",
             nativeTurnId: "unused",
             prompt: "unused",
-          }).slice(0, 5),
+          })
+            .slice(0, 5)
+            .map((entry) =>
+              entry.type === "expect_outbound" && entry.label === "thread/start"
+                ? {
+                    ...entry,
+                    frame: { id: 2, method: "thread/start", params: { config: threadConfig } },
+                  }
+                : entry,
+            ),
         }),
         () => Effect.void,
         (method, params) =>
           Effect.sync(() => {
             if (method === "thread/start") requests.push(params);
           }),
+        undefined,
+        { ...CODEX_TEST_RUNTIME_POLICY, environment: { FM_TASK_ID: "task-1" } },
       );
       assert.deepEqual(requests, [
         {
           cwd: "/workspace",
           model: "gpt-5.4",
           config: {
-            "tools.update_plan.enabled": true,
-            mcp_optional_startup_grace_ms: 10_000,
+            ...threadConfig,
             "mcp_servers.t3-code": {
               url: "http://127.0.0.1:43123/mcp",
               tool_timeout_sec: 3_900,

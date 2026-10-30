@@ -102,7 +102,10 @@ import { resolveAttachmentPath, resolveAttachmentPathById } from "../../attachme
 import { getCodexServiceTierOptionValue } from "../../codexModelOptions.ts";
 import { ServerConfig } from "../../config.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
-import { buildCodexAdditionalContext } from "../../provider/CodexDeveloperInstructions.ts";
+import {
+  buildCodexAdditionalContext,
+  buildCodexThreadInstructionsContext,
+} from "../../provider/CodexDeveloperInstructions.ts";
 import {
   describeMcpElicitation,
   toMcpElicitationResponse,
@@ -325,6 +328,7 @@ export const CodexProviderCapabilitiesV2 = {
   runtimePolicy: {
     enforcement: "native",
   },
+  threadConfig: { environment: true, instructions: true },
 } satisfies OrchestrationV2ProviderCapabilities;
 
 function toProtocolError(
@@ -769,10 +773,14 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
             },
           )
         : undefined;
-    const additionalContext =
-      t3Context === undefined && Object.keys(appContext).length === 0
+    const threadContext =
+      input.runtimePolicy.instructions === undefined
         ? undefined
-        : { ...t3Context, ...appContext };
+        : buildCodexThreadInstructionsContext(input.runtimePolicy.instructions);
+    const additionalContext =
+      t3Context === undefined && threadContext === undefined && Object.keys(appContext).length === 0
+        ? undefined
+        : { ...t3Context, ...threadContext, ...appContext };
     return yield* decodeCodexTurnStartParamsWithCollaborationMode({
       threadId: input.nativeThreadId,
       input: input.codexInput,
@@ -1333,6 +1341,13 @@ function codexThreadRuntimeParams(input: {
     ...(input.modelSelection === undefined ? {} : { model: input.modelSelection.model }),
     config: {
       ...CODEX_THREAD_CONFIG,
+      // One key per variable keeps the user's own shell_environment_policy.set entries.
+      ...Object.fromEntries(
+        Object.entries(input.runtimePolicy?.environment ?? {}).map(([name, value]) => [
+          `shell_environment_policy.set.${name}`,
+          value,
+        ]),
+      ),
       ...(mcpSession === undefined
         ? {}
         : {

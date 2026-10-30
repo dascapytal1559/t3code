@@ -19,6 +19,8 @@ import {
   readThread,
   unavailable,
 } from "../../threadAccess.ts";
+import * as ProviderRegistry from "../../../provider/ProviderRegistry.ts";
+import { effectiveRuntimeMode } from "../../../orchestration-v2/RuntimePolicy.ts";
 import * as ThreadSearch from "../../../orchestration-v2/ThreadSearch.ts";
 import * as ScheduledTasks from "../../../scheduledTasks/ScheduledTaskService.ts";
 import { queuedRunsInDeliveryOrder } from "../../../orchestration-v2/QueuedRunOrder.ts";
@@ -198,11 +200,20 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
         const {
           projection: { thread },
         } = yield* readThread(input.threadId);
+        const provider = (yield* ProviderRegistry.ProviderRegistry.pipe(
+          Effect.flatMap((registry) => registry.getProviders),
+        )).find((candidate) => candidate.instanceId === thread.modelSelection.instanceId);
         return {
           threadId: thread.id,
           modelSelection: thread.modelSelection,
           runtimeMode: thread.runtimeMode,
+          effectiveRuntimeMode: effectiveRuntimeMode(
+            thread.runtimeMode,
+            provider?.supportedRuntimeModes,
+          ),
           interactionMode: thread.interactionMode,
+          ...(thread.environment === undefined ? {} : { environment: thread.environment }),
+          ...(thread.instructions === undefined ? {} : { instructions: thread.instructions }),
         };
       }),
     ),

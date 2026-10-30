@@ -139,6 +139,57 @@ export const OrchestrationV2DelegatedFrom = Schema.Struct({
 });
 export type OrchestrationV2DelegatedFrom = typeof OrchestrationV2DelegatedFrom.Type;
 
+const THREAD_ENVIRONMENT_MAX_VARIABLES = 64;
+const THREAD_ENVIRONMENT_MAX_BYTES = 16_384;
+const THREAD_INSTRUCTIONS_MAX_LENGTH = 16_000;
+
+const threadEnvironmentName = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const utf8Encoder = new TextEncoder();
+
+/** T3 sets these for its own wiring, so a thread cannot shadow them. Windows env names ignore case. */
+const threadEnvironmentNameIsReserved = (name: string): boolean => {
+  const upper = name.toUpperCase();
+  return (
+    upper.startsWith("T3_") ||
+    upper.startsWith("T3CODE_") ||
+    upper.startsWith("AGENT_DEVICE_") ||
+    upper === "CODEX_HOME" ||
+    upper === "CLAUDE_CONFIG_DIR" ||
+    /^OPENCODE_.*PASSWORD$/.test(upper)
+  );
+};
+
+/** Bound at launch and stored with the thread, so values must not be secrets. */
+export const OrchestrationV2ThreadEnvironment = Schema.Record(Schema.String, Schema.String).check(
+  Schema.makeFilter((environment: Readonly<Record<string, string>>) => {
+    const entries = Object.entries(environment);
+    if (entries.length > THREAD_ENVIRONMENT_MAX_VARIABLES)
+      return `An environment holds at most ${THREAD_ENVIRONMENT_MAX_VARIABLES} variables.`;
+    let bytes = 0;
+    for (const [name, value] of entries) {
+      if (!threadEnvironmentName.test(name))
+        return `${JSON.stringify(name)} is not an environment variable name: use letters, digits, and _, not starting with a digit.`;
+      if (threadEnvironmentNameIsReserved(name))
+        return `${name} is set by T3 Code; T3 owns T3_*, T3CODE_*, AGENT_DEVICE_*, CODEX_HOME, CLAUDE_CONFIG_DIR, and OPENCODE_*PASSWORD.`;
+      if (value.includes("\0")) return `${name} contains a NUL character.`;
+      bytes += utf8Encoder.encode(name).length + utf8Encoder.encode(value).length + 2;
+    }
+    return (
+      bytes <= THREAD_ENVIRONMENT_MAX_BYTES ||
+      `The environment is over ${THREAD_ENVIRONMENT_MAX_BYTES} bytes.`
+    );
+  }),
+);
+export type OrchestrationV2ThreadEnvironment = typeof OrchestrationV2ThreadEnvironment.Type;
+
+export const OrchestrationV2ThreadInstructions = Schema.String.check(
+  Schema.makeFilter(
+    (instructions: string) =>
+      (instructions.trim().length > 0 && instructions.length <= THREAD_INSTRUCTIONS_MAX_LENGTH) ||
+      `Instructions must be nonblank and at most ${THREAD_INSTRUCTIONS_MAX_LENGTH} characters.`,
+  ),
+);
+
 export const OrchestrationV2NativeRefStrength = Schema.Literals(["strong", "weak", "none"]);
 export type OrchestrationV2NativeRefStrength = typeof OrchestrationV2NativeRefStrength.Type;
 
@@ -363,6 +414,14 @@ export const OrchestrationV2RuntimePolicyCapabilities = Schema.Struct({
 export type OrchestrationV2RuntimePolicyCapabilities =
   typeof OrchestrationV2RuntimePolicyCapabilities.Type;
 
+/** Whether the adapter applies a thread's bound environment and instructions to its sessions. */
+export const OrchestrationV2ThreadConfigCapabilities = Schema.Struct({
+  environment: Schema.Boolean,
+  instructions: Schema.Boolean,
+});
+export type OrchestrationV2ThreadConfigCapabilities =
+  typeof OrchestrationV2ThreadConfigCapabilities.Type;
+
 export const OrchestrationV2IdentityCapabilities = Schema.Struct({
   nativeThreadIds: OrchestrationV2NativeRefStrength,
   nativeTurnIds: OrchestrationV2NativeRefStrength,
@@ -383,6 +442,8 @@ export const OrchestrationV2ProviderCapabilities = Schema.Struct({
   context: OrchestrationV2ContextCapabilities,
   checkpointing: OrchestrationV2CheckpointCapabilities,
   identity: OrchestrationV2IdentityCapabilities,
+  /** Absent: the adapter applies neither, so a thread that binds one cannot run on it. */
+  threadConfig: Schema.optional(OrchestrationV2ThreadConfigCapabilities),
   // Replay defaults old events to the weaker client-boundary guarantee.
   runtimePolicy: OrchestrationV2RuntimePolicyCapabilities.pipe(
     Schema.withDecodingDefault(Effect.succeed({ enforcement: "client-boundary" as const })),
@@ -452,6 +513,9 @@ export const OrchestrationV2AppThread = Schema.Struct({
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),
   linkOrigin: Schema.optional(OrchestrationV2LinkOrigin),
   delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
+  /** Bound at launch for every provider session the thread opens. */
+  environment: Schema.optional(OrchestrationV2ThreadEnvironment),
+  instructions: Schema.optional(OrchestrationV2ThreadInstructions),
   lineage: OrchestrationV2AppThreadLineage,
   forkedFrom: Schema.NullOr(
     Schema.Union([
@@ -2867,6 +2931,8 @@ export const OrchestrationV2Command = Schema.Union([
     linkOrigin: Schema.optional(OrchestrationV2LinkOrigin),
     /** Only the server sets this, with `linkOrigin`, for a linked environment's delegated task. */
     delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
+    environment: Schema.optional(OrchestrationV2ThreadEnvironment),
+    instructions: Schema.optional(OrchestrationV2ThreadInstructions),
     importedNativeThread: Schema.optional(
       Schema.Struct({
         ref: Schema.Struct({
@@ -3566,6 +3632,8 @@ export const OrchestrationV2ThreadLaunchInput = Schema.Struct({
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   workspaceStrategy: OrchestrationV2ThreadLaunchWorkspaceStrategy,
+  environment: Schema.optional(OrchestrationV2ThreadEnvironment),
+  instructions: Schema.optional(OrchestrationV2ThreadInstructions),
   initialMessage: Schema.optional(
     Schema.Struct({
       messageId: Schema.optional(MessageId),

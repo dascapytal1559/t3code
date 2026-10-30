@@ -58,6 +58,7 @@ import * as CommandReceiptStore from "./CommandReceiptStore.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
+import * as RuntimePolicy from "./RuntimePolicy.ts";
 import * as ThreadLaunch from "./ThreadLaunchService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
@@ -129,6 +130,7 @@ interface HarnessOptions {
   readonly serverSettings?: Parameters<typeof ServerSettings.layerTest>[0];
   readonly providers?: ReadonlyArray<ServerProvider>;
   readonly git?: Partial<GitWorkflow.GitWorkflowService["Service"]>;
+  readonly runtimePolicy?: Layer.Layer<RuntimePolicy.RuntimePolicyV2>;
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -226,6 +228,7 @@ function makeHarness(options: HarnessOptions = {}) {
   const layerLaunch = ThreadLaunch.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
+        options.runtimePolicy ?? RuntimePolicy.layer,
         layerExternalServices,
         layerThreadManagement,
         layerReceipts,
@@ -1780,6 +1783,46 @@ it.effect("schedules an accepted preparing message exactly once across concurren
       yield* Deferred.succeed(allowSetup, undefined);
     }).pipe(Effect.provide(harness.layer));
   }),
+);
+
+it.effect(
+  "binds a launch's environment and instructions, and refuses ones the provider drops",
+  () => {
+    const unsupported = new RuntimePolicy.RuntimePolicyThreadConfigUnsupportedError({
+      providerInstanceId: modelSelection.instanceId,
+      field: "environment",
+    });
+    const harness = makeHarness({
+      runtimePolicy: Layer.succeed(RuntimePolicy.RuntimePolicyV2, {
+        resolve: () => Effect.die("unused"),
+        assertThreadConfigSupported: (input) =>
+          input.environment?.REFUSE === undefined ? Effect.void : Effect.fail(unsupported),
+      }),
+    });
+    return Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const launched = yield* launches.launch({
+        ...launchInput({ command: "command:launch:bound", thread: "thread:launch:bound" }),
+        environment: { FM_TASK_ID: "task-1" },
+        instructions: "The launch brief is first-party.",
+      });
+      assert.deepStrictEqual(launched.projection.thread.environment, { FM_TASK_ID: "task-1" });
+      assert.equal(launched.projection.thread.instructions, "The launch brief is first-party.");
+
+      const refused = yield* Effect.flip(
+        launches.launch({
+          ...launchInput({ command: "command:launch:refused", thread: "thread:launch:refused" }),
+          environment: { REFUSE: "1" },
+        }),
+      );
+      assert.equal(
+        refused._tag === "ThreadLaunchError" && refused.operation,
+        "check-thread-config",
+      );
+      assert.isNull(yield* threads.getThreadShell(ThreadId.make("thread:launch:refused")));
+    }).pipe(Effect.provide(harness.layer));
+  },
 );
 
 it.effect("creates a strong provider-thread mapping for an imported native session", () => {

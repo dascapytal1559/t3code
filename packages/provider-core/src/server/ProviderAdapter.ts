@@ -51,8 +51,19 @@ export const ProviderAdapterV2RuntimePolicy = Schema.Struct({
   cwd: Schema.NullOr(Schema.String),
   approvalPolicy: Schema.optional(Schema.Unknown),
   sandboxPolicy: Schema.optional(Schema.Unknown),
+  /** The thread's bound environment; see `withThreadEnvironment`. */
+  environment: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+  /** The thread's bound instructions, applied through the adapter's system or developer channel. */
+  instructions: Schema.optional(Schema.String),
 });
 export type ProviderAdapterV2RuntimePolicy = typeof ProviderAdapterV2RuntimePolicy.Type;
+
+/** Thread variables override the instance's environment; T3's own variables are set after this. */
+export const withThreadEnvironment = (
+  base: NodeJS.ProcessEnv,
+  policy: Pick<ProviderAdapterV2RuntimePolicy, "environment"> | undefined,
+): NodeJS.ProcessEnv =>
+  policy?.environment === undefined ? base : { ...base, ...policy.environment };
 
 export const ProviderAdapterV2TurnMessage = Schema.Struct({
   messageId: MessageId,

@@ -44,6 +44,7 @@ import * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRunti
 import { makeAcpNativeLoggerFactory } from "@t3tools/provider-acp/server/nativeLogging";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
+import { withThreadEnvironment } from "@t3tools/provider-core/server/ProviderAdapter";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
 import {
@@ -157,11 +158,14 @@ function makeAcpRegistryRuntime(
         AcpSessionRuntime.layer({
           ...runtimeInput,
           spawn:
-            processEnvironment === undefined
+            processEnvironment === undefined && input.runtimePolicy.environment === undefined
               ? resolved.spawn
               : {
                   ...resolved.spawn,
-                  env: { ...resolved.spawn.env, ...processEnvironment },
+                  env: {
+                    ...withThreadEnvironment(resolved.spawn.env ?? {}, input.runtimePolicy),
+                    ...processEnvironment,
+                  },
                 },
           ...(options.settings.authMethodId ? { authMethodId: options.settings.authMethodId } : {}),
           customModels: readCustomModelEntries(options.settings.customModels).map(
@@ -211,12 +215,18 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
   const flavor: AcpAdapterV2Flavor = {
     driver: ACP_REGISTRY_PROVIDER,
     // Cancelling a Copilot prompt also kills the background agents it started.
-    capabilities: isCopilot
-      ? {
-          ...AcpProviderCapabilitiesV2,
-          turns: { ...AcpProviderCapabilitiesV2.turns, supportsSteeringByInterruptRestart: false },
-        }
-      : AcpProviderCapabilitiesV2,
+    capabilities: {
+      ...AcpProviderCapabilitiesV2,
+      ...(isCopilot
+        ? {
+            turns: {
+              ...AcpProviderCapabilitiesV2.turns,
+              supportsSteeringByInterruptRestart: false,
+            },
+          }
+        : {}),
+      threadConfig: { environment: true, instructions: true },
+    },
     customModels: readCustomModelEntries(options.settings.customModels).map((entry) => entry.slug),
     promptFailure: (cause) => acpRegistryPromptFailure(registryAgentId, cause),
     ...(registryAgentId === "factory-droid"

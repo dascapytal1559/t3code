@@ -448,6 +448,7 @@ export const ClaudeProviderCapabilitiesV2 = {
   runtimePolicy: {
     enforcement: "native",
   },
+  threadConfig: { environment: true, instructions: true },
 } satisfies OrchestrationV2ProviderCapabilities;
 
 const CLAUDE_CODE_PRESET_TOOLS = {
@@ -1468,6 +1469,8 @@ export function makeClaudeQueryOptions(input: {
   readonly supportedDialogKinds?: ClaudeQueryOptions["supportedDialogKinds"];
   readonly allowDangerouslySkipPermissions?: boolean;
   readonly appendSystemPromptFileText?: string;
+  /** The thread's bound instructions, after the instance's own appended prompt. */
+  readonly threadInstructions?: string;
   // Flag settings, because a user's settings.json env beats the process env in Claude Code.
   readonly toolSearchOverride?: "true";
 }): ClaudeAgentSdkQueryOptions {
@@ -1582,6 +1585,7 @@ export function makeClaudeQueryOptions(input: {
                 ? `\n${T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH}\n`
                 : "")),
         ...launchAppendSystemPrompt,
+        ...(input.threadInstructions === undefined ? [] : [input.threadInstructions]),
       ].join("\n\n"),
     },
     ...(deviceInstructions
@@ -9918,12 +9922,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             attachmentsDir,
             settings: adapterOptions.settings,
             ...(launchArgSettings === undefined ? {} : { sdkSettings: launchArgSettings }),
-            environment: claudeQueryEnvironment(
-              adapterOptions.environment,
-              turnInput.appThread,
-              turnInput.appThread.lineage.relationshipToParent === "subagent"
-                ? yield* resolveSubagentPromptCacheTtl(turnInput.runtimePolicy.cwd)
-                : undefined,
+            environment: ProviderAdapter.withThreadEnvironment(
+              claudeQueryEnvironment(
+                adapterOptions.environment,
+                turnInput.appThread,
+                turnInput.appThread.lineage.relationshipToParent === "subagent"
+                  ? yield* resolveSubagentPromptCacheTtl(turnInput.runtimePolicy.cwd)
+                  : undefined,
+              ),
+              turnInput.runtimePolicy,
             ),
             tools: queryPolicy.tools ?? CLAUDE_CODE_PRESET_TOOLS,
             ...(mcpOverrides.allowedTools === undefined
@@ -9943,6 +9950,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             onUserDialog,
             supportedDialogKinds: ["resume_return"],
             ...(appendSystemPromptFileText === undefined ? {} : { appendSystemPromptFileText }),
+            ...(turnInput.runtimePolicy.instructions === undefined
+              ? {}
+              : { threadInstructions: turnInput.runtimePolicy.instructions }),
             ...(toolSearchOverride === undefined ? {} : { toolSearchOverride }),
           });
           const querySession = yield* queryRunner

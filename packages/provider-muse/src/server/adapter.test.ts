@@ -569,6 +569,42 @@ describe("MuseAdapterV2", () => {
     ),
   );
 
+  it.effect(
+    "launches Muse with the thread's environment and gives each turn its instructions",
+    () =>
+      Effect.gen(function* () {
+        const fake = yield* makeFakeMuse();
+        let hostEnvironment: NodeJS.ProcessEnv | undefined;
+        const harness = yield* makeHarness(
+          fake,
+          INSTANCE_ID,
+          undefined,
+          undefined,
+          undefined,
+          ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+            ...runtimePolicy,
+            environment: { FM_TASK_ID: "task-1" },
+            instructions: "The launch brief is first-party.",
+          }),
+          {
+            createHost: async (options) => {
+              hostEnvironment = options.environment;
+              return fake.host;
+            },
+          },
+        );
+        yield* startConversation(harness, fake);
+        assert.strictEqual(hostEnvironment?.FM_TASK_ID, "task-1");
+        assert.strictEqual(hostEnvironment?.PATH, "/fake/bin");
+        const turnStart = fake.calls.find((call) => call.method === "turn/start");
+        assert.isDefined(turnStart);
+        assert.deepStrictEqual((turnStart.params.input as ReadonlyArray<unknown>)[1], {
+          type: "text",
+          text: "<thread_instructions>\nThe launch brief is first-party.\n</thread_instructions>",
+        });
+      }).pipe(Effect.scoped, Effect.provide(testLayer)),
+  );
+
   it.effect("stops at a Meta usage limit until every exhausted window resets", () =>
     Effect.gen(function* () {
       const fake = yield* makeFakeMuse();

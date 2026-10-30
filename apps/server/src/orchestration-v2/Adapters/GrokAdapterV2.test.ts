@@ -241,11 +241,18 @@ describe("Grok launch permission mode", () => {
     layerHost,
   );
 
-  const launchArgs = (runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy) =>
+  const launches = (
+    runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
+    environment: NodeJS.ProcessEnv = {},
+  ) =>
     Effect.gen(function* () {
-      const launches: Array<ReadonlyArray<string>> = [];
+      const launches: Array<{
+        readonly args: ReadonlyArray<string>;
+        readonly env: Record<string, string | undefined> | undefined;
+      }> = [];
       const childProcessSpawner = ChildProcessSpawner.make((command) => {
-        if (command._tag === "StandardCommand") launches.push(command.args);
+        if (command._tag === "StandardCommand")
+          launches.push({ args: command.args, env: command.options.env });
         return Effect.fail(
           PlatformError.systemError({
             _tag: "NotFound",
@@ -258,7 +265,7 @@ describe("Grok launch permission mode", () => {
       const adapter = yield* makeGrokAdapterV2({
         instanceId,
         settings: LAUNCH_TEST_GROK_SETTINGS,
-        environment: {},
+        environment,
         hostPlatform: "darwin",
         selfInvocation: yield* resolveSelfInvocation(),
       }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner));
@@ -272,6 +279,8 @@ describe("Grok launch permission mode", () => {
         .pipe(Effect.scoped, Effect.ignore);
       return launches;
     }).pipe(Effect.provideService(HostProcess.Platform, "darwin"), Effect.provide(layerTest));
+  const launchArgs = (runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy) =>
+    launches(runtimePolicy).pipe(Effect.map((all) => all.map((launch) => launch.args)));
 
   const policy = (
     runtimeMode: RuntimeMode,
@@ -295,6 +304,18 @@ describe("Grok launch permission mode", () => {
   )("launches %s threads with %s", ([runtimeMode, , args]) =>
     Effect.gen(function* () {
       assert.deepEqual(yield* launchArgs(policy(runtimeMode)), [args]);
+    }),
+  );
+
+  it.effect("launches with the thread's environment over the instance's", () =>
+    Effect.gen(function* () {
+      const [launch] = yield* launches(
+        policy("full-access", { environment: { FM_TASK_ID: "task-1", SHARED: "thread" } }),
+        { SHARED: "instance", INSTANCE_ONLY: "1" },
+      );
+      assert.equal(launch?.env?.FM_TASK_ID, "task-1");
+      assert.equal(launch?.env?.SHARED, "thread");
+      assert.equal(launch?.env?.INSTANCE_ONLY, "1");
     }),
   );
 

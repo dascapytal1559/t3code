@@ -64,6 +64,7 @@ import {
   isOrchestrationV2WorkActive,
 } from "@t3tools/contracts";
 import { getProviderOptionCurrentValue } from "@t3tools/shared/model";
+import { AcpRegistrySettings } from "@t3tools/provider-acp-registry/settings";
 import { runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
 import { formatThreadLink } from "@t3tools/shared/threadLinks";
 import {
@@ -136,6 +137,22 @@ const DEFAULT_THREAD_LIST_LIMIT = 50;
 const DEFAULT_THREAD_READ_LIMIT = 50;
 const DEFAULT_THREAD_RUN_LIMIT = 10;
 const DEFAULT_THREAD_ITEM_MAX_CHARS = 20_000;
+
+const decodeAcpRegistrySettings = Schema.decodeUnknownOption(AcpRegistrySettings);
+
+/** A local-command instance runs no registry agent, so it reports none. */
+function acpRegistryAgentId(
+  provider: Pick<ServerProvider, "driver" | "instanceId">,
+  settings: { readonly providerInstances: Readonly<Record<string, { readonly config?: unknown }>> },
+): { readonly agentId?: string } {
+  if (provider.driver !== "acpRegistry") return {};
+  const config = Option.getOrUndefined(
+    decodeAcpRegistrySettings(settings.providerInstances[provider.instanceId]?.config ?? {}),
+  );
+  return config?.source === "registry" && config.agentId.length > 0
+    ? { agentId: config.agentId }
+    : {};
+}
 
 interface ResolvedTarget {
   readonly modelSelection: ModelSelection;
@@ -2116,6 +2133,16 @@ const make = Effect.gen(function* () {
       );
       const inherited = parent?.thread.modelSelection;
       const searchTerms = input.search?.toLowerCase().split(/\s+/) ?? [];
+      const threadConfigs = new Map(
+        yield* Effect.forEach(providers, (provider) =>
+          providerAdapters.get(provider.instanceId).pipe(
+            Effect.flatMap((adapter) => adapter.getCapabilities()),
+            Effect.map((capabilities) => capabilities.threadConfig),
+            Effect.orElseSucceed(() => undefined),
+            Effect.map((threadConfig) => [provider.instanceId, threadConfig] as const),
+          ),
+        ),
+      );
       return {
         parentThreadId: parent?.thread.id ?? null,
         inheritedProviderInstanceId: inherited?.instanceId ?? null,
@@ -2159,6 +2186,9 @@ const make = Effect.gen(function* () {
             provider.supportedRuntimeModes.length === 0
               ? {}
               : { runtimeModes: [...provider.supportedRuntimeModes] }),
+            threadEnvironment: threadConfigs.get(provider.instanceId)?.environment === true,
+            threadInstructions: threadConfigs.get(provider.instanceId)?.instructions === true,
+            ...acpRegistryAgentId(provider, settings),
             canRunChildTask: constraints.length === 0,
             canRunCrossProviderChildTask: constraints.length === 0,
             constraints: [...constraints],

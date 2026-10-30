@@ -217,6 +217,8 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           runtimeMode: startedRuntimeMode,
           interactionMode,
           workspaceStrategy: input.workspaceStrategy ?? { type: "root" },
+          ...(input.environment === undefined ? {} : { environment: input.environment }),
+          ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
           ...(input.message === undefined && attachments.length === 0
             ? {}
             : {
@@ -244,6 +246,12 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
               return new OrchestratorMcpFailure({
                 code: "invalid_request",
                 message: error.message,
+              });
+            }
+            if (error.operation === "check-thread-config" && error.cause instanceof Error) {
+              return new OrchestratorMcpFailure({
+                code: "invalid_request",
+                message: `${error.cause.message} No thread was created.`,
               });
             }
             return unavailable();

@@ -7,6 +7,7 @@ export const T3_MCP_URL_ENV = "T3_MCP_URL";
 export const T3_MCP_BEARER_ENV = "T3_MCP_BEARER_TOKEN";
 export const T3_PI_RUNTIME_MODE_ENV = "T3_PI_RUNTIME_MODE";
 export const T3_PI_MCP_EXTENSION_PATH_ENV = "T3_PI_MCP_EXTENSION_PATH";
+export const T3_PI_THREAD_INSTRUCTIONS_ENV = "T3_PI_THREAD_INSTRUCTIONS";
 
 // These tools trigger file-change approvals, bypassed by Auto-accept edits.
 export const PI_FILE_CHANGE_TOOLS = ["edit", "write"] as const;
@@ -21,6 +22,7 @@ const URL_ENV = ${JSON.stringify(T3_MCP_URL_ENV)};
 const TOKEN_ENV = ${JSON.stringify(T3_MCP_BEARER_ENV)};
 const RUNTIME_MODE_ENV = ${JSON.stringify(T3_PI_RUNTIME_MODE_ENV)};
 const EXTENSION_PATH_ENV = ${JSON.stringify(T3_PI_MCP_EXTENSION_PATH_ENV)};
+const THREAD_INSTRUCTIONS_ENV = ${JSON.stringify(T3_PI_THREAD_INSTRUCTIONS_ENV)};
 const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim())};
 const PROTOCOL = "2025-06-18";
 const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
@@ -241,6 +243,9 @@ function createMcpClient(endpoint: string, token: string) {
 }
 
 export default async function t3McpExtension(pi: ExtensionAPI) {
+  // Read once, then drop it so commands Pi runs do not inherit the text.
+  const threadInstructions = env(THREAD_INSTRUCTIONS_ENV);
+  delete process.env[THREAD_INSTRUCTIONS_ENV];
   // Keep skill chips in the request. Pi expands only one leading /skill:
   // command, so use its own frontmatter loader for every selected chip here.
   pi.on("input", async (event, ctx) => {
@@ -455,9 +460,14 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
     if (sections && typeof sections === "object" && event.systemPromptOptions?.forceSystemPrompt === undefined) {
       // A full prompt override bypasses Pi's later section rendering.
       sections.t3_code_orchestration = ORCHESTRATION_INSTRUCTIONS;
+      if (threadInstructions !== undefined) sections.t3_thread_instructions = threadInstructions;
       return undefined;
     }
-    return { systemPrompt: event.systemPrompt + "\\n\\n" + ORCHESTRATION_INSTRUCTIONS };
+    return {
+      systemPrompt: [event.systemPrompt, ORCHESTRATION_INSTRUCTIONS, threadInstructions]
+        .filter((part) => part !== undefined)
+        .join("\\n\\n"),
+    };
   });
 }
 `;

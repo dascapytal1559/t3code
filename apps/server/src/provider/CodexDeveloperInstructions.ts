@@ -58,3 +58,38 @@ export function buildCodexAdditionalContext(
     ...(tools ? { t3_code_tools: { kind: "application", value: tools } } : {}),
   };
 }
+
+const utf8 = new TextEncoder();
+
+/** Splits on code points, preferring a line break, so each entry stays under Codex's cap. */
+function splitForAdditionalContext(text: string): ReadonlyArray<string> {
+  const chunks: Array<string> = [];
+  let chunk = "";
+  let bytes = 0;
+  for (const codePoint of text) {
+    const size = utf8.encode(codePoint).length;
+    while (bytes + size > CODEX_ADDITIONAL_CONTEXT_VALUE_MAX_BYTES) {
+      const lineBreak = chunk.lastIndexOf("\n");
+      const cut = lineBreak > 0 ? lineBreak + 1 : chunk.length;
+      chunks.push(chunk.slice(0, cut));
+      chunk = chunk.slice(cut);
+      bytes = utf8.encode(chunk).length;
+    }
+    chunk += codePoint;
+    bytes += size;
+  }
+  if (chunk.length > 0) chunks.push(chunk);
+  return chunks;
+}
+
+/** A thread's bound instructions, as developer context that survives compaction with T3's own. */
+export function buildCodexThreadInstructionsContext(
+  instructions: string,
+): Record<string, V2TurnStartParams__AdditionalContextEntry> {
+  return Object.fromEntries(
+    splitForAdditionalContext(instructions).map((value, index) => [
+      `t3_thread_instructions_${String(index + 1).padStart(2, "0")}`,
+      { kind: "application" as const, value },
+    ]),
+  );
+}

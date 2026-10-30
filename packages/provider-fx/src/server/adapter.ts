@@ -1,6 +1,7 @@
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { resolveSelfInvocation, type SelfInvocation } from "@t3tools/shared/nodeRuntime";
 import { type OrchestrationV2ProviderCapabilities } from "@t3tools/contracts";
+import { withThreadEnvironment } from "@t3tools/provider-core/server/ProviderAdapter";
 import { FxSettings } from "../settings.ts";
 import type * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -69,6 +70,7 @@ const FxProviderCapabilitiesV2 = {
     supportsSubagents: true,
     emitsSubagentLifecycle: true,
   },
+  threadConfig: { environment: true, instructions: true },
 } satisfies OrchestrationV2ProviderCapabilities;
 
 const FxSubagentRequest = Schema.Union([
@@ -167,11 +169,14 @@ export interface FxAdapterV2Options {
 function makeFxAcpAdapterFlavor(options: FxAdapterV2Options): AcpAdapterV2Flavor {
   const makeRuntime =
     options.makeRuntime ??
-    (({ runtimePolicy: _runtimePolicy, processEnvironment, ...input }: AcpAdapterV2RuntimeInput) =>
+    (({ runtimePolicy, processEnvironment, ...input }: AcpAdapterV2RuntimeInput) =>
       makeFxAcpRuntime({
         ...input,
         fxSettings: options.settings,
-        environment: { ...options.environment, ...processEnvironment },
+        environment: {
+          ...withThreadEnvironment(options.environment, runtimePolicy),
+          ...processEnvironment,
+        },
       }));
   return {
     driver: FX_DRIVER_KIND,

@@ -41,6 +41,7 @@ import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
+import { threadInstructionsBlock } from "@t3tools/provider-core/server/orchestrationInstructions";
 import { museModelCapabilities, resolveMuseReasoningEffort } from "./modelCatalog.ts";
 import {
   MuseApproval,
@@ -185,6 +186,7 @@ const MuseProviderCapabilitiesV2 = {
     nativeItemIds: "strong",
     nativeRequestIds: "strong",
   },
+  threadConfig: { environment: true, instructions: true },
 } satisfies OrchestrationV2ProviderCapabilities;
 
 export interface MuseAdapterV2Options {
@@ -1664,7 +1666,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         const epoch = ++hostEpoch;
         const mcpSession = yield* mcpSessions.read(input.threadId);
         const environment = McpProviderSession.withAgentDeviceEnvironment(
-          options.environment,
+          ProviderAdapter.withThreadEnvironment(options.environment, input.runtimePolicy),
           mcpSession,
         );
         const launch = yield* agentScope.wrap({
@@ -2067,6 +2069,14 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
                       reasoningEffort: effort,
                     }),
                   },
+                  ...(turnInput.runtimePolicy.instructions === undefined
+                    ? []
+                    : [
+                        {
+                          type: "text" as const,
+                          text: threadInstructionsBlock(turnInput.runtimePolicy.instructions),
+                        },
+                      ]),
                   ...parts,
                 ],
                 displayText: turnInput.message.text || "Image attachment",

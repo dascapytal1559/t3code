@@ -178,6 +178,8 @@ const OpenCode2ProviderCapabilities = {
     nativeRequestIds: "strong",
   },
   runtimePolicy: { enforcement: "native" },
+  // One server per instance serves every thread, so a thread's environment cannot reach it alone.
+  threadConfig: { environment: false, instructions: true },
 } satisfies OrchestrationV2ProviderCapabilities;
 
 type EventOf<T extends OpenCodeEvent["type"]> = Extract<OpenCodeEvent, { readonly type: T }>;
@@ -3052,6 +3054,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       const instructions = [
         buildRuntimeInstructions({ harness: "OpenCode", model: turnInput.modelSelection.model }),
         t3OrchestrationSystemPrompt(mcpAvailable, mcpSession?.capabilities?.has("device") === true),
+        turnInput.runtimePolicy.instructions,
       ]
         .filter((part) => part !== undefined && part.length > 0)
         .join("\n\n");

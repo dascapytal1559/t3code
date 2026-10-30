@@ -10,6 +10,7 @@ import {
   OrchestrationV2ProviderThreadJson,
   OrchestrationV2RpcSchemas,
   OrchestrationV2Subagent,
+  OrchestrationV2ThreadEnvironment,
   OrchestrationV2ThreadShellJson,
   OrchestrationV2SubagentJson,
   OrchestrationV2ThreadHistoryPage,
@@ -444,6 +445,40 @@ describe("orchestration V2 contracts", () => {
     expect(runtimeThread.pendingBackgroundTasks).toEqual([]);
     expect(runtimeThread.contextUsage).toBeNull();
     expect(runtimeThread.nativeMetadata).toBeNull();
+  });
+});
+
+describe("thread environment", () => {
+  const decode = Schema.decodeUnknownExit(OrchestrationV2ThreadEnvironment);
+  const failure = (environment: Record<string, string>) => {
+    const exit = decode(environment);
+    return exit._tag === "Failure" ? String(exit.cause) : undefined;
+  };
+
+  it("accepts ordinary variables and refuses names T3 sets for its own wiring", () => {
+    expect(failure({ FM_TASK_ID: "task-1", GIT_CONFIG_COUNT: "1", _private: "" })).toBeUndefined();
+    for (const reserved of [
+      "T3CODE_THREAD_ID",
+      "T3_MCP_URL",
+      "t3_acp_mcp_endpoint",
+      "AGENT_DEVICE_DAEMON_AUTH_TOKEN",
+      "CODEX_HOME",
+      "CLAUDE_CONFIG_DIR",
+      "OPENCODE_SERVER_PASSWORD",
+    ]) {
+      expect(failure({ [reserved]: "x" })).toContain("is set by T3 Code");
+    }
+    expect(failure({ OPENCODE_CONFIG: "x" })).toBeUndefined();
+  });
+
+  it("refuses malformed names, NUL values, and oversized environments", () => {
+    expect(failure({ "1BAD": "x" })).toContain("is not an environment variable name");
+    expect(failure({ "A-B": "x" })).toContain("is not an environment variable name");
+    expect(failure({ VALUE: "a\0b" })).toContain("NUL");
+    expect(failure({ BIG: "x".repeat(16_384) })).toContain("over 16384 bytes");
+    expect(
+      failure(Object.fromEntries(Array.from({ length: 65 }, (_, index) => [`V${index}`, ""]))),
+    ).toContain("at most 64 variables");
   });
 });
 

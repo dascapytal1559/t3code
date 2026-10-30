@@ -1077,6 +1077,12 @@ describe("OrchestratorMcpService provider resolution", () => {
           instanceIds.includes(instanceId)
             ? Effect.succeed({
                 instanceId,
+                getCapabilities: () =>
+                  Effect.succeed(
+                    instanceId === codexInstanceId
+                      ? { threadConfig: { environment: true, instructions: true } }
+                      : {},
+                  ),
               } as unknown as ProviderAdapter.ProviderAdapterV2["Service"])
             : Effect.fail(
                 new ProviderAdapterRegistry.ProviderAdapterRegistryLookupError({ instanceId }),
@@ -1186,7 +1192,14 @@ describe("OrchestratorMcpService provider resolution", () => {
           Layer.mock(ThreadManagementService.ThreadManagementService)({
             getThreadRecords: () => Effect.succeed(parentProjection([])),
           }),
-          ServerSettings.layerTest(),
+          ServerSettings.layerTest({
+            providerInstances: {
+              [ProviderInstanceId.make("acpRegistry")]: {
+                driver: ProviderDriverKind.make("acpRegistry"),
+                config: { agentId: "gemini" },
+              },
+            },
+          }),
           Layer.mock(ProviderRegistry.ProviderRegistry)({
             getProviders: Effect.sync(() => providers),
           }),
@@ -1255,6 +1268,18 @@ describe("OrchestratorMcpService provider resolution", () => {
             assert.isTrue(entry!.canRunCrossProviderChildTask);
             assert.deepEqual(entry!.constraints, []);
           }
+
+          // A launch may bind environment or instructions only where the adapter applies them.
+          assert.include(byId.get(codexInstanceId), {
+            threadEnvironment: true,
+            threadInstructions: true,
+          });
+          assert.include(byId.get(ProviderInstanceId.make("claudeAgent")), {
+            threadEnvironment: false,
+            threadInstructions: false,
+          });
+          assert.equal(byId.get(ProviderInstanceId.make("acpRegistry"))?.agentId, "gemini");
+          assert.notProperty(byId.get(codexInstanceId), "agentId");
 
           const disabled = byId.get(disabledAntigravityInstanceId);
           assert.isDefined(disabled);

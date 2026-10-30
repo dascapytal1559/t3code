@@ -2550,6 +2550,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command.delegatedFrom === undefined
         ? {}
         : { delegatedFrom: command.delegatedFrom }),
+      ...(command.environment === undefined ? {} : { environment: command.environment }),
+      ...(command.instructions === undefined ? {} : { instructions: command.instructions }),
       lineage: {
         parentThreadId: null,
         relationshipToParent: null,

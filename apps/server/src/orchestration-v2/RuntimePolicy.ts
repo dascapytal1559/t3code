@@ -28,7 +28,22 @@ export class RuntimePolicyResolveError extends Schema.TaggedError<RuntimePolicyR
   }
 }
 
-export const RuntimePolicyV2Error = Schema.Union([RuntimePolicyResolveError]);
+export class RuntimePolicyThreadConfigUnsupportedError extends Schema.TaggedError<RuntimePolicyThreadConfigUnsupportedError>()(
+  "RuntimePolicyThreadConfigUnsupportedError",
+  {
+    providerInstanceId: ProviderInstanceId,
+    field: Schema.Literals(["environment", "instructions"]),
+  },
+) {
+  override get message(): string {
+    return `Provider instance ${this.providerInstanceId} cannot apply a thread's ${this.field}. Pick a provider that orchestrator_capabilities lists with thread${this.field === "environment" ? "Environment" : "Instructions"}: true.`;
+  }
+}
+
+export const RuntimePolicyV2Error = Schema.Union([
+  RuntimePolicyResolveError,
+  RuntimePolicyThreadConfigUnsupportedError,
+]);
 export type RuntimePolicyV2Error = typeof RuntimePolicyV2Error.Type;
 
 export const RuntimePolicyV2Override = Schema.Struct({
@@ -44,11 +59,22 @@ export interface RuntimePolicyV2Shape {
     readonly thread: OrchestrationV2AppThread;
     readonly modelSelection: ModelSelection;
   }) => Effect.Effect<ProviderAdapter.ProviderAdapterV2RuntimePolicy, RuntimePolicyV2Error>;
+  /** Refuses a thread environment or instructions the instance's adapter would not apply. */
+  readonly assertThreadConfigSupported: (
+    input: Pick<OrchestrationV2AppThread, "environment" | "instructions"> & {
+      readonly providerInstanceId: ProviderInstanceId;
+    },
+  ) => Effect.Effect<void, RuntimePolicyThreadConfigUnsupportedError>;
 }
 
 export class RuntimePolicyV2 extends Context.Service<RuntimePolicyV2, RuntimePolicyV2Shape>()(
   "t3/orchestration-v2/RuntimePolicy/RuntimePolicyV2",
 ) {}
+
+const threadConfigOf = (thread: OrchestrationV2AppThread) => ({
+  ...(thread.environment === undefined ? {} : { environment: thread.environment }),
+  ...(thread.instructions === undefined ? {} : { instructions: thread.instructions }),
+});
 
 export const layer: Layer.Layer<RuntimePolicyV2> = Layer.succeed(RuntimePolicyV2, {
   resolve: Effect.fn("RuntimePolicyV2.resolve")(function (input) {
@@ -56,11 +82,18 @@ export const layer: Layer.Layer<RuntimePolicyV2> = Layer.succeed(RuntimePolicyV2
       runtimeMode: input.thread.runtimeMode,
       interactionMode: input.thread.interactionMode,
       cwd: input.thread.worktreePath,
+      ...threadConfigOf(input.thread),
     });
   }),
+  assertThreadConfigSupported: Effect.fn("RuntimePolicyV2.assertThreadConfigSupported")(
+    function () {
+      return Effect.void;
+    },
+  ),
 });
 
-function providerRuntimeMode(
+/** The mode an instance actually runs: one it does not list falls back to approval-required. */
+export function effectiveRuntimeMode(
   runtimeMode: RuntimeMode,
   supportedRuntimeModes: ReadonlyArray<RuntimeMode> | undefined,
 ): RuntimeMode {
@@ -80,13 +113,41 @@ export const layerFromProjectStore: Layer.Layer<
   Effect.gen(function* () {
     const projects = yield* ProjectStore.ProjectStoreV2;
     const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
+    const assertThreadConfigSupported: RuntimePolicyV2Shape["assertThreadConfigSupported"] =
+      Effect.fn("RuntimePolicyV2.assertThreadConfigSupported")(function* (input) {
+        if (input.environment === undefined && input.instructions === undefined) return;
+        const instance = yield* providerInstances.getInstance(input.providerInstanceId);
+        const supported =
+          instance === undefined
+            ? undefined
+            : (yield* instance.orchestrationAdapter
+                .getCapabilities()
+                .pipe(Effect.orElseSucceed(() => undefined)))?.threadConfig;
+        const field =
+          input.environment !== undefined && supported?.environment !== true
+            ? "environment"
+            : input.instructions !== undefined && supported?.instructions !== true
+              ? "instructions"
+              : undefined;
+        if (field !== undefined)
+          return yield* new RuntimePolicyThreadConfigUnsupportedError({
+            providerInstanceId: input.providerInstanceId,
+            field,
+          });
+      });
     return RuntimePolicyV2.of({
+      assertThreadConfigSupported,
       resolve: Effect.fn("RuntimePolicyV2.resolve")(function* (input) {
         const instance = yield* providerInstances.getInstance(input.modelSelection.instanceId);
         const supportedRuntimeModes =
           instance === undefined
             ? undefined
             : (yield* instance.snapshot.getSnapshot).supportedRuntimeModes;
+        // A provider switch or fork can move a thread onto an adapter that would drop these.
+        yield* assertThreadConfigSupported({
+          ...threadConfigOf(input.thread),
+          providerInstanceId: input.modelSelection.instanceId,
+        });
         const cwd =
           input.thread.worktreePath ??
           (yield* projects.get(input.thread.projectId).pipe(
@@ -113,9 +174,10 @@ export const layerFromProjectStore: Layer.Layer<
             ),
           ));
         return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-          runtimeMode: providerRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
+          runtimeMode: effectiveRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
           interactionMode: input.thread.interactionMode,
           cwd,
+          ...threadConfigOf(input.thread),
         });
       }),
     });
@@ -130,6 +192,7 @@ export function layerWithOverride(
     Effect.gen(function* () {
       const base = yield* RuntimePolicyV2;
       return {
+        assertThreadConfigSupported: base.assertThreadConfigSupported,
         resolve: (input) =>
           base.resolve(input).pipe(
             Effect.map((policy) =>

@@ -170,9 +170,12 @@ export const AntigravityDriver: ProviderDriver<
         Effect.map((catalog) => stampIdentity(ModelCatalog.applyModelCatalog(draft, catalog))),
       );
 
-    const makeRuntime = Effect.fn("AntigravityDriver.makeRuntime")(function* (
-      input: Omit<AntigravityAcpRuntimeInput, "spawn" | "childProcessSpawner">,
-    ): Effect.fn.Return<
+    const makeRuntime = Effect.fn("AntigravityDriver.makeRuntime")(function* ({
+      threadEnvironment,
+      ...input
+    }: Omit<AntigravityAcpRuntimeInput, "spawn" | "childProcessSpawner"> & {
+      readonly threadEnvironment?: Readonly<Record<string, string>>;
+    }): Effect.fn.Return<
       AcpSessionRuntime.AcpSessionRuntime["Service"],
       AcpError | ProviderSetupError,
       Scope.Scope
@@ -248,7 +251,11 @@ export const AntigravityDriver: ProviderDriver<
           installation: executable,
           profile,
           cwd: input.cwd,
-          baseEnv: processEnvironment,
+          // Before Antigravity's filter, so its private home and credentials still win.
+          baseEnv:
+            threadEnvironment === undefined
+              ? processEnvironment
+              : { ...processEnvironment, ...threadEnvironment },
           auth,
           runtimeTempDirectory,
         }),

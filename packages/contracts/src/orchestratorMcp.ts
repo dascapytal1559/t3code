@@ -601,6 +601,12 @@ export const OrchestratorMcpProviderCapability = Schema.Struct({
   /** Models left out of `models`: unlisted visible models, or matches past the cap with `search`. */
   omittedModels: Schema.optional(NonNegativeInt),
   runtimeModes: Schema.optional(Schema.Array(RuntimeMode)),
+  /** Whether `t3_thread_launch` accepts `environment` for this provider. */
+  threadEnvironment: Schema.Boolean,
+  /** Whether `t3_thread_launch` accepts `instructions` for this provider. */
+  threadInstructions: Schema.Boolean,
+  /** The ACP registry agent an `acpRegistry` instance runs. */
+  agentId: Schema.optional(Schema.String),
   canRunChildTask: Schema.Boolean,
   canRunCrossProviderChildTask: Schema.Boolean,
   constraints: Schema.Array(Schema.String),

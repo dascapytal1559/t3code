@@ -2022,6 +2022,10 @@ export const layerWsRpc = (
                     runtimeMode: input.runtimeMode,
                     interactionMode: input.interactionMode,
                     workspaceStrategy: input.workspaceStrategy,
+                    ...(input.environment === undefined ? {} : { environment: input.environment }),
+                    ...(input.instructions === undefined
+                      ? {}
+                      : { instructions: input.instructions }),
                     ...(input.initialMessage === undefined
                       ? {}
                       : {

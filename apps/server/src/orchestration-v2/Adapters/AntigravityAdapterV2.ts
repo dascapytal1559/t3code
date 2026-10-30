@@ -58,13 +58,16 @@ const AntigravityProviderCapabilitiesV2 = {
     ...AcpProviderCapabilitiesV2.subagents,
     supportsSubagents: true,
   },
+  threadConfig: { environment: true, instructions: true },
 } satisfies OrchestrationV2ProviderCapabilities;
 
 export interface AntigravityAdapterV2Options {
   readonly instanceId: ProviderInstanceId;
   readonly selfInvocation: SelfInvocation;
   readonly makeRuntime: (
-    input: Omit<AntigravityAcpRuntimeInput, "spawn" | "childProcessSpawner">,
+    input: Omit<AntigravityAcpRuntimeInput, "spawn" | "childProcessSpawner"> & {
+      readonly threadEnvironment?: Readonly<Record<string, string>>;
+    },
   ) => Effect.Effect<
     AcpSessionRuntime.AcpSessionRuntime["Service"],
     EffectAcpErrors.AcpError | ProviderSetupError,
@@ -125,6 +128,9 @@ export function makeAntigravityAcpAdapterFlavor(
           Scope.close(scope, Exit.void),
           options.makeRuntime({
             ...input,
+            ...(input.runtimePolicy.environment === undefined
+              ? {}
+              : { threadEnvironment: input.runtimePolicy.environment }),
             clientFileReads: true,
             additionalDirectories: [options.host.paths.attachmentsDir],
           }),

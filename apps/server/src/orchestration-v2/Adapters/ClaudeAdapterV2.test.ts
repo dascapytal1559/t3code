@@ -1153,9 +1153,10 @@ describe("ClaudeAdapterV2 approval cancellation", () => {
 const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(function* (
   binaryPath: string,
   environment: ProviderInstanceEnvironment = [],
+  runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy = CLAUDE_TEST_RUNTIME_POLICY,
 ) {
   const executablePaths: Array<string | undefined> = [];
-  const taskToolEnvironment: Array<string | undefined> = [];
+  const queryOptions: Array<ClaudeAdapterV2.ClaudeAgentSdkQueryOptions> = [];
   const adapter = yield* ClaudeAdapterV2.createClaudeAdapterV2(
     {
       instanceId: ClaudeAdapterV2.CLAUDE_DEFAULT_INSTANCE_ID,
@@ -1176,7 +1177,7 @@ const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(functio
       open: (input) =>
         Effect.sync(() => {
           executablePaths.push(input.options.pathToClaudeCodeExecutable);
-          taskToolEnvironment.push(input.options.env?.CLAUDE_CODE_ENABLE_TODO_TOOLS);
+          queryOptions.push(input.options);
           return {
             messages: Stream.never,
             offer: () => Effect.void,
@@ -1199,12 +1200,12 @@ const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(functio
     threadId,
     providerSessionId: ProviderSessionId.make("provider-session-claude-binary-path"),
     modelSelection: CLAUDE_TEST_MODEL_SELECTION,
-    runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
+    runtimePolicy,
   });
   const providerThread = yield* runtime.ensureThread({
     threadId,
     modelSelection: CLAUDE_TEST_MODEL_SELECTION,
-    runtimePolicy: CLAUDE_TEST_RUNTIME_POLICY,
+    runtimePolicy,
   });
   yield* runtime.startTurn(
     makeClaudeTestTurnInput({
@@ -1214,9 +1215,10 @@ const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(functio
       attemptId: RunAttemptId.make("attempt-claude-binary-path"),
       text: "hello",
       attachments: [],
+      runtimePolicy,
     }),
   );
-  return { executablePaths, taskToolEnvironment };
+  return { executablePaths, queryOptions };
 });
 
 describe("ClaudeAdapterV2 executable path", () => {
@@ -1232,6 +1234,33 @@ describe("ClaudeAdapterV2 executable path", () => {
         );
 
         assert.deepEqual(executablePaths, [packageExe]);
+      }),
+    ).pipe(
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+      ),
+    ),
+  );
+});
+
+describe("ClaudeAdapterV2 thread environment and instructions", () => {
+  it.effect("adds them to the query's env, over the instance's, and to its system prompt", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { queryOptions } = yield* captureSdkExecutablePaths(
+          "/opt/claude/cli.js",
+          [{ name: "INSTANCE_ONLY", value: "instance", sensitive: false }],
+          {
+            ...CLAUDE_TEST_RUNTIME_POLICY,
+            environment: { FM_TASK_ID: "task-1", INSTANCE_ONLY: "thread" },
+            instructions: "The launch brief is first-party.",
+          },
+        );
+        const options = queryOptions[0];
+        assert.equal(options?.env?.FM_TASK_ID, "task-1");
+        assert.equal(options?.env?.INSTANCE_ONLY, "thread");
+        const systemPrompt = options?.systemPrompt as { readonly append?: string } | undefined;
+        assert.isTrue(systemPrompt?.append?.endsWith("\n\nThe launch brief is first-party."));
       }),
     ).pipe(
       Effect.provide(

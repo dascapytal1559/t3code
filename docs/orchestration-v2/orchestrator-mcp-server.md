@@ -201,7 +201,10 @@ Returns:
 - the inherited provider instance and model;
 - the parent runtime and interaction modes;
 - registered provider instances and advertised models;
-- whether each provider can run a child task; and
+- whether each provider can run a child task;
+- whether each provider applies a launch's `environment` and `instructions`
+  (`threadEnvironment`, `threadInstructions`), and an ACP registry instance's
+  `agentId`; and
 - feature flags for polling, cancellation, and batch thread creation.
 
 Unavailable providers include model-visible constraints such as missing V2
@@ -366,6 +369,21 @@ its own under the environment's Scratch project. For stacked PRs, use the parent
 `startFromOrigin: false`. The new thread may not run with broader runtime or
 interaction modes than the caller. Launch has no retry key, so inspect existing threads after a failed or lost response before
 launching again. `create_threads` remains the batch option for a shared checkout.
+
+`environment` and `instructions` bind to the thread at launch, so they outlive
+idle release and restarts; a fork keeps them, a delegated child does not.
+Values are stored in the database, so they must not be secrets. Each adapter
+applies them through its own channel: thread variables override the provider
+instance's environment, and T3's own variables (reserved: `T3_*`, `T3CODE_*`,
+`AGENT_DEVICE_*`, `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, `OPENCODE_*PASSWORD`) are
+set after them. Codex sets them per thread through
+`shell_environment_policy.set`, so its shared app-server never leaks them to
+another thread. An adapter declares what it applies; launching, or later
+running, a thread on one that would drop either field is refused rather than
+silently ignored. Cursor runs in the server process and OpenCode v2 or a
+configured OpenCode server is shared, so they take instructions but no
+environment. `t3_thread_configure` reads both back with `effectiveRuntimeMode`,
+which shows when a provider runs a mode it lacks as `approval-required`.
 
 ### `t3_thread_list`
 

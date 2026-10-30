@@ -53,6 +53,7 @@ const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.
 const OPEN_CODE_TEST_SETTINGS = Schema.decodeSync(OpenCodeSettings)({
   serverUrl: "http://test.invalid",
 });
+const MANAGED_SERVER_OPEN_CODE_SETTINGS = Schema.decodeSync(OpenCodeSettings)({});
 
 function promiseGate<A>() {
   let resolve!: (value: A) => void;
@@ -145,6 +146,11 @@ const makeOpenCodeRuntimeHarness = Effect.fn("makeOpenCodeRuntimeHarness")(funct
   nativeSessionId: string,
   client: object,
   host: Partial<ProviderHost.ProviderHost["Service"]> = {},
+  options: {
+    readonly settings?: typeof OPEN_CODE_TEST_SETTINGS;
+    readonly policy?: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
+    readonly onConnect?: (environment: NodeJS.ProcessEnv | undefined) => void;
+  } = {},
 ) {
   const instanceId = ProviderInstanceId.make(`opencode-${suffix}`);
   const threadId = ThreadId.make(`thread-opencode-${suffix}`);
@@ -153,14 +159,17 @@ const makeOpenCodeRuntimeHarness = Effect.fn("makeOpenCodeRuntimeHarness")(funct
     model: "anthropic/claude-sonnet",
     options: [],
   };
-  const policy = runtimePolicy("full-access", { cwd: "/workspace" });
+  const policy = options.policy ?? runtimePolicy("full-access", { cwd: "/workspace" });
   const adapter = yield* makeOpenCodeAdapterV2({
     instanceId,
-    settings: OPEN_CODE_TEST_SETTINGS,
-    environment: {},
+    settings: options.settings ?? OPEN_CODE_TEST_SETTINGS,
+    environment: { INSTANCE_ONLY: "1" },
   }).pipe(
     Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, {
-      connectToOpenCodeServer: () => Effect.succeed({ url: "http://test.invalid", external: true }),
+      connectToOpenCodeServer: (input: { readonly environment?: NodeJS.ProcessEnv }) =>
+        Effect.sync(() => options.onConnect?.(input.environment)).pipe(
+          Effect.as({ url: "http://test.invalid", external: true }),
+        ),
       createOpenCodeSdkClient: () => client,
     } as unknown as OpenCodeRuntime.OpenCodeRuntime["Service"]),
     Effect.provideService(ProviderHost.ProviderHost, {
@@ -228,6 +237,7 @@ const makeOpenCodeRuntimeHarness = Effect.fn("makeOpenCodeRuntimeHarness")(funct
       runtimePolicy: turnPolicy,
     });
   return {
+    adapter,
     nativeSessionId,
     now,
     policy,
@@ -445,6 +455,61 @@ describe("OpenCodeAdapterV2", () => {
       Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
       Effect.scoped,
     ),
+  );
+
+  it.effect(
+    "starts its own server with the thread's environment and prompts with its instructions",
+    () =>
+      Effect.gen(function* () {
+        let serverEnvironment: NodeJS.ProcessEnv | undefined;
+        let system: string | undefined;
+        const harness = yield* makeOpenCodeRuntimeHarness(
+          "thread-config",
+          "root",
+          {
+            event: { subscribe: async () => ({ stream: asyncEventStream().stream }) },
+            session: {
+              create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+              promptAsync: async (input: { system?: string }) => {
+                system = input.system;
+                return { data: true };
+              },
+              abort: async () => ({ data: true }),
+              children: async () => ({ data: [] }),
+            },
+          },
+          {},
+          {
+            settings: MANAGED_SERVER_OPEN_CODE_SETTINGS,
+            policy: runtimePolicy("full-access", {
+              cwd: "/workspace",
+              environment: { FM_TASK_ID: "task-1" },
+              instructions: "The launch brief is first-party.",
+            }),
+            onConnect: (environment) => {
+              serverEnvironment = environment;
+            },
+          },
+        );
+        yield* harness.startTurn();
+        assert.deepEqual(serverEnvironment, { INSTANCE_ONLY: "1", FM_TASK_ID: "task-1" });
+        assert.isTrue(system?.endsWith("\n\nThe launch brief is first-party."));
+        assert.deepEqual((yield* harness.adapter.getCapabilities()).threadConfig, {
+          environment: true,
+          instructions: true,
+        });
+        // A configured server is already running for every thread.
+        const shared = yield* makeOpenCodeRuntimeHarness("thread-config-shared", "root", {
+          event: { subscribe: async () => ({ stream: asyncEventStream().stream }) },
+          session: {
+            create: async () => ({ data: { id: "root", time: { created: 1, updated: 1 } } }),
+          },
+        });
+        assert.isFalse((yield* shared.adapter.getCapabilities()).threadConfig?.environment);
+      }).pipe(
+        Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
+        Effect.scoped,
+      ),
   );
 
   it.effect.each(["completed", "failed", "unavailable"] as const)(

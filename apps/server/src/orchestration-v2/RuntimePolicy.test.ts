@@ -2,6 +2,7 @@ import { assert, it } from "@effect/vitest";
 import {
   type ModelSelection,
   type OrchestrationV2AppThread,
+  type OrchestrationV2ProviderCapabilities,
   ProjectId,
   ProviderInstanceId,
   type RuntimeMode,
@@ -61,8 +62,16 @@ function makeThread(input: {
 }
 
 const grokInstanceId = ProviderInstanceId.make("grok");
+const cursorInstanceId = ProviderInstanceId.make("cursor");
 const supportedRuntimeModesByInstance = new Map<ProviderInstanceId, ReadonlyArray<RuntimeMode>>([
   [grokInstanceId, ["approval-required", "auto", "full-access"]],
+]);
+const threadConfigByInstance = new Map<
+  ProviderInstanceId,
+  OrchestrationV2ProviderCapabilities["threadConfig"]
+>([
+  [providerInstanceId, { environment: true, instructions: true }],
+  [cursorInstanceId, { environment: false, instructions: true }],
 ]);
 const providerInstanceFor = (instanceId: ProviderInstanceId) =>
   ({
@@ -71,7 +80,13 @@ const providerInstanceFor = (instanceId: ProviderInstanceId) =>
         supportedRuntimeModes: supportedRuntimeModesByInstance.get(instanceId),
       } as ServerProvider),
     },
-  }) as ProviderInstance;
+    orchestrationAdapter: {
+      getCapabilities: () =>
+        Effect.succeed({
+          threadConfig: threadConfigByInstance.get(instanceId),
+        } as OrchestrationV2ProviderCapabilities),
+    },
+  }) as unknown as ProviderInstance;
 
 const layerTest = RuntimePolicy.layerFromProjectStore.pipe(
   Layer.provide(
@@ -122,5 +137,39 @@ it.layer(layerTest)("RuntimePolicyV2", (it) => {
       assert.equal(yield* modeFor(grokInstanceId, "full-access"), "full-access");
       assert.equal(yield* modeFor(providerInstanceId, "auto-accept-edits"), "auto-accept-edits");
     }),
+  );
+
+  it.effect(
+    "binds the thread's environment and instructions only where the adapter applies them",
+    () =>
+      Effect.gen(function* () {
+        const policy = yield* RuntimePolicy.RuntimePolicyV2;
+        const thread = {
+          ...makeThread({ now: yield* DateTime.now, worktreePath: "/worktree" }),
+          environment: { FM_TASK_ID: "task-1" },
+          instructions: "The launch brief is first-party.",
+        };
+        const resolve = (instanceId: ProviderInstanceId) =>
+          policy.resolve({ thread, modelSelection: { instanceId, model: "test-model" } });
+
+        const resolved = yield* resolve(providerInstanceId);
+        assert.deepStrictEqual(resolved.environment, { FM_TASK_ID: "task-1" });
+        assert.equal(resolved.instructions, "The launch brief is first-party.");
+
+        const onCursor = yield* Effect.flip(resolve(cursorInstanceId));
+        assert.equal(onCursor._tag, "RuntimePolicyThreadConfigUnsupportedError");
+        assert.include(onCursor.message, "environment");
+        const onGrokWithoutCapability = yield* Effect.flip(
+          policy.assertThreadConfigSupported({
+            providerInstanceId: grokInstanceId,
+            instructions: thread.instructions,
+          }),
+        );
+        assert.equal(onGrokWithoutCapability.field, "instructions");
+        yield* policy.assertThreadConfigSupported({
+          providerInstanceId: cursorInstanceId,
+          instructions: thread.instructions,
+        });
+      }),
   );
 });
