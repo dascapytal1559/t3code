@@ -5,9 +5,11 @@ import {
   latestProviderTurnForAttempt,
   MessageId,
   type OrchestrationV2Run,
+  type OrchestrationV2ThreadShell,
   type RunId,
   type ThreadId,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import type { ProjectionRuntimeRecoveryState } from "./ProjectionStore.ts";
@@ -318,4 +320,115 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
         }),
       ),
     ),
+);
+
+const MAX_NOTE_CREW = 10;
+
+/** Started and ended cancelled without a Stop: the restart cut it, as continueRestartedRun assumes. */
+function cutByRestart(thread: OrchestrationV2ThreadShell): boolean {
+  return (
+    thread.status === "cancelled" &&
+    thread.latestRunStartedAt != null &&
+    thread.latestRunStopRequested !== true
+  );
+}
+
+function restartCoordinatorNote(
+  startedAt: string,
+  cutCrew: ReadonlyArray<OrchestrationV2ThreadShell>,
+): string {
+  const omitted = cutCrew.length - MAX_NOTE_CREW;
+  return [
+    `The T3 server restarted at ${startedAt}.`,
+    ...(cutCrew.length === 0
+      ? ["None of your crew threads had a run interrupted."]
+      : [
+          "These crew threads had runs interrupted:",
+          ...cutCrew
+            .slice(0, MAX_NOTE_CREW)
+            .map((thread) => `- ${thread.title.replaceAll(/\s+/g, " ").trim()} (${thread.id})`),
+          ...(omitted > 0 ? [`- and ${omitted} more`] : []),
+        ]),
+    "Run `bin/fm-session-start.sh`, check what is still running, and report.",
+  ].join("\n");
+}
+
+/**
+ * A restart ends a coordinator's session and nothing inside it can wake it again, so each idle
+ * coordinator with live crew gets one note per server start. One whose own run the restart cut
+ * is left to its restart continuation.
+ */
+export const notifyCrewCoordinators = Effect.fn("RestartContinuation.notifyCrewCoordinators")(
+  function* (serverStartedAt: DateTime.Utc) {
+    const settings = yield* (yield* ServerSettings.ServerSettingsService).getSettings.pipe(
+      Effect.orElseSucceed(() => null),
+    );
+    if (!settings) return;
+    const threads = yield* ThreadManagementService.ThreadManagementService;
+    const live = (yield* threads.getShellSnapshot()).threads.filter(
+      (thread) => thread.archivedAt === null && thread.deletedAt === null,
+    );
+    const crewByCoordinator = Map.groupBy(
+      live.filter(
+        (thread) =>
+          thread.lineage.relationshipToParent === "crew" && thread.lineage.parentThreadId !== null,
+      ),
+      (thread) => thread.lineage.parentThreadId,
+    );
+    const now = yield* DateTime.now;
+    const startedAt = DateTime.formatIso(serverStartedAt);
+    for (const coordinator of live) {
+      const crew = crewByCoordinator.get(coordinator.id);
+      if (
+        crew === undefined ||
+        (coordinator.snoozedUntil != null &&
+          DateTime.isGreaterThan(coordinator.snoozedUntil, now)) ||
+        coordinator.activeRunId !== null ||
+        coordinator.status === "queued" ||
+        cutByRestart(coordinator) ||
+        !resolveProjectSettings(settings, coordinator.projectId).settings
+          .continueThreadsAfterServerUpdate
+      )
+        continue;
+      yield* Effect.gen(function* () {
+        const messageId = MessageId.make(`message:restart-note:${coordinator.id}:${startedAt}`);
+        const { messages } = yield* threads.getThreadRecords(coordinator.id, ["messages"], {
+          messageIds: [messageId],
+        });
+        if (messages.some((message) => message.id === messageId)) return;
+        const text = restartCoordinatorNote(startedAt, crew.filter(cutByRestart));
+        yield* threads.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make(`command:restart-note:${coordinator.id}:${startedAt}`),
+          threadId: coordinator.id,
+          messageId,
+          text,
+          notification: {
+            source: { kind: "system" },
+            outcome: "updated",
+            summary: "T3 Code restarted and told this thread about its crew",
+            detail: text,
+          },
+          attachments: [],
+          dispatchMode: { type: "queue_after_active" },
+          createdBy: "agent",
+          creationSource: "server",
+        });
+      }).pipe(
+        Effect.catchCauseIf(
+          (cause) => !Cause.hasInterruptsOnly(cause),
+          (cause) =>
+            Effect.logWarning("Failed to tell a coordinator the server restarted", {
+              threadId: coordinator.id,
+              cause,
+            }),
+        ),
+      );
+    }
+  },
+  // A missed note must not hold up startup.
+  Effect.catchCauseIf(
+    (cause) => !Cause.hasInterruptsOnly(cause),
+    (cause) => Effect.logWarning("Failed to tell coordinators the server restarted", { cause }),
+  ),
 );

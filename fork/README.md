@@ -163,6 +163,15 @@ crewmate's Stop and archive stay independent of its coordinator. Threads
 launched without a parent stay out of the group, and mobile does not group
 crew. Code: `apps/web/src/components/sidebar/coordinatorGroup.logic.ts`.
 
+A server restart ends the coordinator's session, and nothing inside it can wake
+it again. So on each start T3 sends every idle coordinator with unarchived crew
+one note, attributed to T3 Code: when the server restarted, which crew had a run
+cut, and to run `bin/fm-session-start.sh`. Archived or snoozed coordinators get
+none, and neither does one whose own run the restart cut (its restart
+continuation wakes it). The project's continue-after-update setting
+(`continueThreadsAfterServerUpdate`) switches it off. Code:
+`notifyCrewCoordinators` in `apps/server/src/orchestration-v2/RestartContinuation.ts`.
+
 ## Per-thread environment and instructions
 
 An agent that launches a thread can give it its own environment variables and
