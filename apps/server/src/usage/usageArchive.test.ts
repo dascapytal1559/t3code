@@ -28,7 +28,7 @@ afterEach(async () => {
 describe("discoverUsageArchive", () => {
   it("finds transcripts and saved T3 usage under each host, labelled by host and instance", async () => {
     await write("remote-a/home/.claude/projects/app/session.jsonl");
-    await write("remote-a/home/.claude-profiles/z/projects/app/session.jsonl");
+    await write("remote-a/home/.claude-profiles/work/projects/app/session.jsonl");
     await write("remote-a/home/.codex/sessions/2026/08/01/rollout-1.jsonl");
     await write("remote-a/home/.grok/sessions/%2Fhome/turn-1/updates.jsonl");
     await write("remote-a/home/.t3/userdata/usage-scan-cache-v5.json");
@@ -56,9 +56,9 @@ describe("discoverUsageArchive", () => {
       { host: "laptop-old", instance: ".", provider: "claude", dir: "laptop-old/projects" },
       {
         host: "remote-a",
-        instance: "home/.claude-profiles/z",
+        instance: "home/.claude-profiles/work",
         provider: "claude",
-        dir: "remote-a/home/.claude-profiles/z/projects",
+        dir: "remote-a/home/.claude-profiles/work/projects",
       },
       {
         host: "remote-a",
