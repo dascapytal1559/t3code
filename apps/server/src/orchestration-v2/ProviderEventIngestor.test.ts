@@ -1121,8 +1121,8 @@ layer("ProviderEventIngestorV2", (it) => {
     }),
   );
 
-  it.effect.each(["interrupted", "control"] as const)(
-    "dismisses only native questions when a provider turn ends with %s",
+  it.effect.each(["interrupted", "failed", "control"] as const)(
+    "expires the native requests a provider turn ending with %s can no longer answer",
     (terminal) =>
       Effect.gen(function* () {
         const now = yield* DateTime.now;
@@ -1267,15 +1267,21 @@ layer("ProviderEventIngestorV2", (it) => {
         };
         const stored = yield* ingestor.ingestNormalized(input);
         const projection = yield* projectionStore.getThreadProjection(threadId);
+        // A completed turn's approval may belong to a background subagent that is still waiting.
+        const closedKeys = new Set<string>(
+          terminal === "control"
+            ? ["native", "unavailable"]
+            : ["native", "unavailable", "approval"],
+        );
         for (const fixture of fixtures) {
-          const closed = fixture.key === "native" || fixture.key === "unavailable";
+          const closed = closedKeys.has(fixture.key);
           const request = projection.runtimeRequests.find(
             (item) => item.id === fixture.request.id,
           )!;
           const node = projection.nodes.find((item) => item.id === fixture.node.id)!;
           const item = projection.turnItems.find((item) => item.id === fixture.item.id)!;
           if (closed) {
-            assert.equal(request.status, "cancelled");
+            assert.equal(request.status, "expired");
             assert.isNotNull(request.resolvedAt);
             assert.equal(node.status, "cancelled");
             assert.isNotNull(node.completedAt);
@@ -1289,29 +1295,25 @@ layer("ProviderEventIngestorV2", (it) => {
         }
         assert.equal(
           stored.filter((entry) => entry.event.type === "runtime-request.updated").length,
-          2,
-        );
-        assert.isEmpty(
-          (yield* projectionStore.getPendingNativeUserInputs(threadId, providerTurnId))
-            .runtimeRequests,
+          closedKeys.size,
         );
         const replayed = yield* eventStore.read({ threadId }).pipe(Stream.runCollect);
         assert.equal(
           replayed.filter(
             (entry) =>
               entry.event.type === "runtime-request.updated" &&
-              entry.event.payload.status === "cancelled",
+              entry.event.payload.status === "expired",
           ).length,
-          2,
+          closedKeys.size,
         );
         const repeated = yield* ingestor.ingestNormalized(input);
         assert.isFalse(repeated.some((entry) => entry.event.type === "runtime-request.updated"));
       }),
   );
 
-  it.effect(
-    "preserves an answer committed after terminal normalization reads a pending question",
-    () =>
+  it.effect.each(["question", "approval"] as const)(
+    "preserves an answer committed after terminal normalization reads a pending %s",
+    (requestType) =>
       Effect.scoped(
         Effect.gen(function* () {
           const eventSink = yield* EventSink.EventSinkV2;
@@ -1339,7 +1341,7 @@ layer("ProviderEventIngestorV2", (it) => {
             nodeId,
             providerTurnId,
             nativeRequestRef: null,
-            kind: "user_input",
+            kind: requestType === "question" ? "user_input" : "command",
             status: "pending",
             responseCapability: { type: "live", providerSessionId },
             createdAt: now,
@@ -1351,7 +1353,7 @@ layer("ProviderEventIngestorV2", (it) => {
             runId: null,
             parentNodeId: null,
             rootNodeId: nodeId,
-            kind: "user_input_request",
+            kind: requestType === "question" ? "user_input_request" : "approval_request",
             status: "waiting",
             countsForRun: false,
             providerThreadId,
@@ -1377,9 +1379,9 @@ layer("ProviderEventIngestorV2", (it) => {
             startedAt: now,
             completedAt: null,
             updatedAt: now,
-            type: "user_input_request",
-            requestId: request.id,
-            questions: [],
+            ...(requestType === "question"
+              ? { type: "user_input_request", requestId: request.id, questions: [] }
+              : { type: "approval_request", requestId: request.id, requestKind: "command" }),
           };
           const seedEvents: Array<OrchestrationV2DomainEvent> = [threadEvent];
           for (const payload of [
@@ -1423,7 +1425,7 @@ layer("ProviderEventIngestorV2", (it) => {
                   runAttemptId: null,
                   nativeTurnRef: null,
                   ordinal: 1,
-                  status: "completed",
+                  status: requestType === "question" ? "completed" : "interrupted",
                   startedAt: now,
                   completedAt: now,
                 },
@@ -1432,11 +1434,13 @@ layer("ProviderEventIngestorV2", (it) => {
             .pipe(Effect.forkScoped);
           yield* Deferred.await(normalized);
           const answers = { decision: "Use the existing workspace" };
+          const response =
+            requestType === "question" ? { answers } : { decision: "accept" as const };
           const responseEvents: Array<OrchestrationV2DomainEvent> = [];
           for (const payload of [
             {
               type: "runtime-request.updated" as const,
-              payload: { ...request, status: "resolved" as const, answers, resolvedAt: now },
+              payload: { ...request, status: "resolved" as const, ...response, resolvedAt: now },
             },
             {
               type: "node.updated" as const,
@@ -1463,7 +1467,10 @@ layer("ProviderEventIngestorV2", (it) => {
           const projection = yield* projections.getThreadProjection(threadId);
           const answered = projection.runtimeRequests.find((entry) => entry.id === request.id)!;
           assert.equal(answered.status, "resolved");
-          assert.deepEqual(answered.answers, answers);
+          assert.deepEqual(
+            requestType === "question" ? answered.answers : answered.decision,
+            requestType === "question" ? answers : "accept",
+          );
           assert.equal(projection.nodes.find((entry) => entry.id === nodeId)!.status, "completed");
           assert.equal(
             projection.turnItems.find((entry) => entry.id === item.id)!.status,
@@ -1474,7 +1481,7 @@ layer("ProviderEventIngestorV2", (it) => {
             history.some(
               (stored) =>
                 stored.event.type === "runtime-request.updated" &&
-                stored.event.payload.status === "cancelled",
+                stored.event.payload.status === "expired",
             ),
           );
         }),

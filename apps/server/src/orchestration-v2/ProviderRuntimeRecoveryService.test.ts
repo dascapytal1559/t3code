@@ -41,13 +41,17 @@ it.effect("expires orphaned runtime requests before command readiness", () => {
       {
         id: RuntimeRequestId.make("request_orphaned"),
         nodeId: NodeId.make("node_orphaned"),
+        kind: "command",
         status: "pending",
-        responseCapability: { type: "not_resumable", reason: "old process" },
+        responseCapability: {
+          type: "live",
+          providerSessionId: ProviderSessionId.make("session_orphaned"),
+        },
       },
     ],
     providerSessions: [],
     providerThreads: [],
-    runs: [],
+    runs: [{ id: RunId.make("run_orphaned"), status: "interrupted" }],
     nodes: [],
   } as unknown as OrchestrationV2ThreadProjection;
   const layer = ProviderRuntimeRecovery.layer.pipe(

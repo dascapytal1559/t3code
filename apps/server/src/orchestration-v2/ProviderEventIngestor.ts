@@ -377,50 +377,55 @@ export const layer: Layer.Layer<
         );
       });
 
-    const dismissNativeUserInputs = Effect.fn("ProviderEventIngestor.dismissNativeUserInputs")(
-      function* (
-        input: ProviderEventIngestInput,
-        providerTurnId: ProviderTurnId,
-        threadId = input.threadId,
-      ) {
-        const pending = yield* projections.getPendingNativeUserInputs(threadId, providerTurnId);
-        const now = yield* DateTime.now;
-        const events: Array<OrchestrationV2DomainEvent> = [];
-        for (const request of pending.runtimeRequests) {
-          events.push(
-            yield* makeDomainEvent(input, {
-              type: "runtime-request.updated",
-              threadId,
-              nodeId: request.nodeId,
-              payload: { ...request, status: "cancelled", resolvedAt: now },
-            }),
-          );
-        }
-        for (const node of pending.nodes) {
-          events.push(
-            yield* makeDomainEvent(input, {
-              type: "node.updated",
-              threadId,
-              nodeId: node.id,
-              runId: node.runId,
-              payload: { ...node, status: "cancelled", completedAt: now },
-            }),
-          );
-        }
-        for (const item of pending.turnItems) {
-          events.push(
-            yield* makeDomainEvent(input, {
-              type: "turn-item.updated",
-              threadId,
-              nodeId: item.nodeId,
-              runId: item.runId,
-              payload: { ...item, status: "cancelled", completedAt: now, updatedAt: now },
-            }),
-          );
-        }
-        return events;
-      },
-    );
+    // A stopped turn takes every callback with it. A completed turn can still have live
+    // approvals from background subagents, so only its questions expire here.
+    const expireTurnRequests = Effect.fn("ProviderEventIngestor.expireTurnRequests")(function* (
+      input: ProviderEventIngestInput,
+      providerTurnId: ProviderTurnId,
+      turnStatus: OrchestrationV2ProviderTurn["status"],
+      threadId = input.threadId,
+    ) {
+      const pending = yield* projections.getPendingTurnRequests(
+        threadId,
+        providerTurnId,
+        turnStatus === "completed" ? "questions" : "all",
+      );
+      const now = yield* DateTime.now;
+      const events: Array<OrchestrationV2DomainEvent> = [];
+      for (const request of pending.runtimeRequests) {
+        events.push(
+          yield* makeDomainEvent(input, {
+            type: "runtime-request.updated",
+            threadId,
+            nodeId: request.nodeId,
+            payload: { ...request, status: "expired", resolvedAt: now },
+          }),
+        );
+      }
+      for (const node of pending.nodes) {
+        events.push(
+          yield* makeDomainEvent(input, {
+            type: "node.updated",
+            threadId,
+            nodeId: node.id,
+            runId: node.runId,
+            payload: { ...node, status: "cancelled", completedAt: now },
+          }),
+        );
+      }
+      for (const item of pending.turnItems) {
+        events.push(
+          yield* makeDomainEvent(input, {
+            type: "turn-item.updated",
+            threadId,
+            nodeId: item.nodeId,
+            runId: item.runId,
+            payload: { ...item, status: "cancelled", completedAt: now, updatedAt: now },
+          }),
+        );
+      }
+      return events;
+    });
 
     /** Providers may reveal native subagent models late; lock full-row updates against concurrent thread commands. */
     const syncSubagentThreadModel = Effect.fn("ProviderEventIngestor.syncSubagentThreadModel")(
@@ -607,9 +612,10 @@ export const layer: Layer.Layer<
                 ...(["completed", "interrupted", "failed", "cancelled"].includes(
                   input.event.providerTurn.status,
                 )
-                  ? yield* dismissNativeUserInputs(
+                  ? yield* expireTurnRequests(
                       input,
                       input.event.providerTurn.id,
+                      input.event.providerTurn.status,
                       input.event.threadId,
                     )
                   : []),
@@ -704,7 +710,11 @@ export const layer: Layer.Layer<
               // Live output is routed to the command output hub before ingestion.
               return [];
             case "turn.terminal":
-              const dismissed = yield* dismissNativeUserInputs(input, input.event.providerTurnId);
+              const dismissed = yield* expireTurnRequests(
+                input,
+                input.event.providerTurnId,
+                input.event.status,
+              );
               if (input.event.status !== "failed") {
                 return dismissed;
               }
@@ -768,7 +778,7 @@ export const layer: Layer.Layer<
             if (input.writeIfProviderThreadOwner !== undefined) {
               const ownerResult = yield* eventSink
                 .writeIfProviderThreadOwner({
-                  guardPendingUserInputCancellations: true,
+                  guardPendingRequestClosures: true,
                   ...(input.commandId === undefined ? {} : { commandId: input.commandId }),
                   ...input.writeIfProviderThreadOwner,
                   events,
@@ -779,7 +789,7 @@ export const layer: Layer.Layer<
             if (input.writeIfRunCurrent === undefined) {
               return yield* eventSink
                 .write({
-                  guardPendingUserInputCancellations: true,
+                  guardPendingRequestClosures: true,
                   ...(input.commandId === undefined ? {} : { commandId: input.commandId }),
                   events,
                 })
@@ -787,7 +797,7 @@ export const layer: Layer.Layer<
             }
             const result = yield* eventSink
               .writeIfRunCurrent({
-                guardPendingUserInputCancellations: true,
+                guardPendingRequestClosures: true,
                 ...(input.commandId === undefined ? {} : { commandId: input.commandId }),
                 threadId: input.threadId,
                 ...input.writeIfRunCurrent,
