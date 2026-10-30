@@ -71,6 +71,16 @@ runs its updater. Without this, Codex offers an update that fails, because
 upstream's handling of WinGet's Claude, in
 `packages/provider-core/src/server/maintenanceResolver.ts`.
 
+## `~` in a provider's executable path
+
+OpenCode, Grok, Pi, fx, Antigravity and the ACP registry used a configured path
+such as `~/.local/bin/opencode` as written. Processes launch without a shell, so
+the provider showed as not installed. Each of those drivers now expands a
+leading `~` with `expandHomePath` before probing, spawning, resolving
+maintenance or reporting status, as Codex, Claude and Muse already did. Cursor
+never runs its `binaryPath`, so it is unchanged. When a sync finds upstream
+expanding `~` in these drivers, keep upstream's.
+
 ## Idle agent release is a setting (carried upstream PR)
 
 This carries upstream https://github.com/pingdotgg/t3code/pull/25624 unchanged:
@@ -114,6 +124,35 @@ selector in `lib/editableFocus.ts`, the Excalidraw font asset path in
 `apps/web/vite.config.ts`, and licence notices. Excalidraw's canvas fonts are
 served from the app because the desktop CSP blocks the CDN Excalidraw would
 otherwise use. The mobile app has no board.
+
+## FirstMate crew in the sidebar
+
+A FirstMate session and the worker threads it launches are grouped above the
+sidebar inbox and kept out of Working. The main session shows as one line led
+by its model icon; its crewmates hang below it as a tree that collapses to a
+count. Crewmate cards have no hover Snooze or Settle (the context menu still
+has both), and crewmate turns raise no sound or notification. Opening the app
+on the home route jumps to a FirstMate session that is still working or waiting
+on input. Without FirstMate the sidebar is unchanged.
+
+The main session is the newest worktree-less thread at the root of a FirstMate
+checkout. A crewmate is a thread an agent launched over MCP from the
+`firstmate` client, read from `linkOrigin`, which the server now stamps on
+launches from every signed-in OAuth client (`linked: false` for an ordinary
+one); older launches are recognised by an `fm-` title. Code:
+`apps/web/src/components/sidebar/coordinatorGroup.logic.ts`,
+`apps/server/src/mcp/linkOrigin.ts`.
+
+## Per-thread environment and instructions
+
+`t3_thread_launch` takes optional `environment` (env vars) and `instructions`
+(kept in the agent's system context), stored on the thread so they survive
+idle release, restarts and forks. Each adapter applies them through the channel
+it already has and declares what it supports; a launch or later turn that binds
+something its provider cannot apply is refused. `t3_thread_configure` reads
+them back with the effective runtime mode, and `orchestrator_capabilities`
+reports `threadEnvironment`, `threadInstructions` and an ACP registry
+instance's `agentId`. Code: `apps/server/src/orchestration-v2/RuntimePolicy.ts`.
 
 ## Usage statistics carry no account ids
 

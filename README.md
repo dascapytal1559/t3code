@@ -1,3 +1,22 @@
+## About this fork
+
+This is a fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code). On top of upstream it:
+
+- Installs as its own desktop app, T3 Code (Fork), that runs beside the official T3 Code with separate data and settings.
+- Shows 6 and 12 months of usage on the Usage page as stacked daily bars, and keeps parsed usage for a year so it outlives deleted transcripts.
+- Counts archived usage copied from machines and accounts that no longer run T3.
+- Shows skipped usage records as a small footnote instead of a notice at the top of the Usage page.
+- Hides the Update button for a provider CLI bundled inside a macOS app (such as ChatGPT's Codex) and leaves updating it to that app.
+- Accepts a provider path that starts with `~` (such as `~/.local/bin/opencode`) for every provider, not only Codex, Claude and Muse.
+- Lets you choose how long an idle agent is kept before it is released, including Never (Settings → Threads → Agent memory).
+- Tells you in the sidebar when upstream publishes a newer stable release.
+- Adds a Board tab in the chat's right panel for quick annotated sketches and screenshots, which you can attach to the chat as an image.
+- Groups a FirstMate session and its worker threads at the top of the sidebar as a tree, silences the workers' notifications, and opens the FirstMate session at launch when it is still working.
+- Lets an agent launching a thread give it its own environment variables and instructions, for any provider.
+- Sends usage statistics with an anonymous per-install id only, never one derived from your accounts.
+
+The details, and what each upstream sync must carry forward, are in [fork/README.md](fork/README.md).
+
 # T3 Code
 
 T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
