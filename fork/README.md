@@ -1,9 +1,11 @@
 # Fork changes
 
-This fork tracks `pingdotgg/t3code` `main`. Keep this list current so each upstream
-sync knows what to carry forward. Earlier fork work is archived on the local
-branch `archive/fork-legacy-2026-10-19` and is out of scope for syncs; take
-from it only on request.
+This fork tracks `pingdotgg/t3code` `main`. Each feature section says what it
+does, shows a picture where one helps, then what each upstream sync must carry
+forward. Keep this list current. Pictures live in `fork/media/` and show
+made-up data. Earlier fork work is archived on the local branch
+`archive/fork-legacy-2026-10-19` and is out of scope for syncs; take from it
+only on request.
 
 ## Desktop identity
 
@@ -31,12 +33,18 @@ Two things are still shared with the official app:
 
 ## Usage reaches twelve months
 
+![The Usage page's 12 months view: a year of daily cost as stacked bars, split by Codex and Claude Code](media/usage-12-months.png)
+
 The Usage page on web and desktop has 6 months (`Cmd+Shift+5`) and 12 months
 (`Cmd+Shift+6`) periods, drawn as stacked daily bars. The mobile app still
 stops at 90 days. The server keeps parsed usage for 367 days instead of 92, so
 usage stays after Claude Code deletes old transcripts. History older than what
 is on disk or in the saved usage today cannot be recovered; twelve months builds
 up from when this build first scans.
+
+Upstream's "N malformed or inconsistent usage record(s) were skipped" sentence
+shows as a small muted footnote at the bottom of the page instead of a notice
+at the top (`apps/web/src/components/usage/UsagePage.tsx`).
 
 ## Archived usage
 
@@ -73,8 +81,9 @@ upstream's handling of WinGet's Claude, in
 
 ## `~` in a provider's executable path
 
-OpenCode, Grok, Pi, fx, Antigravity and the ACP registry used a configured path
-such as `~/.local/bin/opencode` as written. Processes launch without a shell, so
+A provider path that starts with `~` works for every provider. OpenCode, Grok,
+Pi, fx, Antigravity and the ACP registry used a configured path such as
+`~/.local/bin/opencode` as written. Processes launch without a shell, so
 the provider showed as not installed. Each of those drivers now expands a
 leading `~` with `expandHomePath` before probing, spawning, resolving
 maintenance or reporting status, as Codex, Claude and Muse already did. Cursor
@@ -83,14 +92,19 @@ expanding `~` in these drivers, keep upstream's.
 
 ## Idle agent release is a setting (carried upstream PR)
 
-This carries upstream https://github.com/pingdotgg/t3code/pull/25624 unchanged:
-the server setting `providerSessionIdleTimeoutMinutes` (default 30, `null` is
-Never) replaces the hardcoded 30-minute idle release, shown under Settings →
-Threads → Agent memory. Firstmate's environment sets it to Never. When a sync
-finds the PR merged, or an upstream equivalent, drop this copy and keep
-upstream's.
+![Settings, Agent memory: "Release idle agents" set to 30 minutes, with Never, 1, 5, 10 minutes and 1 hour on offer](media/agent-memory.jpg)
+
+You choose how long an idle agent is kept before T3 releases it, including
+Never. This carries upstream https://github.com/pingdotgg/t3code/pull/25624
+unchanged: the server setting `providerSessionIdleTimeoutMinutes` (default 30,
+`null` is Never) replaces the hardcoded 30-minute idle release, shown under
+Settings → Threads → Agent memory. Firstmate's environment sets it to Never.
+When a sync finds the PR merged, or an upstream equivalent, drop this copy and
+keep upstream's.
 
 ## Upstream release indicator
+
+<img src="media/upstream-release.jpg" width="361" alt="The sidebar update icon's popover: T3 Code v0.1.5 is out. This build is v0.1.4. Ask FirstMate to sync the fork. Release notes and Dismiss buttons.">
 
 The fork has no update feed, so it never hears about upstream releases. When
 `pingdotgg/t3code` publishes a stable release newer than this build, the
@@ -104,6 +118,8 @@ desktop updater is running. Code: `apps/web/src/state/upstreamRelease.ts` and
 FirstMate to update" button belongs in that popover.
 
 ## Board
+
+![A chat beside its Board tab: a pasted Usage screenshot with a circle, an arrow and the note "Why the spike?"](media/board.png)
 
 A quick annotation canvas that opens as a "Board" tab in a chat's right panel,
 from the panel's launcher or "+" menu (W) or "Open board" in the command palette.
@@ -127,6 +143,8 @@ otherwise use. The mobile app has no board.
 
 ## FirstMate crew in the sidebar
 
+<img src="media/firstmate-sidebar.jpg" width="256" alt="The sidebar: a FirstMate session waiting on input at the top, its four crewmate threads in a tree below it, then ordinary threads">
+
 A FirstMate session and the worker threads it launches are grouped above the
 sidebar inbox and kept out of Working. The main session shows as one line led
 by its model icon; its crewmates hang below it as a tree that collapses to a
@@ -145,14 +163,16 @@ one); older launches are recognised by an `fm-` title. Code:
 
 ## Per-thread environment and instructions
 
-`t3_thread_launch` takes optional `environment` (env vars) and `instructions`
-(kept in the agent's system context), stored on the thread so they survive
-idle release, restarts and forks. Each adapter applies them through the channel
-it already has and declares what it supports; a launch or later turn that binds
-something its provider cannot apply is refused. `t3_thread_configure` reads
-them back with the effective runtime mode, and `orchestrator_capabilities`
-reports `threadEnvironment`, `threadInstructions` and an ACP registry
-instance's `agentId`. Code: `apps/server/src/orchestration-v2/RuntimePolicy.ts`.
+An agent that launches a thread can give it its own environment variables and
+instructions, for any provider. `t3_thread_launch` takes optional `environment`
+(env vars) and `instructions` (kept in the agent's system context), stored on
+the thread so they survive idle release, restarts and forks. Each adapter
+applies them through the channel it already has and declares what it
+supports; a launch or later turn that binds something its provider cannot
+apply is refused. `t3_thread_configure` reads them back with the effective
+runtime mode, and `orchestrator_capabilities` reports `threadEnvironment`,
+`threadInstructions` and an ACP registry instance's `agentId`. Code:
+`apps/server/src/orchestration-v2/RuntimePolicy.ts`.
 
 OpenCode 2 shares one server per instance, so its adapter sets each session's
 own environment instead (`PUT /api/session/:id/environment`). That replaces the
