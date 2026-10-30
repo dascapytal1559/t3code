@@ -26,6 +26,8 @@ export class OpenCode2Server extends Context.Service<
     readonly withConnection: <A, E, R>(
       use: (connection: OpenCode2Connection) => Effect.Effect<A, E, R>,
     ) => Effect.Effect<A, E | OpenCodeRuntime.OpenCodeRuntimeError, R>;
+    /** What the server's shells inherit, minus its password; unknown for an external server. */
+    readonly shellEnvironment: Readonly<Record<string, string>> | undefined;
   }
 >()("@t3tools/provider-opencode/server/v2/OpenCode2Server") {}
 
@@ -47,6 +49,16 @@ export const serverEnvironment = (
   const { OPENCODE_SERVER_PASSWORD: _inherited, ...rest } = environment;
   return { ...rest, OPENCODE_PASSWORD: Redacted.value(password) };
 };
+
+export const shellEnvironment = (environment: NodeJS.ProcessEnv): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(environment).filter(
+      (entry): entry is [string, string] =>
+        entry[1] !== undefined &&
+        entry[0] !== "OPENCODE_PASSWORD" &&
+        entry[0] !== "OPENCODE_SERVER_PASSWORD",
+    ),
+  );
 
 const httpFailureOf = (cause: unknown): HttpClientError.HttpClientError | undefined => {
   if (HttpClientError.isHttpClientError(cause)) return cause;
@@ -144,6 +156,7 @@ export const make = Effect.fn("OpenCode2Server.make")(function* (input: {
           Effect.flatMap(use),
         );
       }),
+      shellEnvironment: undefined,
     });
   }
 
@@ -162,5 +175,6 @@ export const make = Effect.fn("OpenCode2Server.make")(function* (input: {
           : Effect.die(new Error("OpenCode 2 server was lent before verification.")),
       );
     }),
+    shellEnvironment: shellEnvironment(input.environment),
   });
 });

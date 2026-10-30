@@ -154,6 +154,15 @@ them back with the effective runtime mode, and `orchestrator_capabilities`
 reports `threadEnvironment`, `threadInstructions` and an ACP registry
 instance's `agentId`. Code: `apps/server/src/orchestration-v2/RuntimePolicy.ts`.
 
+OpenCode 2 shares one server per instance, so its adapter sets each session's
+own environment instead (`PUT /api/session/:id/environment`). That replaces the
+server's environment in the session's shells, is kept in memory only, and is not
+inherited by subagent sessions. So T3 sends every session, subagents included,
+the environment it started the server with minus `OPENCODE_PASSWORD`, plus the
+thread's variables. It sends this again after the server restarts. An external
+server (`serverUrl`) has an environment T3 does not know, so it stays
+unsupported. Code: `packages/provider-opencode/src/server/v2/adapter.ts`.
+
 ## Usage statistics carry no account ids
 
 Product analytics still go to T3, but nothing sent derives from an account.

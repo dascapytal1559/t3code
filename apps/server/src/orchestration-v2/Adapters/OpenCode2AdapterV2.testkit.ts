@@ -94,6 +94,7 @@ const operationOf = (
     if (method === "POST" && rest === "/model") return { type: "session.switchModel", input };
     if (method === "POST" && rest === "/agent") return { type: "session.switchAgent", input };
     if (method === "POST" && rest === "/move") return { type: "session.move", input };
+    if (method === "PUT" && rest === "/environment") return { type: "session.environment", input };
     if (method === "POST" && rest === "/synthetic") return { type: "session.synthetic", input };
     if (method === "POST" && rest === "/fork") return { type: "session.fork", input };
     if (method === "POST" && rest === "/revert/stage") {
@@ -131,6 +132,7 @@ const replayHttpClient = (
   controller: OpenCodeReplayController,
   replayGate: ProviderReplayGate | undefined,
   onPrompt: ((input: unknown) => void) | undefined,
+  onEnvironment: ((input: unknown) => void) | undefined,
 ) =>
   HttpClient.make((request, url) =>
     Effect.tryPromise({
@@ -152,6 +154,7 @@ const replayHttpClient = (
         // HTTP streams and requests use separate connections; deliver prior recorded inbound data before matching requests.
         if (operation.type !== "event.subscribe") await controller.untilInboundDelivered();
         if (operation.type === "session.prompt") onPrompt?.(operation.input);
+        if (operation.type === "session.environment") onEnvironment?.(operation.input);
         await controller.expectOutbound(operation);
         if (operation.type === "event.subscribe") {
           controller.exited = false;
@@ -191,7 +194,9 @@ export const replayServer = (
   transcript: ProviderReplayTranscript,
   options?: {
     readonly external?: boolean;
+    readonly environment?: NodeJS.ProcessEnv;
     readonly onPrompt?: (input: unknown) => void;
+    readonly onEnvironment?: (input: unknown) => void;
     readonly replayGate?: ProviderReplayGate;
     readonly borrowers?: { current: number };
   },
@@ -207,7 +212,12 @@ export const replayServer = (
     const opencode = yield* OpenCode2Client.make.pipe(
       Effect.provideService(
         HttpClient.HttpClient,
-        replayHttpClient(controller, options?.replayGate, options?.onPrompt),
+        replayHttpClient(
+          controller,
+          options?.replayGate,
+          options?.onPrompt,
+          options?.onEnvironment,
+        ),
       ),
     );
     const connection = {
@@ -231,6 +241,10 @@ export const replayServer = (
                   borrowers.current -= 1;
                 }),
             ),
+      shellEnvironment:
+        options?.external === true || options?.environment === undefined
+          ? undefined
+          : OpenCode2Server.shellEnvironment(options.environment),
     });
   });
 
@@ -238,7 +252,9 @@ const makeReplayAdapter = (
   transcript: ProviderReplayTranscript,
   options?: {
     readonly external?: boolean;
+    readonly environment?: NodeJS.ProcessEnv;
     readonly onPrompt?: (input: unknown) => void;
+    readonly onEnvironment?: (input: unknown) => void;
     readonly replayGate?: ProviderReplayGate;
     readonly borrowers?: { current: number };
   },
@@ -285,7 +301,9 @@ export const openCode2ReplayRuntime = (
   entries: ReadonlyArray<ProviderReplayEntry>,
   options?: {
     readonly external?: boolean;
+    readonly environment?: NodeJS.ProcessEnv;
     readonly onPrompt?: (input: unknown) => void;
+    readonly onEnvironment?: (input: unknown) => void;
     readonly borrowers?: { current: number };
     readonly replayGate?: ProviderReplayGate;
     readonly attachmentsDir?: string;

@@ -156,6 +156,7 @@ describe("OpenCode2Server passwords", () => {
       password,
     );
     assert.deepStrictEqual(environment, { PATH: "/bin", OPENCODE_PASSWORD: "t3-generated" });
+    assert.deepStrictEqual(OpenCode2Server.shellEnvironment(environment), { PATH: "/bin" });
   });
 });
 

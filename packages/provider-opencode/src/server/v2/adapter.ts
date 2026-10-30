@@ -178,7 +178,6 @@ const OpenCode2ProviderCapabilities = {
     nativeRequestIds: "strong",
   },
   runtimePolicy: { enforcement: "native" },
-  // One server per instance serves every thread, so a thread's environment cannot reach it alone.
   threadConfig: { environment: false, instructions: true },
 } satisfies OrchestrationV2ProviderCapabilities;
 
@@ -285,7 +284,7 @@ interface ThreadState {
   agent: string;
   title: string | undefined;
   rules: ReadonlyArray<Rule> | undefined;
-  policy: RulesPolicy;
+  policy: SessionPolicy;
   readonly grants: Array<Rule>;
   readonly calls: Map<string, SubagentCall>;
   subagent:
@@ -320,9 +319,9 @@ type TurnTerminal =
   | { readonly status: "failed"; readonly failure: ReturnType<typeof makeProviderFailure> };
 
 type Rule = Permission.Rule;
-type RulesPolicy = Pick<
+type SessionPolicy = Pick<
   ProviderAdapter.ProviderAdapterV2RuntimePolicy,
-  "runtimeMode" | "interactionMode"
+  "runtimeMode" | "interactionMode" | "environment"
 >;
 type NativeForm = EventOf<"form.created">["data"]["form"];
 
@@ -368,7 +367,7 @@ const mcpRules = (mcpServerName: string | null): ReadonlyArray<Rule> =>
       ];
 
 const sessionRules = (
-  policy: RulesPolicy,
+  policy: SessionPolicy,
   paths: ReadonlyArray<Rule>,
   grants: ReadonlyArray<Rule>,
   mcpServerName: string | null,
@@ -386,6 +385,14 @@ const sessionRules = (
   ...paths,
   ...mcpRules(mcpServerName),
 ];
+
+const sameEnvironment = (
+  left: Readonly<Record<string, string>> | undefined,
+  right: Readonly<Record<string, string>>,
+) =>
+  left !== undefined &&
+  Object.keys(left).length === Object.keys(right).length &&
+  Object.entries(right).every(([name, value]) => left[name] === value);
 
 const sameRules = (left: ReadonlyArray<Rule> | undefined, right: ReadonlyArray<Rule>) =>
   left?.length === right.length &&
@@ -650,6 +657,14 @@ const turnTokenUsage = (turn: ActiveTurn, status: OrchestrationV2ProviderTurn["s
 
 export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: ProviderInstanceId) {
   const server = yield* OpenCode2Server.OpenCode2Server;
+  // A session environment replaces the server's, so it needs the one T3 started the server with.
+  const capabilities =
+    server.shellEnvironment === undefined
+      ? OpenCode2ProviderCapabilities
+      : {
+          ...OpenCode2ProviderCapabilities,
+          threadConfig: { ...OpenCode2ProviderCapabilities.threadConfig, environment: true },
+        };
   const idAllocator = yield* IdAllocator.IdAllocatorV2;
   const host = yield* ProviderHost.ProviderHost;
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
@@ -699,7 +714,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       status: "ready",
       cwd: input.runtimePolicy.cwd ?? host.paths.cwd,
       model: input.modelSelection.model,
-      capabilities: OpenCode2ProviderCapabilities,
+      capabilities,
       createdAt: now,
       updatedAt: now,
       lastError: null,
@@ -707,6 +722,8 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event, Cause.Done>();
     const threads = new Map<string, ThreadState>();
     const childOwners = new Map<string, ThreadState>();
+    // Child sessions need theirs before T3 attaches them, so this is keyed by session, not state.
+    const environments = new Map<string, Readonly<Record<string, string>>>();
     const announced = new Map<string, EventOf<"session.created">["data"]>();
     const strays = new Map<string, ThreadState>();
     const busy = new Set<string>();
@@ -1373,6 +1390,10 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           Effect.ignore({ log: true }),
         );
       }
+      yield* writeEnvironment(childId, rootOf(call.state).policy).pipe(
+        Effect.timeout(REQUEST_REPLY_TIMEOUT),
+        Effect.ignore({ log: true }),
+      );
     });
 
     const settleCall: (
@@ -2295,6 +2316,11 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           childOwners.set(event.data.sessionID, owner);
           announced.set(event.data.sessionID, event.data);
           holderOf(event.data.parentID)?.wakes.at(-1)?.children.add(event.data.sessionID);
+          // Subagent sessions do not inherit their parent's environment.
+          yield* writeEnvironment(event.data.sessionID, rootOf(owner).policy).pipe(
+            Effect.timeout(REQUEST_REPLY_TIMEOUT),
+            Effect.ignore({ log: true }),
+          );
         }
         return;
       }
@@ -2628,8 +2654,9 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       client = next.client;
       currentScope = scope;
       yield* Scope.close(previous, Exit.void);
-      // A restarted server forgot T3's MCP servers; the next turn adds them again.
+      // A restarted server forgot T3's MCP servers and session environments; the next turn adds them again.
       for (const state of threads.values()) state.mcp = undefined;
+      environments.clear();
       yield* lock.withPermit(reconcile).pipe(Effect.timeout(RECONCILE_TIMEOUT));
       return stream;
     }).pipe(
@@ -2748,7 +2775,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
 
     const rulesFor = Effect.fnUntraced(function* (
       thread: Pick<ThreadState, "directory" | "agent" | "grants">,
-      policy: RulesPolicy,
+      policy: SessionPolicy,
       appThreadId: string | null,
     ) {
       const plan = policy.interactionMode === "plan";
@@ -2764,7 +2791,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       );
     });
 
-    const writeRules = Effect.fnUntraced(function* (state: ThreadState, policy: RulesPolicy) {
+    const writeRules = Effect.fnUntraced(function* (state: ThreadState, policy: SessionPolicy) {
       const rules = yield* rulesFor(state, policy, rootOf(state).providerThread.appThreadId);
       if (!sameRules(state.rules, rules)) {
         yield* client.session.update({
@@ -2774,6 +2801,18 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         state.rules = rules;
       }
       state.policy = policy;
+    });
+
+    // OpenCode keeps it in memory only and replaces the server's environment with it in shells.
+    const writeEnvironment = Effect.fnUntraced(function* (
+      sessionId: string,
+      policy: SessionPolicy,
+    ) {
+      if (server.shellEnvironment === undefined) return;
+      const variables = { ...server.shellEnvironment, ...policy.environment };
+      if (sameEnvironment(environments.get(sessionId), variables)) return;
+      yield* client.session.environment({ sessionID: Session.ID.make(sessionId), variables });
+      environments.set(sessionId, variables);
     });
 
     const writeTitle = Effect.fnUntraced(function* (state: ThreadState, title: string) {
@@ -3451,6 +3490,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           const state = register(providerThread, native, cwd ?? native.location.directory);
           if (!loaded) yield* stopLeftoverRequests(state);
           yield* writeRules(state, threadInput.runtimePolicy ?? state.policy);
+          yield* writeEnvironment(sessionId, state.policy);
           if (cwd != null && native.location.directory !== cwd) {
             yield* client.session.move({
               sessionID: Session.ID.make(sessionId),
@@ -3556,6 +3596,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
               }
               // Refresh stale mode rules; running subagent updates are best effort because they outlive this turn.
               yield* writeRules(state, turnInput.runtimePolicy);
+              yield* writeEnvironment(sessionId, turnInput.runtimePolicy);
               yield* writeTitle(state, turnInput.appThread.title).pipe(
                 Effect.timeout(REQUEST_REPLY_TIMEOUT),
                 Effect.ignore({ log: true }),
@@ -3563,6 +3604,10 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
               for (const call of runningCalls(state)) {
                 if (call.child === undefined) continue;
                 yield* writeRules(call.child, turnInput.runtimePolicy).pipe(
+                  Effect.timeout(REQUEST_REPLY_TIMEOUT),
+                  Effect.ignore({ log: true }),
+                );
+                yield* writeEnvironment(call.child.sessionId, turnInput.runtimePolicy).pipe(
                   Effect.timeout(REQUEST_REPLY_TIMEOUT),
                   Effect.ignore({ log: true }),
                 );
@@ -3790,10 +3835,12 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           return;
         }
         threads.delete(nativeId);
+        environments.delete(nativeId);
         for (const [child, owner] of childOwners) {
           if (owner !== state) continue;
           childOwners.delete(child);
           threads.delete(child);
+          environments.delete(child);
         }
         if (state.mcp !== undefined) yield* removeMcp(state.mcp);
       }),
@@ -4008,6 +4055,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           const cwd = forkInput.runtimePolicy?.cwd;
           const state = register(providerThread, forked, cwd ?? forked.location.directory);
           yield* writeRules(state, forkInput.runtimePolicy ?? state.policy);
+          yield* writeEnvironment(forked.id, state.policy);
           if (cwd != null && forked.location.directory !== cwd) {
             yield* client.session.move({
               sessionID: Session.ID.make(forked.id),
@@ -4038,7 +4086,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     instanceId,
     driver,
     getCapabilities: Effect.fn("OpencodeAdapter.getCapabilities")(function () {
-      return Effect.succeed(OpenCode2ProviderCapabilities);
+      return Effect.succeed(capabilities);
     }),
     planSelectionTransition: Effect.fn("OpencodeAdapter.planSelectionTransition")(function () {
       return Effect.succeed(turnScopedSelectionTransition());

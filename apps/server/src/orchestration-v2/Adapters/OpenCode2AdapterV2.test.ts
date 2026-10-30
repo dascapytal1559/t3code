@@ -286,6 +286,19 @@ const supervisedRules = [
   ...mcpRules,
 ];
 
+// Matched loosely here; tests compare the recorded variables exactly.
+const environmentPut = (sessionID: string): ReadonlyArray<ProviderReplayEntry> => [
+  out("session.environment", { sessionID }),
+  reply("session.environment", null),
+];
+const SERVER_ENVIRONMENT = {
+  PATH: "/usr/bin",
+  HOME: "/home/t3",
+  OPENCODE_PASSWORD: "t3-generated",
+  OPENCODE_SERVER_PASSWORD: "ambient",
+};
+const SERVER_SHELL = { PATH: "/usr/bin", HOME: "/home/t3" };
+
 const shellAsk = {
   data: {
     id: "per_0eb7c4d7e001Pyt8o50Vi4KrOO",
@@ -318,6 +331,8 @@ const resumed = (
   entries: ReadonlyArray<ProviderReplayEntry>,
   options?: {
     readonly external?: boolean;
+    readonly environment?: NodeJS.ProcessEnv;
+    readonly onEnvironment?: (input: unknown) => void;
     readonly supervised?: boolean;
     readonly replayGate?: ProviderReplayGate;
     readonly attachmentsDir?: string;
@@ -341,12 +356,17 @@ const resumed = (
               reply("session.update", null),
             ]
           : []),
+        ...(options?.environment === undefined || options.external === true
+          ? []
+          : environmentPut(SESSION)),
         ...entries,
       ]),
       {
         ...(options?.fileSystem === undefined ? {} : { fileSystem: options.fileSystem }),
         ...(options?.onPrompt === undefined ? {} : { onPrompt: options.onPrompt }),
         ...(options?.external === undefined ? {} : { external: options.external }),
+        ...(options?.environment === undefined ? {} : { environment: options.environment }),
+        ...(options?.onEnvironment === undefined ? {} : { onEnvironment: options.onEnvironment }),
         ...(options?.replayGate === undefined ? {} : { replayGate: options.replayGate }),
         ...(options?.attachmentsDir === undefined
           ? {}
@@ -2449,6 +2469,134 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         runtimePolicy: { ...policy(), instructions },
       });
       assert.equal((yield* Fiber.join(terminal))?.status, "completed");
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("gives a session T3's server environment, minus its password, under the thread's", () =>
+    Effect.gen(function* () {
+      const puts: Array<unknown> = [];
+      const turn = [
+        out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+        promptAccepted,
+        event("session.execution.succeeded", { sessionID: SESSION }),
+      ];
+      const { runtime, thread } = yield* resumed([...environmentPut(SESSION), ...turn, ...turn], {
+        environment: SERVER_ENVIRONMENT,
+        onEnvironment: (input) => puts.push(input),
+      });
+      const environment = { PATH: "/thread/bin", FM_TASK_ID: "task-1" };
+      for (let index = 0; index < 2; index++) {
+        const terminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
+        yield* runtime.startTurn({
+          ...turnInput(thread),
+          runtimePolicy: { ...policy(), environment },
+        });
+        assert.equal((yield* Fiber.join(terminal))?.status, "completed");
+      }
+      assert.equal(runtime.providerSession.capabilities.threadConfig?.environment, true);
+      assert.deepStrictEqual(puts, [
+        { sessionID: SESSION, variables: SERVER_SHELL },
+        { sessionID: SESSION, variables: { HOME: "/home/t3", ...environment } },
+      ]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("gives a session its environment again after the OpenCode server restarts", () =>
+    Effect.gen(function* () {
+      const puts: Array<unknown> = [];
+      const { runtime, thread } = yield* resumed(
+        [
+          out("session.prompt", { sessionID: SESSION, id: PROMPT_ID, text: "<any>" }),
+          promptAccepted,
+          ...reconnected({}, "succeeded"),
+          ...environmentPut(SESSION),
+          out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+          promptAccepted,
+          event("session.execution.succeeded", { sessionID: SESSION }),
+        ],
+        { environment: SERVER_ENVIRONMENT, onEnvironment: (input) => puts.push(input) },
+      );
+      for (let index = 0; index < 2; index++) {
+        const terminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
+        yield* runtime.startTurn(turnInput(thread));
+        assert.equal((yield* Fiber.join(terminal))?.status, "completed");
+      }
+      assert.deepStrictEqual(puts, [
+        { sessionID: SESSION, variables: SERVER_SHELL },
+        { sessionID: SESSION, variables: SERVER_SHELL },
+      ]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("gives a subagent's session its parent thread's environment", () =>
+    Effect.gen(function* () {
+      const puts: Array<unknown> = [];
+      const launch = backgroundLaunch(CHILD);
+      const { runtime, thread } = yield* resumed(
+        [
+          ...environmentPut(SESSION),
+          // The child's session.created comes just before the progress that attaches it.
+          ...launch.slice(0, -1),
+          ...environmentPut(CHILD),
+          ...launch.slice(-1),
+          event("session.execution.succeeded", { sessionID: SESSION }),
+          ...environmentPut(SESSION),
+          out("session.update", { sessionID: CHILD }),
+          reply("session.update", null),
+          ...environmentPut(CHILD),
+          out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+          promptAccepted,
+          event("session.execution.succeeded", { sessionID: SESSION }),
+        ],
+        { environment: SERVER_ENVIRONMENT, onEnvironment: (input) => puts.push(input) },
+      );
+      const first = { FM_TASK_ID: "task-1" };
+      const second = { FM_TASK_ID: "task-2" };
+      for (const [index, environment] of [first, second].entries()) {
+        const terminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
+        yield* runtime.startTurn({
+          ...withLineage(thread),
+          runId: RunId.make(`run:opencode2-adapter:${index}`),
+          runOrdinal: index + 1,
+          providerTurnOrdinal: index + 1,
+          attemptId: RunAttemptId.make(`attempt:opencode2-adapter:${index}`),
+          runtimePolicy: { ...policy(), environment },
+        });
+        assert.equal((yield* Fiber.join(terminal))?.status, "completed");
+      }
+      assert.deepStrictEqual(puts, [
+        { sessionID: SESSION, variables: SERVER_SHELL },
+        { sessionID: SESSION, variables: { ...SERVER_SHELL, ...first } },
+        { sessionID: CHILD, variables: { ...SERVER_SHELL, ...first } },
+        { sessionID: SESSION, variables: { ...SERVER_SHELL, ...second } },
+        { sessionID: CHILD, variables: { ...SERVER_SHELL, ...second } },
+      ]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("leaves an external server's session environment alone", () =>
+    Effect.gen(function* () {
+      const puts: Array<unknown> = [];
+      const { runtime, thread } = yield* resumed(
+        [
+          out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+          promptAccepted,
+          event("session.execution.succeeded", { sessionID: SESSION }),
+        ],
+        {
+          external: true,
+          environment: SERVER_ENVIRONMENT,
+          onEnvironment: (input) => puts.push(input),
+        },
+      );
+      const terminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
+      yield* runtime.startTurn({
+        ...turnInput(thread),
+        runtimePolicy: { ...policy(), environment: { FM_TASK_ID: "task-1" } },
+      });
+      assert.equal((yield* Fiber.join(terminal))?.status, "completed");
+      assert.equal(runtime.providerSession.capabilities.threadConfig?.environment, false);
+      assert.deepStrictEqual(puts, []);
     }).pipe(Effect.scoped),
   );
 
