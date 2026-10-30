@@ -130,7 +130,7 @@ upstream code that reintroduces account-derived analytics ids.
 The fork keeps upstream's version number. The desktop app sets up an SSH or
 WSL remote by downloading upstream's `t3` release for its own version
 (`apps/desktop/src/main.ts`), so a version upstream never released, such as
-`0.1.4` or `0.1.3-fork.1`, has nothing to download. The app name, bundle id and
+`0.1.5-fork.1`, has nothing to download. The app name, bundle id and
 data folder tell the fork apart.
 
 ## Build
@@ -144,3 +144,6 @@ The build is unsigned, so electron-builder ad-hoc signs it. It writes
 `T3CODE_DESKTOP_UPDATE_REPOSITORY` and `GITHUB_REPOSITORY` unset. With neither
 set, the app has no update feed and cannot update itself into the official
 app.
+Settings → About → Update track (Stable or Nightly, from upstream 0.1.5) then
+only saves the track for this app, which says to reinstall it yourself. It
+still moves connected machines that run upstream's `t3` to that track.
