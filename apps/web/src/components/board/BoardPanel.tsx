@@ -278,9 +278,8 @@ export function BoardPanel(props: { readonly composerDraftTarget: BoardAttachTar
         title: "Could not attach the board",
         description: errorMessage(error),
       });
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
 
   const clear = async () => {
