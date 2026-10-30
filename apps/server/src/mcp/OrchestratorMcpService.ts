@@ -2202,6 +2202,7 @@ const make = Effect.gen(function* () {
           threadManagement: true,
           incrementalThreadRead: true,
           scheduledTasks: true,
+          approvalResponses: true,
           maxBatchThreads: 20,
         },
       };

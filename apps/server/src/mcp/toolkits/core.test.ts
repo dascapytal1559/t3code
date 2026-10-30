@@ -3,6 +3,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
+  type AuthMcpClientAccess,
   DEFAULT_SERVER_SETTINGS,
   ChatImageAttachment,
   CommandId,
@@ -11,10 +12,12 @@ import {
   OrchestratorMcpThreadReadResult,
   ProviderDriverKind,
   ProviderInstanceId,
+  ProviderSessionId,
   RunId,
   RuntimeRequestId,
   ThreadId,
   TurnItemId,
+  type OrchestrationV2ServerCommand,
   type OrchestrationV2ProjectedTurnItem,
   type OrchestrationV2ThreadShell,
   type ServerProvider,
@@ -162,7 +165,7 @@ it.effect("an answered question reports already answered instead of not found", 
     });
     expect(declaredFailure(yield* respond("missing-question"))).toMatchObject({
       code: "invalid_request",
-      message: "The pending user-input request was not found.",
+      message: "The pending request was not found.",
     });
   }).pipe(
     Effect.provide(
@@ -212,6 +215,158 @@ it.effect("an answered question reports already answered instead of not found", 
                 ],
               }),
             dispatch: () => Effect.die("an answered question must not dispatch again"),
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+it.effect("answers a worker's approval only for a full-access caller other than the worker", () => {
+  // Approval-required, so an approval-required client passes the target-mode check.
+  const shell = McpToolAccessTestkit.liveThreadShell(threadId, {
+    runtimeMode: "approval-required",
+  });
+  const projection = McpToolAccessTestkit.idleThreadProjection(shell);
+  const approval = (name: string, status: "pending" | "resolved" | "expired") => ({
+    request: {
+      id: RuntimeRequestId.make(name),
+      nodeId: NodeId.make(`node:${name}`),
+      providerTurnId: null,
+      nativeRequestRef: null,
+      kind: "command" as const,
+      status,
+      responseCapability: {
+        type: "live" as const,
+        providerSessionId: ProviderSessionId.make("worker-session"),
+        supportsFeedback: true,
+      },
+      createdAt: shell.createdAt,
+      resolvedAt: status === "pending" ? null : shell.updatedAt,
+    },
+    item: {
+      id: TurnItemId.make(`item:${name}`),
+      threadId,
+      runId: null,
+      nodeId: NodeId.make(`node:${name}`),
+      providerThreadId: null,
+      providerTurnId: null,
+      nativeItemRef: null,
+      parentItemId: null,
+      ordinal: 0,
+      status: "waiting" as const,
+      title: null,
+      startedAt: shell.createdAt,
+      completedAt: null,
+      updatedAt: shell.updatedAt,
+      type: "approval_request" as const,
+      requestId: RuntimeRequestId.make(name),
+      requestKind: "command" as const,
+      prompt: "python3 - <<EOF",
+      reason: "Heredoc can run arbitrary code",
+      fullAccessOverride: "provider_check" as const,
+    },
+  });
+  const approvals = [
+    approval("pending", "pending"),
+    approval("answered", "resolved"),
+    approval("expired", "expired"),
+  ];
+  const dispatched: Array<OrchestrationV2ServerCommand> = [];
+  const asClient = (access: AuthMcpClientAccess): McpInvocationContext.McpInvocationScope => ({
+    ...scope,
+    thread: undefined,
+    client: { sessionId: "firstmate", label: "FirstMate", access },
+  });
+  return Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const call = (caller: McpInvocationContext.McpInvocationScope, args: object) =>
+      server
+        .callTool({ name: "t3_pending_request", arguments: { threadId, ...args } })
+        .pipe(
+          Effect.provideService(McpInvocationContext.McpInvocationContext, caller),
+          Effect.provideService(McpSchema.McpServerClient, client),
+        );
+    const firstMate = asClient("full-access");
+    const entry = {
+      requestId: "pending",
+      type: "approval",
+      kind: "command",
+      detail: "python3 - <<EOF",
+      reason: "Heredoc can run arbitrary code",
+      override: "provider_check",
+      supportsFeedback: true,
+    };
+    expect((yield* call(firstMate, { action: "list" })).structuredContent).toEqual({
+      requestIds: [],
+      approvals: [entry],
+    });
+    expect(
+      (yield* call(firstMate, { action: "read", requestId: "pending" })).structuredContent,
+    ).toEqual(entry);
+
+    yield* call(firstMate, { action: "respond", requestId: "pending", decision: "allow" });
+    yield* call(firstMate, {
+      action: "respond",
+      requestId: "pending",
+      decision: "deny",
+      feedback: "Write the script to a file first.",
+    });
+    expect(dispatched).toMatchObject([
+      {
+        type: "runtime-request.respond",
+        threadId,
+        requestId: "pending",
+        decision: "accept",
+        respondedBy: "agent",
+      },
+      {
+        type: "runtime-request.respond",
+        requestId: "pending",
+        decision: "decline",
+        feedback: "Write the script to a file first.",
+        respondedBy: "agent",
+      },
+    ]);
+    expect(dispatched[0]).not.toHaveProperty("feedback");
+
+    for (const [caller, requestId, failure] of [
+      [asClient("read-only"), "pending", { code: "capability_denied" }],
+      [
+        asClient("approval-required"),
+        "pending",
+        {
+          code: "capability_denied",
+          message: "Answering an approval needs a full-access calling thread or client.",
+        },
+      ],
+      [scope, "pending", { message: "A thread cannot answer its own approval." }],
+      [firstMate, "answered", { message: "The approval was already answered." }],
+      [firstMate, "expired", { message: "The approval is no longer pending (expired)." }],
+    ] as const) {
+      const result = yield* call(caller, { action: "respond", requestId, decision: "allow" });
+      expect(declaredFailure(result)).toMatchObject(failure);
+    }
+    expect(dispatched).toHaveLength(2);
+  }).pipe(
+    Effect.provide(
+      layerThreadToolkit.pipe(
+        Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provide(NodeCrypto.layer),
+        Layer.provide(
+          Layer.mock(ThreadManagement.ThreadManagementService)({
+            getThreadShell: () => Effect.succeed(shell),
+            getProjectThreadRecords: () =>
+              Effect.succeed({
+                ...projection,
+                runtimeRequests: approvals.map(({ request }) => request),
+                turnItems: approvals.map(({ item }) => item),
+              }),
+            dispatch: (command) =>
+              Effect.sync(() => {
+                dispatched.push(command);
+                return { sequence: dispatched.length, storedEvents: [] };
+              }),
           }),
         ),
       ),

@@ -127,6 +127,32 @@ it.effect(
           },
         });
       }
+      yield* projections.apply({
+        id: EventId.make("item:child"),
+        type: "turn-item.updated",
+        threadId,
+        occurredAt: now,
+        payload: {
+          id: TurnItemId.make("item:child"),
+          threadId,
+          runId: null,
+          nodeId: NodeId.make("node:child"),
+          providerThreadId: null,
+          providerTurnId: null,
+          nativeItemRef: null,
+          parentItemId: null,
+          ordinal: 1,
+          status: "waiting",
+          title: null,
+          startedAt: now,
+          completedAt: null,
+          updatedAt: now,
+          type: "approval_request",
+          requestId: RuntimeRequestId.make("child"),
+          requestKind: "command",
+          fullAccessOverride: "provider_check",
+        },
+      });
       const commandId = CommandId.make("respond:approval-feedback");
       const feedback = "Run it in a safer manner.";
       for (const [index, invalid] of [
@@ -153,12 +179,19 @@ it.effect(
         requestId: RuntimeRequestId.make("child"),
         decision: "decline",
         feedback,
+        respondedBy: "agent",
       });
       const projection = yield* projections.getThreadProjection(threadId);
-      assert.equal(
-        projection.runtimeRequests.find((request) => request.id === "child")?.feedback,
-        feedback,
+      assert.deepInclude(
+        projection.runtimeRequests.find((request) => request.id === "child"),
+        { feedback, respondedBy: "agent" },
       );
+      const answered = (yield* projections.getRuntimeResponseContext(
+        threadId,
+        RuntimeRequestId.make("child"),
+      )).item;
+      assert.equal(answered?.type === "approval_request" && answered.respondedBy, "agent");
+      assert.equal(projection.messages.at(-1)?.createdBy, "agent");
       assert.equal(
         projection.runtimeRequests.find((request) => request.id === "other")?.status,
         "pending",

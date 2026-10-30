@@ -9,6 +9,7 @@ A fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code). It adds:
 - A sidebar note when upstream ships a newer release.
 - A setting to keep idle agents for good (Settings → Threads → Agent memory).
 - Per-thread environment and instructions for agent-launched threads.
+- Agents such as FirstMate can answer a thread's permission prompts over MCP.
 - Small fixes: `~` in provider paths, no Update button for app-bundled CLIs, no account ids in usage statistics.
 
 Details and pictures: [fork/README.md](fork/README.md).

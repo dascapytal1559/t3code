@@ -1263,6 +1263,8 @@ export const OrchestrationV2RuntimeRequest = Schema.Struct({
   decision: Schema.optional(ProviderApprovalDecision),
   feedback: Schema.optional(Schema.String),
   answers: Schema.optional(ProviderUserInputAnswers),
+  /** Absent means the user answered. */
+  respondedBy: Schema.optional(OrchestrationV2Actor),
 });
 export type OrchestrationV2RuntimeRequest = typeof OrchestrationV2RuntimeRequest.Type;
 
@@ -1717,6 +1719,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
     fullAccessOverride: Schema.optional(ProviderApprovalFullAccessOverride),
     appName: Schema.optional(Schema.String),
     options: Schema.optional(Schema.Array(ProviderApprovalOption)),
+    respondedBy: Schema.optional(OrchestrationV2Actor),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -2543,6 +2546,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     fullAccessOverride: Schema.optional(ProviderApprovalFullAccessOverride),
     appName: Schema.optional(Schema.String),
     options: Schema.optional(Schema.Array(ProviderApprovalOption)),
+    respondedBy: Schema.optional(OrchestrationV2Actor),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
@@ -3285,6 +3289,7 @@ export const OrchestrationV2Command = Schema.Union([
     feedback: Schema.optional(Schema.String),
     answers: Schema.optional(ProviderUserInputAnswers),
     attachmentsByQuestionId: Schema.optional(UserInputAttachments),
+    respondedBy: Schema.optional(OrchestrationV2Actor),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.user-input.dismiss"),

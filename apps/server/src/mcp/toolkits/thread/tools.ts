@@ -11,6 +11,8 @@ import {
   RuntimeMode,
   ProviderInteractionMode,
   RuntimeRequestId,
+  ProviderApprovalFullAccessOverride,
+  ProviderRequestKind,
   ProviderUserInputAnswers,
   IsoDateTime,
   OrchestratorMcpFailure,
@@ -124,20 +126,38 @@ const question = Schema.Struct({
   initialAnswer: Schema.optional(Schema.String),
   required: Schema.optional(Schema.Boolean),
 });
+const PendingApproval = Schema.Struct({
+  requestId: RuntimeRequestId,
+  type: Schema.Literal("approval"),
+  kind: ProviderRequestKind,
+  /** The command, file, or tool the provider asks to run. */
+  detail: Schema.optional(Schema.String),
+  reason: Schema.optional(Schema.String),
+  /** Why it asks although the thread runs with full access. */
+  override: Schema.NullOr(ProviderApprovalFullAccessOverride),
+  supportsFeedback: Schema.Boolean,
+});
 const PendingRequestTool = Tool.make("t3_pending_request", {
   ...commandTool,
   description:
-    "Pending user questions in a thread. Omit `threadId` for this thread. list: their ids; approvals are not listed. read: one by `requestId`. respond: answer one with `answers`; this cannot approve a permission request.",
+    "Pending questions and approvals in a thread. Omit `threadId` for this thread. list: question `requestIds` and `approvals`. read: one by `requestId`. respond: answer a question with `answers`, or, with full access, another thread's approval with `decision`; `feedback` on deny tells its agent why.",
   parameters: Schema.Struct({
     action: Schema.Literals(["list", "read", "respond"]),
     environmentId: OrchestratorMcpEnvironmentTarget,
     threadId: Schema.optional(ThreadId),
     requestId: Schema.optional(RuntimeRequestId),
     answers: Schema.optional(ProviderUserInputAnswers),
+    decision: Schema.optional(Schema.Literals(["allow", "deny"])),
+    feedback: Schema.optional(TrimmedNonEmptyString),
   }),
   success: Schema.Union([
-    Schema.Struct({ requestIds: Schema.Array(RuntimeRequestId) }),
+    Schema.Struct({
+      requestIds: Schema.Array(RuntimeRequestId),
+      // Linked servers without approval responses omit it.
+      approvals: Schema.optional(Schema.Array(PendingApproval)),
+    }),
     Schema.Struct({ requestId: RuntimeRequestId, questions: Schema.Array(question) }),
+    PendingApproval,
     OrchestrationV2DispatchCommandResult,
   ]),
 })

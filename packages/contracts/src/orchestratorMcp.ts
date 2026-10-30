@@ -650,6 +650,8 @@ export const OrchestratorMcpCapabilitiesResult = Schema.Struct({
     threadManagement: Schema.Boolean,
     incrementalThreadRead: Schema.Boolean,
     scheduledTasks: Schema.Boolean,
+    /** `t3_pending_request` lists and answers approvals. Linked servers without it omit it. */
+    approvalResponses: Schema.optional(Schema.Boolean),
     maxBatchThreads: Schema.Number,
   }),
 });

@@ -8633,6 +8633,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...(command.decision === undefined ? {} : { decision: command.decision }),
         ...(command.feedback === undefined ? {} : { feedback: command.feedback }),
         ...(answers === undefined ? {} : { answers }),
+        ...(command.respondedBy === undefined ? {} : { respondedBy: command.respondedBy }),
       };
       const emitEvent = emit(events, command);
       const requestNode = context.node;
@@ -8654,7 +8655,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             text: command.feedback,
             attachments: [],
             streaming: false,
-            createdBy: "user",
+            createdBy: command.respondedBy ?? "user",
             creationSource: "server",
             createdAt: now,
             updatedAt: now,
@@ -8693,7 +8694,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             inputIntent: "steer",
             text: command.feedback,
             attachments: [],
-            createdBy: "user",
+            createdBy: command.respondedBy ?? "user",
             creationSource: "server",
           },
         });
@@ -8762,6 +8763,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                     ),
                   },
                 }
+              : {}),
+            ...(approvalTurnItem.type === "approval_request" && command.respondedBy !== undefined
+              ? { respondedBy: command.respondedBy }
               : {}),
             status: resolvedNodeStatus,
             completedAt: now,

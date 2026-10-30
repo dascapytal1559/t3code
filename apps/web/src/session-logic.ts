@@ -528,7 +528,7 @@ function projectedWorkEntry(row: OrchestrationV2ProjectedTurnItem): WorkLogEntry
     case "approval_request":
       return {
         ...common,
-        label: title ?? "Approval requested",
+        label: `${title ?? "Approval requested"}${item.respondedBy === "agent" ? " · answered by agent" : ""}`,
         detail: item.prompt ?? item.requestKind,
         toolData: item,
       };

@@ -585,6 +585,8 @@ function itemSummary(
       ? dynamicToolTitle(item.toolName, item.input, item.title)
       : undefined) ?? item.title?.trim();
   if (item.type === "subagent") return formatSubagentDisplayTitle(title || "Subagent");
+  if (item.type === "approval_request" && item.respondedBy === "agent")
+    return `${title ? capitalizePhrase(title) : "Approval requested"} · answered by agent`;
   if (title) return toolPresentation?.displayName ?? capitalizePhrase(title);
   switch (item.type) {
     case "reasoning":

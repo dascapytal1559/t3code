@@ -183,6 +183,20 @@ thread's variables. It sends this again after the server restarts. An external
 server (`serverUrl`) has an environment T3 does not know, so it stays
 unsupported. Code: `packages/provider-opencode/src/server/v2/adapter.ts`.
 
+## Agents answer approvals over MCP
+
+Claude asks for some commands even with full access (its own safety checks and
+the user's ask rules). An agent driving T3 over MCP, such as FirstMate, can
+answer those so the user never has to. `t3_pending_request` `list` returns
+`approvals` next to question `requestIds`, each with its `kind`, `detail`,
+`reason` and `override` (`provider_check`, `ask_rule` or `null`); `respond`
+takes `decision: "allow" | "deny"` and optional `feedback` on deny, and sends
+the same command the Approve and Decline buttons do. Only a full-access caller
+other than the asking thread may answer one. The resolved request and its
+timeline row record `respondedBy: "agent"`, which web and mobile show as
+"answered by agent". `orchestrator_capabilities` reports `approvalResponses`.
+Code: `apps/server/src/mcp/toolkits/thread/handlers.ts`.
+
 ## Usage statistics carry no account ids
 
 Product analytics still go to T3, but nothing sent derives from an account.
