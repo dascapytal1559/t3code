@@ -6,7 +6,6 @@ import {
   CommandId,
   ContextTransferId,
   EnvironmentId,
-  linkOriginIsFenced,
   NodeId,
   type OrchestrationV2Run,
   ProjectId,
@@ -214,8 +213,7 @@ const clientScope = (
 const laptop = clientScope("laptop", true, "auto");
 const desk = clientScope("desk", true, "auto");
 const trusted = clientScope("trusted", true, "full-access");
-// Below full access, so only its not being a link keeps it unfenced.
-const claudeCode = clientScope("claude-code", false, "auto");
+const claudeCode = clientScope("claude-code", false, "full-access");
 
 const call = (
   scope: McpInvocationContext.McpInvocationScope,
@@ -320,14 +318,9 @@ it.layer(Layer.provideMerge(layerTools, layerOrchestration))("work a link starts
       );
       assert.deepEqual(fork.targetThread.linkOrigin, shell?.linkOrigin);
 
-      // An ordinary outside agent's launch says where it came from, but not as a link.
+      // An ordinary outside agent's launch is not a link's.
       const plain = yield* launch(claudeCode, "Started by Claude Code");
-      assert.deepEqual((yield* projections.getThreadShell(plain))?.linkOrigin, {
-        sessionId: "claude-code",
-        label: "T3 Code · claude-code",
-        access: "auto",
-        linked: false,
-      });
+      assert.equal((yield* projections.getThreadShell(plain))?.linkOrigin, undefined);
 
       // A link's delegated task names its parent there; only a link's launch may.
       const delegatedFrom = {
@@ -361,13 +354,8 @@ it.layer(Layer.provideMerge(layerTools, layerOrchestration))("work a link starts
       assert.equal(failureCode(yield* rename(laptop, users)), "capability_denied");
       assert.equal(failureCode(yield* rename(desk, ownLaunch)), "capability_denied");
       assert.equal((yield* projections.getThreadShell(users))?.title, "The user's own");
-      // An ordinary outside agent is not fenced, nor is the work it started.
+      // An ordinary outside agent is not fenced.
       assert.equal((yield* rename(claudeCode, users)).isError, false);
-      assert.equal((yield* rename(claudeCode, ownLaunch)).isError, false);
-      const plainLaunch = yield* launch(claudeCode, "Claude Code's");
-      const plain = (yield* projections.getThreadShell(plainLaunch))?.linkOrigin;
-      assert.ok(plain);
-      assert.equal(linkOriginIsFenced(plain), false);
       // Naming this environment's own id is still this environment's thread.
       for (const [name, args] of [
         ["t3_thread_send", { message: "From the laptop." }],

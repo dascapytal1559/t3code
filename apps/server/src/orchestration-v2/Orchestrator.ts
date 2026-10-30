@@ -57,7 +57,6 @@ import {
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2TurnItem,
   latestProviderTurnForAttempt,
-  linkOriginIsPeerLink,
   parseGoalCommand,
   orchestrationV2RunWorkStartedAt,
   ProviderInstanceId,
@@ -2564,10 +2563,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       activeProviderThreadId: null,
       pullRequests: [],
       ...(command.linkOrigin === undefined ? {} : { linkOrigin: command.linkOrigin }),
-      // Only a link's work names a remote parent, so a client cannot claim one.
-      ...(command.linkOrigin === undefined ||
-      !linkOriginIsPeerLink(command.linkOrigin) ||
-      command.delegatedFrom === undefined
+      // Only stamped work names a remote parent, so a client cannot claim one.
+      ...(command.linkOrigin === undefined || command.delegatedFrom === undefined
         ? {}
         : { delegatedFrom: command.delegatedFrom }),
       ...(command.environment === undefined ? {} : { environment: command.environment }),

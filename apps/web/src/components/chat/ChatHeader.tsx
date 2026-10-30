@@ -1,8 +1,6 @@
 import {
   AuthOrchestrationOperateScope,
   type EnvironmentId,
-  linkOriginIsPeerLink,
-  type OrchestrationV2LinkOrigin,
   type ThreadId,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -48,7 +46,7 @@ interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
   activeThreadId: ThreadId;
   activeThreadTitle: string;
-  activeThreadLinkOrigin?: OrchestrationV2LinkOrigin | null | undefined;
+  activeThreadLinkOrigin?: string | null | undefined;
   isServerThread: boolean;
   activeProject: EnvironmentProject | null;
   parentThreadLink: { threadId: ThreadId; title: string } | null;
@@ -416,12 +414,10 @@ export const ChatHeader = memo(function ChatHeader({
           {renamingTitle === null && activeThreadLinkOrigin ? (
             <Tooltip>
               <TooltipTrigger render={<Badge variant="info" size="sm" />}>
-                From {activeThreadLinkOrigin.label}
+                From {activeThreadLinkOrigin}
               </TooltipTrigger>
               <TooltipPopup side="top">
-                {linkOriginIsPeerLink(activeThreadLinkOrigin)
-                  ? `Started by an agent on ${activeThreadLinkOrigin.label} through a linked environment.`
-                  : `Started by ${activeThreadLinkOrigin.label} through T3 Code's MCP tools.`}
+                Started by an agent on {activeThreadLinkOrigin} through a linked environment.
               </TooltipPopup>
             </Tooltip>
           ) : null}
