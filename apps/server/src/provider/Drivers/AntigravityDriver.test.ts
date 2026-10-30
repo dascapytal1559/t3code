@@ -355,7 +355,7 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
 
   it.effect.skipIf(windowsHost)("keeps the previous catalog when executable resolution fails", () =>
     Effect.gen(function* () {
-      const h = yield* makeHarness();
+      const h = yield* makeHarness({ config: { binaryPath: "~/bin/agy" } });
       yield* h.refresh();
       const before = yield* h.instance.snapshot.getSnapshot;
       h.controls.failResolution = true;
@@ -364,7 +364,11 @@ it.layer(layerTest)("AntigravityDriver", (it) => {
       const after = yield* h.instance.snapshot.getSnapshot;
       expect(after.models).toEqual(before.models);
       expect(after.auth).toEqual(before.auth);
-      expect(h.acquisitions).toHaveLength(2);
+      const expandedBinaryPath = h.path.join(yield* HostProcess.HomeDirectory, "bin", "agy");
+      expect(h.acquisitions.map((acquisition) => acquisition.binaryPath)).toEqual([
+        expandedBinaryPath,
+        expandedBinaryPath,
+      ]);
       expect(h.releases).toEqual([h.first.version]);
       yield* h.assertClosed;
     }).pipe(Effect.scoped),

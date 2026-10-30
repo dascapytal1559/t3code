@@ -119,6 +119,19 @@ it.layer(layerTest)("GrokDriver", (it) => {
         lockKey: "grok",
       }),
     },
+    {
+      name: "expands a configured ~/ executable path under the home directory",
+      binary: ["bin", "grok"],
+      configuredFromHome: true,
+      reportedPrefix: "own",
+      brewArgs: [],
+      latestVersion: undefined,
+      update: (_brewPath: string, binaryPath: string) => ({
+        executable: binaryPath,
+        args: ["update"],
+        lockKey: "grok",
+      }),
+    },
   ] as const;
 
   for (const testCase of homebrewCases) {
@@ -142,8 +155,12 @@ it.layer(layerTest)("GrokDriver", (it) => {
           displayName: "Grok test",
           enabled: false,
           environment: [],
-          config: { ...GrokDriver.defaultConfig(), binaryPath },
-        });
+          config: {
+            ...GrokDriver.defaultConfig(),
+            binaryPath:
+              "configuredFromHome" in testCase ? `~/${testCase.binary.join("/")}` : binaryPath,
+          },
+        }).pipe(Effect.provideService(HostProcess.HomeDirectory, prefix));
         const capabilities = yield* instance.snapshot.resolveMaintenance();
 
         const update = testCase.update(brewPath, binaryPath);

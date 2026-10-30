@@ -364,13 +364,20 @@ it.layer(layerUpdate)("OpenCodeDriver updates", (it) => {
           NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-opencode-driver-update-")),
         );
         const binaryPath = npmGlobalInstall(NodePath.join(root, "v1"), ["opencode-ai"], "opencode");
+        versionProbes.length = 0;
         const instance = yield* OpenCodeDriver.create({
           instanceId: ProviderInstanceId.make("opencode-update"),
           displayName: undefined,
           environment: [],
           enabled: true,
-          config: { ...OpenCodeDriver.defaultConfig(), binaryPath },
-        }).pipe(Effect.provideService(HttpClient.HttpClient, noHttp));
+          config: {
+            ...OpenCodeDriver.defaultConfig(),
+            binaryPath: `~/${NodePath.relative(root, binaryPath)}`,
+          },
+        }).pipe(
+          Effect.provideService(HttpClient.HttpClient, noHttp),
+          Effect.provideService(HostProcess.HomeDirectory, root),
+        );
 
         versionOutput.current = undefined;
         const unknown = yield* instance.snapshot.resolveMaintenance({ fresh: true });
@@ -385,6 +392,7 @@ it.layer(layerUpdate)("OpenCodeDriver updates", (it) => {
         const v2 = yield* instance.snapshot.resolveMaintenance({ fresh: true });
         assert.strictEqual(v2.packageName, "@opencode/cli");
         assert.isNull(v2.update);
+        assert.deepStrictEqual(new Set(versionProbes), new Set([binaryPath]));
       }).pipe(Effect.scoped),
   );
 });

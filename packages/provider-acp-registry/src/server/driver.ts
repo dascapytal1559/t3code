@@ -9,6 +9,7 @@ import {
 } from "@t3tools/contracts";
 import { AcpRegistrySettings } from "../settings.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
@@ -491,7 +492,11 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
       accentColor,
       continuationKey: continuationIdentity.continuationKey,
     };
-    const effectiveConfig = { ...config, enabled } satisfies AcpRegistrySettings;
+    const effectiveConfig = {
+      ...config,
+      enabled,
+      commandPath: expandHomePath(config.commandPath, yield* HostProcess.HomeDirectory),
+    } satisfies AcpRegistrySettings;
     const processEnvironment = yield* mergeProviderInstanceEnvironment(
       environment,
       hostEnvironment,
@@ -502,7 +507,7 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
       accentColor,
       environment,
       enabled,
-      config,
+      config: effectiveConfig,
     }).pipe(
       Effect.mapError(
         (cause) =>

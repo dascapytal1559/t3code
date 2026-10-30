@@ -1,5 +1,6 @@
 import { TextGenerationError } from "@t3tools/contracts";
 import { FxSettings } from "../settings.ts";
+import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import type * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -102,7 +103,11 @@ export const FxDriver: ProviderDriver<FxSettings, FxDriverEnv> = {
       accentColor,
       continuationGroupKey: continuationIdentity.continuationKey,
     });
-    const effectiveConfig = { ...config, enabled } satisfies FxSettings;
+    const effectiveConfig = {
+      ...config,
+      enabled,
+      binaryPath: expandHomePath(config.binaryPath, yield* HostProcess.HomeDirectory),
+    } satisfies FxSettings;
     const snapshotSettings = yield* makeProviderSnapshotSettingsSource(effectiveConfig);
     const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<FxSettings>>({
       resolveMaintenance: () => Effect.succeed(MAINTENANCE),
@@ -131,7 +136,14 @@ export const FxDriver: ProviderDriver<FxSettings, FxDriverEnv> = {
     const orchestrationAdapter = yield* makeFxAdapterV2Driver(
       snapshot.getSnapshot.pipe(Effect.map((current) => fxDefaultModelId(current.models))),
     )
-      .create({ instanceId, displayName, accentColor, environment, enabled, config })
+      .create({
+        instanceId,
+        displayName,
+        accentColor,
+        environment,
+        enabled,
+        config: effectiveConfig,
+      })
       .pipe(
         Effect.mapError(
           (cause) =>

@@ -1,12 +1,20 @@
 import { AcpRegistryOperationError, ProviderInstanceId } from "@t3tools/contracts";
 import { AcpRegistrySettings } from "../settings.ts";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
+import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
 import * as AcpRegistrySupport from "./AcpRegistrySupport.ts";
 import {
+  AcpRegistryDriver,
   applyAcpRegistryAvailableCommands,
   applyAcpRegistryLiveConfiguration,
   buildCheckedAcpRegistrySnapshot,
@@ -399,5 +407,43 @@ describe("acpRegistrySnapshotReadiness", () => {
         message: "Checking ACP authentication, models, and commands in the background...",
       });
     }),
+  );
+});
+
+const layerDriver = TestProviderHost.layer({ runBackgroundWork: false }).pipe(
+  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(IdAllocator.layer),
+  Layer.provideMerge(McpProviderSessions.layer),
+  Layer.provideMerge(
+    Layer.succeed(
+      ProviderEventLoggers.ProviderEventLoggers,
+      ProviderEventLoggers.NoOpProviderEventLoggers,
+    ),
+  ),
+);
+
+it.layer(layerDriver)("AcpRegistryDriver", (it) => {
+  it.effect("expands a configured ~/ local command under the home directory", () =>
+    Effect.gen(function* () {
+      const inspected: Array<string> = [];
+      yield* AcpRegistryDriver.create({
+        instanceId: identity.instanceId,
+        displayName: identity.displayName,
+        environment: [],
+        enabled: true,
+        config: decodeSettings({ source: "local", commandPath: "~/bin/agent" }),
+      }).pipe(
+        Effect.provideService(AcpRegistrySupport.AcpRegistryCatalog, {
+          ...catalogWithInspection({ status: "unconfigured" }),
+          inspect: (settings) =>
+            Effect.sync(() => {
+              inspected.push(settings.commandPath);
+              return { status: "missing_runner", version: null, distribution: "local" } as const;
+            }),
+        }),
+        Effect.provideService(HostProcess.HomeDirectory, "/home/ada"),
+      );
+      expect(new Set(inspected)).toEqual(new Set(["/home/ada/bin/agent"]));
+    }).pipe(Effect.scoped),
   );
 });

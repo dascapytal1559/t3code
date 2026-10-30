@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { DEFAULT_SERVER_SETTINGS, ProviderInstanceId } from "@t3tools/contracts";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -127,8 +128,12 @@ it.layer(layerTest)("PiDriver workspace discovery", (it) => {
   it.effect("keeps each workspace's skills and commands separate from the machine catalog", () =>
     Effect.gen(function* () {
       const { spawner, launches } = yield* makePiSpawner();
-      const instance = yield* create({ launchArgs: '--approve --skill "extra skill"' }).pipe(
+      const instance = yield* create({
+        binaryPath: "~/bin/pi",
+        launchArgs: '--approve --skill "extra skill"',
+      }).pipe(
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        Effect.provideService(HostProcess.HomeDirectory, "/home/ada"),
       );
       yield* instance.snapshot.refresh;
       assert.isDefined(instance.snapshotForCwd);
@@ -163,7 +168,7 @@ it.layer(layerTest)("PiDriver workspace discovery", (it) => {
       assert.deepEqual(first.models, machine.models);
       const workspaceLaunch = launches.find((launch) => launch.options.cwd === "/first");
       assert.isDefined(workspaceLaunch);
-      assert.equal(workspaceLaunch!.command, "custom-pi");
+      assert.equal(workspaceLaunch!.command, "/home/ada/bin/pi");
       assert.includeMembers(
         [...workspaceLaunch!.args],
         ["--approve", "--skill", "extra skill", "--no-session"],
