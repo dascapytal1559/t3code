@@ -1,6 +1,6 @@
 ## About this fork
 
-A fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code). It adds:
+A fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code). Works with [this FirstMate fork](https://github.com/dascapytal1559/firstmate), which runs its workers in T3 Code. It adds:
 
 - Its own desktop app, T3 Code (Fork), that runs beside the official one.
 - Usage up to 12 months, kept for a year, including archived machines.
