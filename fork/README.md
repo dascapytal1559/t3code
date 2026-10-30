@@ -90,17 +90,18 @@ maintenance or reporting status, as Codex, Claude and Muse already did. Cursor
 never runs its `binaryPath`, so it is unchanged. When a sync finds upstream
 expanding `~` in these drivers, keep upstream's.
 
-## Idle agent release is a setting (carried upstream PR)
+## Idle agent release is a server setting
 
-![Settings, Agent memory: "Release idle agents" set to 30 minutes, with Never, 1, 5, 10 minutes and 1 hour on offer](media/agent-memory.jpg)
-
-You choose how long an idle agent is kept before T3 releases it, including
-Never. This carries upstream https://github.com/pingdotgg/t3code/pull/25624
-unchanged: the server setting `providerSessionIdleTimeoutMinutes` (default 30,
-`null` is Never) replaces the hardcoded 30-minute idle release, shown under
-Settings → Threads → Agent memory. Firstmate's environment sets it to Never.
-When a sync finds the PR merged, or an upstream equivalent, drop this copy and
-keep upstream's.
+The server setting `providerSessionIdleTimeoutMinutes` (whole minutes from 1 to
+1440, default 30, `null` is Never) replaces the hardcoded 30-minute idle
+release. It has no control in the app: edit
+`~/.t3-fork/userdata/settings.json`, for example
+`"providerSessionIdleTimeoutMinutes": null`. The running server picks the
+change up, including for agents already idle. Firstmate's environment sets it
+to Never. This is the server half of upstream
+https://github.com/pingdotgg/t3code/pull/25624, without its web and mobile
+controls. When a sync finds the PR merged, or an upstream equivalent, drop
+this copy and keep upstream's.
 
 ## Upstream release indicator
 
