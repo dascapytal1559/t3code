@@ -1,14 +1,11 @@
-import type {
-  EnvironmentProject,
-  EnvironmentThreadShell,
-} from "@t3tools/client-runtime/state/models";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { SidebarSection } from "../Sidebar.logic";
 
 /**
- * The coordinator a thread names, if any. A coordinator is an unarchived thread some thread names
- * (it may name itself); its crew are the other unarchived threads naming it. The sidebar lists
- * both above Pinned and keeps them out of Working.
+ * The coordinator a thread names, if any. A coordinator is an unarchived thread some thread names;
+ * its crew are the other unarchived threads naming it. The sidebar lists both above Pinned and
+ * keeps them out of Working.
  */
 export type CoordinatorOf<T> = (thread: T) => ThreadId | null;
 
@@ -66,101 +63,26 @@ export function coordinatorGroupSlot<T>(
   return group.crew.has(thread) ? "crew" : null;
 }
 
-type FirstMateThread = GroupThread &
-  Pick<
-    EnvironmentThreadShell,
-    "projectId" | "title" | "worktreePath" | "createdAt" | "linkOrigin"
-  > & {
-    readonly source: Pick<EnvironmentThreadShell["source"], "createdBy" | "creationSource">;
-  };
+type CrewThread = GroupThread & Pick<EnvironmentThreadShell, "lineage">;
 
-type FirstMateProject = Pick<
-  EnvironmentProject,
-  "environmentId" | "id" | "workspaceRoot" | "repositoryIdentity"
->;
+/** The coordinator a thread's lineage names: the parent it was launched as crew of. */
+export const crewCoordinatorOf: CoordinatorOf<CrewThread> = (thread) =>
+  thread.lineage.relationshipToParent === "crew" ? thread.lineage.parentThreadId : null;
 
-const FIRSTMATE = "firstmate";
-
-const trimSeparators = (path: string) => path.replace(/[\\/]+$/, "");
-
-/**
- * A FirstMate home is a clone of the FirstMate repository: its root, not a folder inside it,
- * found by repository or folder name.
- */
-function isFirstMateHome(project: FirstMateProject): boolean {
-  const root = trimSeparators(project.workspaceRoot);
-  const identity = project.repositoryIdentity;
-  if (
-    identity?.name?.toLowerCase() === FIRSTMATE &&
-    (identity.rootPath === undefined || trimSeparators(identity.rootPath) === root)
-  ) {
-    return true;
-  }
-  return root.slice(Math.max(root.lastIndexOf("/"), root.lastIndexOf("\\")) + 1) === FIRSTMATE;
-}
-
-/**
- * FirstMate launches every crewmate over MCP from its own signed-in client. Its older launches
- * carry no client origin, only an `fm-<task-id>` title.
- */
-function isFirstMateCrewmate(thread: FirstMateThread): boolean {
-  if (thread.source.creationSource !== "mcp" || thread.source.createdBy !== "agent") return false;
-  return thread.linkOrigin?.label === FIRSTMATE || thread.title.startsWith("fm-");
-}
-
-/**
- * Infers the coordinator link FirstMate cannot yet record, since T3 stores nothing about which
- * session launched a thread. The main session is the newest unarchived thread in a FirstMate
- * home that runs in the home itself rather than a worktree and is not a crewmate, as FirstMate's
- * own discovery finds it. It names itself, so it stays on top before its first crewmate.
- */
-export function inferFirstMateCoordinatorOf<T extends FirstMateThread>(
+/** The coordinator group the app shows and opens. */
+export function resolveAppCoordinatorGroup<T extends CrewThread>(
   threads: readonly T[],
-  projects: readonly FirstMateProject[],
-): CoordinatorOf<T> {
-  const homes = new Set(
-    projects.filter(isFirstMateHome).map((project) => `${project.environmentId}:${project.id}`),
-  );
-  let main: T | null = null;
-  if (homes.size > 0) {
-    for (const thread of threads) {
-      if (
-        thread.archivedAt === null &&
-        thread.worktreePath === null &&
-        homes.has(`${thread.environmentId}:${thread.projectId}`) &&
-        !isFirstMateCrewmate(thread) &&
-        (main === null || thread.createdAt > main.createdAt)
-      ) {
-        main = thread;
-      }
-    }
-  }
-  if (main === null) return () => null;
-  const coordinator = main;
-  return (thread) =>
-    thread === coordinator ||
-    (thread.environmentId === coordinator.environmentId && isFirstMateCrewmate(thread))
-      ? coordinator.id
-      : null;
-}
-
-/** The coordinator group the app shows and opens; the one place its coordinator link is read. */
-export function resolveAppCoordinatorGroup<T extends FirstMateThread>(
-  threads: readonly T[],
-  projects: readonly FirstMateProject[],
 ): CoordinatorGroup<T> {
-  // Becomes `(thread) => thread.coordinatorThreadId` once threads record their coordinator.
-  return resolveCoordinatorGroup(threads, inferFirstMateCoordinatorOf(threads, projects));
+  return resolveCoordinatorGroup(threads, crewCoordinatorOf);
 }
 
 /** Whether the app's coordinator group lists a thread as crew; crew stays out of notifications. */
-export function isAppCrewmate<T extends FirstMateThread>(
+export function isAppCrewmate<T extends CrewThread>(
   threads: readonly T[],
-  projects: readonly FirstMateProject[],
   environmentId: EnvironmentId,
   threadId: ThreadId,
 ): boolean {
-  for (const member of resolveAppCoordinatorGroup(threads, projects).crew) {
+  for (const member of resolveAppCoordinatorGroup(threads).crew) {
     if (member.environmentId === environmentId && member.id === threadId) return true;
   }
   return false;

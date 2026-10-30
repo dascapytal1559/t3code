@@ -52,7 +52,7 @@ function IndexDraftLanding() {
 
   const mostRecentProject =
     sortScopedProjectsForSidebar(projects, threads, "updated_at")[0] ?? null;
-  const launchCoordinator = resolveLaunchCoordinator(resolveAppCoordinatorGroup(threads, projects));
+  const launchCoordinator = resolveLaunchCoordinator(resolveAppCoordinatorGroup(threads));
   const attempt = startState.retryRequest;
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens a coordinator on launch, else starts a draft in the most recent project, while still on the index

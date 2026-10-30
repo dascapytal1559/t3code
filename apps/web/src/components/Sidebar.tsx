@@ -428,7 +428,6 @@ function useSidebarThreads(input: {
     threads,
     delegatedUnderParent,
     routeRowThreadKey,
-    projects,
     folderGroups,
     keepEmptyFolders: keepEmpty,
   } = input;
@@ -475,7 +474,7 @@ function useSidebarThreads(input: {
   const settledVisibleCount =
     settledTail.scopeKey === projectScopeKey ? settledTail.count : SETTLED_TAIL_INITIAL_COUNT;
 
-  const coordinatorGroup = resolveAppCoordinatorGroup(threads, projects);
+  const coordinatorGroup = resolveAppCoordinatorGroup(threads);
   const partition = partitionSidebarThreads({
     threads,
     scopedProjectKeys,

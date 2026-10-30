@@ -1330,6 +1330,50 @@ it.effect("replays a thread.create receipt without changing the thread", () =>
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect(
+  "a crew thread names its coordinator and roots at itself; an unknown parent is refused",
+  () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const create = (threadId: ThreadId, parentThreadId?: ThreadId) =>
+        orchestrator.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make(`create:${threadId}`),
+          threadId,
+          projectId: ProjectId.make("project:crew"),
+          title: threadId,
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdBy: "agent",
+          creationSource: "mcp",
+          ...(parentThreadId === undefined ? {} : { parentThreadId }),
+        });
+      const coordinator = ThreadId.make("thread:crew-coordinator");
+      const crew = ThreadId.make("thread:crew-member");
+      yield* create(coordinator);
+      yield* create(crew, coordinator);
+      assert.deepEqual((yield* projections.getThread(crew)).lineage, {
+        parentThreadId: coordinator,
+        relationshipToParent: "crew",
+        rootThreadId: crew,
+      });
+
+      for (const [threadId, parentThreadId] of [
+        [ThreadId.make("thread:crew-orphan"), ThreadId.make("thread:crew-missing")],
+        [ThreadId.make("thread:crew-self"), ThreadId.make("thread:crew-self")],
+      ] as const) {
+        const refused = yield* create(threadId, parentThreadId).pipe(Effect.flip);
+        assert.equal(refused._tag, "OrchestratorDispatchError");
+        const stored = yield* projections.getThread(threadId).pipe(Effect.result);
+        assert.ok(Result.isFailure(stored), "a refused crew thread must not be created");
+      }
+    }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("explicit settle clears snooze atomically and stays idempotent after re-snoozing", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;

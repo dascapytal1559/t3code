@@ -161,6 +161,12 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
           "Kept in the agent's system context for the thread's life. Providers with threadInstructions.",
       }),
     ),
+    parentThreadId: Schema.optional(
+      ThreadId.annotate({
+        description:
+          "A thread here this one works for. The sidebar lists it as that thread's crew; stopping or archiving stays separate.",
+      }),
+    ),
     clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
     /** Set by a linked environment launching its agent's delegated task here; ignored otherwise. */
     delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),

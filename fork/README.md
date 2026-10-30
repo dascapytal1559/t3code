@@ -151,15 +151,17 @@ by its model icon; its crewmates hang below it as a tree that collapses to a
 count. Crewmate cards have no hover Snooze or Settle (the context menu still
 has both), and crewmate turns raise no sound or notification. Opening the app
 on the home route jumps to a FirstMate session that is still working or waiting
-on input. Without FirstMate the sidebar is unchanged.
+on input. Without crew threads the sidebar is unchanged.
 
-The main session is the newest worktree-less thread at the root of a FirstMate
-checkout. A crewmate is a thread an agent launched over MCP from the
-`firstmate` client, read from `linkOrigin`, which the server now stamps on
-launches from every signed-in OAuth client (`linked: false` for an ordinary
-one); older launches are recognised by an `fm-` title. Code:
-`apps/web/src/components/sidebar/coordinatorGroup.logic.ts`,
-`apps/server/src/mcp/linkOrigin.ts`.
+A crew thread names its coordinator at launch: `t3_thread_launch` takes an
+optional `parentThreadId`, stored as thread lineage with
+`relationshipToParent: "crew"`, which thread reads report. FirstMate passes its
+main session's id, and a secondmate's workers pass the secondmate's, which
+stays grouped with its own coordinator. The parent must be a thread the caller
+can read; naming it grants nothing on it. Unlike `delegate_task` children, a
+crewmate's Stop and archive stay independent of its coordinator. Threads
+launched without a parent stay out of the group, and mobile does not group
+crew. Code: `apps/web/src/components/sidebar/coordinatorGroup.logic.ts`.
 
 ## Per-thread environment and instructions
 

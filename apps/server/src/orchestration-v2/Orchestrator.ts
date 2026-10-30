@@ -2527,6 +2527,26 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
     }
 
+    const parentThreadId = command.parentThreadId;
+    if (parentThreadId !== undefined) {
+      const parent =
+        parentThreadId === command.threadId
+          ? null
+          : yield* projectionStore.getThread(parentThreadId).pipe(
+              Effect.catchTags({ ProjectionStoreThreadNotFoundError: () => Effect.succeed(null) }),
+              Effect.mapError(
+                (cause) => new OrchestratorProjectionError({ threadId: parentThreadId, cause }),
+              ),
+            );
+      if (parent === null || parent.deletedAt !== null) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Parent thread ${parentThreadId} was not found.`,
+        });
+      }
+    }
+
     const now = yield* DateTime.now;
     const emitEvent = emit(events, command);
     const thread: OrchestrationV2AppThread = {
@@ -2552,9 +2572,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         : { delegatedFrom: command.delegatedFrom }),
       ...(command.environment === undefined ? {} : { environment: command.environment }),
       ...(command.instructions === undefined ? {} : { instructions: command.instructions }),
+      // Crew roots at itself: the root scopes a conversation's family (forks and subagents), and
+      // a coordinator's family would otherwise load every crew thread's subagent tree.
       lineage: {
-        parentThreadId: null,
-        relationshipToParent: null,
+        parentThreadId: parentThreadId ?? null,
+        relationshipToParent: parentThreadId === undefined ? null : "crew",
         rootThreadId: command.threadId,
       },
       forkedFrom: null,

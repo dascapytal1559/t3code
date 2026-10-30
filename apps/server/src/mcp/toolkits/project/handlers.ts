@@ -25,7 +25,13 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { resolveRuntimeMode } from "../../delegatedTaskModes.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
-import { newCommandId, readCaller, resolveProjectId, unavailable } from "../../threadAccess.ts";
+import {
+  newCommandId,
+  readCaller,
+  readThread,
+  resolveProjectId,
+  unavailable,
+} from "../../threadAccess.ts";
 import { ProjectToolkit } from "./tools.ts";
 
 function projectFailure(error: Project.ProjectServiceError) {
@@ -107,6 +113,8 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
             message:
               "scratch:true picks its own project and folder; omit projectId and workspaceStrategy.",
           });
+        // Reading the parent is enough: naming it grants nothing on it.
+        if (input.parentThreadId !== undefined) yield* readThread(input.parentThreadId, []);
         const projectId =
           input.scratch === true
             ? (yield* ManagedProjectFolders.ManagedProjectFolders.pipe(
@@ -218,6 +226,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           interactionMode,
           workspaceStrategy: input.workspaceStrategy ?? { type: "root" },
           ...(input.environment === undefined ? {} : { environment: input.environment }),
+          ...(input.parentThreadId === undefined ? {} : { parentThreadId: input.parentThreadId }),
           ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
           ...(input.message === undefined && attachments.length === 0
             ? {}

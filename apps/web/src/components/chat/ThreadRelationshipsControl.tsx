@@ -54,6 +54,7 @@ import {
   PlusIcon,
   SquareIcon,
   UnplugIcon,
+  UsersIcon,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
@@ -178,6 +179,9 @@ function relationshipLabel(edge: ThreadRelationshipEdge, currentThreadId: Thread
   if (edge.kind === "transfer") return "Context transfer";
   if (edge.kind === "subagent") {
     return edge.sourceThreadId === currentThreadId ? "Subagent" : "Parent agent";
+  }
+  if (edge.kind === "crew") {
+    return edge.sourceThreadId === currentThreadId ? "Crew" : "Coordinator";
   }
   return edge.sourceThreadId === currentThreadId ? "Fork" : "Parent thread";
 }
@@ -612,7 +616,9 @@ export function ThreadRelationshipsPanel(props: {
                 ? CornerLeftUpIcon
                 : isSubagent
                   ? BotIcon
-                  : GitForkIcon;
+                  : edge.kind === "crew"
+                    ? UsersIcon
+                    : GitForkIcon;
               const relationship = relationshipLabel(edge, props.threadId);
               const projectedAgent =
                 isSubagent && !isParent ? subagentsByThreadId.get(threadId) : undefined;

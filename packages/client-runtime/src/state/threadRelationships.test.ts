@@ -115,9 +115,10 @@ describe("thread relationships", () => {
     ]);
   });
 
-  it("combines subagent and transfer edges with archived shell state", () => {
+  it("combines subagent, crew and transfer edges with archived shell state", () => {
     const parent = ThreadId.make("thread-parent");
     const child = ThreadId.make("thread-child");
+    const crew = ThreadId.make("thread-crew");
     const transferTarget = ThreadId.make("thread-transfer");
     const graph = deriveThreadRelationshipGraph({
       threads: [
@@ -140,6 +141,14 @@ describe("thread relationships", () => {
             parentThreadId: parent,
             relationshipToParent: "subagent",
           },
+        },
+        {
+          id: crew,
+          title: "Crewmate",
+          status: "running",
+          archivedAt: null,
+          forkedFrom: null,
+          lineage: { rootThreadId: crew, parentThreadId: parent, relationshipToParent: "crew" },
         },
       ] as never,
       projection: {
@@ -164,6 +173,7 @@ describe("thread relationships", () => {
           targetThreadId: child,
           kind: "subagent",
         }),
+        expect.objectContaining({ sourceThreadId: parent, targetThreadId: crew, kind: "crew" }),
         expect.objectContaining({
           sourceThreadId: child,
           targetThreadId: transferTarget,

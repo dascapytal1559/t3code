@@ -19,7 +19,6 @@ import {
 import { getClientSettings, subscribeClientSettings } from "../hooks/useSettings";
 import { isWindowsPlatform } from "../lib/utils";
 import { environmentSummaries } from "../state/presentation";
-import { environmentProjects } from "../state/projects";
 import { environmentShell } from "../state/shell";
 import { environmentThreadShells } from "../state/threads";
 import {
@@ -169,14 +168,9 @@ export function startThreadNotifications(
     }
   };
 
-  // FirstMate's crewmates report to its main session, so only that session notifies.
+  // Crew report to their coordinator, so only the coordinator notifies.
   const isCrewmate = (environmentId: EnvironmentId, threadId: ThreadId) =>
-    isAppCrewmate(
-      registry.get(environmentThreadShells.threadShellsAtom),
-      registry.get(environmentProjects.projectsAtom),
-      environmentId,
-      threadId,
-    );
+    isAppCrewmate(registry.get(environmentThreadShells.threadShellsAtom), environmentId, threadId);
 
   const observeThreads = (
     environmentId: EnvironmentId,

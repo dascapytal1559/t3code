@@ -10,6 +10,7 @@ import {
   type ModelSelection,
   type RuntimeMode,
   type OrchestrationV2ThreadShell,
+  ThreadId,
 } from "@t3tools/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -105,6 +106,7 @@ const clientLaunchHarness = (input: {
               } as unknown as OrchestrationV2ThreadShell),
         );
       },
+      getProjectThreadRecords: (thread) => Effect.succeed({ thread } as never),
     }),
     Layer.mock(ThreadLaunch.ThreadLaunchService)({
       checkWorktreeBase: input.checkWorktreeBase ?? (() => Effect.void),
@@ -241,6 +243,38 @@ it.effect(
       });
       expect(fromSettings.launched[0]?.modelSelection).toEqual(overrideModel);
     }),
+);
+
+it.effect("a launch names a parent the caller can read and refuses an unknown one", () =>
+  Effect.gen(function* () {
+    const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
+    const { projectId, dependencies } = clientLaunchHarness({
+      runtimeModeCeiling: "full-access",
+      launched,
+    });
+    const toolkit = yield* ProjectToolkit.pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(Layer.provide(dependencies)),
+      ),
+    );
+    const launch = (parentThreadId?: ThreadId) =>
+      toolkit
+        .handle("t3_thread_launch", {
+          title: "Fix",
+          projectId,
+          ...(parentThreadId === undefined ? {} : { parentThreadId }),
+        })
+        .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+
+    yield* launch();
+    const coordinator = launched[0]!.threadId;
+    yield* launch(coordinator);
+    expect(launched[1]?.parentThreadId).toBe(coordinator);
+
+    const unknown = yield* launch(ThreadId.make("thread:missing"));
+    expect(unknown.at(-1)?.result).toMatchObject({ code: "thread_not_found" });
+    expect(launched).toHaveLength(2);
+  }),
 );
 
 it.effect("a launch retried with the same clientRequestId replays the first one", () =>
