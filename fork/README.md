@@ -209,15 +209,15 @@ timeline row record `respondedBy: "agent"`, which web and mobile show as
 "answered by agent". `orchestrator_capabilities` reports `approvalResponses`.
 Code: `apps/server/src/mcp/toolkits/thread/handlers.ts`.
 
-## Usage statistics carry no account ids
+## Telemetry off by default
 
-Product analytics still go to T3, but nothing sent derives from an account.
-`distinct_id` is the hashed per-install anonymous id, not the Codex workspace
-or Claude machine id (`apps/server/src/telemetry/Identify.ts`). The
-`install.owner_observed` event is gone: the server no longer reads the linked
-T3 Connect account or provider logins for it, and clients no longer send the
-`clientOwner` and `clientDevice` connection parameters. When syncing, drop any
-upstream code that reintroduces account-derived analytics ids.
+The fork sends no product analytics and no T3 Connect relay traces unless you
+opt in. `T3CODE_TELEMETRY_ENABLED` governs both and defaults to `false` here
+(upstream defaults it to `true`): `AnalyticsService.ts` and
+`isRelayTracingEnabled` in `packages/shared/src/otelEnvironment.ts`. To turn them
+on, set `T3CODE_TELEMETRY_ENABLED=true` in the server's environment (for the
+desktop app, export it in your shell profile and restart the app). Your own
+OpenTelemetry export and the mobile app's crash reports have their own settings.
 
 ## Version
 

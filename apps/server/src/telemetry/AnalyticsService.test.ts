@@ -4,9 +4,7 @@ import { assert, it } from "@effect/vitest";
 import * as Clock from "effect/Clock";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 import * as HttpClient from "effect/http/HttpClient";
@@ -17,7 +15,6 @@ import * as HttpServer from "effect/http/HttpServer";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { hashTelemetryId } from "@t3tools/shared/telemetryId";
 
 import * as ServerConfig from "../config.ts";
 import { getTelemetryIdentity } from "./Identify.ts";
@@ -66,6 +63,8 @@ const SentBatch = Schema.fromJsonString(
         properties: Schema.Struct({
           telemetryChannel: Schema.String,
           installId: Schema.optionalKey(Schema.String),
+          ownerSource: Schema.optionalKey(Schema.String),
+          observedBy: Schema.optionalKey(Schema.String),
         }),
       }),
     ),
@@ -110,7 +109,7 @@ const recordTwentyEvents = Effect.gen(function* () {
 /**
  * Runs `record` (20 events by default), then lets `minutes` of background
  * flushes run against a client that answers every send with `respond`.
- * Returns the sent batches; `bodies` collects each raw request body.
+ * Returns the sent batches.
  */
 const sendFor = (
   minutes: number,
@@ -120,16 +119,15 @@ const sendFor = (
     never,
     AnalyticsService.AnalyticsService | Effect.Services<typeof getTelemetryIdentity>
   > = recordTwentyEvents,
-  bodies: Array<string> = [],
 ) =>
   Effect.gen(function* () {
     const batches: Array<ReadonlyArray<SentEvent>> = [];
     const client = HttpClient.make((request) =>
       Effect.gen(function* () {
         if (request.body._tag === "Uint8Array") {
-          const text = new TextDecoder().decode(request.body.body);
-          bodies.push(text);
-          const body = yield* decodeSentBatch(text).pipe(Effect.orDie);
+          const body = yield* decodeSentBatch(new TextDecoder().decode(request.body.body)).pipe(
+            Effect.orDie,
+          );
           batches.push(body.batch);
         }
         return yield* respond(request);
@@ -167,67 +165,29 @@ const sendFor = (
   });
 
 it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
-  it.effect("sends the install id and no Codex or Claude account id, raw or hashed", () =>
+  it.effect("client owner reports cannot use up the server's owner cap", () =>
     Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const homeDirectory = yield* fileSystem.makeTempDirectoryScoped({
-        prefix: "t3-telemetry-home-",
-      });
-      const idToken = [
-        "e30",
-        Buffer.from(
-          JSON.stringify({
-            sub: "google-oauth2|login-method",
-            "https://api.openai.com/auth": { user_id: "user-openai-person" },
-          }),
-        ).toString("base64url"),
-        "signature",
-      ].join(".");
-      yield* fileSystem.makeDirectory(path.join(homeDirectory, ".codex"));
-      yield* fileSystem.writeFileString(
-        path.join(homeDirectory, ".codex", "auth.json"),
-        JSON.stringify({ tokens: { account_id: "team-workspace", id_token: idToken } }),
-      );
-      yield* fileSystem.writeFileString(
-        path.join(homeDirectory, ".claude.json"),
-        JSON.stringify({
-          userID: "claude-machine",
-          oauthAccount: { accountUuid: "claude-person" },
-        }),
-      );
-
-      const bodies: Array<string> = [];
-      let installId = "";
       const batches = yield* sendFor(
-        1,
+        10,
         respondWithStatus(204),
         Effect.gen(function* () {
-          const { anonymousIdPath } = yield* ServerConfig.ServerConfig;
-          installId = hashTelemetryId(
-            yield* fileSystem.readFileString(anonymousIdPath).pipe(Effect.orDie),
+          const analytics = yield* AnalyticsService.AnalyticsService;
+          yield* analytics.recordOwners(
+            Array.from({ length: 1_001 }, (_, index) => ({
+              source: "device" as const,
+              ownerId: index.toString(16).padStart(64, "0"),
+            })),
+            "client",
           );
-          yield* recordTwentyEvents;
+          // The event buffer also holds 1,000, so send the client events first.
+          yield* analytics.flush;
+          yield* analytics.recordOwners([{ source: "connect", ownerId: "a".repeat(64) }], "server");
         }),
-        bodies,
-      ).pipe(Effect.provideService(HostProcess.HomeDirectory, homeDirectory));
-
-      assert.equal(batches.flat().length, 20);
-      assert.isTrue(
-        batches.flat().every((event) => event.distinct_id === installId),
-        "distinct_id is the install id",
       );
-      const sent = bodies.join("\n");
-      for (const accountId of [
-        "team-workspace",
-        "user-openai-person",
-        "google-oauth2|login-method",
-        "claude-machine",
-        "claude-person",
-      ]) {
-        assert.notInclude(sent, accountId);
-        assert.notInclude(sent, hashTelemetryId(accountId));
-      }
+      const owners = batches.flat().map((event) => event.properties.observedBy);
+
+      assert.equal(owners.filter((observedBy) => observedBy === "client").length, 1_000);
+      assert.equal(owners.filter((observedBy) => observedBy === "server").length, 1);
     }),
   );
 
@@ -363,7 +323,7 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
     }),
   );
 
-  it.effect("does not send batch requests when telemetry is disabled", () =>
+  it.effect("does not send batch requests unless telemetry is enabled", () =>
     Effect.gen(function* () {
       const capturedPaths: Array<string> = [];
       const layerServerConfig = ServerConfig.ServerConfig.layerTest(process.cwd(), {
@@ -372,7 +332,6 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
       const layerTelemetry = AnalyticsService.layer.pipe(Layer.provideMerge(layerServerConfig));
       const layerConfig = ConfigProvider.layer(
         ConfigProvider.fromUnknown({
-          T3CODE_TELEMETRY_ENABLED: false,
           T3CODE_POSTHOG_KEY: "phc_test_key",
           T3CODE_POSTHOG_HOST: "http://localhost",
         }),

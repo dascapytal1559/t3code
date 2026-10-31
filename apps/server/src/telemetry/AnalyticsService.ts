@@ -20,7 +20,7 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
-import { getTelemetryIdentity } from "./Identify.ts";
+import { getTelemetryIdentity, type TelemetryOwner } from "./Identify.ts";
 
 interface BufferedAnalyticsEvent {
   readonly uuid: string;
@@ -46,6 +46,10 @@ const SEND_TIMEOUT = "10 seconds";
 // The waiting batch holds newer events back; `maxBufferedEvents` bounds them meanwhile.
 const MAX_BATCH_RETRY_MS = 30 * 60_000;
 const RETRY_BASE_DELAY_MS = 2_000;
+// Clients can report any number of owner ids; past this many per observer, new ones
+// are not sent. Each observer has its own cap, so client reports never crowd out the
+// server's own.
+const MAX_RECORDED_OWNERS = 1_000;
 const RETRY_MAX_DELAY_MS = 300_000;
 // These statuses reject the batch itself; unlike 408/429, retrying cannot help.
 const REJECTED_BATCH_STATUSES = new Set([400, 401, 413]);
@@ -63,7 +67,7 @@ const TelemetryEnvConfig = Config.all({
   posthogHost: Config.String("T3CODE_POSTHOG_HOST").pipe(
     Config.withDefault("https://ingest.t3.codes"),
   ),
-  enabled: Config.Boolean("T3CODE_TELEMETRY_ENABLED").pipe(Config.withDefault(true)),
+  enabled: Config.Boolean("T3CODE_TELEMETRY_ENABLED").pipe(Config.withDefault(false)),
   flushBatchSize: Config.Number("T3CODE_TELEMETRY_FLUSH_BATCH_SIZE").pipe(Config.withDefault(20)),
   maxBufferedEvents: Config.Number("T3CODE_TELEMETRY_MAX_BUFFERED_EVENTS").pipe(
     Config.withDefault(1_000),
@@ -80,6 +84,16 @@ export class AnalyticsService extends Context.Service<
     ) => Effect.Effect<void>;
 
     readonly flush: Effect.Effect<void>;
+
+    /**
+     * Records `install.owner_observed` for each owner of this install that the
+     * server read itself or a connecting client reported. Each owner is sent once
+     * per server process, so reconnects and repeated reads are free.
+     */
+    readonly recordOwners: (
+      owners: ReadonlyArray<TelemetryOwner>,
+      observedBy: "server" | "client",
+    ) => Effect.Effect<void>;
   }
 >()("t3/telemetry/AnalyticsService") {}
 
@@ -114,6 +128,9 @@ export const make = Effect.gen(function* () {
     failures: 0,
     retryAt: 0,
   });
+  const recordedOwnersRef = yield* Ref.make<
+    Readonly<Record<"server" | "client", ReadonlySet<string>>>
+  >({ server: new Set(), client: new Set() });
   // The background flush and the shutdown flush must not send the same batch at once.
   const flushLock = yield* Semaphore.make(1);
   const clientType = serverConfig.mode === "desktop" ? "desktop-app" : "cli-web-client";
@@ -283,13 +300,36 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  const recordOwners: AnalyticsService["Service"]["recordOwners"] = Effect.fn(
+    "AnalyticsService.recordOwners",
+  )((owners, observedBy) =>
+    Effect.forEach(
+      owners,
+      ({ source, ownerId }) =>
+        Ref.modify(recordedOwnersRef, (recorded) => {
+          const key = `${source}:${ownerId}`;
+          const seen = recorded[observedBy];
+          return seen.has(key) || seen.size >= MAX_RECORDED_OWNERS
+            ? [false, recorded]
+            : [true, { ...recorded, [observedBy]: new Set(seen).add(key) }];
+        }).pipe(
+          Effect.flatMap((isNew) =>
+            isNew
+              ? record("install.owner_observed", { ownerSource: source, ownerId, observedBy })
+              : Effect.void,
+          ),
+        ),
+      { discard: true },
+    ),
+  );
+
   yield* Effect.forever(Effect.sleep(FLUSH_INTERVAL_MS).pipe(Effect.andThen(flushWhenDue)), {
     disableYield: true,
   }).pipe(Effect.forkScoped);
 
   yield* Effect.addFinalizer(() => flush);
 
-  return AnalyticsService.of({ record, flush });
+  return AnalyticsService.of({ record, flush, recordOwners });
 });
 
 export const layer = Layer.effect(AnalyticsService, make);
