@@ -33,20 +33,15 @@ const thread = (
   projectId: overrides.projectId ?? homeId,
   title,
   archivedAt: overrides.archivedAt ?? null,
+  ...(overrides.crewOf === undefined ? {} : { crewOf: ThreadId.make(overrides.crewOf) }),
   lineage:
-    overrides.crewOf !== undefined
+    overrides.forkOf !== undefined
       ? {
-          parentThreadId: ThreadId.make(overrides.crewOf),
-          relationshipToParent: "crew" as const,
-          rootThreadId: ThreadId.make(title),
+          parentThreadId: ThreadId.make(overrides.forkOf),
+          relationshipToParent: "fork" as const,
+          rootThreadId: ThreadId.make(overrides.forkOf),
         }
-      : overrides.forkOf !== undefined
-        ? {
-            parentThreadId: ThreadId.make(overrides.forkOf),
-            relationshipToParent: "fork" as const,
-            rootThreadId: ThreadId.make(overrides.forkOf),
-          }
-        : { parentThreadId: null, relationshipToParent: null, rootThreadId: ThreadId.make(title) },
+      : { parentThreadId: null, relationshipToParent: null, rootThreadId: ThreadId.make(title) },
   updatedAt: overrides.updatedAt ?? "2026-10-28T10:00:00.000Z",
   runtime:
     overrides.status === undefined || overrides.status === null

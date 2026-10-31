@@ -4,7 +4,9 @@ import {
   MessageId,
   EventId,
   NodeId,
+  OrchestrationV2AppThread,
   type OrchestrationV2DomainEvent,
+  OrchestrationV2ThreadShell,
   PlanId,
   ProjectId,
   ProviderDriverKind,
@@ -20,9 +22,12 @@ import {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Metric from "effect/Metric";
+import * as Option from "effect/Option";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -1330,13 +1335,60 @@ it.effect("replays a thread.create receipt without changing the thread", () =>
   }).pipe(Effect.provide(layerTest)),
 );
 
+// Upstream clients, such as the App Store mobile app, decode lineage with only these literals.
+const UpstreamLineage = Schema.Struct({
+  parentThreadId: Schema.NullOr(ThreadId),
+  relationshipToParent: Schema.NullOr(Schema.Literals(["fork", "subagent"])),
+  rootThreadId: ThreadId,
+});
+const upstreamShaped = <F extends { readonly lineage: Schema.Top }>(fields: F) => ({
+  ...fields,
+  lineage: UpstreamLineage,
+});
+const encodeThread = Schema.encodeSync(Schema.toCodecJson(OrchestrationV2AppThread));
+const encodeShell = Schema.encodeSync(Schema.toCodecJson(OrchestrationV2ThreadShell));
+const decodeUpstreamThread = Schema.decodeUnknownExit(
+  Schema.toCodecJson(OrchestrationV2AppThread.mapFields(upstreamShaped)),
+);
+const decodeUpstreamShell = Schema.decodeUnknownExit(
+  Schema.toCodecJson(OrchestrationV2ThreadShell.mapFields(upstreamShaped)),
+);
+const threadDecodesUpstream = (thread: OrchestrationV2AppThread) =>
+  Exit.isSuccess(decodeUpstreamThread(encodeThread(thread)));
+
+const crewReadsDecodeUpstream = Effect.fn("crewReadsDecodeUpstream")(function* (
+  threadId: ThreadId,
+  location: "active" | "archive",
+) {
+  const orchestrator = yield* Orchestrator.OrchestratorV2;
+  const projections = yield* ProjectionStore.ProjectionStoreV2;
+  const thread = yield* projections.getThread(threadId);
+  const snapshot = yield* projections.getShellSnapshot({ location, familyOf: threadId });
+  const [shell] = location === "active" ? snapshot.threads : snapshot.archivedThreads;
+  const created = yield* orchestrator
+    .streamStoredEventsFrom({ threadId, eventType: "thread.created" })
+    .pipe(Stream.runHead, Effect.map(Option.getOrThrow));
+  assert.ok(shell !== undefined && created.event.type === "thread.created");
+  for (const read of [thread, shell, created.event.payload]) {
+    assert.deepEqual(read.lineage, {
+      parentThreadId: null,
+      relationshipToParent: null,
+      rootThreadId: threadId,
+    });
+  }
+  assert.ok(threadDecodesUpstream(thread), "thread projection");
+  assert.ok(Exit.isSuccess(decodeUpstreamShell(encodeShell(shell))), "shell row");
+  assert.ok(threadDecodesUpstream(created.event.payload), "created event");
+  return { thread, shell, created: created.event.payload };
+});
+
 it.effect(
-  "a crew thread names its coordinator and roots at itself; an unknown parent is refused",
+  "a crew thread names its coordinator outside lineage and roots at itself; an unknown parent is refused",
   () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       const projections = yield* ProjectionStore.ProjectionStoreV2;
-      const create = (threadId: ThreadId, parentThreadId?: ThreadId) =>
+      const create = (threadId: ThreadId, crewOf?: ThreadId) =>
         orchestrator.dispatch({
           type: "thread.create",
           commandId: CommandId.make(`create:${threadId}`),
@@ -1350,28 +1402,71 @@ it.effect(
           worktreePath: null,
           createdBy: "agent",
           creationSource: "mcp",
-          ...(parentThreadId === undefined ? {} : { parentThreadId }),
+          ...(crewOf === undefined ? {} : { crewOf }),
         });
       const coordinator = ThreadId.make("thread:crew-coordinator");
       const crew = ThreadId.make("thread:crew-member");
       yield* create(coordinator);
       yield* create(crew, coordinator);
-      assert.deepEqual((yield* projections.getThread(crew)).lineage, {
-        parentThreadId: coordinator,
-        relationshipToParent: "crew",
-        rootThreadId: crew,
-      });
+      const reads = yield* crewReadsDecodeUpstream(crew, "active");
+      for (const read of Object.values(reads)) assert.equal(read.crewOf, coordinator);
 
-      for (const [threadId, parentThreadId] of [
+      for (const [threadId, crewOf] of [
         [ThreadId.make("thread:crew-orphan"), ThreadId.make("thread:crew-missing")],
         [ThreadId.make("thread:crew-self"), ThreadId.make("thread:crew-self")],
       ] as const) {
-        const refused = yield* create(threadId, parentThreadId).pipe(Effect.flip);
+        const refused = yield* create(threadId, crewOf).pipe(Effect.flip);
         assert.equal(refused._tag, "OrchestratorDispatchError");
         const stored = yield* projections.getThread(threadId).pipe(Effect.result);
         assert.ok(Result.isFailure(stored), "a refused crew thread must not be created");
       }
     }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("reads a crew thread stored with legacy crew lineage as crewOf", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const sql = yield* SqlClient.SqlClient;
+    const coordinator = ThreadId.make("thread:legacy-coordinator");
+    const create = (threadId: ThreadId) =>
+      orchestrator.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make(`create:${threadId}`),
+        threadId,
+        projectId: ProjectId.make("project:legacy-crew"),
+        title: threadId,
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdBy: "agent",
+        creationSource: "mcp",
+      });
+    yield* create(coordinator);
+    for (const location of ["active", "archive"] as const) {
+      const crew = ThreadId.make(`thread:legacy-crew-${location}`);
+      yield* create(crew);
+      if (location === "archive") {
+        yield* orchestrator.dispatch({
+          type: "thread.archive",
+          commandId: CommandId.make(`archive:${crew}`),
+          threadId: crew,
+        });
+      }
+      // What builds before crewOf wrote for a crew launch.
+      const legacyLineage = sql`json_set(payload_json,
+        '$.lineage.parentThreadId', ${coordinator},
+        '$.lineage.relationshipToParent', 'crew')`;
+      yield* sql`UPDATE orchestration_v2_projection_threads SET payload_json = ${legacyLineage}
+        WHERE thread_id = ${crew}`;
+      yield* sql`UPDATE orchestration_events SET payload_json = ${legacyLineage}
+        WHERE stream_id = ${crew} AND event_type = 'thread.created'`;
+
+      const reads = yield* crewReadsDecodeUpstream(crew, location);
+      for (const read of Object.values(reads)) assert.equal(read.crewOf, coordinator);
+    }
+  }).pipe(Effect.provide(layerTest)),
 );
 
 it.effect("explicit settle clears snooze atomically and stays idempotent after re-snoozing", () =>

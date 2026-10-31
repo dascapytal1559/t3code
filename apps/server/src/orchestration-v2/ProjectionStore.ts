@@ -993,9 +993,7 @@ const matchesNothing = (...filters: ReadonlyArray<ReadonlyArray<unknown> | undef
 const encodeThreadPayload = Schema.encodeEffect(
   Schema.fromJsonString(OrchestrationV2AppThreadJsonSchema),
 );
-const encodeThreadUpdatedAt = Schema.encodeEffect(
-  OrchestrationV2AppThreadJsonSchema.fields.updatedAt,
-);
+const encodeThreadUpdatedAt = Schema.encodeEffect(Schema.DateTimeUtcFromString);
 const encodeRunPayload = Schema.encodeEffect(Schema.fromJsonString(OrchestrationV2RunJsonSchema));
 const encodeRestartCancelledBackgroundWork = Schema.encodeEffect(
   Schema.fromJsonString(OrchestrationV2RunJsonSchema.fields.restartCancelledBackgroundWork),
@@ -1469,6 +1467,7 @@ export function threadShellFromProjection(
       : { activeOrderKey: projection.thread.activeOrderKey }),
     lineage: projection.thread.lineage,
     ...(projection.thread.coordinator === true ? { coordinator: true } : {}),
+    ...(projection.thread.crewOf === undefined ? {} : { crewOf: projection.thread.crewOf }),
     forkedFrom: projection.thread.forkedFrom,
     activeProviderThreadId: projection.thread.activeProviderThreadId,
     ...(projection.thread.historyOrigin === undefined
@@ -1752,6 +1751,7 @@ function shellFromState(input: {
       : { activeOrderKey: input.state.thread.activeOrderKey }),
     lineage: input.state.thread.lineage,
     ...(input.state.thread.coordinator === true ? { coordinator: true } : {}),
+    ...(input.state.thread.crewOf === undefined ? {} : { crewOf: input.state.thread.crewOf }),
     forkedFrom: input.state.thread.forkedFrom,
     activeProviderThreadId: input.state.thread.activeProviderThreadId,
     ...(input.state.thread.historyOrigin === undefined

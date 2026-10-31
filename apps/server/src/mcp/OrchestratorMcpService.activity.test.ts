@@ -39,6 +39,7 @@ const environmentId = EnvironmentId.make("environment-mcp-orchestrator-detail");
 const projectId = ProjectId.make("project-mcp-orchestrator-detail");
 const parentThreadId = ThreadId.make("thread-mcp-orchestrator-parent");
 const childThreadId = ThreadId.make("thread-mcp-orchestrator-child");
+const crewCoordinatorId = ThreadId.make("thread-mcp-orchestrator-crew-coordinator");
 const activeRunId = RunId.make("run-mcp-active");
 const cancelledRunId = RunId.make("run-mcp-cancelled");
 const childRunId = RunId.make("run-mcp-child");
@@ -126,6 +127,7 @@ it("readThread prefers activity-run status over a newer cancelled queued run", a
         model: "gpt-5.4",
       }),
       coordinator: true,
+      crewOf: crewCoordinatorId,
     },
     runs: [
       makeRun({ id: activeRunId, ordinal: 1, status: "running" }),
@@ -184,6 +186,9 @@ it("readThread prefers activity-run status over a newer cancelled queued run", a
     expect(result.thread.latestRunId).toBe(cancelledRunId);
     expect(result.thread.activeRunId).toBe(activeRunId);
     expect(result.thread.coordinator).toBe(true);
+    // FirstMate reads crew from MCP lineage, though threads carry it outside `lineage`.
+    expect(result.thread.parentThreadId).toBe(crewCoordinatorId);
+    expect(result.thread.relationshipToParent).toBe("crew");
   }).pipe(Effect.provide(layer), Effect.runPromise);
 });
 

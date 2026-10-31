@@ -790,13 +790,24 @@ function listItemFromShell(
     pullRequests: threadPullRequests(shell.pullRequests),
     ...threadSettlement(shell),
     ...threadSnooze(shell, nowMs),
-    parentThreadId: shell.lineage.parentThreadId,
-    relationshipToParent: shell.lineage.relationshipToParent,
+    ...mcpLineage(shell),
     coordinator: shell.coordinator === true,
     itemCount: shell.visibleItemCount,
     createdAt: DateTime.formatIso(shell.createdAt),
     updatedAt: DateTime.formatIso(shell.updatedAt),
   };
+}
+
+/** MCP reports crew as a lineage relationship, though threads carry it in `crewOf`. */
+function mcpLineage(
+  thread: Pick<OrchestrationV2ThreadShell, "lineage" | "crewOf">,
+): Pick<OrchestratorMcpThreadDetail, "parentThreadId" | "relationshipToParent"> {
+  return thread.crewOf === undefined
+    ? {
+        parentThreadId: thread.lineage.parentThreadId,
+        relationshipToParent: thread.lineage.relationshipToParent,
+      }
+    : { parentThreadId: thread.crewOf, relationshipToParent: "crew" };
 }
 
 function threadDetail(
@@ -834,8 +845,7 @@ function threadDetail(
           },
     branch: projection.thread.branch,
     worktreePath: projection.thread.worktreePath,
-    parentThreadId: projection.thread.lineage.parentThreadId,
-    relationshipToParent: projection.thread.lineage.relationshipToParent,
+    ...mcpLineage(projection.thread),
     coordinator: projection.thread.coordinator === true,
     runCount: projection.runs.length,
     itemCount,

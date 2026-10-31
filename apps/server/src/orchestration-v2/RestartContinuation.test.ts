@@ -1166,14 +1166,7 @@ function shellThread(id: string, overrides: Record<string, unknown> = {}) {
 }
 
 function crewThread(id: string, overrides: Record<string, unknown> = {}) {
-  return shellThread(id, {
-    lineage: {
-      parentThreadId: coordinatorId,
-      relationshipToParent: "crew",
-      rootThreadId: ThreadId.make(id),
-    },
-    ...overrides,
-  });
+  return shellThread(id, { crewOf: coordinatorId, ...overrides });
 }
 
 const restartNotes = Effect.fn(function* (

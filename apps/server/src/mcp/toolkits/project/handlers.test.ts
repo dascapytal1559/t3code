@@ -269,7 +269,7 @@ it.effect("a launch names a parent the caller can read and refuses an unknown on
     yield* launch();
     const coordinator = launched[0]!.threadId;
     yield* launch(coordinator);
-    expect(launched[1]?.parentThreadId).toBe(coordinator);
+    expect(launched[1]?.crewOf).toBe(coordinator);
 
     const unknown = yield* launch(ThreadId.make("thread:missing"));
     expect(unknown.at(-1)?.result).toMatchObject({ code: "thread_not_found" });

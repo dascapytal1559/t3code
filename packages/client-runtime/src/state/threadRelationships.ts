@@ -85,17 +85,18 @@ export function deriveThreadRelationshipGraph(input: {
       thread.forkedFrom?.type === "run"
         ? thread.forkedFrom.threadId
         : thread.lineage.parentThreadId;
-    if (parentThreadId === null) continue;
-    addEdge({
-      sourceThreadId: parentThreadId,
-      targetThreadId: thread.id,
-      kind:
-        thread.lineage.relationshipToParent === "subagent" ||
-        thread.lineage.relationshipToParent === "crew"
-          ? thread.lineage.relationshipToParent
-          : "fork",
-      status: thread.activityRunStatus ?? thread.status,
-    });
+    const status = thread.activityRunStatus ?? thread.status;
+    if (parentThreadId !== null) {
+      addEdge({
+        sourceThreadId: parentThreadId,
+        targetThreadId: thread.id,
+        kind: thread.lineage.relationshipToParent === "subagent" ? "subagent" : "fork",
+        status,
+      });
+    }
+    if (thread.crewOf !== undefined) {
+      addEdge({ sourceThreadId: thread.crewOf, targetThreadId: thread.id, kind: "crew", status });
+    }
   }
 
   if (input.projection !== null) {

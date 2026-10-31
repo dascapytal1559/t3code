@@ -370,11 +370,8 @@ export const notifyCrewCoordinators = Effect.fn("RestartContinuation.notifyCrewC
       (thread) => thread.archivedAt === null && thread.deletedAt === null,
     );
     const crewByCoordinator = Map.groupBy(
-      live.filter(
-        (thread) =>
-          thread.lineage.relationshipToParent === "crew" && thread.lineage.parentThreadId !== null,
-      ),
-      (thread) => thread.lineage.parentThreadId,
+      live.filter((thread) => thread.crewOf !== undefined),
+      (thread) => thread.crewOf,
     );
     const now = yield* DateTime.now;
     const startedAt = DateTime.formatIso(serverStartedAt);

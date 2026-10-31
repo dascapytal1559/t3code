@@ -108,7 +108,7 @@ export interface ThreadLaunchInput {
   readonly environment?: OrchestrationV2ThreadEnvironment;
   readonly instructions?: string;
   /** The coordinator thread this one works for, in the same environment. */
-  readonly parentThreadId?: ThreadId;
+  readonly crewOf?: ThreadId;
 }
 
 type PreparationInput = Pick<
@@ -940,9 +940,7 @@ const make = Effect.gen(function* () {
                   : { delegatedFrom: input.delegatedFrom }),
                 ...(input.environment === undefined ? {} : { environment: input.environment }),
                 ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
-                ...(input.parentThreadId === undefined
-                  ? {}
-                  : { parentThreadId: input.parentThreadId }),
+                ...(input.crewOf === undefined ? {} : { crewOf: input.crewOf }),
                 createdBy: input.createdBy,
                 creationSource: input.creationSource,
               });

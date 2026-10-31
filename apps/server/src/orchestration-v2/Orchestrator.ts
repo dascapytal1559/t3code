@@ -2526,22 +2526,22 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
     }
 
-    const parentThreadId = command.parentThreadId;
-    if (parentThreadId !== undefined) {
-      const parent =
-        parentThreadId === command.threadId
+    const crewOf = command.crewOf;
+    if (crewOf !== undefined) {
+      const coordinator =
+        crewOf === command.threadId
           ? null
-          : yield* projectionStore.getThread(parentThreadId).pipe(
+          : yield* projectionStore.getThread(crewOf).pipe(
               Effect.catchTags({ ProjectionStoreThreadNotFoundError: () => Effect.succeed(null) }),
               Effect.mapError(
-                (cause) => new OrchestratorProjectionError({ threadId: parentThreadId, cause }),
+                (cause) => new OrchestratorProjectionError({ threadId: crewOf, cause }),
               ),
             );
-      if (parent === null || parent.deletedAt !== null) {
+      if (coordinator === null || coordinator.deletedAt !== null) {
         return yield* new OrchestratorDispatchError({
           commandId: command.commandId,
           commandType: command.type,
-          cause: `Parent thread ${parentThreadId} was not found.`,
+          cause: `Parent thread ${crewOf} was not found.`,
         });
       }
     }
@@ -2569,11 +2569,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         : { delegatedFrom: command.delegatedFrom }),
       ...(command.environment === undefined ? {} : { environment: command.environment }),
       ...(command.instructions === undefined ? {} : { instructions: command.instructions }),
-      // Crew roots at itself: the root scopes a conversation's family (forks and subagents), and
-      // a coordinator's family would otherwise load every crew thread's subagent tree.
+      ...(crewOf === undefined ? {} : { crewOf }),
       lineage: {
-        parentThreadId: parentThreadId ?? null,
-        relationshipToParent: parentThreadId === undefined ? null : "crew",
+        parentThreadId: null,
+        relationshipToParent: null,
         rootThreadId: command.threadId,
       },
       forkedFrom: null,

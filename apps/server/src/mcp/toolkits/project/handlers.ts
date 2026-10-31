@@ -226,7 +226,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           interactionMode,
           workspaceStrategy: input.workspaceStrategy ?? { type: "root" },
           ...(input.environment === undefined ? {} : { environment: input.environment }),
-          ...(input.parentThreadId === undefined ? {} : { parentThreadId: input.parentThreadId }),
+          ...(input.parentThreadId === undefined ? {} : { crewOf: input.parentThreadId }),
           ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
           ...(input.message === undefined && attachments.length === 0
             ? {}

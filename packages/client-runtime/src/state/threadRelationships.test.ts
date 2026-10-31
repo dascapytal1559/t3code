@@ -148,7 +148,8 @@ describe("thread relationships", () => {
           status: "running",
           archivedAt: null,
           forkedFrom: null,
-          lineage: { rootThreadId: crew, parentThreadId: parent, relationshipToParent: "crew" },
+          crewOf: parent,
+          lineage: { rootThreadId: crew, parentThreadId: null, relationshipToParent: null },
         },
       ] as never,
       projection: {

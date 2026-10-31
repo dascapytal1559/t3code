@@ -203,7 +203,7 @@ export type OrchestrationV2ProviderRef = typeof OrchestrationV2ProviderRef.Type;
 
 export const OrchestrationV2AppThreadLineage = Schema.Struct({
   parentThreadId: Schema.NullOr(ThreadId),
-  relationshipToParent: Schema.NullOr(Schema.Literals(["fork", "subagent", "crew"])),
+  relationshipToParent: Schema.NullOr(Schema.Literals(["fork", "subagent"])),
   rootThreadId: ThreadId,
 });
 export type OrchestrationV2AppThreadLineage = typeof OrchestrationV2AppThreadLineage.Type;
@@ -517,6 +517,11 @@ export const OrchestrationV2AppThread = Schema.Struct({
   instructions: Schema.optional(OrchestrationV2ThreadInstructions),
   /** Its project's pinned coordinator, noted after every server start. At most one per project. */
   coordinator: Schema.optional(Schema.Boolean),
+  /**
+   * The coordinator thread this crew thread works for. Kept out of `lineage`, whose literals
+   * upstream clients decode strictly.
+   */
+  crewOf: Schema.optional(ThreadId),
   lineage: OrchestrationV2AppThreadLineage,
   forkedFrom: Schema.NullOr(
     Schema.Union([
@@ -2105,6 +2110,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   branchPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   lineage: OrchestrationV2AppThreadLineage,
   coordinator: Schema.optional(Schema.Boolean),
+  crewOf: OrchestrationV2AppThread.fields.crewOf,
   forkedFrom: Schema.NullOr(OrchestrationV2AppThread.fields.forkedFrom),
   activeProviderThreadId: Schema.NullOr(ProviderThreadId),
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),
@@ -2287,8 +2293,15 @@ export const OrchestrationV2StoredEvent = Schema.Struct({
 });
 export type OrchestrationV2StoredEvent = typeof OrchestrationV2StoredEvent.Type;
 
-export const OrchestrationV2AppThreadJson = OrchestrationV2AppThread.mapFields((fields) => ({
+// Fork builds before `crewOf` stored the crew link as lineage "crew"; reads move it to `crewOf`.
+const LegacyCrewLineageJson = Schema.Struct({
+  ...OrchestrationV2AppThreadLineage.fields,
+  relationshipToParent: Schema.NullOr(Schema.Literals(["fork", "subagent", "crew"])),
+});
+
+const StoredAppThreadJson = OrchestrationV2AppThread.mapFields((fields) => ({
   ...fields,
+  lineage: LegacyCrewLineageJson,
   createdAt: Schema.DateTimeUtcFromString,
   updatedAt: Schema.DateTimeUtcFromString,
   archivedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
@@ -2314,6 +2327,36 @@ export const OrchestrationV2AppThreadJson = OrchestrationV2AppThread.mapFields((
   ),
   deletedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
 }));
+
+type StoredAppThread = typeof StoredAppThreadJson.Type;
+
+const hasUpstreamLineage = (thread: StoredAppThread): thread is OrchestrationV2AppThread =>
+  thread.lineage.relationshipToParent !== "crew";
+
+const fromLegacyCrewLineage = (thread: StoredAppThread): OrchestrationV2AppThread => {
+  if (hasUpstreamLineage(thread)) return thread;
+  const { lineage } = thread;
+  return {
+    ...thread,
+    ...(lineage.parentThreadId === null ? {} : { crewOf: lineage.parentThreadId }),
+    lineage: {
+      parentThreadId: null,
+      relationshipToParent: null,
+      rootThreadId: lineage.rootThreadId,
+    },
+  };
+};
+
+/** The stored thread payload, as projections and thread events persist it. */
+export const OrchestrationV2AppThreadJson = StoredAppThreadJson.pipe(
+  Schema.decodeTo(
+    Schema.toType(OrchestrationV2AppThread),
+    SchemaTransformation.transform<OrchestrationV2AppThread, StoredAppThread>({
+      decode: fromLegacyCrewLineage,
+      encode: (thread) => thread,
+    }),
+  ),
+);
 export type OrchestrationV2AppThreadJson = typeof OrchestrationV2AppThreadJson.Type;
 
 export const OrchestrationV2RunJson = OrchestrationV2Run.mapFields((fields) => ({
@@ -2938,7 +2981,7 @@ export const OrchestrationV2Command = Schema.Union([
     /** Only the server sets this, with `linkOrigin`, for a linked environment's delegated task. */
     delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
     /** A thread in this environment that this one works for; the sidebar lists it under that coordinator. */
-    parentThreadId: Schema.optional(ThreadId),
+    crewOf: Schema.optional(ThreadId),
     environment: Schema.optional(OrchestrationV2ThreadEnvironment),
     instructions: Schema.optional(OrchestrationV2ThreadInstructions),
     importedNativeThread: Schema.optional(

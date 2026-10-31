@@ -63,11 +63,10 @@ export function coordinatorGroupSlot<T>(
   return group.crew.has(thread) ? "crew" : null;
 }
 
-type CrewThread = GroupThread & Pick<EnvironmentThreadShell, "lineage">;
+type CrewThread = GroupThread & Pick<EnvironmentThreadShell, "crewOf">;
 
-/** The coordinator a thread's lineage names: the parent it was launched as crew of. */
-export const crewCoordinatorOf: CoordinatorOf<CrewThread> = (thread) =>
-  thread.lineage.relationshipToParent === "crew" ? thread.lineage.parentThreadId : null;
+/** The coordinator a thread was launched as crew of. */
+export const crewCoordinatorOf: CoordinatorOf<CrewThread> = (thread) => thread.crewOf ?? null;
 
 /** The coordinator group the app shows and opens. */
 export function resolveAppCoordinatorGroup<T extends CrewThread>(

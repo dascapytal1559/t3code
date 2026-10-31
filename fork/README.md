@@ -155,8 +155,12 @@ on the home route jumps to a FirstMate session that is still working or waiting
 on input. Without crew threads the sidebar is unchanged.
 
 A crew thread names its coordinator at launch: `t3_thread_launch` takes an
-optional `parentThreadId`, stored as thread lineage with
-`relationshipToParent: "crew"`, which thread reads report. FirstMate passes its
+optional `parentThreadId`, stored as the thread's `crewOf`. MCP thread reads
+report it as `parentThreadId` with `relationshipToParent: "crew"`. It stays out
+of the thread's `lineage`, which upstream-built clients such as the App Store
+mobile app decode strictly; one unknown lineage value there stops their whole
+thread list from syncing. Crew stored in lineage by earlier builds is read back
+as `crewOf`. FirstMate passes its
 main session's id, and a secondmate's workers pass the secondmate's, which
 stays grouped with its own coordinator. The parent must be a thread the caller
 can read; naming it grants nothing on it. Unlike `delegate_task` children, a
