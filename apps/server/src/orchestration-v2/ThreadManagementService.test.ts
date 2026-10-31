@@ -35,6 +35,10 @@ import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
+import * as ProjectionStore from "./ProjectionStore.ts";
+import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
+import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
+import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 
 it("stamps authoritative provenance on commands that create threads or messages", () => {
   const command: OrchestrationV2Command = {
@@ -596,3 +600,83 @@ it.effect.each([
     expect(dispatched).toEqual(settles ? ["thread.settle"] : []);
   }),
 );
+
+it.effect("pinning a coordinator moves its project's pin and leaves other projects alone", () => {
+  const instanceId = ProviderInstanceId.make("codex");
+  const layerDatabase = SqlitePersistence.layerMemory;
+  const layerTest = ThreadManagementService.layer.pipe(
+    Layer.provideMerge(
+      ProviderReplayHarness.layerWithRegistry(
+        { name: "coordinator-pin" },
+        ProviderAdapterRegistry.layerFromAdapters([
+          {
+            instanceId,
+            driver: ProviderDriverKind.make("codex"),
+            getCapabilities: () => Effect.succeed(CodexProviderCapabilitiesV2),
+          } as unknown as ProviderAdapter.ProviderAdapterV2["Service"],
+        ]),
+        { databaseLayer: layerDatabase, runEffectWorker: false },
+      ),
+    ),
+    Layer.provide(ServerSettings.layerTest()),
+    Layer.provide(CommandReceiptStore.layer.pipe(Layer.provide(layerDatabase))),
+    Layer.provideMerge(ProjectionStore.layer.pipe(Layer.provide(layerDatabase))),
+  );
+  return Effect.gen(function* () {
+    const service = yield* ThreadManagementService.ThreadManagementService;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const projectId = ProjectId.make("project:coordinator");
+    const otherProjectId = ProjectId.make("project:coordinator-other");
+    const [first, second, elsewhere] = ["first", "second", "elsewhere"].map((name) =>
+      ThreadId.make(`thread:coordinator-${name}`),
+    ) as [ThreadId, ThreadId, ThreadId];
+    for (const [threadId, threadProjectId] of [
+      [first, projectId],
+      [second, projectId],
+      [elsewhere, otherProjectId],
+    ] as const)
+      yield* service.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make(`create:${threadId}`),
+        threadId,
+        projectId: threadProjectId,
+        title: threadId,
+        modelSelection: { instanceId, model: "gpt-5" },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdBy: "agent",
+        creationSource: "mcp",
+      });
+    const pin = (threadId: ThreadId, coordinator: boolean, step: string) =>
+      service.setCoordinator({
+        projectId: threadId === elsewhere ? otherProjectId : projectId,
+        threadId,
+        commandId: CommandId.make(`pin:${step}`),
+        coordinator,
+      });
+    const pinned = Effect.fn(function* () {
+      const shells = yield* Effect.forEach([first, second, elsewhere], (threadId) =>
+        projections.getThreadShell(threadId),
+      );
+      return shells.filter((shell) => shell?.coordinator === true).map((shell) => shell!.id);
+    });
+
+    yield* pin(first, true, "first");
+    yield* pin(elsewhere, true, "elsewhere");
+    expect(yield* pinned()).toEqual([first, elsewhere]);
+
+    yield* service.dispatch({
+      type: "thread.archive",
+      commandId: CommandId.make("archive:first"),
+      threadId: first,
+    });
+    yield* pin(second, true, "second");
+    expect(yield* pinned()).toEqual([second, elsewhere]);
+    expect((yield* projections.getThread(first)).coordinator).toBe(false);
+
+    yield* pin(second, false, "unpin-second");
+    expect(yield* pinned()).toEqual([elsewhere]);
+  }).pipe(Effect.provide(layerTest));
+});

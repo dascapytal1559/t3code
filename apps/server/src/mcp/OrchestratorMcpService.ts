@@ -792,6 +792,7 @@ function listItemFromShell(
     ...threadSnooze(shell, nowMs),
     parentThreadId: shell.lineage.parentThreadId,
     relationshipToParent: shell.lineage.relationshipToParent,
+    coordinator: shell.coordinator === true,
     itemCount: shell.visibleItemCount,
     createdAt: DateTime.formatIso(shell.createdAt),
     updatedAt: DateTime.formatIso(shell.updatedAt),
@@ -835,6 +836,7 @@ function threadDetail(
     worktreePath: projection.thread.worktreePath,
     parentThreadId: projection.thread.lineage.parentThreadId,
     relationshipToParent: projection.thread.lineage.relationshipToParent,
+    coordinator: projection.thread.coordinator === true,
     runCount: projection.runs.length,
     itemCount,
     pendingRequestCount: projection.runtimeRequests.filter(
@@ -2203,6 +2205,7 @@ const make = Effect.gen(function* () {
           incrementalThreadRead: true,
           scheduledTasks: true,
           approvalResponses: true,
+          coordinatorRestartNote: true,
           maxBatchThreads: 20,
         },
       };

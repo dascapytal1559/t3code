@@ -170,7 +170,10 @@ one note, attributed to T3 Code: when the server restarted, which crew had a run
 cut, and to run `bin/fm-session-start.sh`. Archived or snoozed coordinators get
 none, and neither does one whose own run the restart cut (its restart
 continuation wakes it). The project's continue-after-update setting
-(`continueThreadsAfterServerUpdate`) switches it off. Code:
+(`continueThreadsAfterServerUpdate`) switches it off. A thread pinned with
+`t3_thread_configure` `coordinator: true` (one per project; pinning moves it,
+`false` unpins) gets the note after every start even with no crew or while busy,
+and thread reads report `coordinator`. Code:
 `notifyCrewCoordinators` in `apps/server/src/orchestration-v2/RestartContinuation.ts`.
 
 ## Per-thread environment and instructions

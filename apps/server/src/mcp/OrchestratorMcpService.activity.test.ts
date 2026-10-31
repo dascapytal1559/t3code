@@ -118,12 +118,15 @@ function makeRun(input: {
 
 it("readThread prefers activity-run status over a newer cancelled queued run", async () => {
   const projection = {
-    thread: baseThread({
-      threadId: parentThreadId,
-      title: "Parent",
-      instanceId: parentInstanceId,
-      model: "gpt-5.4",
-    }),
+    thread: {
+      ...baseThread({
+        threadId: parentThreadId,
+        title: "Parent",
+        instanceId: parentInstanceId,
+        model: "gpt-5.4",
+      }),
+      coordinator: true,
+    },
     runs: [
       makeRun({ id: activeRunId, ordinal: 1, status: "running" }),
       makeRun({ id: cancelledRunId, ordinal: 2, status: "cancelled" }),
@@ -180,6 +183,7 @@ it("readThread prefers activity-run status over a newer cancelled queued run", a
     expect(result.thread.status).toBe("running");
     expect(result.thread.latestRunId).toBe(cancelledRunId);
     expect(result.thread.activeRunId).toBe(activeRunId);
+    expect(result.thread.coordinator).toBe(true);
   }).pipe(Effect.provide(layer), Effect.runPromise);
 });
 

@@ -173,6 +173,8 @@ const threadConfiguration = Schema.Struct({
   interactionMode: ProviderInteractionMode,
   environment: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   instructions: Schema.optional(Schema.String),
+  // Linked servers without coordinator pins omit it.
+  coordinator: Schema.optional(Schema.Boolean),
 });
 const ThreadConfigureTool = Tool.make("t3_thread_configure", {
   ...commandTool,
@@ -183,6 +185,12 @@ const ThreadConfigureTool = Tool.make("t3_thread_configure", {
     environmentId: OrchestratorMcpEnvironmentTarget,
     threadId: Schema.optional(ThreadId),
     modelSelection: Schema.optional(ModelSelection),
+    coordinator: Schema.optional(
+      Schema.Boolean.annotate({
+        description:
+          "true: pin as the project's one coordinator, noted after every T3 restart. false: unpin.",
+      }),
+    ),
   }),
   success: Schema.Union([threadConfiguration, OrchestrationV2DispatchCommandResult]),
 }).annotate(Tool.Destructive, true);

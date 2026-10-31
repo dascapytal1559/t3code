@@ -238,7 +238,7 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
     ),
   ),
   t3_thread_configure: McpToolAccess.either(
-    (input) => input.modelSelection === undefined,
+    (input) => input.modelSelection === undefined && input.coordinator === undefined,
     McpToolAccess.reads((input) =>
       Effect.gen(function* () {
         const {
@@ -258,21 +258,40 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
           interactionMode: thread.interactionMode,
           ...(thread.environment === undefined ? {} : { environment: thread.environment }),
           ...(thread.instructions === undefined ? {} : { instructions: thread.instructions }),
+          coordinator: thread.coordinator === true,
         };
       }),
     ),
     writesThread((input) =>
       Effect.gen(function* () {
-        const modelSelection = yield* required(input.modelSelection, "modelSelection");
         const {
           threads,
           projection: { thread },
         } = yield* readThread(input.threadId);
-        const type = modelSelectionCommandType(thread.providerInstanceId, modelSelection);
-        const result = yield* threads
-          .dispatch({ type, threadId: thread.id, commandId: yield* newCommandId(), modelSelection })
-          .pipe(Effect.mapError(dispatchFailure));
-        return { sequence: result.sequence };
+        let sequence = 0;
+        if (input.modelSelection !== undefined) {
+          const modelSelection = input.modelSelection;
+          const type = modelSelectionCommandType(thread.providerInstanceId, modelSelection);
+          sequence = (yield* threads
+            .dispatch({
+              type,
+              threadId: thread.id,
+              commandId: yield* newCommandId(),
+              modelSelection,
+            })
+            .pipe(Effect.mapError(dispatchFailure))).sequence;
+        }
+        if (input.coordinator !== undefined) {
+          sequence = (yield* threads
+            .setCoordinator({
+              projectId: thread.projectId,
+              threadId: thread.id,
+              commandId: yield* newCommandId(),
+              coordinator: input.coordinator,
+            })
+            .pipe(Effect.mapError(dispatchFailure))).sequence;
+        }
+        return { sequence };
       }),
     ),
   ),

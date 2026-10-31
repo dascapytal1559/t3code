@@ -515,6 +515,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
   /** Bound at launch for every provider session the thread opens. */
   environment: Schema.optional(OrchestrationV2ThreadEnvironment),
   instructions: Schema.optional(OrchestrationV2ThreadInstructions),
+  /** Its project's pinned coordinator, noted after every server start. At most one per project. */
+  coordinator: Schema.optional(Schema.Boolean),
   lineage: OrchestrationV2AppThreadLineage,
   forkedFrom: Schema.NullOr(
     Schema.Union([
@@ -2102,6 +2104,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   pullRequests: Schema.optional(Schema.Array(ThreadPullRequestLink)),
   branchPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   lineage: OrchestrationV2AppThreadLineage,
+  coordinator: Schema.optional(Schema.Boolean),
   forkedFrom: Schema.NullOr(OrchestrationV2AppThread.fields.forkedFrom),
   activeProviderThreadId: Schema.NullOr(ProviderThreadId),
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),
@@ -3066,6 +3069,7 @@ export const OrchestrationV2Command = Schema.Union([
     limitRecovery: Schema.optional(Schema.NullOr(OrchestrationV2LimitRecoveryUpdate)),
     /** Link (object) or unlink (null) a pull request; absent leaves it unchanged. */
     linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
+    coordinator: Schema.optional(Schema.Boolean),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.pull-request.link"),

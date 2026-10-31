@@ -1204,30 +1204,57 @@ const restartNotes = Effect.fn(function* (
   return commands;
 });
 
-it.effect("tells an idle coordinator once per server start which crew the restart cut", () =>
+it.effect.each([false, true])(
+  "tells an idle coordinator (pinned: %s) once per server start which crew the restart cut",
+  (coordinator) =>
+    Effect.gen(function* () {
+      const commands = yield* restartNotes(
+        [
+          shellThread("thread:coordinator", { coordinator }),
+          crewThread("thread:crew-cut", { status: "cancelled" }),
+          crewThread("thread:crew-done"),
+          crewThread("thread:crew-stopped", { status: "cancelled", latestRunStopRequested: true }),
+        ],
+        { passes: 2 },
+      );
+      assert.lengthOf(commands, 1);
+      const command = commands[0]!;
+      assert.equal(command.type, "message.dispatch");
+      if (command.type !== "message.dispatch") return;
+      assert.equal(command.threadId, coordinatorId);
+      assert.equal(
+        command.commandId,
+        `command:restart-note:${coordinatorId}:${DateTime.formatIso(serverStartedAt)}`,
+      );
+      assert.include(command.text, "- thread:crew-cut (thread:crew-cut)");
+      assert.notInclude(command.text, "thread:crew-done");
+      assert.notInclude(command.text, "thread:crew-stopped");
+      assert.include(command.text, "bin/fm-session-start.sh");
+    }),
+);
+
+it.effect.each([
+  ["has no crew", [shellThread("thread:coordinator", { coordinator: true })]],
+  [
+    "is busy and its crew ran clean",
+    [
+      shellThread("thread:coordinator", {
+        coordinator: true,
+        status: "running",
+        activeRunId: runId,
+      }),
+      crewThread("thread:crew"),
+    ],
+  ],
+] as const)("tells a pinned coordinator that %s about the restart once", ([, shells]) =>
   Effect.gen(function* () {
-    const commands = yield* restartNotes(
-      [
-        shellThread("thread:coordinator"),
-        crewThread("thread:crew-cut", { status: "cancelled" }),
-        crewThread("thread:crew-done"),
-        crewThread("thread:crew-stopped", { status: "cancelled", latestRunStopRequested: true }),
-      ],
-      { passes: 2 },
-    );
+    const commands = yield* restartNotes(shells, { passes: 2 });
     assert.lengthOf(commands, 1);
     const command = commands[0]!;
-    assert.equal(command.type, "message.dispatch");
-    if (command.type !== "message.dispatch") return;
+    if (command.type !== "message.dispatch") return assert.fail(command.type);
     assert.equal(command.threadId, coordinatorId);
-    assert.equal(
-      command.commandId,
-      `command:restart-note:${coordinatorId}:${DateTime.formatIso(serverStartedAt)}`,
-    );
-    assert.include(command.text, "- thread:crew-cut (thread:crew-cut)");
-    assert.notInclude(command.text, "thread:crew-done");
-    assert.notInclude(command.text, "thread:crew-stopped");
-    assert.include(command.text, "bin/fm-session-start.sh");
+    assert.deepEqual(command.dispatchMode, { type: "queue_after_active" });
+    assert.include(command.text, "None of your crew threads had a run interrupted.");
   }),
 );
 
@@ -1257,6 +1284,16 @@ it.effect.each([
     "its own run was cut and continues on its own",
     [shellThread("thread:coordinator", { status: "cancelled" }), crewThread("thread:crew")],
     {},
+  ],
+  [
+    "it is pinned but its own run was cut and continues on its own",
+    [shellThread("thread:coordinator", { coordinator: true, status: "cancelled" })],
+    {},
+  ],
+  [
+    "it is pinned but the project opted out",
+    [shellThread("thread:coordinator", { coordinator: true })],
+    { enabled: false },
   ],
   [
     "it has a run waiting to start",

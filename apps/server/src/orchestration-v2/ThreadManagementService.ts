@@ -443,6 +443,16 @@ export interface ThreadManagementServiceShape {
     { readonly sequence: number } | { readonly settlesWhenTurnEnds: true },
     Orchestrator.OrchestratorV2Error | ThreadManagementProviderInstanceDisabledError
   >;
+  /** Pinning a thread as its project's coordinator unpins the project's other ones. */
+  readonly setCoordinator: (input: {
+    readonly projectId: ProjectId;
+    readonly threadId: ThreadId;
+    readonly commandId: CommandId;
+    readonly coordinator: boolean;
+  }) => Effect.Effect<
+    { readonly sequence: number },
+    Orchestrator.OrchestratorV2Error | ThreadManagementProviderInstanceDisabledError
+  >;
   readonly interruptThread: (
     input: ThreadManagementInterruptInput,
   ) => Effect.Effect<ThreadManagementInterruptResult, ThreadManagementFailure>;
@@ -1019,6 +1029,30 @@ const make = Effect.gen(function* () {
     return { sequence: result.sequence };
   });
 
+  const setCoordinator: ThreadManagementServiceShape["setCoordinator"] = Effect.fn(
+    "ThreadManagementService.setCoordinator",
+  )(function* (input) {
+    // Pin before unpinning the rest: an interrupted move leaves an extra note, never a missed one.
+    const result = yield* dispatch({
+      type: "thread.metadata.update",
+      commandId: input.commandId,
+      threadId: input.threadId,
+      coordinator: input.coordinator,
+    });
+    if (!input.coordinator) return { sequence: result.sequence };
+    const snapshot = yield* orchestrator.getShellSnapshot({ projectId: input.projectId });
+    for (const thread of [...snapshot.threads, ...snapshot.archivedThreads]) {
+      if (thread.coordinator !== true || thread.id === input.threadId) continue;
+      yield* dispatch({
+        type: "thread.metadata.update",
+        commandId: CommandId.make(`${input.commandId}:unpin-coordinator:${thread.id}`),
+        threadId: thread.id,
+        coordinator: false,
+      });
+    }
+    return { sequence: result.sequence };
+  });
+
   const interruptThread: ThreadManagementServiceShape["interruptThread"] = Effect.fn(
     "ThreadManagementService.interruptThread",
   )(function* (input) {
@@ -1344,6 +1378,7 @@ const make = Effect.gen(function* () {
     waitForThread,
     settleAfterRun,
     settleThread,
+    setCoordinator,
     interruptThread,
     stopDelegatedTasks,
     stopWorkflow,

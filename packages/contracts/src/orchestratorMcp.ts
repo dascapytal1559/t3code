@@ -373,6 +373,8 @@ export const OrchestratorMcpThreadListItem = Schema.Struct({
   snoozedUntil: Schema.NullOr(IsoDateTime),
   parentThreadId: Schema.NullOr(ThreadId),
   relationshipToParent: Schema.NullOr(Schema.Literals(["fork", "subagent", "crew"])),
+  /** Pinned as its project's coordinator. Linked servers without it omit it. */
+  coordinator: Schema.optional(Schema.Boolean),
   itemCount: NonNegativeInt,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -443,6 +445,8 @@ export const OrchestratorMcpThreadDetail = Schema.Struct({
   worktreePath: Schema.NullOr(Schema.String),
   parentThreadId: Schema.NullOr(ThreadId),
   relationshipToParent: Schema.NullOr(Schema.Literals(["fork", "subagent", "crew"])),
+  /** Pinned as its project's coordinator. Linked servers without it omit it. */
+  coordinator: Schema.optional(Schema.Boolean),
   runCount: NonNegativeInt,
   itemCount: NonNegativeInt,
   pendingRequestCount: NonNegativeInt,
@@ -652,6 +656,8 @@ export const OrchestratorMcpCapabilitiesResult = Schema.Struct({
     scheduledTasks: Schema.Boolean,
     /** `t3_pending_request` lists and answers approvals. Linked servers without it omit it. */
     approvalResponses: Schema.optional(Schema.Boolean),
+    /** Pinned coordinators get a note after every server start. Linked servers without it omit it. */
+    coordinatorRestartNote: Schema.optional(Schema.Boolean),
     maxBatchThreads: Schema.Number,
   }),
 });

@@ -356,7 +356,8 @@ function restartCoordinatorNote(
 /**
  * A restart ends a coordinator's session and nothing inside it can wake it again, so each idle
  * coordinator with live crew gets one note per server start. One whose own run the restart cut
- * is left to its restart continuation.
+ * is left to its restart continuation. A pinned coordinator gets the note even when it is busy
+ * or has no crew; the note queues after its other work.
  */
 export const notifyCrewCoordinators = Effect.fn("RestartContinuation.notifyCrewCoordinators")(
   function* (serverStartedAt: DateTime.Utc) {
@@ -378,14 +379,17 @@ export const notifyCrewCoordinators = Effect.fn("RestartContinuation.notifyCrewC
     const now = yield* DateTime.now;
     const startedAt = DateTime.formatIso(serverStartedAt);
     for (const coordinator of live) {
-      const crew = crewByCoordinator.get(coordinator.id);
+      const crew = crewByCoordinator.get(coordinator.id) ?? [];
+      const pinned = coordinator.coordinator === true;
       if (
-        crew === undefined ||
+        (!pinned &&
+          (crew.length === 0 ||
+            coordinator.activeRunId !== null ||
+            coordinator.status === "queued")) ||
+        // A note that starts first would make the orchestrator drop the cut run's continuation.
+        cutByRestart(coordinator) ||
         (coordinator.snoozedUntil != null &&
           DateTime.isGreaterThan(coordinator.snoozedUntil, now)) ||
-        coordinator.activeRunId !== null ||
-        coordinator.status === "queued" ||
-        cutByRestart(coordinator) ||
         !resolveProjectSettings(settings, coordinator.projectId).settings
           .continueThreadsAfterServerUpdate
       )

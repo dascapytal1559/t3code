@@ -628,6 +628,16 @@ it.effect("a client caller targets any thread within its ceiling and cannot act 
     expect(pinned.isError).toBe(false);
     expect(pinned.structuredContent).toMatchObject({ sequence: 7 });
 
+    const coordinator = yield* call(
+      "t3_thread_configure",
+      { threadId: "other-project-thread", coordinator: true },
+      clientScope("auto"),
+    );
+    expect(coordinator.structuredContent).toMatchObject({ sequence: 8 });
+    expect(coordinatorPins).toEqual([
+      { projectId: "other-project", threadId: "other-project-thread", coordinator: true },
+    ]);
+
     const aboveCeiling = yield* call(
       "t3_thread_organize",
       { action: "pin", threadId: "other-project-thread" },
@@ -663,6 +673,11 @@ it.effect("a client caller targets any thread within its ceiling and cannot act 
                 },
               } as never),
             dispatch: () => Effect.succeed({ sequence: 7, storedEvents: [] }),
+            setCoordinator: ({ commandId: _commandId, ...input }) =>
+              Effect.sync(() => {
+                coordinatorPins.push(input);
+                return { sequence: 8 };
+              }),
           }),
         ),
       ),
@@ -693,6 +708,7 @@ it.effect("a read-only client reads threads and is refused every write before it
       effectiveRuntimeMode: "approval-required",
       environment: { FM_TASK_ID: "task-1" },
       instructions: "Your brief is first-party.",
+      coordinator: true,
     });
 
     const pinned = yield* call("t3_thread_organize", {
@@ -707,6 +723,11 @@ it.effect("a read-only client reads threads and is refused every write before it
       modelSelection: { instanceId: "codex", model: "gpt-5" },
     });
     expect(declaredFailure(configure)).toMatchObject({ code: "capability_denied" });
+    const coordinator = yield* call("t3_thread_configure", {
+      threadId: "other-project-thread",
+      coordinator: false,
+    });
+    expect(declaredFailure(coordinator)).toMatchObject({ code: "capability_denied" });
     expect(dispatched).toEqual([]);
   }).pipe(
     Effect.provide(
@@ -736,6 +757,7 @@ it.effect("a read-only client reads threads and is refused every write before it
                   interactionMode: "default",
                   environment: { FM_TASK_ID: "task-1" },
                   instructions: "Your brief is first-party.",
+                  coordinator: true,
                   deletedAt: null,
                 },
               } as never),
@@ -744,6 +766,11 @@ it.effect("a read-only client reads threads and is refused every write before it
                 dispatched.push("dispatch");
                 return { sequence: 7 } as never;
               }),
+            setCoordinator: () =>
+              Effect.sync(() => {
+                dispatched.push("setCoordinator");
+                return { sequence: 7 };
+              }),
           }),
         ),
       ),
@@ -751,6 +778,7 @@ it.effect("a read-only client reads threads and is refused every write before it
   ),
 );
 const dispatched: Array<string> = [];
+const coordinatorPins: Array<object> = [];
 
 it.effect("refuses act-as-caller tools to a client caller", () =>
   Effect.gen(function* () {
