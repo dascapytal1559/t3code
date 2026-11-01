@@ -3,13 +3,16 @@ import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { SidebarSection } from "../Sidebar.logic";
 
 /**
- * The coordinator a thread names, if any. A coordinator is an unarchived thread some thread names;
- * its crew are the other unarchived threads naming it. The sidebar lists both above Pinned and
- * keeps them out of Working.
+ * The coordinator a thread names, if any. A coordinator is an unarchived thread pinned as its
+ * project's coordinator or named by some thread; its crew are the other unarchived threads naming
+ * it. The sidebar lists both above Pinned and keeps them out of Working.
  */
 export type CoordinatorOf<T> = (thread: T) => ThreadId | null;
 
-type GroupThread = Pick<EnvironmentThreadShell, "environmentId" | "id" | "archivedAt">;
+type GroupThread = Pick<
+  EnvironmentThreadShell,
+  "environmentId" | "id" | "archivedAt" | "coordinator"
+>;
 
 export interface CoordinatorGroup<T> {
   readonly coordinators: ReadonlySet<T>;
@@ -28,6 +31,7 @@ export function resolveCoordinatorGroup<T extends GroupThread>(
   const coordinators = new Set<T>();
   const crew = new Set<T>();
   for (const thread of threads) {
+    if (thread.coordinator === true && thread.archivedAt === null) coordinators.add(thread);
     const coordinatorId = coordinatorOf(thread);
     if (coordinatorId === null) continue;
     const coordinator = byKey.get(`${thread.environmentId}:${coordinatorId}`);
