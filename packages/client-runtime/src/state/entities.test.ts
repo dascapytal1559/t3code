@@ -98,6 +98,13 @@ describe("V2 client presentation", () => {
     ).toBeNull();
   });
 
+  it("carries the pinned coordinator flag", () => {
+    expect(
+      presentThreadShell(environmentId, { ...v2ThreadShell, coordinator: true }),
+    ).toMatchObject({ coordinator: true });
+    expect(presentThreadShell(environmentId, v2ThreadShell)).not.toHaveProperty("coordinator");
+  });
+
   it.each([
     { kinds: ["command"], expected: "completed" },
     { kinds: ["command", "subagent"], expected: "idle" },

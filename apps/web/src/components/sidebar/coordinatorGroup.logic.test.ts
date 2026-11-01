@@ -22,6 +22,8 @@ const thread = (
     archivedAt?: string | null;
     /** The coordinator this thread was launched as crew of. */
     crewOf?: string;
+    /** Pinned as its project's coordinator. */
+    coordinator?: boolean;
     /** A thread with a parent that is not a coordinator link. */
     forkOf?: string;
     status?: "running" | "idle" | "completed" | "cancelled" | "failed" | null;
@@ -34,6 +36,7 @@ const thread = (
   title,
   archivedAt: overrides.archivedAt ?? null,
   ...(overrides.crewOf === undefined ? {} : { crewOf: ThreadId.make(overrides.crewOf) }),
+  ...(overrides.coordinator === undefined ? {} : { coordinator: overrides.coordinator }),
   lineage:
     overrides.forkOf !== undefined
       ? {
@@ -135,6 +138,26 @@ describe("crewCoordinatorOf", () => {
   it("does not take a fork or a parentless thread for crew", () => {
     expect(crewCoordinatorOf(thread("Side branch", { forkOf: "Captain's session" }))).toBeNull();
     expect(crewCoordinatorOf(thread("Refactor login"))).toBeNull();
+  });
+
+  it("keeps a pinned coordinator a coordinator with or without crew", () => {
+    const main = thread("Captain's session", { coordinator: true });
+    const crewmate = thread("Fix the docs", { crewOf: "Captain's session" });
+    const other = thread("Refactor login");
+    const alone = resolveAppCoordinatorGroup([main, other]);
+    expect([...alone.coordinators]).toEqual([main]);
+    expect(alone.crew.size).toBe(0);
+    const withCrew = resolveAppCoordinatorGroup([main, crewmate, other]);
+    expect([...withCrew.coordinators]).toEqual([main]);
+    expect([...withCrew.crew]).toEqual([crewmate]);
+  });
+
+  it("drops an archived pinned coordinator", () => {
+    const main = thread("Captain's session", {
+      coordinator: true,
+      archivedAt: "2026-10-28T11:00:00.000Z",
+    });
+    expect(resolveAppCoordinatorGroup([main]).coordinators.size).toBe(0);
   });
 
   it("forms no group when no thread was launched as crew", () => {
