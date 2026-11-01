@@ -25,6 +25,7 @@ import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
+import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import type * as McpInvocationContext from "./McpInvocationContext.ts";
 import * as OrchestratorMcpService from "./OrchestratorMcpService.ts";
@@ -117,7 +118,8 @@ function makeRun(input: {
   };
 }
 
-it("readThread prefers activity-run status over a newer cancelled queued run", async () => {
+it("readThread preserves caller access errors and prefers activity-run status over a newer cancelled queued run", async () => {
+  let callerUnavailable = false;
   const projection = {
     thread: {
       ...baseThread({
@@ -147,15 +149,24 @@ it("readThread prefers activity-run status over a newer cancelled queued run", a
         Layer.mock(ThreadManagementService.ThreadManagementService)({
           getTimelinePage: () => Effect.succeed({ items: [], totalItems: 0, hasMore: false }),
           getThreadRecords: (threadId) =>
-            threadId === parentThreadId
-              ? Effect.succeed(projection)
-              : Effect.die(`unexpected thread ${threadId}`),
+            callerUnavailable
+              ? Effect.fail(
+                  new Orchestrator.OrchestratorProjectionError({
+                    threadId,
+                    cause: "Caller unavailable",
+                  }),
+                )
+              : threadId === parentThreadId
+                ? Effect.succeed(projection)
+                : Effect.die(`unexpected thread ${threadId}`),
           getThreadShell: (threadId) =>
-            Effect.succeed(
-              threadId === parentThreadId
-                ? (projection.thread as unknown as OrchestrationV2ThreadShell)
-                : null,
-            ),
+            callerUnavailable
+              ? Effect.die("A failed caller read must not reach the target")
+              : Effect.succeed(
+                  threadId === parentThreadId
+                    ? (projection.thread as unknown as OrchestrationV2ThreadShell)
+                    : null,
+                ),
           getProjectThreadRecords: (input) =>
             input.threadId === parentThreadId
               ? Effect.succeed(projection)
@@ -189,6 +200,17 @@ it("readThread prefers activity-run status over a newer cancelled queued run", a
     // FirstMate reads crew from MCP lineage, though threads carry it outside `lineage`.
     expect(result.thread.parentThreadId).toBe(crewCoordinatorId);
     expect(result.thread.relationshipToParent).toBe("crew");
+
+    callerUnavailable = true;
+    const denied = yield* service
+      .readThread({ ...makeScope(), capabilities: new Set() }, { threadId: parentThreadId })
+      .pipe(Effect.flip);
+    expect(denied.code).toBe("capability_denied");
+    const missingCaller = yield* service
+      .readThread(makeScope(), { threadId: parentThreadId })
+      .pipe(Effect.flip);
+    expect(missingCaller.code).toBe("orchestration_error");
+    expect(missingCaller.message).toContain(`Unable to read thread ${parentThreadId}:`);
   }).pipe(Effect.provide(layer), Effect.runPromise);
 });
 
