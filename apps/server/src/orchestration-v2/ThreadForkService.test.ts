@@ -181,6 +181,30 @@ it.effect("starts a fork without the source thread's pending title regeneration"
   }),
 );
 
+it.effect.each([{ sideChat: false }, { sideChat: true }])(
+  "a fork (side chat: $sideChat) keeps the source's environment but not its coordinator pin or crew link",
+  ({ sideChat }) =>
+    Effect.gen(function* () {
+      const sourceRun = makeSourceRun("completed");
+      const sourceProjection = {
+        ...makeSourceProjection(sourceRun),
+        thread: {
+          ...makeSourceThread(),
+          coordinator: true,
+          crewOf: ThreadId.make("thread:fork-source-coordinator"),
+          environment: { FM_TASK_ID: "task-1" },
+          instructions: "The launch brief is first-party.",
+        },
+      };
+      const result = yield* planFork(sourceRun, sourceProjection, { sideChat });
+
+      assert.isUndefined(result.targetThread.coordinator);
+      assert.isUndefined(result.targetThread.crewOf);
+      assert.deepEqual(result.targetThread.environment, { FM_TASK_ID: "task-1" });
+      assert.equal(result.targetThread.instructions, "The launch brief is first-party.");
+    }),
+);
+
 it.effect("preserves pull request context without inheriting any watches", () =>
   Effect.gen(function* () {
     const sourceRun = makeSourceRun("completed");
