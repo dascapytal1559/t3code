@@ -253,7 +253,6 @@ import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrom
 import {
   coordinatorGroupSlot,
   resolveAppCoordinatorGroup,
-  soleCoordinator,
   type CoordinatorGroup,
 } from "./sidebar/coordinatorGroup.logic";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
@@ -589,7 +588,6 @@ function useSidebarThreads(input: {
     ...partition,
     threads,
     workingShelfEnabled,
-    soleCoordinator: soleCoordinator(coordinatorGroup),
     searchableThreads: [
       ...coordinatorThreads,
       ...crewThreads,
@@ -1333,7 +1331,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const {
     workingShelfEnabled,
     coordinatorThreads,
-    soleCoordinator: soleCoordinatorThread,
     crewThreads,
     crewShelfExpanded,
     toggleCrewShelf,
@@ -3373,7 +3370,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             }
                             thread={thread}
                             variant={rowVariant}
-                            hideTitle={section === "crew" && thread === soleCoordinatorThread}
                             coordinator={isCoordinator}
                             hideHoverActions={!sidebarSectionHasHoverActions(section)}
                             crewTree={

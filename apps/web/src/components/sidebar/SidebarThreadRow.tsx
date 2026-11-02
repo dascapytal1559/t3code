@@ -150,6 +150,12 @@ function RelativeTimeLabel(props: { timestamp: string | null }) {
       );
 }
 
+function StartedAgoLabel(props: { timestamp: string }) {
+  const nowMinute = useNowMinute();
+  const label = formatRelativeTimeLabel(props.timestamp, Date.parse(`${nowMinute}:00.000Z`));
+  return label === "" ? null : `started ${label}`;
+}
+
 function threadTimeTimestamp(thread: SidebarThreadSummary): string {
   return thread.latestUserMessageAt ?? thread.updatedAt;
 }
@@ -229,33 +235,6 @@ function SidebarProviderStack(props: {
       })}
       <span className="relative z-10 inline-flex items-center">{current}</span>
     </span>
-  );
-}
-
-/** A coordinator card leads with its provider's mark where other cards show their project. */
-function SidebarCoordinatorIcon(props: {
-  thread: SidebarThreadSummary;
-  project: ProjectFaviconProject | null;
-  providerEntryByInstanceId: ReadonlyMap<string, SidebarProviderEntry>;
-}) {
-  const stack = resolveThreadProviderStack(props.thread);
-  const entry = props.providerEntryByInstanceId.get(stack[stack.length - 1]!);
-  if (entry === undefined) {
-    return props.project ? (
-      <ProjectFavicon project={props.project} className="size-4 shrink-0" />
-    ) : null;
-  }
-  return (
-    <ProviderInstanceIcon
-      driverKind={entry.driverKind}
-      displayName={entry.displayName}
-      accentColor={entry.accentColor}
-      acpRegistryAgentId={entry.acpRegistryAgentId}
-      acpRegistryIconUrl={entry.acpRegistryIconUrl}
-      showBadge={shouldShowInstanceBadge(entry, props.providerEntryByInstanceId.values())}
-      size="compact"
-      iconClassName="size-4"
-    />
   );
 }
 
@@ -569,8 +548,6 @@ type SidebarThreadRowProps = {
   // "folder" is a one-line row inside a boring sidebar project folder;
   // "folder-multiline" adds the card's branch and PR line under it.
   variant: "card" | "slim" | "folder" | "folder-multiline";
-  // A card that needs no title, such as the only coordinator, keeps every other line.
-  hideTitle?: boolean | undefined;
   // The FirstMate main session: led by its provider's mark.
   coordinator?: boolean | undefined;
   // Hides hover Snooze and Settle; the context menu still offers both.
@@ -1221,12 +1198,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1"
       >
         {remoteMachineIcon}
-        {props.coordinator ? null : (
-          <SidebarProviderStack
-            thread={thread}
-            providerEntryByInstanceId={props.providerEntryByInstanceId}
-          />
-        )}
+        <SidebarProviderStack
+          thread={thread}
+          providerEntryByInstanceId={props.providerEntryByInstanceId}
+        />
       </span>
     </div>
   );
@@ -1237,18 +1212,15 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         {prBadge}
       </span>
     ) : null;
-  const titleLineIcons =
-    metaLineEmpty && (remoteMachineIcon !== null || !props.coordinator) ? (
-      <span aria-hidden className="inline-flex shrink-0 items-center gap-1">
-        {remoteMachineIcon}
-        {props.coordinator ? null : (
-          <SidebarProviderStack
-            thread={thread}
-            providerEntryByInstanceId={props.providerEntryByInstanceId}
-          />
-        )}
-      </span>
-    ) : null;
+  const titleLineIcons = metaLineEmpty ? (
+    <span aria-hidden className="inline-flex shrink-0 items-center gap-1">
+      {remoteMachineIcon}
+      <SidebarProviderStack
+        thread={thread}
+        providerEntryByInstanceId={props.providerEntryByInstanceId}
+      />
+    </span>
+  ) : null;
 
   if (variant !== "card") {
     const multiline = variant === "folder-multiline";
@@ -1449,8 +1421,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     );
   }
 
-  const titleHidden = props.hideTitle === true && !isRenaming;
-
   return (
     <li
       data-thread-item={threadKey}
@@ -1458,7 +1428,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       {...(fileDropHandlers ?? {})}
       className={cn(
         "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_78px]",
-        (metaLineEmpty || titleHidden) && "[contain-intrinsic-size:auto_58px]",
+        metaLineEmpty && "[contain-intrinsic-size:auto_58px]",
         props.crewTree !== undefined && cn("relative", CREW_TREE_INDENT_CLASS_NAME),
         // Joins this row's guide line to the next one's across the list gap.
         props.crewTree === "branch" && "-mb-px",
@@ -1507,22 +1477,16 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           <div
             className={cn(
               "relative z-10 h-[4.875rem] px-(--sidebar-row-content-inset) py-(--sidebar-content-inset)",
-              (metaLineEmpty || titleHidden) && "h-auto",
+              metaLineEmpty && "h-auto",
             )}
           >
             <div className="flex h-5 min-w-0 items-center gap-1.5">
-              {/* First, so the crew tree's guide line stays under it. */}
-              {props.coordinator ? (
-                <SidebarCoordinatorIcon
-                  thread={thread}
-                  project={props.project}
-                  providerEntryByInstanceId={props.providerEntryByInstanceId}
-                />
-              ) : null}
-              {draftIndicator}
-              {props.project && !props.coordinator ? (
+              {/* A coordinator's icon goes first, so the crew tree's guide line stays under it. */}
+              {props.coordinator ? null : draftIndicator}
+              {props.project ? (
                 <ProjectFavicon project={props.project} className="size-4 shrink-0" />
               ) : null}
+              {props.coordinator ? draftIndicator : null}
               {/* Left of the status slot, the pin would slide when hover swaps the
                 label for the wider row controls. */}
               {pinIndicator}
@@ -1663,19 +1627,26 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               )}
               {props.sweepAction !== null ? dragDestination : null}
             </div>
-            {titleHidden &&
-            (!metaLineEmpty || (props.coordinator && titleLineBadges === null)) ? null : (
-              <div className="mt-1 flex min-w-0 items-center gap-1.5">
-                {titleHidden ? <span className="flex-1" /> : title}
-                {isRegeneratingTitle ? (
-                  <span role="status" className="sr-only">
-                    Regenerating title
-                  </span>
-                ) : null}
-                {titleLineBadges}
-                {titleLineIcons}
-              </div>
-            )}
+            <div className="mt-1 flex min-w-0 items-center gap-1.5">
+              {/* A coordinator's age says when to restart it; its title rarely matters. */}
+              {props.coordinator && !isRenaming ? (
+                <span
+                  aria-hidden
+                  className="min-w-0 flex-1 truncate text-secondary-label text-xs tabular-nums"
+                >
+                  <StartedAgoLabel timestamp={thread.createdAt} />
+                </span>
+              ) : (
+                title
+              )}
+              {isRegeneratingTitle ? (
+                <span role="status" className="sr-only">
+                  Regenerating title
+                </span>
+              ) : null}
+              {titleLineBadges}
+              {titleLineIcons}
+            </div>
             {metaLine}
           </div>
           {props.jumpLabel ? <JumpHintBadge label={props.jumpLabel} /> : null}

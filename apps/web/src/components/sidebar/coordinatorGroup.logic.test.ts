@@ -8,7 +8,6 @@ import {
   resolveAppCoordinatorGroup,
   resolveCoordinatorGroup,
   resolveLaunchCoordinator,
-  soleCoordinator,
 } from "./coordinatorGroup.logic";
 
 const environmentId = EnvironmentId.make("environment-local");
@@ -227,24 +226,5 @@ describe("resolveLaunchCoordinator", () => {
     const recent = thread("recent", { status: "idle", updatedAt: "2026-10-28T12:00:00.000Z" });
     const group = resolveCoordinatorGroup([older, recent], (subject) => subject.id);
     expect(resolveLaunchCoordinator(group)).toBe(recent);
-  });
-});
-
-describe("soleCoordinator", () => {
-  it("names the only coordinator, whose card drops its title", () => {
-    const main = thread("Captain's session");
-    const crewmate = thread("Docs fix", { crewOf: "Captain's session" });
-    expect(soleCoordinator(resolveAppCoordinatorGroup([main, crewmate]))).toBe(main);
-  });
-
-  it("names none of several coordinators, so their titles tell them apart", () => {
-    const first = thread("first");
-    const second = thread("second");
-    const group = resolveCoordinatorGroup([first, second], (subject) => subject.id);
-    expect(soleCoordinator(group)).toBeNull();
-  });
-
-  it("names none without a coordinator", () => {
-    expect(soleCoordinator(resolveAppCoordinatorGroup([thread("Refactor login")]))).toBeNull();
   });
 });
