@@ -1184,13 +1184,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       </span>
     ) : null;
   const diff = latestRunDiff(thread);
-  // Only the trailing icons would remain, so the row moves them to the title line instead.
-  const metaLineEmpty =
-    !thread.branch &&
-    !showsScratchMachine &&
-    prBadge === null &&
-    diff === null &&
-    runningTerminalIds.length === 0;
+  // Without a branch or machine to label it, the meta line would hold only trailing
+  // badges and icons, so the row moves them to the title line instead.
+  const metaLineEmpty = !thread.branch && !showsScratchMachine && diff === null;
   const metaLine = metaLineEmpty ? null : (
     <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
       {thread.branch ? (
@@ -1234,6 +1230,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       </span>
     </div>
   );
+  const titleLineBadges =
+    metaLineEmpty && (prBadge !== null || runningTerminalIds.length > 0) ? (
+      <span className="inline-flex shrink-0 items-center gap-1.5 text-secondary-label text-xs">
+        {terminalStatusIcon}
+        {prBadge}
+      </span>
+    ) : null;
   const titleLineIcons =
     metaLineEmpty && (remoteMachineIcon !== null || !props.coordinator) ? (
       <span aria-hidden className="inline-flex shrink-0 items-center gap-1">
@@ -1307,6 +1310,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               )}
               {draftIndicator}
               {title}
+              {multiline ? titleLineBadges : null}
               {multiline ? titleLineIcons : null}
               {pinIndicator}
               {multiline ? null : terminalStatusIcon}
@@ -1659,7 +1663,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               )}
               {props.sweepAction !== null ? dragDestination : null}
             </div>
-            {titleHidden && (props.coordinator || !metaLineEmpty) ? null : (
+            {titleHidden &&
+            (!metaLineEmpty || (props.coordinator && titleLineBadges === null)) ? null : (
               <div className="mt-1 flex min-w-0 items-center gap-1.5">
                 {titleHidden ? <span className="flex-1" /> : title}
                 {isRegeneratingTitle ? (
@@ -1667,6 +1672,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     Regenerating title
                   </span>
                 ) : null}
+                {titleLineBadges}
                 {titleLineIcons}
               </div>
             )}
