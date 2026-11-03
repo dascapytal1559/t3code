@@ -1,7 +1,5 @@
 import {
   type CommandId,
-  type OrchestrationV2RuntimeRequest,
-  ProviderRequestKind,
   type RuntimeRequestId,
   ThreadId,
   type OrchestrationV2ThreadProjection,
@@ -10,11 +8,11 @@ import {
   type OrchestrationV2Command,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
 import { modelSelectionCommandType } from "@t3tools/shared/model";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
+import { isApprovalKind, listPendingRequests, pendingApproval } from "../../pendingRequests.ts";
 import {
   assertFullAccess,
   dispatchFailure,
@@ -55,30 +53,6 @@ const dispatch = Effect.fn("mcp.dispatchThreadCommand")(function* (
     .pipe(Effect.mapError(dispatchFailure));
   return { sequence: result.sequence };
 });
-
-const isApprovalKind = Schema.is(ProviderRequestKind);
-
-const pendingApproval = (
-  request: OrchestrationV2RuntimeRequest,
-  kind: ProviderRequestKind,
-  turnItems: OrchestrationV2ThreadProjection["turnItems"],
-) => {
-  const item = turnItems.findLast(
-    (item) => item.type === "approval_request" && item.requestId === request.id,
-  );
-  const approval = item?.type === "approval_request" ? item : undefined;
-  return {
-    requestId: request.id,
-    type: "approval" as const,
-    kind,
-    ...(approval?.prompt === undefined ? {} : { detail: approval.prompt }),
-    ...(approval?.reason === undefined ? {} : { reason: approval.reason }),
-    override: approval?.fullAccessOverride ?? null,
-    supportsFeedback:
-      request.responseCapability.type === "live" &&
-      request.responseCapability.supportsFeedback === true,
-  };
-};
 
 const readPendingRequest = Effect.fn("mcp.readPendingRequest")(function* (input: {
   threadId?: ThreadId | undefined;
@@ -304,20 +278,7 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
             "runtimeRequests",
             "turnItems",
           ]);
-          const pending = projection.runtimeRequests.filter(
-            (request) => request.status === "pending",
-          );
-          return {
-            requestIds: pending
-              .filter((request) => request.kind === "user_input")
-              .map((request) => request.id),
-            approvals: pending.flatMap((request) => {
-              const kind = request.kind;
-              return isApprovalKind(kind)
-                ? [pendingApproval(request, kind, projection.turnItems)]
-                : [];
-            }),
-          };
+          return listPendingRequests(projection);
         }
         const requestId = yield* required(input.requestId, "requestId");
         const { approval, item } = yield* readPendingRequest({

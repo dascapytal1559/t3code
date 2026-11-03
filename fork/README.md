@@ -216,6 +216,23 @@ timeline row record `respondedBy: "agent"`, which web and mobile show as
 "answered by agent". `orchestrator_capabilities` reports `approvalResponses`.
 Code: `apps/server/src/mcp/toolkits/thread/handlers.ts`.
 
+## Waits end on a question or approval
+
+T3 sends an MCP client no event when a thread starts waiting on a question or
+approval, so FirstMate used to re-list every watched thread's pending requests
+once a second, at about 40 ms of server CPU per check. Now `t3_thread_wait`
+takes `settleOnPendingRequest: true` and also returns, at once, when a
+question or approval appears that the caller does not know of: one outside
+`knownRequestIds`, or, without that list, one not pending when the wait
+started. It listens to the thread's `runtime-request.updated` events on the
+subscription the wait already holds, so it costs nothing while idle. The
+result then carries `settledBy` (`run_ended`, `timeout` or `pending_request`)
+and, for a pending request, `pendingRequests` in the shape
+`t3_pending_request` `list` returns. Callers without the flag see no change.
+Clients detect it by the field in the tool's `tools/list` input schema.
+Code: `apps/server/src/orchestration-v2/ThreadManagementService.ts`
+(`waitForThread`).
+
 ## Telemetry off by default
 
 The fork sends no product analytics and no T3 Connect relay traces unless you

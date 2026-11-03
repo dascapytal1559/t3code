@@ -17,6 +17,7 @@ import {
   ProviderThreadId,
   ProviderTurnId,
   RunId,
+  RuntimeRequestId,
   ThreadId,
   type OrchestrationV2ServerCommand,
   type OrchestrationV2ThreadProjection,
@@ -310,6 +311,9 @@ describe("OrchestratorMcpService", () => {
       const taskId = NodeId.make("node:mcp-next-task");
       let finished = false;
       let pendingRequest = false;
+      const questionId = RuntimeRequestId.make("request:mcp-next-question");
+      const approvalId = RuntimeRequestId.make("request:mcp-next-approval");
+      const waitInputs: Array<ThreadManagementService.ThreadManagementWaitInput> = [];
       const parentProjection = () =>
         ({
           thread: { id: parentThreadId },
@@ -343,9 +347,21 @@ describe("OrchestratorMcpService", () => {
           messages: [],
           subagents: [],
           providerThreads: [],
-          runtimeRequests: pendingRequest ? [{ status: "pending" }] : [],
+          runtimeRequests: pendingRequest
+            ? [
+                { id: questionId, kind: "user_input", status: "pending" },
+                {
+                  id: approvalId,
+                  kind: "command",
+                  status: "pending",
+                  responseCapability: { type: "live", supportsFeedback: true },
+                },
+              ]
+            : [],
           nodes: [],
-          turnItems: [],
+          turnItems: pendingRequest
+            ? [{ type: "approval_request", requestId: approvalId, prompt: "rm -rf build" }]
+            : [],
         }) as unknown as OrchestrationV2ThreadProjection;
       const layerDependencies = Layer.mergeAll(
         NodeServices.layer,
@@ -354,11 +370,16 @@ describe("OrchestratorMcpService", () => {
             Effect.succeed(threadId === parentThreadId ? parentProjection() : childProjection()),
           getThreadShell: (threadId) => Effect.succeed(liveThreadShell(threadId)),
           getProjectThreadRecords: () => Effect.succeed(childProjection()),
-          waitForThread: () =>
-            Effect.succeed({
-              threadId: childThreadId,
-              run: childRun() as unknown as OrchestrationV2ThreadProjection["runs"][number],
-              timedOut: !finished,
+          waitForThread: (input) =>
+            Effect.sync(() => {
+              waitInputs.push(input);
+              const asks = pendingRequest && input.settleOnPendingRequest !== undefined;
+              return {
+                threadId: childThreadId,
+                run: childRun() as unknown as OrchestrationV2ThreadProjection["runs"][number],
+                timedOut: !finished && !asks,
+                ...(asks ? { pendingRequestIds: [approvalId] } : {}),
+              };
             }),
           dispatch: () => Effect.succeed({} as never),
         }),
@@ -399,7 +420,42 @@ describe("OrchestratorMcpService", () => {
         const asking = yield* service.waitForThread(scope, { threadId: childThreadId });
         assert.isTrue(asking.timedOut);
         assert.notProperty(asking, "next");
+        assert.notProperty(asking, "settledBy");
+        assert.notProperty(asking, "pendingRequests");
+        assert.notProperty(waitInputs.at(-1), "settleOnPendingRequest");
+
+        // Opted in, the wait returns the pending requests as t3_pending_request lists them.
+        const settledByRequest = yield* service.waitForThread(scope, {
+          threadId: childThreadId,
+          settleOnPendingRequest: true,
+          knownRequestIds: [questionId],
+        });
+        assert.deepEqual(waitInputs.at(-1)?.settleOnPendingRequest, {
+          knownRequestIds: [questionId],
+        });
+        assert.isFalse(settledByRequest.timedOut);
+        assert.equal(settledByRequest.settledBy, "pending_request");
+        assert.deepEqual(settledByRequest.pendingRequests, {
+          requestIds: [questionId],
+          approvals: [
+            {
+              requestId: approvalId,
+              type: "approval",
+              kind: "command",
+              detail: "rm -rf build",
+              override: null,
+              supportsFeedback: true,
+            },
+          ],
+        });
         pendingRequest = false;
+        const timedOut = yield* service.waitForThread(scope, {
+          threadId: childThreadId,
+          settleOnPendingRequest: true,
+        });
+        assert.deepEqual(waitInputs.at(-1)?.settleOnPendingRequest, {});
+        assert.equal(timedOut.settledBy, "timeout");
+        assert.notProperty(timedOut, "pendingRequests");
 
         finished = true;
         const completed = yield* service.taskStatus(scope, taskId);
@@ -408,6 +464,11 @@ describe("OrchestratorMcpService", () => {
         const waited = yield* service.waitForThread(scope, { threadId: childThreadId });
         assert.equal(waited.status, "completed");
         assert.notProperty(waited, "next");
+        const ended = yield* service.waitForThread(scope, {
+          threadId: childThreadId,
+          settleOnPendingRequest: true,
+        });
+        assert.equal(ended.settledBy, "run_ended");
       }).pipe(Effect.provide(layerOrchestratorService.pipe(Layer.provide(layerDependencies))));
     }),
   );

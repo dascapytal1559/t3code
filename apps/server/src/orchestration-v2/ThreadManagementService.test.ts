@@ -5,6 +5,7 @@ import {
   MessageId,
   type OrchestrationV2Command,
   type OrchestrationV2Run,
+  type OrchestrationV2RuntimeRequest,
   type OrchestrationV2ProviderThread,
   ProviderThreadId,
   ProviderDriverKind,
@@ -14,6 +15,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   RunId,
+  RuntimeRequestId,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
@@ -462,6 +464,152 @@ it.effect("waitForThread returns the cut run once its continuation is declined",
     const result = yield* Fiber.join(fiber);
 
     expect(result).toMatchObject({ timedOut: false, run: { id: runId, status: "cancelled" } });
+  }),
+);
+
+const pendingRequestWait = (initialRequests: ReadonlyArray<OrchestrationV2RuntimeRequest>) =>
+  Effect.gen(function* () {
+    const projectId = ProjectId.make("project:thread-management:wait-request");
+    const threadId = ThreadId.make("thread:thread-management:wait-request");
+    const runId = RunId.make("run:thread-management:wait-request");
+    const subscribed = yield* Deferred.make<void>();
+    const events = yield* Queue.unbounded<OrchestrationV2StoredEvent>();
+    const subscribedTypes: Array<string | undefined> = [];
+    const state = {
+      runs: [{ id: runId, status: "running" }] as Array<Pick<OrchestrationV2Run, "id" | "status">>,
+      requests: [...initialRequests],
+    };
+    let sequence = 0;
+    const layerTest = ThreadManagementService.layer.pipe(
+      Layer.provide(Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({})),
+      Layer.provide(
+        Layer.mock(Orchestrator.OrchestratorV2)({
+          getThreadEventSequence: () => Effect.succeed(0),
+          restartContinuationPending: () => Effect.succeed(false),
+          streamStoredEventsFrom: (input) => {
+            subscribedTypes.push(input?.eventType);
+            return input?.eventType === "run.updated"
+              ? Stream.fromEffect(Deferred.succeed(subscribed, undefined)).pipe(
+                  Stream.drain,
+                  Stream.concat(Stream.fromQueue(events)),
+                )
+              : Stream.never;
+          },
+          getThreadRecords: () =>
+            Effect.sync(
+              () =>
+                ({
+                  thread: { id: threadId, projectId, deletedAt: null },
+                  runs: state.runs,
+                  runtimeRequests: state.requests,
+                }) as unknown as OrchestrationV2ThreadProjection,
+            ),
+        }),
+      ),
+      Layer.provide(ServerSettings.layerTest()),
+      Layer.provide(layerReceiptsTest),
+    );
+    const service = yield* ThreadManagementService.ThreadManagementService.pipe(
+      Effect.provide(layerTest),
+    );
+    // One queue stands in for every event type the wait subscribes to.
+    const emit = (event: object) =>
+      Queue.offer(events, {
+        sequence: ++sequence,
+        event: { threadId, ...event },
+      } as unknown as OrchestrationV2StoredEvent);
+    const addRequest = (request: OrchestrationV2RuntimeRequest) => {
+      state.requests = [...state.requests, request];
+      return emit({ type: "runtime-request.updated", payload: request });
+    };
+    const start = (
+      settleOnPendingRequest?: ThreadManagementService.ThreadManagementWaitInput["settleOnPendingRequest"],
+    ) =>
+      service
+        .waitForThread({
+          projectId,
+          threadId,
+          runId,
+          timeoutMs: 60_000,
+          ...(settleOnPendingRequest === undefined ? {} : { settleOnPendingRequest }),
+        })
+        .pipe(Effect.forkChild);
+    return { runId, state, subscribed, subscribedTypes, emit, addRequest, start };
+  });
+
+const runtimeRequest = (id: string, kind: OrchestrationV2RuntimeRequest["kind"]) =>
+  ({ id: RuntimeRequestId.make(id), kind, status: "pending" }) as OrchestrationV2RuntimeRequest;
+
+it.effect.each([
+  { label: "approval", request: runtimeRequest("request:new-approval", "command") },
+  { label: "question", request: runtimeRequest("request:new-question", "user_input") },
+])("waitForThread settles on a new pending $label", ({ request }) =>
+  Effect.gen(function* () {
+    // Already pending when the wait starts, so it does not settle the wait.
+    const known = runtimeRequest("request:known", "permission");
+    const harness = yield* pendingRequestWait([known]);
+    const fiber = yield* harness.start({});
+    yield* Effect.raceFirst(Deferred.await(harness.subscribed), Fiber.await(fiber));
+    expect(harness.subscribedTypes).toContain("runtime-request.updated");
+    // Neither a known request nor one nobody answers settles it.
+    yield* harness.emit({ type: "runtime-request.updated", payload: known });
+    yield* harness.addRequest(runtimeRequest("request:auth", "auth_refresh"));
+    yield* harness.addRequest(request);
+    const result = yield* Fiber.join(fiber);
+
+    expect(result).toMatchObject({
+      timedOut: false,
+      run: { id: harness.runId, status: "running" },
+      pendingRequestIds: [request.id],
+    });
+  }),
+);
+
+it.effect("waitForThread settles at once on a pending request outside the caller's known ids", () =>
+  Effect.gen(function* () {
+    const known = runtimeRequest("request:known", "command");
+    const missed = runtimeRequest("request:missed", "user_input");
+    const harness = yield* pendingRequestWait([known, missed]);
+    const result = yield* Fiber.join(yield* harness.start({ knownRequestIds: [known.id] }));
+    expect(result).toMatchObject({ timedOut: false, pendingRequestIds: [missed.id] });
+
+    // Every pending request known: only the timeout ends it.
+    const quiet = yield* harness.start({ knownRequestIds: [known.id, missed.id] });
+    yield* Effect.raceFirst(Deferred.await(harness.subscribed), Fiber.await(quiet));
+    yield* harness.emit({ type: "runtime-request.updated", payload: known });
+    yield* TestClock.adjust(Duration.millis(60_000));
+    const timedOut = yield* Fiber.join(quiet);
+    expect(timedOut).toMatchObject({ timedOut: true });
+    expect(timedOut).not.toHaveProperty("pendingRequestIds");
+  }),
+);
+
+it.effect("waitForThread with settleOnPendingRequest still settles on run end", () =>
+  Effect.gen(function* () {
+    const harness = yield* pendingRequestWait([]);
+    const fiber = yield* harness.start({});
+    yield* Effect.raceFirst(Deferred.await(harness.subscribed), Fiber.await(fiber));
+    harness.state.runs = [{ id: harness.runId, status: "completed" }];
+    yield* harness.emit({ type: "run.updated", payload: { id: harness.runId } });
+    const result = yield* Fiber.join(fiber);
+
+    expect(result).toMatchObject({ timedOut: false, run: { status: "completed" } });
+    expect(result).not.toHaveProperty("pendingRequestIds");
+  }),
+);
+
+it.effect("waitForThread without settleOnPendingRequest ignores pending requests", () =>
+  Effect.gen(function* () {
+    const harness = yield* pendingRequestWait([]);
+    const fiber = yield* harness.start();
+    yield* Effect.raceFirst(Deferred.await(harness.subscribed), Fiber.await(fiber));
+    yield* harness.addRequest(runtimeRequest("request:ignored", "command"));
+    yield* TestClock.adjust(Duration.millis(60_000));
+    const result = yield* Fiber.join(fiber);
+
+    expect(result).toMatchObject({ timedOut: true, run: { status: "running" } });
+    expect(result).not.toHaveProperty("pendingRequestIds");
+    expect(harness.subscribedTypes).not.toContain("runtime-request.updated");
   }),
 );
 

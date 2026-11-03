@@ -11,8 +11,8 @@ import {
   RuntimeMode,
   ProviderInteractionMode,
   RuntimeRequestId,
-  ProviderApprovalFullAccessOverride,
-  ProviderRequestKind,
+  OrchestratorMcpPendingApproval,
+  OrchestratorMcpPendingRequests,
   ProviderUserInputAnswers,
   IsoDateTime,
   OrchestratorMcpFailure,
@@ -127,17 +127,6 @@ const question = Schema.Struct({
   initialAnswer: Schema.optional(Schema.String),
   required: Schema.optional(Schema.Boolean),
 });
-const PendingApproval = Schema.Struct({
-  requestId: RuntimeRequestId,
-  type: Schema.Literal("approval"),
-  kind: ProviderRequestKind,
-  /** The command, file, or tool the provider asks to run. */
-  detail: Schema.optional(Schema.String),
-  reason: Schema.optional(Schema.String),
-  /** Why it asks although the thread runs with full access. */
-  override: Schema.NullOr(ProviderApprovalFullAccessOverride),
-  supportsFeedback: Schema.Boolean,
-});
 const PendingRequestTool = Tool.make("t3_pending_request", {
   ...commandTool,
   description:
@@ -152,13 +141,9 @@ const PendingRequestTool = Tool.make("t3_pending_request", {
     feedback: Schema.optional(TrimmedNonEmptyString),
   }),
   success: Schema.Union([
-    Schema.Struct({
-      requestIds: Schema.Array(RuntimeRequestId),
-      // Linked servers without approval responses omit it.
-      approvals: Schema.optional(Schema.Array(PendingApproval)),
-    }),
+    OrchestratorMcpPendingRequests,
     Schema.Struct({ requestId: RuntimeRequestId, questions: Schema.Array(question) }),
-    PendingApproval,
+    OrchestratorMcpPendingApproval,
     OrchestrationV2DispatchCommandResult,
   ]),
 })

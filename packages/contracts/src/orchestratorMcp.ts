@@ -25,7 +25,12 @@ import {
   ScheduledTaskSchedule,
   ScheduledTaskUpsertSchedule,
 } from "./scheduledTask.ts";
-import { ProviderInteractionMode, ProviderRequestKind, RuntimeMode } from "./providerPolicy.ts";
+import {
+  ProviderApprovalFullAccessOverride,
+  ProviderInteractionMode,
+  ProviderRequestKind,
+  RuntimeMode,
+} from "./providerPolicy.ts";
 import { PullRequestState } from "./pullRequest.ts";
 import {
   ThreadLinkedPullRequest,
@@ -522,6 +527,27 @@ export const OrchestratorMcpThreadSendResult = Schema.Struct({
 });
 export type OrchestratorMcpThreadSendResult = typeof OrchestratorMcpThreadSendResult.Type;
 
+export const OrchestratorMcpPendingApproval = Schema.Struct({
+  requestId: RuntimeRequestId,
+  type: Schema.Literal("approval"),
+  kind: ProviderRequestKind,
+  /** The command, file, or tool the provider asks to run. */
+  detail: Schema.optional(Schema.String),
+  reason: Schema.optional(Schema.String),
+  /** Why it asks although the thread runs with full access. */
+  override: Schema.NullOr(ProviderApprovalFullAccessOverride),
+  supportsFeedback: Schema.Boolean,
+});
+export type OrchestratorMcpPendingApproval = typeof OrchestratorMcpPendingApproval.Type;
+
+/** What `t3_pending_request` `list` returns. */
+export const OrchestratorMcpPendingRequests = Schema.Struct({
+  requestIds: Schema.Array(RuntimeRequestId),
+  // Linked servers without approval responses omit it.
+  approvals: Schema.optional(Schema.Array(OrchestratorMcpPendingApproval)),
+});
+export type OrchestratorMcpPendingRequests = typeof OrchestratorMcpPendingRequests.Type;
+
 export const OrchestratorMcpThreadWaitInput = Schema.Struct({
   environmentId: OrchestratorMcpEnvironmentTarget,
   threadId: ThreadId,
@@ -531,6 +557,18 @@ export const OrchestratorMcpThreadWaitInput = Schema.Struct({
     Schema.Boolean.annotate({
       description:
         "Also wait for its delegated and background tasks and their completions to settle. `resultRun` then names the run with its final answer.",
+    }),
+  ),
+  settleOnPendingRequest: Schema.optional(
+    Schema.Boolean.annotate({
+      description:
+        "Also return when a new question or approval appears, with `settledBy` and `pendingRequests`.",
+    }),
+  ),
+  knownRequestIds: Schema.optional(
+    Schema.Array(RuntimeRequestId).annotate({
+      description:
+        "Request ids already seen; any other pending one returns at once. Default: those pending at the start.",
     }),
   ),
 });
@@ -544,6 +582,10 @@ export const OrchestratorMcpThreadWaitResult = Schema.Struct({
   next: Schema.optional(OrchestratorMcpRunningTaskNext),
   /** With untilDelegatedWorkSettled, once settled: the run whose reply is the thread's result. */
   resultRun: Schema.optional(Schema.Struct({ runId: RunId, status: OrchestrationV2RunStatus })),
+  /** With settleOnPendingRequest: why the wait returned. */
+  settledBy: Schema.optional(Schema.Literals(["run_ended", "timeout", "pending_request"])),
+  /** With settledBy pending_request: every pending request, as `t3_pending_request` lists them. */
+  pendingRequests: Schema.optional(OrchestratorMcpPendingRequests),
 });
 export type OrchestratorMcpThreadWaitResult = typeof OrchestratorMcpThreadWaitResult.Type;
 

@@ -119,6 +119,7 @@ import {
   taskPrompt,
 } from "./delegatedTaskModes.ts";
 import { isLiveCallerShell, threadNotFound } from "./threadAccess.ts";
+import { listPendingRequests } from "./pendingRequests.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
@@ -3074,8 +3075,26 @@ const make = Effect.gen(function* () {
             Math.max(1, input.timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS),
           ),
           ...(input.untilDelegatedWorkSettled === true ? { untilDelegatedWorkSettled: true } : {}),
+          ...(input.settleOnPendingRequest === true
+            ? {
+                settleOnPendingRequest:
+                  input.knownRequestIds === undefined
+                    ? {}
+                    : { knownRequestIds: input.knownRequestIds },
+              }
+            : {}),
         })
         .pipe(Effect.mapError(threadManagementFailure));
+      const pendingRequests =
+        result.pendingRequestIds === undefined
+          ? undefined
+          : listPendingRequests(
+              yield* threadManagement
+                .getThreadRecords(input.threadId, ["runtimeRequests", "turnItems"], {
+                  turnItemTypes: ["approval_request"],
+                })
+                .pipe(Effect.mapError(threadManagementFailure)),
+            );
       const status = result.run === null ? "idle" : runOutcome(result.run);
       const taskId = result.run?.delegatedTaskId;
       const ownedTask =
@@ -3110,6 +3129,11 @@ const make = Effect.gen(function* () {
           : {
               resultRun: { runId: result.resultRun.id, status: runOutcome(result.resultRun) },
             }),
+        ...(input.settleOnPendingRequest !== true
+          ? {}
+          : pendingRequests !== undefined
+            ? { settledBy: "pending_request" as const, pendingRequests }
+            : { settledBy: result.timedOut ? ("timeout" as const) : ("run_ended" as const) }),
       } satisfies OrchestratorMcpThreadWaitResult;
     }),
     interruptThread: Effect.fn("OrchestratorMcpService.interruptThread")(function* (scope, input) {

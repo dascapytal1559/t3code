@@ -10,6 +10,7 @@ A fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code). Works with [t
 - A setting to keep idle agents for good (Settings → Threads → Agent memory).
 - Per-thread environment and instructions for agent-launched threads.
 - Agents such as FirstMate can answer a thread's permission prompts over MCP.
+- An agent's wait on a thread can end the moment a question or approval appears.
 - Telemetry off by default.
 - Small fixes: `~` in provider paths, no Update button for app-bundled CLIs.
 
