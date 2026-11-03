@@ -1279,6 +1279,7 @@ function shellThread(id: string, overrides: Record<string, unknown> = {}) {
     archivedAt: null,
     deletedAt: null,
     snoozedUntil: null,
+    settledOverride: null,
     ...overrides,
   };
 }
@@ -1370,6 +1371,30 @@ it.effect.each([
 );
 
 it.effect.each([
+  ["idle", "completed", [coordinatorId]],
+  ["cut", "cancelled", [ThreadId.make("thread:old"), coordinatorId]],
+] as const)(
+  "beside a pinned coordinator, wakes an older parent whose crew is %s only when the restart cut it",
+  ([, crewStatus, expected]) =>
+    Effect.gen(function* () {
+      const commands = yield* restartNotes([
+        shellThread("thread:old"),
+        shellThread("thread:coordinator", { coordinator: true }),
+        shellThread("thread:old-crew", {
+          crewOf: ThreadId.make("thread:old"),
+          status: crewStatus,
+        }),
+      ]);
+      assert.deepEqual(
+        commands.flatMap((command) =>
+          command.type === "message.dispatch" ? [command.threadId] : [],
+        ),
+        [...expected],
+      );
+    }),
+);
+
+it.effect.each([
   ["it has no crew", [shellThread("thread:coordinator")], {}],
   [
     "it is archived",
@@ -1389,6 +1414,19 @@ it.effect.each([
       }),
       crewThread("thread:crew"),
     ],
+    {},
+  ],
+  [
+    "it is settled, even with a cut crew run",
+    [
+      shellThread("thread:coordinator", { settledOverride: "settled" }),
+      crewThread("thread:crew", { status: "cancelled" }),
+    ],
+    {},
+  ],
+  [
+    "it is pinned but settled",
+    [shellThread("thread:coordinator", { coordinator: true, settledOverride: "settled" })],
     {},
   ],
   [

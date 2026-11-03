@@ -171,7 +171,9 @@ crew. Code: `apps/web/src/components/sidebar/coordinatorGroup.logic.ts`.
 A server restart ends the coordinator's session, and nothing inside it can wake
 it again. So on each start T3 sends every idle coordinator with unarchived crew
 one note, attributed to T3 Code: when the server restarted, which crew had a run
-cut, and to run `bin/fm-session-start.sh`. Archived or snoozed coordinators get
+cut, and to run `bin/fm-session-start.sh`. Once a project has a pinned
+coordinator, an unpinned one gets the note only if the restart cut one of its
+crew's runs. Archived, settled or snoozed coordinators get
 none, and neither does one whose own run the restart cut (its restart
 continuation wakes it). The project's continue-after-update setting
 (`continueThreadsAfterServerUpdate`) switches it off. A thread pinned with
