@@ -24,12 +24,17 @@ The values are in `apps/desktop/src/forkIdentity.ts`. The app name is
 `productName` in `apps/desktop/package.json`. `T3CODE_HOME` still overrides the
 data folder.
 
-Two things are still shared with the official app:
+Three things are still shared with the official app:
 
 - The `t3code://` link scheme. Both apps register it, so macOS picks which app
   opens sign-in and prompt links.
 - The default Tailscale Serve port, 443. Do not turn on Tailscale Serve in both
   apps at the same port.
+- The managed policy (`/Library/Application Support/T3Code/policy.json` or the
+  `com.t3tools.t3code` managed preferences). A policy written for the official
+  app restricts the fork too, except that the fork ignores its update feed
+  (`limits.updates.feedUrl`), so it never gets one
+  (`apps/desktop/src/updates/DesktopUpdatePolicy.ts`).
 
 ## Usage reaches twelve months
 
@@ -82,7 +87,7 @@ upstream's handling of WinGet's Claude, in
 ## `~` in a provider's executable path
 
 A provider path that starts with `~` works for every provider. OpenCode, Grok,
-Pi, fx, Antigravity and the ACP registry used a configured path such as
+Pi, fx, Antigravity, Kiro and the ACP registry used a configured path such as
 `~/.local/bin/opencode` as written. Processes launch without a shell, so
 the provider showed as not installed. Each of those drivers now expands a
 leading `~` with `expandHomePath` before probing, spawning, resolving
@@ -241,9 +246,12 @@ The fork sends no product analytics and no T3 Connect relay traces unless you
 opt in. `T3CODE_TELEMETRY_ENABLED` governs both and defaults to `false` here
 (upstream defaults it to `true`): `AnalyticsService.ts` and
 `isRelayTracingEnabled` in `packages/shared/src/otelEnvironment.ts`. To turn them
-on, set `T3CODE_TELEMETRY_ENABLED=true` in the server's environment (for the
-desktop app, export it in your shell profile and restart the app). Your own
-OpenTelemetry export and the mobile app's crash reports have their own settings.
+on, set `T3CODE_TELEMETRY_ENABLED=true` in the server's environment. The desktop
+app starts its server before it reads your login shell, so a shell-profile
+export does not reach an app opened from the Dock: run
+`launchctl setenv T3CODE_TELEMETRY_ENABLED true` and restart the app, or start
+the app from a terminal that has the variable set. Your own OpenTelemetry export
+and the mobile app's crash reports have their own settings.
 
 ## Version
 

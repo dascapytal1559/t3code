@@ -1,5 +1,6 @@
 import { AcpRegistryOperationError, ProviderInstanceId } from "@t3tools/contracts";
 import { AcpRegistrySettings } from "../settings.ts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -183,6 +184,37 @@ describe("acpRegistrySnapshotReadiness", () => {
       nativeSessions: { canList: true, canLoad: true, canResume: true },
       models: [{ slug: "live-model", isDefault: true }],
     });
+
+    expect(
+      applyAcpRegistryLiveConfiguration(
+        provider,
+        { models: [], currentModelId: null, configOptions: [] },
+        [],
+      ).models,
+    ).toEqual(provider.models);
+
+    const liveOptions = [
+      {
+        id: "effort",
+        label: "Effort",
+        type: "select" as const,
+        options: [{ id: "high", label: "High" }],
+        currentValue: "high",
+      },
+    ];
+    expect(
+      applyAcpRegistryLiveConfiguration(
+        provider,
+        { models: [], currentModelId: null, configOptions: liveOptions },
+        [],
+      ).models,
+    ).toMatchObject([
+      {
+        slug: "probe-model",
+        isDefault: true,
+        capabilities: { optionDescriptors: [{ id: "effort", currentValue: "high" }] },
+      },
+    ]);
   });
 
   it("projects discovery without claiming authentication when no login methods are advertised", () => {
@@ -411,7 +443,7 @@ describe("acpRegistrySnapshotReadiness", () => {
 });
 
 const layerDriver = TestProviderHost.layer({ runBackgroundWork: false }).pipe(
-  Layer.provideMerge(NodeServices.layer),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   Layer.provideMerge(IdAllocator.layer),
   Layer.provideMerge(McpProviderSessions.layer),
   Layer.provideMerge(
