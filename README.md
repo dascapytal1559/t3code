@@ -1,18 +1,15 @@
 ## About this fork
 
-A fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code). Works with [this FirstMate fork](https://github.com/dascapytal1559/firstmate), which runs its workers in T3 Code. It adds:
+A fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code), built to host [this FirstMate fork](https://github.com/dascapytal1559/firstmate) and its crew.
 
-- Its own desktop app, T3 Code (Fork), that runs beside the official one.
-- Usage up to 12 months, kept for a year, including archived machines.
-- A Board tab to sketch on screenshots and attach them to the chat.
+For FirstMate:
 - FirstMate sessions and their workers grouped as a tree in the sidebar.
-- A sidebar note when upstream ships a newer release.
-- A setting to keep idle agents for good (Settings → Threads → Agent memory).
-- Per-thread environment and instructions for agent-launched threads.
-- Agents such as FirstMate can answer a thread's permission prompts over MCP.
-- An agent's wait on a thread can end the moment a question or approval appears.
-- Telemetry off by default.
-- Small fixes: `~` in provider paths, no Update button for app-bundled CLIs.
+- FirstMate can answer a worker's permission prompts, and hears its questions the moment they appear.
+- Per-thread settings for agent-launched workers, and idle agents can be kept for good.
+
+Also:
+- Its own app, T3 Code (Fork), beside the official one. Telemetry off by default.
+- A Board tab to sketch on screenshots, usage up to 12 months, and a note when upstream ships a release.
 
 Details and pictures: [fork/README.md](fork/README.md).
 
