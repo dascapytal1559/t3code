@@ -1,6 +1,8 @@
 ## About this fork
 
-A fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code), built to host [this FirstMate fork](https://github.com/dascapytal1559/firstmate) and its crew.
+This fork and [the FirstMate fork](https://github.com/dascapytal1559/firstmate) ship together as one bundle: use both.
+
+A fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code), built to host the FirstMate fork and its crew.
 
 For FirstMate:
 - FirstMate sessions and their workers grouped as a tree in the sidebar.
