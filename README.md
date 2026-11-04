@@ -9,6 +9,7 @@ For FirstMate:
 - FirstMate sessions and their workers grouped as a tree in the sidebar.
 - FirstMate can answer a worker's permission prompts, and hears its questions the moment they appear.
 - Per-thread settings for agent-launched workers, and idle agents can be kept for good.
+- FirstMate can mark a worker's thread read, clearing its Done card without opening the app.
 
 Also:
 

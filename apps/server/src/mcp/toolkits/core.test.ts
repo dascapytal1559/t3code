@@ -676,6 +676,18 @@ it.effect("a client caller targets any thread within its ceiling and cannot act 
     expect(pinned.isError).toBe(false);
     expect(pinned.structuredContent).toMatchObject({ sequence: 7 });
 
+    const markRead = yield* call(
+      "t3_thread_organize",
+      { action: "mark_read", threadId: "other-project-thread" },
+      clientScope("auto"),
+    );
+    expect(markRead.isError).toBe(false);
+    expect(organizeCommands.at(-1)).toMatchObject({
+      type: "thread.visit",
+      threadId: "other-project-thread",
+      visitedAt: "1970-01-01T00:00:00.000Z",
+    });
+
     const coordinator = yield* call(
       "t3_thread_configure",
       { threadId: "other-project-thread", coordinator: true },
@@ -720,7 +732,11 @@ it.effect("a client caller targets any thread within its ceiling and cannot act 
                   deletedAt: null,
                 },
               } as never),
-            dispatch: () => Effect.succeed({ sequence: 7, storedEvents: [] }),
+            dispatch: (command) =>
+              Effect.sync(() => {
+                organizeCommands.push(command);
+                return { sequence: 7, storedEvents: [] };
+              }),
             setCoordinator: ({ commandId: _commandId, ...input }) =>
               Effect.sync(() => {
                 coordinatorPins.push(input);
@@ -827,6 +843,7 @@ it.effect("a read-only client reads threads and is refused every write before it
 );
 const dispatched: Array<string> = [];
 const coordinatorPins: Array<object> = [];
+const organizeCommands: Array<object> = [];
 
 it.effect("refuses act-as-caller tools to a client caller", () =>
   Effect.gen(function* () {
