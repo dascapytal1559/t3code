@@ -1,7 +1,5 @@
 import { ProviderDriverKind } from "@t3tools/contracts";
 import { OpenCodeSettings } from "../settings.ts";
-import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
-import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
@@ -18,6 +16,8 @@ import * as OpenCode2TextGeneration from "./v2/textGeneration.ts";
 import { makeOpenCodeTextGeneration } from "./textGeneration.ts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
+import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as OpenCodeAdapterV2 from "./adapter.ts";
 import * as OpenCode2AdapterV2 from "./v2/adapter.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";

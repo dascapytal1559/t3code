@@ -1629,6 +1629,11 @@ it.effect("reads a crew thread stored with legacy crew lineage as crewOf", () =>
 
       const reads = yield* crewReadsDecodeUpstream(crew, location);
       for (const read of Object.values(reads)) assert.equal(read.crewOf, coordinator);
+      const pullRequests = yield* orchestrator.getPullRequestSnapshot({ threadId: crew });
+      assert.deepEqual(
+        pullRequests.threads.map((thread) => thread.id),
+        [crew],
+      );
     }
   }).pipe(Effect.provide(layerTest)),
 );

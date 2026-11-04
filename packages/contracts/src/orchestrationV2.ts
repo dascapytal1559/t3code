@@ -2350,7 +2350,7 @@ const LegacyCrewLineageJson = Schema.Struct({
   relationshipToParent: Schema.NullOr(Schema.Literals(["fork", "subagent", "crew"])),
 });
 
-const StoredAppThreadJson = OrchestrationV2AppThread.mapFields((fields) => ({
+export const OrchestrationV2StoredAppThreadJson = OrchestrationV2AppThread.mapFields((fields) => ({
   ...fields,
   lineage: LegacyCrewLineageJson,
   createdAt: Schema.DateTimeUtcFromString,
@@ -2379,7 +2379,7 @@ const StoredAppThreadJson = OrchestrationV2AppThread.mapFields((fields) => ({
   deletedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
 }));
 
-type StoredAppThread = typeof StoredAppThreadJson.Type;
+type StoredAppThread = typeof OrchestrationV2StoredAppThreadJson.Type;
 
 const hasUpstreamLineage = (thread: StoredAppThread): thread is OrchestrationV2AppThread =>
   thread.lineage.relationshipToParent !== "crew";
@@ -2399,7 +2399,7 @@ const fromLegacyCrewLineage = (thread: StoredAppThread): OrchestrationV2AppThrea
 };
 
 /** The stored thread payload, as projections and thread events persist it. */
-export const OrchestrationV2AppThreadJson = StoredAppThreadJson.pipe(
+export const OrchestrationV2AppThreadJson = OrchestrationV2StoredAppThreadJson.pipe(
   Schema.decodeTo(
     Schema.toType(OrchestrationV2AppThread),
     SchemaTransformation.transform<OrchestrationV2AppThread, StoredAppThread>({
