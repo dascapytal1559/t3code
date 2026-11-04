@@ -140,9 +140,15 @@ describe("resolveThreadListV2Status", () => {
     { roster: "dev server", task: { kind: "command" }, status: "ready" },
     { roster: "dev server watchdog", task: { kind: "monitor" }, status: "ready" },
     { roster: "awaited command", task: { kind: "command", awaited: true }, status: "waiting" },
+    {
+      roster: "crew pipeline command",
+      task: { kind: "command" },
+      crewOf: ThreadId.make("coordinator"),
+      status: "waiting",
+    },
   ] as const)(
     "presents an unseen completion with a $roster roster as $status",
-    ({ task, status }) => {
+    ({ task, status, ...rest }) => {
       const thread = presentThreadShell(
         environmentId,
         makeRawThreadShell({
@@ -151,6 +157,7 @@ describe("resolveThreadListV2Status", () => {
           latestRunCompletedAt: DateTime.makeUnsafe(NOW),
           lastVisitedAt: DateTime.makeUnsafe("2026-06-01T23:59:00.000Z"),
           pendingBackgroundTasks: [{ taskId: "background-work", ...task }],
+          ...rest,
         }),
       );
 

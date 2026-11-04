@@ -159,6 +159,13 @@ has both), and crewmate turns raise no sound or notification. Opening the app
 on the home route jumps to a FirstMate session that is still working or waiting
 on input. Without crew threads the sidebar is unchanged.
 
+Upstream counts a background command as work only when the agent marks it with
+`t3_background_wait`, so an unmarked one leaves a thread reading Done. A
+crewmate's card reads Waiting while any background task runs, marked or not,
+because crew usually end their turn to wait on a pipeline run. Other threads
+and auto-settle keep upstream's rule. Code: `threadWaitsOnBackgroundWork` in
+`packages/client-runtime/src/state/models.ts`.
+
 A crew thread names its coordinator at launch: `t3_thread_launch` takes an
 optional `parentThreadId`, stored as the thread's `crewOf`. MCP thread reads
 report it as `parentThreadId` with `relationshipToParent: "crew"`. It stays out

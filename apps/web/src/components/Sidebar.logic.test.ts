@@ -889,6 +889,14 @@ describe("unseen completion with background work", () => {
       receded: true,
       pill: "Waiting",
     },
+    {
+      roster: "crew pipeline command",
+      task: { kind: "command" },
+      crewOf: ThreadId.make("coordinator"),
+      status: "waiting",
+      receded: true,
+      pill: "Waiting",
+    },
   ] as const)("presents a completed thread with a $roster roster", (expected) => {
     const thread = presentThreadShell(localEnvironmentId, {
       ...makeThreadFixture().source,
@@ -897,6 +905,7 @@ describe("unseen completion with background work", () => {
       latestRunCompletedAt: DateTime.makeUnsafe("2026-06-20T01:00:00.000Z"),
       lastVisitedAt: DateTime.makeUnsafe("2026-06-20T00:59:00.000Z"),
       pendingBackgroundTasks: [{ taskId: "background-work", ...expected.task }],
+      ...("crewOf" in expected ? { crewOf: expected.crewOf } : {}),
     });
     const status = resolveSidebarThreadStatus(thread);
     const isUnread = hasUnseenCompletion(thread);
