@@ -59,7 +59,6 @@ import {
   usageSourceMessages,
 } from "@t3tools/shared/usageFormat";
 import { Button, InlineButton } from "../ui/button";
-import { Checkbox } from "../ui/checkbox";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import {
   Menu,
@@ -784,22 +783,19 @@ function UsageOverview({
             const providerLoading = !excluded && loadingProviders.has(provider);
             const awaitingData = providerLoading && !providersWithData.has(provider);
             return (
-              <div key={provider} className="flex gap-2">
-                <span className="flex h-5 shrink-0 items-center">
-                  <Checkbox
-                    aria-label={`Count ${PROVIDER_PRESENTATION[provider].label} in usage`}
-                    checked={!excluded}
-                    onCheckedChange={(checked) => onProviderShownChange(provider, checked)}
-                  />
-                </span>
-                <div
-                  className={cn(
-                    "flex min-w-0 flex-1 flex-col gap-1",
-                    excluded && "opacity-50 grayscale",
-                  )}
-                >
-                  <div className="flex items-baseline justify-between gap-4">
-                    <span className="flex min-w-0 items-center gap-2 text-sm text-foreground">
+              <div
+                key={provider}
+                className={cn("flex min-w-0 flex-col gap-1", excluded && "opacity-50 grayscale")}
+              >
+                <div className="flex items-baseline justify-between gap-4">
+                  <span className="flex min-w-0 items-baseline gap-1.5 text-sm text-foreground">
+                    <button
+                      type="button"
+                      aria-label={`Count ${PROVIDER_PRESENTATION[provider].label} in usage`}
+                      aria-pressed={!excluded}
+                      onClick={() => onProviderShownChange(provider, excluded)}
+                      className="-mx-1 flex min-w-0 cursor-pointer items-center gap-2 rounded-sm px-1 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                    >
                       <span
                         aria-hidden
                         className="size-2 shrink-0 rounded-full"
@@ -808,50 +804,48 @@ function UsageOverview({
                         }}
                       />
                       <ProviderMark provider={provider} className="size-4" />
-                      <span className="flex min-w-0 items-baseline gap-1.5">
-                        <span className="truncate">{PROVIDER_PRESENTATION[provider].label}</span>
-                        <span
-                          className={cn(
-                            "shrink-0 whitespace-nowrap text-2xs text-muted-foreground tabular-nums",
-                            figureClass(providerLoading),
-                            awaitingData && "invisible",
-                          )}
-                        >
-                          {sessionLabel}
-                        </span>
-                      </span>
-                    </span>
+                      <span className="truncate">{PROVIDER_PRESENTATION[provider].label}</span>
+                    </button>
                     <span
                       className={cn(
-                        "shrink-0 text-sm font-medium text-foreground tabular-nums",
+                        "shrink-0 whitespace-nowrap text-2xs text-muted-foreground tabular-nums",
                         figureClass(providerLoading),
+                        awaitingData && "invisible",
                       )}
                     >
-                      {awaitingData
-                        ? "-"
-                        : metric === "cost"
-                          ? formatUsd(totals?.costUsd ?? 0)
-                          : formatTokens(totals?.totalTokens ?? 0)}
+                      {sessionLabel}
                     </span>
-                  </div>
+                  </span>
                   <span
                     className={cn(
-                      "text-xs text-muted-foreground",
+                      "shrink-0 text-sm font-medium text-foreground tabular-nums",
                       figureClass(providerLoading),
-                      awaitingData && "invisible",
                     )}
                   >
-                    {`${
-                      excluded
-                        ? "Excluded"
-                        : `${formatPercent(share)} of ${metric === "cost" ? "cost" : "tokens"}`
-                    } · ${
-                      metric === "cost"
-                        ? `${formatTokens(totals?.totalTokens ?? 0)} tokens`
-                        : formatUsd(totals?.costUsd ?? 0)
-                    }`}
+                    {awaitingData
+                      ? "-"
+                      : metric === "cost"
+                        ? formatUsd(totals?.costUsd ?? 0)
+                        : formatTokens(totals?.totalTokens ?? 0)}
                   </span>
                 </div>
+                <span
+                  className={cn(
+                    "text-xs text-muted-foreground",
+                    figureClass(providerLoading),
+                    awaitingData && "invisible",
+                  )}
+                >
+                  {`${
+                    excluded
+                      ? "Excluded"
+                      : `${formatPercent(share)} of ${metric === "cost" ? "cost" : "tokens"}`
+                  } · ${
+                    metric === "cost"
+                      ? `${formatTokens(totals?.totalTokens ?? 0)} tokens`
+                      : formatUsd(totals?.costUsd ?? 0)
+                  }`}
+                </span>
               </div>
             );
           })}

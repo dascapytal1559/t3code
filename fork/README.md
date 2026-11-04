@@ -51,22 +51,23 @@ Upstream's "N malformed or inconsistent usage record(s) were skipped" sentence
 shows as a small muted footnote at the bottom of the page instead of a notice
 at the top (`apps/web/src/components/usage/UsagePage.tsx`).
 
-## Usage rows can be unticked
+## Usage rows can be muted
 
-![The Usage page with Codex and Grok Build unticked and grayed out, leaving Claude Code alone in the headline, chart and totals](media/usage-provider-filter.png)
+![The Usage page with Codex and Grok Build muted and grayed out, leaving Claude Code alone in the headline, chart and totals](media/usage-provider-filter.png)
 
-Each provider row on the Usage page has a checkbox. Unticking one grays the row
-and leaves it in the list, showing what that provider would have added, so it
-can be ticked back. Everything else drops it: the headline, the other rows'
-shares, the chart, the totals, the by-type bars and the breakdown.
+On the Usage page, click a provider's dot, icon or name to mute it; click again
+to bring it back. The row looks like plain text until you hover it. Muting grays
+the row and leaves it in the list, showing what that provider would have added.
+Everything else drops it: the headline, the other rows' shares, the chart, the
+totals, the by-type bars and the breakdown.
 
 This is a second control on upstream's own filter, the provider menu in the
 Usage header, and they share one saved setting. Keep that setting
 (`hiddenProviders`) as the single source when syncing, and keep what the fork
 adds: `excludedProviders` in `apps/web/src/state/usage.ts` and the rows in
 `apps/web/src/components/usage/UsagePage.tsx`. Upstream's filter also hides a
-provider's Limits cards, so a row unticked here hides them too. The mobile app
-has no checkboxes.
+provider's Limits cards, so a row muted here hides them too. The mobile app
+has no row toggles.
 
 ## Archived usage
 

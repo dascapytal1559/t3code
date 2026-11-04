@@ -15,7 +15,7 @@ Also:
 
 - Its own app, T3 Code (Fork), beside the official one. Telemetry off by default.
 - A Board tab to sketch on screenshots, usage up to 12 months, and a note when upstream ships a release.
-- Tick providers on and off on the Usage page to dial into one provider's usage.
+- Click a provider on the Usage page to mute it and dial into one provider's usage.
 
 Details and pictures: [fork/README.md](fork/README.md).
 
