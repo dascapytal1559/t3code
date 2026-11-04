@@ -17,7 +17,12 @@ import { resolveUsageAccess } from "@t3tools/client-runtime/state/usage-access";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useState } from "react";
 
-import { mergeUsage, type EnvironmentUsage, type MergedUsage } from "@t3tools/shared/usageMerge";
+import {
+  mergeUsage,
+  type EnvironmentUsage,
+  type MergedUsage,
+  type ProviderTotals,
+} from "@t3tools/shared/usageMerge";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentPresentations } from "./presentation";
 import { serverEnvironment } from "./server";
@@ -87,12 +92,17 @@ const usageByWindowAtom = Atom.family((windowKey: string) =>
   }).pipe(Atom.withLabel(`web-usage:window:${windowKey}`)),
 );
 
+export interface SelectedUsage extends MergedUsage {
+  /** What hidden providers would have added, so their rows can stay listed. Not in any total. */
+  readonly excludedProviders: readonly ProviderTotals[];
+}
+
 export interface UsageView {
-  readonly merged: MergedUsage;
+  readonly merged: SelectedUsage;
   readonly environments: readonly EnvironmentUsageStatus[];
   readonly selectedEnvironments: readonly EnvironmentUsageStatus[];
   readonly isPending: boolean;
-  readonly shown: { readonly window: UsageSummaryInput; readonly merged: MergedUsage } | null;
+  readonly shown: { readonly window: UsageSummaryInput; readonly merged: SelectedUsage } | null;
   readonly isPartial: boolean;
   readonly refresh: (input?: UsageSummaryInput) => Promise<void>;
 }
@@ -143,6 +153,21 @@ function withoutProviders(
   );
 }
 
+export function mergeSelectedUsage(
+  environments: readonly EnvironmentUsageStatus[],
+  hiddenProviders: ReadonlySet<UsageProviderKind>,
+): SelectedUsage {
+  return {
+    ...mergeAnsweredUsage(withoutProviders(environments, hiddenProviders)),
+    excludedProviders:
+      hiddenProviders.size === 0
+        ? []
+        : mergeAnsweredUsage(environments).providers.filter(({ provider }) =>
+            hiddenProviders.has(provider),
+          ),
+  };
+}
+
 function deriveSelection(
   environments: readonly EnvironmentUsageStatus[],
   selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null,
@@ -157,7 +182,7 @@ function deriveSelection(
     selectedEnvironmentIds,
     hiddenProviders,
     selectedEnvironments,
-    merged: mergeAnsweredUsage(withoutProviders(selectedEnvironments, hiddenProviders)),
+    merged: mergeSelectedUsage(selectedEnvironments, hiddenProviders),
   };
 }
 

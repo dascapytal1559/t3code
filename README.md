@@ -5,13 +5,16 @@ This fork and [the FirstMate fork](https://github.com/dascapytal1559/firstmate) 
 A fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code), built to host the FirstMate fork and its crew.
 
 For FirstMate:
+
 - FirstMate sessions and their workers grouped as a tree in the sidebar.
 - FirstMate can answer a worker's permission prompts, and hears its questions the moment they appear.
 - Per-thread settings for agent-launched workers, and idle agents can be kept for good.
 
 Also:
+
 - Its own app, T3 Code (Fork), beside the official one. Telemetry off by default.
 - A Board tab to sketch on screenshots, usage up to 12 months, and a note when upstream ships a release.
+- Tick providers on and off on the Usage page to dial into one provider's usage.
 
 Details and pictures: [fork/README.md](fork/README.md).
 

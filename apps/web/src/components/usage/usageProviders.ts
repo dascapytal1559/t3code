@@ -49,6 +49,16 @@ export const PROVIDER_PRESENTATION = {
 
 export const PROVIDER_ORDER = Object.keys(PROVIDER_PRESENTATION) as UsageProviderKind[];
 
+export function withProviderShown(
+  hiddenProviders: ReadonlySet<UsageProviderKind>,
+  provider: UsageProviderKind,
+  shown: boolean,
+): readonly UsageProviderKind[] {
+  return PROVIDER_ORDER.filter((entry) =>
+    entry === provider ? !shown : hiddenProviders.has(entry),
+  );
+}
+
 export function providersWithUsage(
   totals: readonly {
     readonly provider: UsageProviderKind;

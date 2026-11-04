@@ -42,7 +42,7 @@ import { primaryServerKeybindingsAtom, serverEnvironment } from "../../state/ser
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import { isModelPickerOpen } from "../../modelPickerVisibility";
 import { shortcutLabelForCommand } from "../../keybindings";
-import { useUsage, type EnvironmentUsageStatus } from "../../state/usage";
+import { useUsage, type EnvironmentUsageStatus, type SelectedUsage } from "../../state/usage";
 import { useAtomCommand } from "../../state/use-atom-command";
 import {
   enumerateDays,
@@ -59,6 +59,7 @@ import {
   usageSourceMessages,
 } from "@t3tools/shared/usageFormat";
 import { Button, InlineButton } from "../ui/button";
+import { Checkbox } from "../ui/checkbox";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import {
   Menu,
@@ -101,7 +102,12 @@ import {
   resolveUsageShortcut,
   type UsageMetric,
 } from "./usageShortcuts";
-import { PROVIDER_ORDER, PROVIDER_PRESENTATION, providersWithUsage } from "./usageProviders";
+import {
+  PROVIDER_ORDER,
+  PROVIDER_PRESENTATION,
+  providersWithUsage,
+  withProviderShown,
+} from "./usageProviders";
 import {
   readUsagePagePreferences,
   saveUsagePagePreferences,
@@ -560,6 +566,11 @@ export function UsagePage() {
                 metric={metric === "tokens" ? "tokens" : "cost"}
                 selectedEnvironments={selectedEnvironments}
                 hiddenProviders={hiddenProviders}
+                onProviderShownChange={(provider, shown) =>
+                  updatePreferences({
+                    hiddenProviders: withProviderShown(hiddenProviders, provider, shown),
+                  })
+                }
                 refreshingUsage={refreshingUsage}
                 cursorAccessEnvironments={cursorAccessEnvironments}
                 showChatGptSharing={showChatGptSharing}
@@ -613,13 +624,14 @@ function UsageOverview({
   metric,
   selectedEnvironments,
   hiddenProviders,
+  onProviderShownChange,
   refreshingUsage,
   cursorAccessEnvironments,
   showChatGptSharing,
   onCursorEnabled,
   onSelectModel,
 }: {
-  readonly merged: MergedUsage;
+  readonly merged: SelectedUsage;
   readonly shownWindow: UsageSummaryInput;
   readonly hour12: boolean;
   readonly days: readonly string[];
@@ -628,6 +640,7 @@ function UsageOverview({
   readonly metric: "tokens" | "cost";
   readonly selectedEnvironments: readonly EnvironmentUsageStatus[];
   readonly hiddenProviders: ReadonlySet<UsageProviderKind>;
+  readonly onProviderShownChange: (provider: UsageProviderKind, shown: boolean) => void;
   readonly refreshingUsage: boolean;
   readonly cursorAccessEnvironments: readonly EnvironmentUsageStatus[];
   readonly showChatGptSharing: boolean;
@@ -651,6 +664,10 @@ function UsageOverview({
   );
   const chartLoadingProviders = new Set(
     activeProviders.filter((provider) => loadingProviders.has(provider)),
+  );
+  const excludedProviders = new Set(providersWithUsage(merged.excludedProviders));
+  const listedProviders = [...PROVIDER_ORDER].filter(
+    (provider) => activeProviders.includes(provider) || excludedProviders.has(provider),
   );
   const sourceNotices = usageSourceMessages(
     selectedEnvironments.flatMap(
@@ -678,16 +695,16 @@ function UsageOverview({
     0,
   );
   const cursorInsertAt =
-    Math.max(activeProviders.indexOf("codex"), activeProviders.indexOf("claude")) + 1;
+    Math.max(listedProviders.indexOf("codex"), listedProviders.indexOf("claude")) + 1;
   const summaryRows: ReadonlyArray<
     | { readonly kind: "usage"; readonly provider: UsageProviderKind }
     | { readonly kind: "enable"; readonly environment: EnvironmentUsageStatus }
   > = [
-    ...activeProviders
+    ...listedProviders
       .slice(0, cursorInsertAt)
       .map((provider) => ({ kind: "usage" as const, provider })),
     ...cursorAccessEnvironments.map((environment) => ({ kind: "enable" as const, environment })),
-    ...activeProviders
+    ...listedProviders
       .slice(cursorInsertAt)
       .map((provider) => ({ kind: "usage" as const, provider })),
   ];
@@ -755,63 +772,86 @@ function UsageOverview({
               );
             }
             const provider = row.provider;
-            const totals = merged.providers.find((entry) => entry.provider === provider);
+            const excluded = excludedProviders.has(provider);
+            const totals = (excluded ? merged.excludedProviders : merged.providers).find(
+              (entry) => entry.provider === provider,
+            );
             const share = metric === "cost" ? (totals?.costShare ?? 0) : (totals?.tokenShare ?? 0);
             const providerSessions = totals?.sessions ?? 0;
             const sessionLabel = `${formatCount(providerSessions)} ${
               providerSessions === 1 ? "session" : "sessions"
             }`;
-            const providerLoading = loadingProviders.has(provider);
+            const providerLoading = !excluded && loadingProviders.has(provider);
             const awaitingData = providerLoading && !providersWithData.has(provider);
             return (
-              <div key={provider} className="flex flex-col gap-1">
-                <div className="flex items-baseline justify-between gap-4">
-                  <span className="flex min-w-0 items-center gap-2 text-sm text-foreground">
-                    <span
-                      aria-hidden
-                      className="size-2 shrink-0 rounded-full"
-                      style={{
-                        backgroundColor: PROVIDER_PRESENTATION[provider].color,
-                      }}
-                    />
-                    <ProviderMark provider={provider} className="size-4" />
-                    <span className="flex min-w-0 items-baseline gap-1.5">
-                      <span className="truncate">{PROVIDER_PRESENTATION[provider].label}</span>
-                      <span
-                        className={cn(
-                          "shrink-0 whitespace-nowrap text-2xs text-muted-foreground tabular-nums",
-                          figureClass(providerLoading),
-                          awaitingData && "invisible",
-                        )}
-                      >
-                        {sessionLabel}
-                      </span>
-                    </span>
-                  </span>
-                  <span
-                    className={cn(
-                      "shrink-0 text-sm font-medium text-foreground tabular-nums",
-                      figureClass(providerLoading),
-                    )}
-                  >
-                    {awaitingData
-                      ? "-"
-                      : metric === "cost"
-                        ? formatUsd(totals?.costUsd ?? 0)
-                        : formatTokens(totals?.totalTokens ?? 0)}
-                  </span>
-                </div>
-                <span
+              <div key={provider} className="flex gap-2">
+                <span className="flex h-5 shrink-0 items-center">
+                  <Checkbox
+                    aria-label={`Count ${PROVIDER_PRESENTATION[provider].label} in usage`}
+                    checked={!excluded}
+                    onCheckedChange={(checked) => onProviderShownChange(provider, checked)}
+                  />
+                </span>
+                <div
                   className={cn(
-                    "text-xs text-muted-foreground",
-                    figureClass(providerLoading),
-                    awaitingData && "invisible",
+                    "flex min-w-0 flex-1 flex-col gap-1",
+                    excluded && "opacity-50 grayscale",
                   )}
                 >
-                  {metric === "cost"
-                    ? `${formatPercent(share)} of cost · ${formatTokens(totals?.totalTokens ?? 0)} tokens`
-                    : `${formatPercent(share)} of tokens · ${formatUsd(totals?.costUsd ?? 0)}`}
-                </span>
+                  <div className="flex items-baseline justify-between gap-4">
+                    <span className="flex min-w-0 items-center gap-2 text-sm text-foreground">
+                      <span
+                        aria-hidden
+                        className="size-2 shrink-0 rounded-full"
+                        style={{
+                          backgroundColor: PROVIDER_PRESENTATION[provider].color,
+                        }}
+                      />
+                      <ProviderMark provider={provider} className="size-4" />
+                      <span className="flex min-w-0 items-baseline gap-1.5">
+                        <span className="truncate">{PROVIDER_PRESENTATION[provider].label}</span>
+                        <span
+                          className={cn(
+                            "shrink-0 whitespace-nowrap text-2xs text-muted-foreground tabular-nums",
+                            figureClass(providerLoading),
+                            awaitingData && "invisible",
+                          )}
+                        >
+                          {sessionLabel}
+                        </span>
+                      </span>
+                    </span>
+                    <span
+                      className={cn(
+                        "shrink-0 text-sm font-medium text-foreground tabular-nums",
+                        figureClass(providerLoading),
+                      )}
+                    >
+                      {awaitingData
+                        ? "-"
+                        : metric === "cost"
+                          ? formatUsd(totals?.costUsd ?? 0)
+                          : formatTokens(totals?.totalTokens ?? 0)}
+                    </span>
+                  </div>
+                  <span
+                    className={cn(
+                      "text-xs text-muted-foreground",
+                      figureClass(providerLoading),
+                      awaitingData && "invisible",
+                    )}
+                  >
+                    {`${
+                      excluded
+                        ? "Excluded"
+                        : `${formatPercent(share)} of ${metric === "cost" ? "cost" : "tokens"}`
+                    } · ${
+                      metric === "cost"
+                        ? `${formatTokens(totals?.totalTokens ?? 0)} tokens`
+                        : formatUsd(totals?.costUsd ?? 0)
+                    }`}
+                  </span>
+                </div>
               </div>
             );
           })}
@@ -821,19 +861,25 @@ function UsageOverview({
           <h2 className="text-sm font-medium text-foreground">
             {shownHourly ? "Hourly" : "Daily"} {metric === "tokens" ? "processed tokens" : "cost"}
           </h2>
-          <UsageProviderChart
-            providers={activeProviders}
-            loadingProviders={chartLoadingProviders}
-            days={days}
-            daily={merged.daily}
-            hours={hours}
-            hourly={merged.hourly}
-            metric={metric}
-            referenceTime={shownWindow.untilTime}
-            resolution={shownHourly ? "hour" : "day"}
-            timeZone={shownWindow.timeZone}
-            hour12={hour12}
-          />
+          {activeProviders.length === 0 && excludedProviders.size > 0 ? (
+            <p className="flex h-56 items-center justify-center text-sm text-muted-foreground">
+              No activity in this window.
+            </p>
+          ) : (
+            <UsageProviderChart
+              providers={activeProviders}
+              loadingProviders={chartLoadingProviders}
+              days={days}
+              daily={merged.daily}
+              hours={hours}
+              hourly={merged.hourly}
+              metric={metric}
+              referenceTime={shownWindow.untilTime}
+              resolution={shownHourly ? "hour" : "day"}
+              timeZone={shownWindow.timeZone}
+              hour12={hour12}
+            />
+          )}
         </div>
       </section>
 
@@ -1155,7 +1201,7 @@ function CursorEnableRow({
   readonly onEnabled: () => void;
 }) {
   return (
-    <div className="flex min-w-0 items-baseline justify-between gap-4 text-sm">
+    <div className="flex min-w-0 items-baseline justify-between gap-4 ps-6 text-sm">
       <span className="flex min-w-0 items-center gap-2 text-sm text-foreground">
         <span
           aria-hidden
@@ -1475,11 +1521,7 @@ function UsageProviderFilter({
             checked={!hiddenProviders.has(provider)}
             closeOnClick={false}
             onCheckedChange={(checked) =>
-              onChange(
-                PROVIDER_ORDER.filter((entry) =>
-                  entry === provider ? !checked : hiddenProviders.has(entry),
-                ),
-              )
+              onChange(withProviderShown(hiddenProviders, provider, checked))
             }
           >
             <span className="flex min-w-0 items-center gap-2">
@@ -1503,7 +1545,7 @@ function UsageSkeleton() {
             <Skeleton className="h-4 w-32" />
           </div>
           {PROVIDER_ORDER.map((provider) => (
-            <div key={provider} className="flex flex-col gap-1">
+            <div key={provider} className="flex flex-col gap-1 ps-6">
               <div className="flex min-h-5 items-center justify-between gap-4">
                 <span className="flex items-center gap-2">
                   <Skeleton shape="pill" className="size-2 shrink-0" />
