@@ -34,7 +34,9 @@ Three things are still shared with the official app:
   `com.t3tools.t3code` managed preferences). A policy written for the official
   app restricts the fork too, except that the fork ignores its update feed
   (`limits.updates.feedUrl`), so it never gets one
-  (`apps/desktop/src/updates/DesktopUpdatePolicy.ts`).
+  (`apps/desktop/src/updates/DesktopUpdatePolicy.ts`). Upstream's `t3 update`
+  command does follow that feed, but the app never runs it: its server is
+  desktop-managed (`apps/server/src/cloud/selfUpdate.ts`).
 
 ## Usage reaches twelve months
 
