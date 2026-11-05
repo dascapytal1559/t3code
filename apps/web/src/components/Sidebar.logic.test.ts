@@ -17,7 +17,7 @@ import {
   orderItemsByPreferredIds,
   pinOrderKeyBetween,
   resolveSidebarSweepKeys,
-  sidebarSectionHasHoverActions,
+  sidebarSectionHasHoverSnooze,
   resolveSidebarThreadStatus,
   resolveThreadStatusPill,
   resolveWorkingStartedAt,
@@ -1151,10 +1151,10 @@ describe("Working shelf (beta)", () => {
       ).toEqual({ kind: "none" });
     });
 
-    it("leaves hover Snooze and Settle off crew cards only", () => {
-      expect(sidebarSectionHasHoverActions("crew")).toBe(false);
+    it("leaves hover Snooze off crew cards only", () => {
+      expect(sidebarSectionHasHoverSnooze("crew")).toBe(false);
       for (const section of ["pinned", "active", "working", "snoozed", "settled"] as const) {
-        expect(sidebarSectionHasHoverActions(section)).toBe(true);
+        expect(sidebarSectionHasHoverSnooze(section)).toBe(true);
       }
     });
 

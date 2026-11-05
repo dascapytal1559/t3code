@@ -553,8 +553,8 @@ type SidebarThreadRowProps = {
   variant: "card" | "slim" | "folder" | "folder-multiline";
   // The FirstMate main session: led by its provider's mark.
   coordinator?: boolean | undefined;
-  // Hides hover Snooze and Settle; the context menu still offers both.
-  hideHoverActions?: boolean | undefined;
+  // Hides hover Snooze; the context menu still offers it.
+  hideHoverSnooze?: boolean | undefined;
   crewTree?: CrewTreePlace | undefined;
   // The coordinator card the expanded crew hangs from, which carries the top of the guide line.
   crewTreeRoot?: boolean | undefined;
@@ -956,11 +956,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     setSnoozeGateClock({ thread, now: new Date(snoozeGateOpensAt).toISOString() });
   }
   const showSnoozeButton =
-    props.hideHoverActions !== true &&
+    props.hideHoverSnooze !== true &&
     canOperateThread &&
     props.snoozeSupported &&
     canSnooze(thread, { now: snoozeGateNow });
-  const showSettleButton = props.hideHoverActions !== true && props.settlementSupported;
+  const showSettleButton = props.settlementSupported;
   const hasHoverControls = showSettleButton || showSnoozeButton || hasUnsentDraft;
   // Closing here, not just masking, keeps the menu from reopening when the button returns.
   if (snoozeMenuOpenRaw && !showSnoozeButton) setSnoozeMenuOpen(false);
