@@ -44,6 +44,7 @@ import {
   Files,
   Globe2,
   MessagesSquare,
+  PencilRuler,
   Plus,
   TerminalSquare,
 } from "lucide-react";
@@ -143,6 +144,7 @@ export interface RightPanelTabsProps {
   onAddDevice: () => void;
   /** Absent where side chats are not offered. */
   onAddSideChat?: (() => void) | undefined;
+  onAddBoard: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
@@ -153,6 +155,7 @@ export interface RightPanelTabsProps {
   sideChatAvailable?: boolean;
   /** Overrides the default reason while side chats are available but cannot start. */
   sideChatDisabledReason?: string | null;
+  boardAvailable: boolean;
   pullRequestStatusSeeds?: Readonly<Record<string, PullRequestTabStatusSeed>>;
   children: ReactNode;
 }
@@ -180,6 +183,7 @@ const SURFACE_DISABLED_REASONS = {
   pullRequests: "No linked pull requests are available for this thread.",
   device: "Devices are only available from a thread.",
   sideChat: "Side chats start after the first message.",
+  board: "The board is only available from a thread.",
 } as const;
 
 // Closed keepMounted popups must stop blocking shortcuts once their exit transition ends.
@@ -205,6 +209,7 @@ const SURFACE_UNAVAILABLE_HINTS = {
   pullRequests: "No linked pull requests available.",
   device: "Available from a thread.",
   sideChat: "Available after the first message.",
+  board: "Available from a thread.",
 } as const;
 
 type TabContextMenuAction =
@@ -324,6 +329,7 @@ function RightPanelEmptyState(props: {
   onAddDevice: () => void;
   /** Absent where side chats are not offered. */
   onAddSideChat?: (() => void) | undefined;
+  onAddBoard: () => void;
   browserAvailable: boolean;
   terminalAvailable: boolean;
   diffAvailable: boolean;
@@ -333,6 +339,7 @@ function RightPanelEmptyState(props: {
   deviceAvailable: boolean;
   sideChatAvailable: boolean;
   sideChatDisabledReason: string | null;
+  boardAvailable: boolean;
 }) {
   const [highlight, setHighlight] = useState(-1);
 
@@ -407,6 +414,14 @@ function RightPanelEmptyState(props: {
           },
         ]
       : []),
+    {
+      label: "Board",
+      icon: PencilRuler,
+      shortcut: "W",
+      available: props.boardAvailable,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.board,
+      onClick: props.onAddBoard,
+    },
   ] as const;
 
   type SurfaceAction = (typeof actions)[number];
@@ -590,6 +605,8 @@ function surfaceTitle(
       return `#${surface.number}`;
     case "pull-requests":
       return "Pull requests";
+    case "board":
+      return "Board";
     case "device":
       return surface.title ?? surface.target?.name ?? "Device";
     case "side-chat":
@@ -684,6 +701,8 @@ function SurfaceIcon({
       return <PullRequestGlyph.link className="size-3 shrink-0" />;
     case "side-chat":
       return <SideChatTabIcon environmentId={environmentId} threadId={surface.threadId} />;
+    case "board":
+      return <PencilRuler className="size-3 shrink-0" />;
     case "device":
       return surface.target?.platform === "ios" ? (
         <AppleIcon className="size-3 shrink-0" />
@@ -1159,6 +1178,14 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           },
         ]
       : []),
+    {
+      label: "Board",
+      icon: PencilRuler,
+      shortcut: "W",
+      available: props.boardAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.board,
+      onClick: props.onAddBoard,
+    },
   ] as const;
 
   const handleAddSurfaceMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -1534,6 +1561,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddPullRequests={props.onAddPullRequests}
             onAddDevice={props.onAddDevice}
             onAddSideChat={props.onAddSideChat}
+            onAddBoard={props.onAddBoard}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}
             diffAvailable={props.diffAvailable}
@@ -1543,6 +1571,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             deviceAvailable={props.deviceAvailable}
             sideChatAvailable={props.sideChatAvailable === true}
             sideChatDisabledReason={props.sideChatDisabledReason ?? null}
+            boardAvailable={props.boardAvailable}
           />
         ) : (
           props.children

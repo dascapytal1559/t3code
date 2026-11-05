@@ -33,6 +33,9 @@ const DevicePanel = lazy(() =>
   import("../device/DevicePanel").then((module) => ({ default: module.DevicePanel })),
 );
 const FilePreviewPanel = lazy(() => import("../files/FilePreviewPanel"));
+const BoardPanel = lazy(() =>
+  import("../board/BoardPanel").then((module) => ({ default: module.BoardPanel })),
+);
 
 type RightPanelTerminalProps = Omit<
   PersistentThreadTerminalPanelProps,
@@ -178,6 +181,12 @@ export function RightPanelSurfaceContent(props: {
           parentPanel={props.sideChatParentPanel}
           onClose={() => onCloseSurface(surface)}
         />
+      );
+    case "board":
+      return (
+        <Suspense fallback={null}>
+          <BoardPanel composerDraftTarget={props.composerDraftTarget} />
+        </Suspense>
       );
     case "device":
       return (

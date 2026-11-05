@@ -168,6 +168,8 @@ overrides:
   "expo-sharing>@expo/config-types": 58.0.3
   # @pierre/trees pins @pierre/theming 1.0.0, whose peer range predates @pierre/theme 2.
   "@pierre/trees>@pierre/theming": 1.0.2
+  # Excalidraw 0.18 pins a Tabs release whose peers stop at React 18.
+  "@excalidraw/excalidraw>@radix-ui/react-tabs": 1.1.3
   # Resolve below remark-math so Vite, Metro and Node use the same tokenizer.
   "remark-math>micromark-extension-math": npm:micromark-extension-llm-math@3.1.0
   micromark-extension-gfm-table: 2.1.1

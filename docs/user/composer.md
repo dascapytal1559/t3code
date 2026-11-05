@@ -60,6 +60,16 @@ in split screen.
 
 See [images and videos](#images-and-videos-in-messages) for previewing and saving media.
 
+### Mark up a screenshot
+
+On web and desktop, the board is a quick canvas for showing the agent what you mean. Open it
+from the right panel's new-tab menu or **Open board** in the command palette. Paste or drop a
+screenshot, mark it up, then choose **Attach to chat** to add it to this thread's composer. With
+something selected, only the selection is attached.
+
+There is one board, and it stays in this browser or desktop app. It is not stored on the
+environment, and it does not follow you to other devices.
+
 ## Send while the agent is working
 
 On web and desktop, choose **Settings → Chat → Follow-up behavior** to queue
