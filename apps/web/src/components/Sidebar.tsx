@@ -199,7 +199,7 @@ import {
   resolveSidebarSweepKeys,
   resolveSidebarDropTarget,
   resolveSidebarDropVerb,
-  sidebarSectionHasHoverSnooze,
+  sidebarSectionHasHoverActions,
   resolveSidebarThreadSection,
   resolveSidebarReorderableThreadKeys,
   searchSidebarThreads,
@@ -3414,7 +3414,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             thread={thread}
                             variant={rowVariant}
                             coordinator={isCoordinator}
-                            hideHoverSnooze={!sidebarSectionHasHoverSnooze(section)}
+                            hideHoverActions={!sidebarSectionHasHoverActions(section)}
                             crewTree={
                               section !== "crew" || isCoordinator
                                 ? undefined

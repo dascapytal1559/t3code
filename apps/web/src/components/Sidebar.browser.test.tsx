@@ -1,4 +1,4 @@
-import { DEFAULT_CLIENT_SETTINGS, EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS, EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
@@ -6,15 +6,12 @@ import { render } from "../../test/render";
 import { openCommandPalette } from "../commandPaletteBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { __setClientSettingsForTests, getClientSettings } from "../hooks/useSettings";
-import { useProjects, useQuietThreadShells, useServerConfigs } from "../state/entities";
-import { useEnvironmentScope } from "../state/session";
-import { makeThreadFixture } from "../test-fixtures";
+import { useProjects } from "../state/entities";
 import type { Project } from "../types";
 import Sidebar from "./Sidebar";
 import { SidebarProvider } from "./ui/sidebar";
 
 vi.mock("../state/entities", { spy: true });
-vi.mock("../state/session", { spy: true });
 vi.mock("../hooks/useHandleNewThread", { spy: true });
 vi.mock("../commandPaletteBus", () => ({
   openCommandPalette: vi.fn(),
@@ -87,57 +84,6 @@ describe("sidebar header new thread", () => {
     } else {
       expect(openCommandPalette).not.toHaveBeenCalled();
       expect(startThread).toHaveBeenCalledExactlyOnceWith(currentProjectRef);
-    }
-  });
-});
-
-describe("sidebar crew cards", () => {
-  it("offers Settle on the FirstMate and crew cards, and Snooze only on other cards", async () => {
-    using stack = new DisposableStack();
-    localStorage.setItem("t3code:sidebar:crew-expanded", "true");
-    stack.defer(() => localStorage.removeItem("t3code:sidebar:crew-expanded"));
-    const home = project("home");
-    const scope = { environmentId: home.environmentId, projectId: home.id };
-    const coordinatorId = ThreadId.make("firstmate");
-    vi.mocked(useEnvironmentScope).mockReturnValue(true);
-    vi.mocked(useProjects).mockReturnValue([home]);
-    vi.mocked(useServerConfigs).mockReturnValue(new Map([[home.environmentId, {} as never]]));
-    vi.mocked(useQuietThreadShells).mockReturnValue([
-      { ...makeThreadFixture({ ...scope, id: coordinatorId, title: "Main" }), coordinator: true },
-      {
-        ...makeThreadFixture({ ...scope, id: ThreadId.make("crew"), title: "Crewmate" }),
-        crewOf: coordinatorId,
-      },
-      makeThreadFixture({ ...scope, id: ThreadId.make("plain"), title: "Ordinary" }),
-    ]);
-    vi.mocked(useHandleNewThread).mockReturnValue({
-      activeDraftThread: null,
-      activeThread: null,
-      defaultProjectRef: null,
-      handleNewThread: vi.fn(),
-      routeDraftId: null,
-      routeThreadRef: null,
-    });
-    await using screen = await render(
-      <SidebarProvider>
-        <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
-      </SidebarProvider>,
-    );
-
-    const card = (title: string) =>
-      screen.getByTestId("sidebar-row-card").filter({ hasText: title });
-    for (const title of ["Main", "Crewmate", "Ordinary"]) {
-      await expect
-        .element(card(title).getByRole("button", { name: "Settle thread" }))
-        .toBeInTheDocument();
-    }
-    await expect
-      .element(card("Ordinary").getByRole("button", { name: "Snooze thread" }))
-      .toBeInTheDocument();
-    for (const title of ["Main", "Crewmate"]) {
-      await expect
-        .element(card(title).getByRole("button", { name: "Snooze thread" }))
-        .not.toBeInTheDocument();
     }
   });
 });

@@ -174,8 +174,8 @@ otherwise use. The mobile app has no board.
 A FirstMate session and the worker threads it launches are grouped above the
 sidebar inbox and kept out of Working. The main session shows as one line led
 by its model icon; its crewmates hang below it as a tree that collapses to a
-count. Both show hover Settle but no hover Snooze (the context menu still has
-it), and crewmate turns raise no sound or notification. Opening the app
+count. Crewmate cards have no hover Snooze or Settle (the context menu still
+has both), and crewmate turns raise no sound or notification. Opening the app
 on the home route jumps to a FirstMate session that is still working or waiting
 on input. Without crew threads the sidebar is unchanged.
 
