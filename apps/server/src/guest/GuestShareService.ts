@@ -225,6 +225,7 @@ const threadOf = (event: OrchestrationV2DomainEvent): OrchestrationV2AppThread |
     case "thread.metadata-updated":
     case "thread.model-selection-updated":
     case "thread.provider-switched":
+    case "thread.session-replaced":
       return event.payload;
     default:
       return null;

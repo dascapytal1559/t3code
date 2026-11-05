@@ -454,6 +454,89 @@ describe("deriveMessagesTimelineRows", () => {
     },
   );
 
+  it("shows a session boundary as its own divider row after the turn it closes", () => {
+    const fixture = makeStreamingTimelineFixture();
+    const at = DateTime.makeUnsafe(fixture.time(2));
+    const source: OrchestrationV2ProjectedTurnItem = {
+      ...fixture.visibleTurnItems[0]!,
+      sourceItemId: TurnItemId.make("session-boundary"),
+      item: {
+        id: TurnItemId.make("session-boundary"),
+        threadId: fixture.threadId,
+        runId: fixture.runId,
+        nodeId: null,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: 2,
+        startedAt: at,
+        completedAt: at,
+        updatedAt: at,
+        type: "system_notice",
+        message: "New session",
+        title: null,
+        status: "completed",
+        sessionBoundary: true,
+      },
+    };
+    const [boundary] = deriveTimelineEntriesFromVisibleTurnItems({
+      visibleTurnItems: [source],
+      optimisticMessages: [],
+    });
+    if (boundary?.kind !== "work") throw new Error("Expected a boundary work entry");
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "stow-tool",
+          kind: "work",
+          createdAt: fixture.time(1),
+          entry: {
+            id: "stow-tool",
+            runId: fixture.runId,
+            createdAt: fixture.time(1),
+            label: "Ran command",
+            tone: "tool",
+            toolLifecycleStatus: "completed",
+          },
+        },
+        {
+          id: "stow-reply",
+          kind: "message",
+          createdAt: fixture.time(1),
+          message: {
+            id: MessageId.make("stow-reply"),
+            runId: fixture.runId,
+            role: "assistant",
+            text: "Stowed.",
+            createdAt: fixture.time(1),
+            updatedAt: fixture.time(1),
+            streaming: false,
+          },
+        },
+        boundary,
+      ],
+      isWorking: false,
+      latestRun: {
+        runId: fixture.runId,
+        status: "completed",
+        startedAt: fixture.time(1),
+        completedAt: fixture.time(2),
+      },
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+    });
+    const kinds = rows.map((row) => row.kind);
+    expect(kinds.indexOf("session-boundary")).toBeGreaterThan(kinds.indexOf("message"));
+    expect(rows.find((row) => row.kind === "session-boundary")).toMatchObject({
+      label: "New session",
+      createdAt: boundary.createdAt,
+    });
+    expect(
+      rows.some((row) => row.kind === "work" && row.groupedEntries.includes(boundary.entry)),
+    ).toBe(false);
+  });
+
   it("shows each compaction trigger as one live status, then a reasoned token divider", () => {
     const fixture = makeStreamingTimelineFixture();
     const [history0, history1, history2, liveUser, , liveAssistant] = fixture.visibleTurnItems;

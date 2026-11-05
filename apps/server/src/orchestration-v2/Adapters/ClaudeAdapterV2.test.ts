@@ -2614,10 +2614,11 @@ describe("ClaudeAdapterV2 native fork", () => {
   );
 });
 
-function makeFakeClaudeCli(answerSetServers = true) {
+function makeFakeClaudeCli(answerSetServers = true, options?: { readonly deferExit?: boolean }) {
   const spawns: Array<SpawnOptions> = [];
   const controlRequests: Array<object> = [];
   const stdins: Array<NodeStream.PassThrough> = [];
+  const children: Array<NodeEvents.EventEmitter> = [];
   const spawn = (options: SpawnOptions): SpawnedProcess => {
     spawns.push(options);
     const stdin = new NodeStream.PassThrough();
@@ -2630,10 +2631,12 @@ function makeFakeClaudeCli(answerSetServers = true) {
       exitCode: null as number | null,
       kill: () => {
         stdout.end();
-        child.emit("exit", null, "SIGTERM");
+        child.killed = true;
+        if (exitsOnKill) child.emit("exit", null, "SIGTERM");
         return true;
       },
     });
+    children.push(child);
     let pending = "";
     stdin.on("data", (chunk: Buffer) => {
       pending += chunk.toString("utf8");
@@ -2654,12 +2657,17 @@ function makeFakeClaudeCli(answerSetServers = true) {
     });
     stdin.on("end", () => {
       stdout.end();
-      child.emit("exit", 0, null);
+      if (exitsOnKill) child.emit("exit", 0, null);
     });
     return child;
   };
+  const exitsOnKill = options?.deferExit !== true;
   const closed = () => stdins.length > 0 && stdins.every((stdin) => stdin.writableEnded);
-  return { spawn, spawns, controlRequests, closed };
+  // A deferred-exit CLI lingers after its kill until the test lets it exit.
+  const exit = () => {
+    for (const child of children) child.emit("exit", null, "SIGKILL");
+  };
+  return { spawn, spawns, controlRequests, closed, exit };
 }
 
 describe("ClaudeAdapterV2 MCP credential channel", () => {
@@ -2723,6 +2731,28 @@ describe("ClaudeAdapterV2 MCP credential channel", () => {
       assert.isTrue(committed);
       committed = false;
       yield* session.close;
+    }),
+  );
+
+  it.effect("awaitExit settles once the CLI process exits, or after the kill window", () =>
+    Effect.gen(function* () {
+      const lingering = makeFakeClaudeCli(true, { deferExit: true });
+      const session = yield* openWith(lingering);
+      yield* session.close;
+      const exited = yield* session.awaitExit!.pipe(Effect.forkChild);
+      yield* TestClock.adjust("1 second");
+      assert.isUndefined(exited.pollUnsafe());
+      lingering.exit();
+      yield* Fiber.join(exited);
+
+      const stuck = makeFakeClaudeCli(true, { deferExit: true });
+      const stuckSession = yield* openWith(stuck);
+      yield* stuckSession.close;
+      const gaveUp = yield* stuckSession.awaitExit!.pipe(Effect.forkChild);
+      yield* TestClock.adjust("14 seconds");
+      assert.isUndefined(gaveUp.pollUnsafe());
+      yield* TestClock.adjust("2 seconds");
+      yield* Fiber.join(gaveUp);
     }),
   );
 

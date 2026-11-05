@@ -337,6 +337,8 @@ const CLAUDE_STOP_CONFIRM_TIMEOUT_MS = 10_000;
 const CLAUDE_STDERR_TAIL_LENGTH = 2_048;
 // The process group is killed on exit, so its stderr closes promptly.
 const CLAUDE_STDERR_DRAIN_TIMEOUT = Duration.seconds(1);
+// Past the SDK's SIGTERM at 2 s and SIGKILL 5 s later, with room for the group watcher's kill.
+const CLAUDE_PROCESS_EXIT_TIMEOUT = Duration.seconds(15);
 // Claude Code's refusal of bypassPermissions as root, which it explains only on stderr.
 const CLAUDE_ROOT_REFUSAL =
   "--dangerously-skip-permissions cannot be used with root/sudo privileges for security reasons";
@@ -549,6 +551,8 @@ export interface ClaudeAgentSdkQuerySession {
   ) => Effect.Effect<boolean, ClaudeAgentSdkQueryRunnerError>;
   readonly interrupt: Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   readonly close: Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
+  /** Resolves once the CLI process has exited, or after the kill escalation has had its time. */
+  readonly awaitExit?: Effect.Effect<void>;
 }
 
 type ClaudeQueryStreamExit = Exit.Exit<void, ClaudeAgentSdkQueryRunnerError>;
@@ -1315,6 +1319,11 @@ export const layerQueryRunner: Layer.Layer<
                   },
                 }),
               ),
+            ),
+            // The SDK's close only schedules SIGTERM, then SIGKILL 5 s later.
+            awaitExit: Effect.promise(() => processExit ?? Promise.resolve()).pipe(
+              Effect.timeoutOption(CLAUDE_PROCESS_EXIT_TIMEOUT),
+              Effect.asVoid,
             ),
           } satisfies ClaudeAgentSdkQuerySession;
         },
@@ -11266,6 +11275,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const existing = yield* Ref.get(queryContext);
           if (existing !== null) {
             yield* existing.query.close.pipe(Effect.ignore);
+            // A session released for a fresh one must not leave its process behind: FirstMate's
+            // session lock belongs to the process, and a successor that loses it is read-only.
+            yield* existing.query.awaitExit ?? Effect.void;
           }
           yield* Effect.yieldNow;
           yield* queryRunner.assertComplete.pipe(

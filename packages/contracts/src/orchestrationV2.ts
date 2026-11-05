@@ -1802,6 +1802,8 @@ export const OrchestrationV2TurnItem = Schema.Union([
     ...OrchestrationV2TurnItemBaseFields,
     type: Schema.Literal("system_notice"),
     message: Schema.String,
+    /** Marks where a context refresh started a fresh agent session; history pages stop here. */
+    sessionBoundary: Schema.optional(Schema.Literal(true)),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -1969,6 +1971,7 @@ export const OrchestrationV2DomainEvent = Schema.Union([
       "thread.interaction-mode-updated",
       "thread.model-selection-updated",
       "thread.provider-switched",
+      "thread.session-replaced",
       "thread.guest-share-updated",
     ]),
     payload: OrchestrationV2AppThread,
@@ -2672,6 +2675,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     ...OrchestrationV2TurnItemJsonBaseFields,
     type: Schema.Literal("system_notice"),
     message: Schema.String,
+    sessionBoundary: Schema.optional(Schema.Literal(true)),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
@@ -2894,6 +2898,7 @@ export const OrchestrationV2DomainEventJson = Schema.Union([
       "thread.interaction-mode-updated",
       "thread.model-selection-updated",
       "thread.provider-switched",
+      "thread.session-replaced",
       "thread.guest-share-updated",
     ]),
     payload: OrchestrationV2AppThreadJson,
@@ -3101,6 +3106,15 @@ export const OrchestrationV2Command = Schema.Union([
     commandId: CommandId,
     threadId: ThreadId,
     reason: Schema.Literal("user"),
+  }),
+  /**
+   * Starts a context refresh: one `/stow` turn on the current agent session, then a fresh
+   * session on the same thread whose first message is `ahoy`. Refused while a turn runs.
+   */
+  Schema.Struct({
+    type: Schema.Literal("thread.session.refresh"),
+    commandId: CommandId,
+    threadId: ThreadId,
   }),
   Schema.Struct({
     type: Schema.Literal("thread.snooze"),
@@ -3501,6 +3515,21 @@ export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
 
 // Excluded from dispatchCommand so only the server can send these.
 const OrchestrationV2InternalCommand = Schema.Union([
+  /**
+   * Ends a context refresh once its `/stow` turn settled. `replaced` drops the thread's active
+   * provider thread, so the next turn opens a fresh session, and writes the session boundary
+   * notice; `kept` leaves the session alone and says why in the thread.
+   */
+  Schema.Struct({
+    type: Schema.Literal("thread.session.refresh.complete"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    /** The provider thread the `/stow` turn ran on; the refresh is void if it is no longer active. */
+    providerThreadId: Schema.NullOr(ProviderThreadId),
+    runId: RunId,
+    outcome: Schema.Literals(["replaced", "kept"]),
+    detail: Schema.optional(Schema.String),
+  }),
   // Guest share commands the server issues after checking T3 Connect and the guest token.
   Schema.Struct({
     type: Schema.Literal("thread.guest-share.open"),

@@ -225,6 +225,38 @@ continuation wakes it). The project's continue-after-update setting
 and thread reads report `coordinator`. Code:
 `notifyCrewCoordinators` in `apps/server/src/orchestration-v2/RestartContinuation.ts`.
 
+## Refresh context on the FirstMate thread
+
+The FirstMate thread keeps one id and one chat for its whole life, while the
+agent session behind it is replaced on demand. The thread header of a pinned
+coordinator thread (`t3_thread_configure` `coordinator: true`) has a Refresh
+context button, greyed out while a turn runs. Clicking it:
+
+1. sends one `/stow` turn to the current session, attributed to T3 Code;
+2. when that turn completes, ends the agent's process and waits for it to exit,
+   because FirstMate's session lock belongs to the live process and a session
+   that loses it comes up read-only;
+3. drops the thread's active provider thread, so the next turn opens a fresh
+   session with no earlier chat (no handoff, no resume), and writes a dated
+   "New session" divider into the chat;
+4. sends `ahoy` as the fresh session's first message, which FirstMate answers
+   with Bearings.
+
+If the `/stow` turn fails, is stopped, or the agent is still busy, nothing is
+swapped and a notice under that turn says so. A server restart in the middle of
+a refresh drops it; press the button again. The thread opens at its latest
+divider, and "Load previous session" pages back one session at a time through
+the existing history paging; the divider is a `system_notice` item with
+`sessionBoundary: true`, which upstream decoders ignore, so the App Store mobile
+app shows it as a plain notice and pages the same way. Mobile has no button.
+Idle compaction and the idle release of the agent are unchanged. The Claude
+adapter now waits for its CLI process to exit when a session closes, for every
+release path. Code: `thread.session.refresh` in
+`apps/server/src/orchestration-v2/Orchestrator.ts`,
+`apps/server/src/orchestration-v2/SessionRefreshService.ts`, the boundary stop
+in `apps/server/src/orchestration-v2/threadHistoryPaging.ts`, and
+`ChatHeader.tsx` on the web.
+
 ## Per-thread environment and instructions
 
 An agent that launches a thread can give it its own environment variables and

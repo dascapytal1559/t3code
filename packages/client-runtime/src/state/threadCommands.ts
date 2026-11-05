@@ -42,6 +42,7 @@ import {
   setThreadInteractionMode,
   setThreadRuntimeMode,
   pinThread,
+  refreshThreadSession,
   reorderPinnedThread,
   reorderActiveThread,
   setThreadAutoSettle,
@@ -164,6 +165,12 @@ export function createThreadEnvironmentAtoms<R, E>(
     unsettle: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:unsettle",
       execute: unsettleThread,
+      scheduler,
+      concurrency,
+    }),
+    refreshSession: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:refresh-session",
+      execute: refreshThreadSession,
       scheduler,
       concurrency,
     }),

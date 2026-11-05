@@ -174,6 +174,12 @@ import * as RunExecutionService from "./RunExecutionService.ts";
 import { ProviderSessionManagerV2 } from "./ProviderSessionManager.ts";
 import { ProviderSwitchServiceV2 } from "./ProviderSwitchService.ts";
 import { isAutomaticCompletionRun, queuedRunsInDeliveryOrder } from "./QueuedRunOrder.ts";
+import {
+  SESSION_BOUNDARY_NOTICE,
+  SESSION_REFRESH_STOW_TEXT,
+  sessionRefreshKeptNotice,
+  sessionRefreshStowMessageId,
+} from "./SessionRefresh.ts";
 import { isRuntimePolicyAboveCeilingError, RuntimePolicyV2 } from "./RuntimePolicy.ts";
 import {
   endOrphanedNativeSubagent,
@@ -289,7 +295,7 @@ export class OrchestratorThreadAboveModeLimitError extends Schema.TaggedError<Or
   }
 }
 
-const isOrchestratorDispatchError = Schema.is(OrchestratorDispatchError);
+export const isOrchestratorDispatchError = Schema.is(OrchestratorDispatchError);
 
 /** The ceiling refusal under however many dispatch errors wrapped it on the way out. */
 function runtimePolicyCeilingCause(error: unknown) {
@@ -596,6 +602,8 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.interrupt.unresponsive":
     case "thread.stop":
     case "provider.switch":
+    case "thread.session.refresh":
+    case "thread.session.refresh.complete":
       return command.threadId;
     case "delegated_task.request":
     case "delegated_task.remote.request":
@@ -4345,6 +4353,160 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       yield* Ref.update(effects, (existing) => [...existing, pendingEffect]);
     },
   );
+
+  // The refresh is the `/stow` turn itself; SessionRefreshService completes it once that run ends.
+  const dispatchSessionRefresh = Effect.fn("orchestrationV2.dispatch.sessionRefresh")(function* (
+    command: Extract<OrchestrationV2Command, { readonly type: "thread.session.refresh" }>,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+  ) {
+    const projection = yield* projectionStore
+      .getThreadRecords(command.threadId, ["runs", "providerThreads"], { turnItemTypes: [] })
+      .pipe(
+        Effect.mapError(
+          (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+        ),
+      );
+    const reject = (cause: string) =>
+      new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause,
+      });
+    if (projection.thread.archivedAt !== null) {
+      return yield* reject(`Thread ${command.threadId} is archived.`);
+    }
+    if (projection.runs.some((run) => isActiveRun(run) || run.status === "queued")) {
+      return yield* reject(
+        "A turn is running. Wait for it to finish, or press Stop, then refresh the context again.",
+      );
+    }
+    if (
+      !projection.providerThreads.some(
+        (candidate) => candidate.id === projection.thread.activeProviderThreadId,
+      )
+    ) {
+      return yield* reject("This thread has no agent session to refresh yet.");
+    }
+    return yield* dispatchMessage(
+      {
+        type: "message.dispatch",
+        commandId: command.commandId,
+        threadId: command.threadId,
+        messageId: sessionRefreshStowMessageId(command.commandId),
+        text: SESSION_REFRESH_STOW_TEXT,
+        attachments: [],
+        createdBy: "agent",
+        creationSource: "server",
+        dispatchMode: { type: "start_immediately" },
+      },
+      events,
+      effects,
+    );
+  });
+
+  const dispatchSessionRefreshComplete = Effect.fn(
+    "orchestrationV2.dispatch.sessionRefreshComplete",
+  )(function* (
+    command: Extract<
+      OrchestrationV2InternalCommand,
+      { readonly type: "thread.session.refresh.complete" }
+    >,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+  ) {
+    const projection = yield* projectionStore
+      .getThreadRecords(command.threadId, ["runs"], { turnItemTypes: [] })
+      .pipe(
+        Effect.mapError(
+          (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+        ),
+      );
+    const reject = (cause: string) =>
+      new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause,
+      });
+    const stowRun = projection.runs.find((run) => run.id === command.runId);
+    if (stowRun === undefined) {
+      return yield* reject(`Run ${command.runId} does not belong to thread ${command.threadId}.`);
+    }
+    const now = yield* DateTime.now;
+    const { thread } = projection;
+    // Items take their place from their run, so the notice closes the `/stow` turn.
+    const notice = (
+      message: string,
+    ): Extract<OrchestrationV2TurnItem, { readonly type: "system_notice" }> => ({
+      id: idAllocator.derive.runSignalTurnItem({ runId: command.runId, signal: "session-refresh" }),
+      threadId: command.threadId,
+      runId: stowRun.id,
+      nodeId: stowRun.rootNodeId,
+      providerThreadId: null,
+      providerTurnId: null,
+      nativeItemRef: null,
+      parentItemId: null,
+      ordinal: 0,
+      status: "completed",
+      title: null,
+      startedAt: now,
+      completedAt: now,
+      updatedAt: now,
+      type: "system_notice",
+      message,
+    });
+    if (command.outcome === "kept") {
+      yield* emit(
+        events,
+        command,
+      )({
+        type: "turn-item.updated",
+        threadId: command.threadId,
+        runId: stowRun.id,
+        ...(stowRun.rootNodeId === null ? {} : { nodeId: stowRun.rootNodeId }),
+        providerInstanceId: thread.providerInstanceId,
+        occurredAt: now,
+        payload: {
+          ...notice(sessionRefreshKeptNotice(command.detail ?? "the /stow turn did not finish.")),
+          ordinal: yield* nextTurnItemOrdinal(projection),
+        },
+      });
+      return;
+    }
+    if (thread.activeProviderThreadId !== command.providerThreadId) {
+      return yield* reject(
+        `Thread ${command.threadId} moved to another agent session during the refresh.`,
+      );
+    }
+    if (projection.runs.some((run) => isActiveRun(run) || run.status === "queued")) {
+      return yield* reject(`Thread ${command.threadId} started a turn during the refresh.`);
+    }
+    yield* emit(
+      events,
+      command,
+    )({
+      type: "thread.session-replaced",
+      threadId: command.threadId,
+      providerInstanceId: thread.providerInstanceId,
+      occurredAt: now,
+      payload: { ...thread, activeProviderThreadId: null, updatedAt: now },
+    });
+    yield* emit(
+      events,
+      command,
+    )({
+      type: "turn-item.updated",
+      threadId: command.threadId,
+      runId: stowRun.id,
+      ...(stowRun.rootNodeId === null ? {} : { nodeId: stowRun.rootNodeId }),
+      providerInstanceId: thread.providerInstanceId,
+      occurredAt: now,
+      payload: {
+        ...notice(SESSION_BOUNDARY_NOTICE),
+        ordinal: yield* nextTurnItemOrdinal(projection),
+        sessionBoundary: true,
+      },
+    });
+  });
 
   const dispatchThreadProjectAdoptFolder = Effect.fn(
     "orchestrationV2.dispatch.threadProjectAdoptFolder",
@@ -13264,6 +13426,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         break;
       case "provider-session.detach":
         yield* dispatchProviderSessionDetach(command, events, effects);
+        break;
+      case "thread.session.refresh":
+        cancelUnsettledEffects = yield* dispatchSessionRefresh(command, events, effects);
+        break;
+      case "thread.session.refresh.complete":
+        yield* dispatchSessionRefreshComplete(command, events);
         break;
       case "thread.project.adopt-folder":
         yield* dispatchThreadProjectAdoptFolder(command, events);

@@ -10,7 +10,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, RefreshCwIcon } from "lucide-react";
 import {
   memo,
   useEffect,
@@ -56,6 +56,10 @@ interface ChatHeaderProps {
   onNewThreadInProject: () => void;
   onOpenProjectSettings?: (() => void) | undefined;
   onFindInThread?: ((threadRef: ScopedThreadRef) => void) | undefined;
+  /** Set on a coordinator thread: stow the agent session and start a fresh one. */
+  onRefreshContext?: (() => void) | undefined;
+  /** The refresh waits for the running turn. */
+  refreshContextDisabled?: boolean | undefined;
 }
 
 function resolveRenameCommit(input: {
@@ -83,6 +87,8 @@ export const ChatHeader = memo(function ChatHeader({
   onNewThreadInProject,
   onOpenProjectSettings,
   onFindInThread,
+  onRefreshContext,
+  refreshContextDisabled = false,
 }: ChatHeaderProps) {
   const activeProjectName = activeProject?.isScratch ? "No project" : activeProject?.title;
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
@@ -430,6 +436,28 @@ export const ChatHeader = memo(function ChatHeader({
           ) : null}
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
+      {onRefreshContext ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                aria-label="Refresh context"
+                disabled={refreshContextDisabled}
+                onClick={onRefreshContext}
+                className="inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-default disabled:opacity-50 disabled:hover:text-muted-foreground"
+              />
+            }
+          >
+            <RefreshCwIcon aria-hidden className="size-3.5" />
+          </TooltipTrigger>
+          <TooltipPopup side="bottom">
+            {refreshContextDisabled
+              ? "Refresh context once the turn ends"
+              : "Refresh context: stow, then start a fresh session"}
+          </TooltipPopup>
+        </Tooltip>
+      ) : null}
       {isServerThread ? <GuestShareIndicator threadRef={activeThreadRef} /> : null}
     </div>
   );

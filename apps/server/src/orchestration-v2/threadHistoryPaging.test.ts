@@ -916,4 +916,110 @@ describe("threadHistoryPaging", () => {
       detailInTurnItem: true,
     });
   });
+
+  it("opens at the latest session boundary and pages one earlier session at a time", () => {
+    const boundary = (index: number): OrchestrationV2ProjectedTurnItem => {
+      const row = makeRow(index);
+      return {
+        ...row,
+        item: {
+          ...row.item,
+          type: "system_notice",
+          message: "New session",
+          sessionBoundary: true,
+        },
+      } as OrchestrationV2ProjectedTurnItem;
+    };
+    // Forty sessions of a hundred user turns each, a divider before every session but the first.
+    const sessionTurns = 100;
+    const sessions = 40;
+    const items: OrchestrationV2ProjectedTurnItem[] = [];
+    const boundaryIds: string[] = [];
+    for (let session = 0; session < sessions; session += 1) {
+      if (session > 0) {
+        const divider = boundary(items.length);
+        boundaryIds.push(String(divider.sourceItemId));
+        items.push(divider);
+      }
+      for (let turn = 0; turn < sessionTurns; turn += 1) {
+        items.push(makeTurnStart(items.length, "user"), makeRow(items.length + 1));
+      }
+    }
+    // Generous limits, so only the boundary decides where a page ends.
+    const generous = { maxUserTurns: 10_000, maxItems: 100_000, maxEncodedBytes: 100_000_000 };
+    const full = makeProjection(items);
+    const bounded = buildBoundedThreadProjection({
+      projection: full,
+      snapshotSequence: 1,
+      policy: generous,
+    });
+    const opened = bounded.projection.visibleTurnItems;
+    expect(String(opened[0]?.sourceItemId)).toBe(boundaryIds.at(-1));
+    expect(opened).toHaveLength(sessionTurns * 2 + 1);
+    expect(bounded.hasMoreHistory).toBe(true);
+
+    // Each earlier page is exactly one session, back to the thread's start.
+    const pageStarts: string[] = [];
+    let cursor = bounded.historyCursor;
+    while (cursor !== null) {
+      const page = selectHistoryPageFromCursor({
+        items,
+        cursor,
+        snapshotSequence: 1,
+        policy: generous,
+      });
+      pageStarts.push(String(page.items[0]?.sourceItemId));
+      expect(page.items).toHaveLength(sessionTurns * 2 + (page.hasMoreHistory ? 1 : 0));
+      cursor = page.hasMoreHistory ? page.nextCursor : null;
+    }
+    expect(pageStarts).toEqual([
+      ...boundaryIds.slice(0, -1).reverse(),
+      String(items[0]!.sourceItemId),
+    ]);
+
+    // A targeted page reaches its entry across a boundary; an untargeted one stops there.
+    const short = [
+      makeTurnStart(0, "user"),
+      makeRow(1),
+      boundary(2),
+      makeTurnStart(3, "user"),
+      makeRow(4),
+      boundary(5),
+      makeTurnStart(6, "user"),
+      makeRow(7),
+    ];
+    const shortCursor = encodeThreadHistoryCursor({
+      snapshotSequence: 1,
+      sourceThreadId: THREAD,
+      sourceItemId: short[5]!.sourceItemId,
+      position: 5,
+    });
+    const target = short[0]!;
+    const targeted = selectHistoryPageFromCursor({
+      items: short,
+      cursor: shortCursor,
+      snapshotSequence: 1,
+      throughEntryId: String(target.item.type === "user_message" ? target.item.messageId : ""),
+    });
+    expect(targeted.items.map((row) => String(row.sourceItemId))).toEqual(
+      short.slice(0, 5).map((row) => String(row.sourceItemId)),
+    );
+    const untargeted = selectHistoryPageFromCursor({
+      items: short,
+      cursor: shortCursor,
+      snapshotSequence: 1,
+    });
+    expect(untargeted.items.map((row) => String(row.sourceItemId))).toEqual(
+      short.slice(2, 5).map((row) => String(row.sourceItemId)),
+    );
+
+    // Ordinary page limits still cut inside a session longer than a page.
+    const limited = selectHistoryPageFromCursor({
+      items,
+      cursor: bounded.historyCursor!,
+      snapshotSequence: 1,
+    });
+    expect(limited.items.length).toBeLessThan(sessionTurns);
+    expect(limited.items.some((row) => boundaryIds.includes(String(row.sourceItemId)))).toBe(false);
+  });
 });
