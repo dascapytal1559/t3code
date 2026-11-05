@@ -519,6 +519,30 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
       ),
     );
 
+    it.effect("gives only the firstmate MCP client a ten-year session", () =>
+      Effect.gen(function* () {
+        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+        const now = yield* DateTime.now;
+        const lifeInDays = (label: string) =>
+          serverAuth
+            .issueMcpClientSession({
+              label,
+              access: "read-only",
+              peerLink: false,
+              client: { deviceType: "bot" },
+            })
+            .pipe(
+              Effect.map(
+                (issued) =>
+                  (issued.expiresAt.epochMilliseconds - now.epochMilliseconds) / 86_400_000,
+              ),
+            );
+
+        expect(yield* lifeInDays("firstmate")).toBe(3650);
+        expect(yield* lifeInDays("t3 thread cli")).toBe(30);
+      }).pipe(Effect.provide(layerEnvironmentAuth())),
+    );
+
     it.effect("issues startup pairing URLs that bootstrap administrative sessions", () =>
       Effect.gen(function* () {
         const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;

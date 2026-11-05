@@ -321,6 +321,17 @@ not count as the user opening the thread. Clients detect it by `mark_read` in th
 tool's `tools/list` `action` enum. Upstream has no equivalent in the
 version last synced (`cefb544af3`). Code: `apps/server/src/mcp/toolkits/thread/handlers.ts`.
 
+## FirstMate's sign-in lasts 10 years
+
+Upstream gives every MCP sign-in a 30-day pass, most likely so a leaked or
+forgotten pass does not stay valid forever. Here the pass for the client named
+`firstmate` lasts 10 years; every other client stays at 30 days. Anything able to
+read that pass on this machine already runs as the owner and could mint a new
+one, and a pass can still be revoked, so the short life added little and a
+renewal job was more machinery than it saved. The match is on the exact label
+`firstmate`, which is the `client_name` FirstMate signs in with. Code:
+`apps/server/src/auth/EnvironmentAuth.ts` (`FIRSTMATE_SESSION_TTL`).
+
 ## Telemetry off by default
 
 The fork sends no product analytics and no T3 Connect relay traces unless you

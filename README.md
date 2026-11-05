@@ -10,6 +10,7 @@ For FirstMate:
 - FirstMate can answer a worker's permission prompts, and hears its questions the moment they appear.
 - Per-thread settings for agent-launched workers, and idle agents can be kept for good.
 - FirstMate can mark a worker's thread read, clearing its Done card without opening the app.
+- FirstMate's sign-in lasts 10 years instead of 30 days, so it never needs renewing.
 
 Also:
 
