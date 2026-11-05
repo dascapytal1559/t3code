@@ -239,8 +239,9 @@ context button, greyed out while a turn runs. Clicking it:
 3. drops the thread's active provider thread, so the next turn opens a fresh
    session with no earlier chat (no handoff, no resume), and writes a dated
    "New session" divider into the chat;
-4. sends `ahoy` as the fresh session's first message, which FirstMate answers
-   with Bearings.
+4. sends `Context refreshed.` as the fresh session's first message. A first
+   message is what starts the session; it is not `ahoy`, so FirstMate does not
+   run Bearings on the new session.
 
 If the `/stow` turn fails, is stopped, or the agent is still busy, nothing is
 swapped and a notice under that turn says so. A server restart in the middle of

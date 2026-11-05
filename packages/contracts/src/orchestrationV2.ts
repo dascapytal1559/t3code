@@ -3109,7 +3109,7 @@ export const OrchestrationV2Command = Schema.Union([
   }),
   /**
    * Starts a context refresh: one `/stow` turn on the current agent session, then a fresh
-   * session on the same thread whose first message is `ahoy`. Refused while a turn runs.
+   * session on the same thread whose first message is `Context refreshed.`. Refused while a turn runs.
    */
   Schema.Struct({
     type: Schema.Literal("thread.session.refresh"),

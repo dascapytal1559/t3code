@@ -319,7 +319,7 @@ const refresh = (orchestrator: Orchestrator.OrchestratorV2["Service"]) =>
   });
 
 describe("context refresh", () => {
-  it.live("stows, ends the old session before the fresh one starts, then opens with ahoy", () =>
+  it.live("stows, ends the old session before the fresh one starts, then opens without ahoy", () =>
     run("replace", {}, ({ orchestrator, log, injectedHistory, send, waitRun }) =>
       Effect.gen(function* () {
         yield* send(1, "Hello");
@@ -342,8 +342,8 @@ describe("context refresh", () => {
         );
         const texts = new Map(after.messages.map((message) => [message.runId, message.text]));
         assert.equal(texts.get(after.runs[1]!.id), "/stow");
-        assert.equal(texts.get(after.runs[2]!.id), "ahoy");
-        // The stow turn ran on the old session; ahoy on a new provider thread.
+        assert.equal(texts.get(after.runs[2]!.id), "Context refreshed.");
+        // The stow turn ran on the old session; the opening message on a new provider thread.
         assert.equal(after.runs[1]!.providerThreadId, oldProviderThreadId);
         assert.notEqual(after.runs[2]!.providerThreadId, oldProviderThreadId);
         assert.equal(after.thread.activeProviderThreadId, after.runs[2]!.providerThreadId);
@@ -354,11 +354,11 @@ describe("context refresh", () => {
         const boundaryIndex = after.visibleTurnItems.findIndex(
           (row) => row.item.id === boundary!.id,
         );
-        const ahoyIndex = after.visibleTurnItems.findIndex(
-          (row) => row.item.type === "user_message" && row.item.text === "ahoy",
+        const openingIndex = after.visibleTurnItems.findIndex(
+          (row) => row.item.type === "user_message" && row.item.text === "Context refreshed.",
         );
         assert.isAbove(boundaryIndex, 0);
-        assert.isAbove(ahoyIndex, boundaryIndex);
+        assert.isAbove(openingIndex, boundaryIndex);
 
         // Fresh: nothing was injected, and the new native thread is not the old one.
         assert.equal(yield* Ref.get(injectedHistory), 0);

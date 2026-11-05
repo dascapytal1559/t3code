@@ -21,7 +21,7 @@ const isTerminalRunStatus = (status: OrchestrationV2Run["status"]) =>
 /**
  * Finishes a context refresh once its `/stow` turn ends: releases the old agent session and
  * waits for its process to exit, drops it from the thread, then opens the fresh session with
- * `ahoy`. A `/stow` turn that did not complete keeps the session and says so in the thread.
+ * `Context refreshed.`. A `/stow` turn that did not complete keeps the session and says so in the thread.
  * Nothing is remembered across a server restart; a refresh cut by one is simply not finished.
  */
 export const make = Effect.gen(function* () {

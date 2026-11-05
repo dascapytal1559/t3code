@@ -2,8 +2,8 @@ import { MessageId, type CommandId, type RunId } from "@t3tools/contracts";
 
 /** The turn that lets FirstMate stow its session before the context is dropped. */
 export const SESSION_REFRESH_STOW_TEXT = "/stow";
-/** The fresh session's first message; FirstMate answers a session's first `ahoy` with Bearings. */
-export const SESSION_REFRESH_OPENING_TEXT = "ahoy";
+/** The fresh session's first message; it only starts the session. FirstMate answers `ahoy` with Bearings, so never that. */
+export const SESSION_REFRESH_OPENING_TEXT = "Context refreshed.";
 export const SESSION_BOUNDARY_NOTICE = "New session";
 
 const STOW_MESSAGE_PREFIX = "session-refresh:stow:";
