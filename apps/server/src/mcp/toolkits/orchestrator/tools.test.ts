@@ -23,6 +23,18 @@ it("refuses a t3_thread_update whose fields do not fit its action", () => {
   );
   expect(Exit.isFailure(decode({ action: "rename" }))).toBe(true);
   expect(Exit.isFailure(decode({ action: "regenerate_title", title: "New" }))).toBe(true);
+  expect(Exit.isFailure(decode({ action: "set_status_label" }))).toBe(true);
+  expect(Exit.isFailure(decode({ action: "clear_status_label", statusLabel: "Testing" }))).toBe(
+    true,
+  );
+  expect(Exit.isFailure(decode({ action: "rename", title: "New", statusLabel: "Testing" }))).toBe(
+    true,
+  );
+  expect(Exit.isFailure(decode({ action: "set_status_label", statusLabel: "x".repeat(33) }))).toBe(
+    true,
+  );
+  expect(Exit.isSuccess(decode({ action: "set_status_label", statusLabel: "Testing" }))).toBe(true);
+  expect(Exit.isSuccess(decode({ action: "clear_status_label" }))).toBe(true);
   expect(Exit.isSuccess(decode({ action: "rename", title: "New", environmentId: undefined }))).toBe(
     true,
   );

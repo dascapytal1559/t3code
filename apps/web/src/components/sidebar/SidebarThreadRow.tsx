@@ -109,6 +109,7 @@ import {
   CrewTreeGutter,
   type CrewTreePlace,
 } from "./SidebarCrewTree";
+import { resolveCrewStatusLabel } from "./coordinatorGroup.logic";
 import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
@@ -799,6 +800,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                         }
                       : null;
   const isWokeStatus = topStatus?.icon === "woke";
+  const crewStatusLabel = resolveCrewStatusLabel({
+    crew: props.crewTree !== undefined,
+    statusLabel: thread.statusLabel,
+    status,
+    isWoke,
+  });
 
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
     effectiveEnvMode: thread.worktreePath === null ? "local" : "worktree",
@@ -1032,7 +1039,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
 
   const accessibility = resolveSidebarRowAccessibility({
     title: thread.title,
-    statusLabel: topStatus?.label ?? null,
+    statusLabel: crewStatusLabel ?? topStatus?.label ?? null,
     projectDisplayName: props.projectDisplayName,
     isActive: props.isActive,
   });
@@ -1529,7 +1536,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       snoozeMenuOpen && "pointer-events-none absolute right-0 opacity-0",
                     )}
                   >
-                    {topStatus ? (
+                    {crewStatusLabel !== null ? (
+                      <span className="max-w-32 truncate font-medium">{crewStatusLabel}</span>
+                    ) : topStatus ? (
                       isWokeStatus ? (
                         <Tooltip>
                           <TooltipTrigger

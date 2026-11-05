@@ -1505,7 +1505,12 @@ const UpstreamLineage = Schema.Struct({
   rootThreadId: ThreadId,
   sideChat: Schema.optional(Schema.Boolean),
 });
-const upstreamShaped = <F extends { readonly lineage: Schema.Top }>(fields: F) => ({
+const upstreamShaped = <
+  F extends { readonly lineage: Schema.Top; readonly statusLabel: Schema.Top },
+>({
+  statusLabel: _statusLabel,
+  ...fields
+}: F) => ({
   ...fields,
   lineage: UpstreamLineage,
 });
@@ -1585,6 +1590,52 @@ it.effect(
         assert.ok(Result.isFailure(stored), "a refused crew thread must not be created");
       }
     }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("a status label sets and clears without counting as activity or upsetting upstream", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const threadId = ThreadId.make("thread:status-label");
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("create:status-label"),
+      threadId,
+      projectId: ProjectId.make("project:crew"),
+      title: "Plain title",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "agent",
+      creationSource: "mcp",
+    });
+    const { shell: unlabeled } = yield* crewReadsDecodeUpstream(threadId, "active");
+    assert.equal(unlabeled.statusLabel, undefined);
+
+    const label = (statusLabel: string | null) =>
+      TestClock.adjust("1 minute").pipe(
+        Effect.andThen(
+          orchestrator.dispatch({
+            type: "thread.metadata.update",
+            commandId: CommandId.make(`label:${statusLabel}`),
+            threadId,
+            statusLabel,
+          }),
+        ),
+        Effect.andThen(crewReadsDecodeUpstream(threadId, "active")),
+      );
+
+    const labeled = yield* label("Testing");
+    assert.equal(labeled.thread.statusLabel, "Testing");
+    assert.equal(labeled.shell.statusLabel, "Testing");
+    assert.equal(labeled.shell.title, "Plain title");
+    assert.deepEqual(labeled.shell.updatedAt, unlabeled.updatedAt);
+
+    const cleared = yield* label(null);
+    assert.equal(cleared.shell.statusLabel ?? null, null);
+    assert.deepEqual(cleared.shell.updatedAt, unlabeled.updatedAt);
+  }).pipe(Effect.provide(layerTest)),
 );
 
 it.effect("reads a crew thread stored with legacy crew lineage as crewOf", () =>

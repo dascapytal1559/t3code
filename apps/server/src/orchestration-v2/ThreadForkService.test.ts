@@ -210,7 +210,7 @@ it.effect("starts a fork without the source thread's pending title regeneration"
 );
 
 it.effect.each([{ sideChat: false }, { sideChat: true }])(
-  "a fork (side chat: $sideChat) keeps the source's environment but not its coordinator pin or crew link",
+  "a fork (side chat: $sideChat) keeps the source's environment but not its coordinator pin, crew link or card label",
   ({ sideChat }) =>
     Effect.gen(function* () {
       const sourceRun = makeSourceRun("completed");
@@ -220,6 +220,7 @@ it.effect.each([{ sideChat: false }, { sideChat: true }])(
           ...makeSourceThread(),
           coordinator: true,
           crewOf: ThreadId.make("thread:fork-source-coordinator"),
+          statusLabel: "Testing",
           environment: { FM_TASK_ID: "task-1" },
           instructions: "The launch brief is first-party.",
         },
@@ -228,6 +229,7 @@ it.effect.each([{ sideChat: false }, { sideChat: true }])(
 
       assert.isUndefined(result.targetThread.coordinator);
       assert.isUndefined(result.targetThread.crewOf);
+      assert.isUndefined(result.targetThread.statusLabel);
       assert.deepEqual(result.targetThread.environment, { FM_TASK_ID: "task-1" });
       assert.equal(result.targetThread.instructions, "The launch brief is first-party.");
     }),

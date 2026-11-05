@@ -1590,6 +1590,9 @@ export function threadShellFromProjection(
     lineage: projection.thread.lineage,
     ...(projection.thread.coordinator === true ? { coordinator: true } : {}),
     ...(projection.thread.crewOf === undefined ? {} : { crewOf: projection.thread.crewOf }),
+    ...(projection.thread.statusLabel == null
+      ? {}
+      : { statusLabel: projection.thread.statusLabel }),
     forkedFrom: projection.thread.forkedFrom,
     activeProviderThreadId: projection.thread.activeProviderThreadId,
     ...(projection.thread.historyOrigin === undefined
@@ -1873,6 +1876,9 @@ function shellFromState(input: {
     lineage: input.state.thread.lineage,
     ...(input.state.thread.coordinator === true ? { coordinator: true } : {}),
     ...(input.state.thread.crewOf === undefined ? {} : { crewOf: input.state.thread.crewOf }),
+    ...(input.state.thread.statusLabel == null
+      ? {}
+      : { statusLabel: input.state.thread.statusLabel }),
     forkedFrom: input.state.thread.forkedFrom,
     activeProviderThreadId: input.state.thread.activeProviderThreadId,
     ...(input.state.thread.historyOrigin === undefined

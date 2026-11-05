@@ -7,6 +7,7 @@ import {
   ThreadId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
+import { ThreadStatusLabel } from "./orchestrationV2.ts";
 import { ThreadLinkedPullRequest } from "./threadPullRequest.ts";
 import { ThreadTitleRegeneration } from "./threadTitle.ts";
 
@@ -40,19 +41,30 @@ const ThreadMetadataClientRequestId = TrimmedNonEmptyString.check(Schema.isMaxLe
   )
   .annotate({ description: "Stable idempotency key to reuse when retrying this mutation." });
 
-export const ThreadMetadataMcpAction = Schema.Literals(["rename", "regenerate_title"]);
+export const ThreadMetadataMcpAction = Schema.Literals([
+  "rename",
+  "regenerate_title",
+  "set_status_label",
+  "clear_status_label",
+]);
 export type ThreadMetadataMcpAction = typeof ThreadMetadataMcpAction.Type;
 
 export const ThreadMetadataMcpUpdateInput = Schema.Struct({
   threadId: Schema.optional(ThreadId),
   action: ThreadMetadataMcpAction,
   title: Schema.optional(ThreadMetadataTitle),
+  statusLabel: Schema.optional(
+    ThreadStatusLabel.annotate({
+      description: "Short crew card status. Required only when action is set_status_label.",
+    }),
+  ),
   clientRequestId: Schema.optional(ThreadMetadataClientRequestId),
 }).check(
   Schema.makeFilter((input) =>
-    (input.action === "rename") === (input.title !== undefined)
+    (input.action === "rename") === (input.title !== undefined) &&
+    (input.action === "set_status_label") === (input.statusLabel !== undefined)
       ? true
-      : "rename requires title; regenerate_title does not accept one.",
+      : "rename requires title and set_status_label requires statusLabel; no other action accepts either.",
   ),
 );
 export type ThreadMetadataMcpUpdateInput = typeof ThreadMetadataMcpUpdateInput.Type;
@@ -63,6 +75,8 @@ export const ThreadMetadataMcpUpdateResult = Schema.Struct({
   commandId: CommandId,
   sequence: NonNegativeInt,
   title: Schema.String,
+  /** Linked servers without it omit it. */
+  statusLabel: Schema.optional(ThreadStatusLabel),
   titleRegeneration: Schema.NullOr(ThreadTitleRegeneration),
   linkedPullRequest: Schema.NullOr(ThreadLinkedPullRequest),
   updatedAt: IsoDateTime,

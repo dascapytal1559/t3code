@@ -1,6 +1,6 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import type { SidebarSection } from "../Sidebar.logic";
+import type { SidebarSection, SidebarThreadStatus } from "../Sidebar.logic";
 
 /**
  * The coordinator a thread names, if any. A coordinator is an unarchived thread pinned as its
@@ -82,6 +82,21 @@ export function isAppCrewmate<T extends CrewThread>(
     if (member.environmentId === environmentId && member.id === threadId) return true;
   }
   return false;
+}
+
+/**
+ * The label a crew card shows in its status slot. It stands in for a calm status or the age only:
+ * a label is a coordinator's note and can lag, so a thread that needs the user still says so.
+ */
+export function resolveCrewStatusLabel(input: {
+  readonly crew: boolean;
+  readonly statusLabel: string | undefined;
+  readonly status: SidebarThreadStatus;
+  readonly isWoke: boolean;
+}): string | null {
+  if (!input.crew || input.statusLabel === undefined || input.isWoke) return null;
+  const calm = input.status === "working" || input.status === "waiting" || input.status === "ready";
+  return calm ? input.statusLabel : null;
 }
 
 /**

@@ -7,6 +7,7 @@ import {
   isAppCrewmate,
   resolveAppCoordinatorGroup,
   resolveCoordinatorGroup,
+  resolveCrewStatusLabel,
   resolveLaunchCoordinator,
 } from "./coordinatorGroup.logic";
 
@@ -187,6 +188,38 @@ describe("isAppCrewmate", () => {
     const main = thread("Captain's session", { archivedAt: "2026-10-28T11:00:00.000Z" });
     const crew = thread("Fix the docs", { crewOf: "Captain's session" });
     expect(crewmatesOf([main, crew])).toEqual([]);
+  });
+});
+
+describe("resolveCrewStatusLabel", () => {
+  const card = {
+    crew: true,
+    statusLabel: "Testing",
+    status: "ready",
+    isWoke: false,
+  } as const;
+
+  it.each(["working", "waiting", "ready"] as const)("replaces a %s card's status", (status) => {
+    expect(resolveCrewStatusLabel({ ...card, status })).toBe("Testing");
+  });
+
+  it("leaves a crew card without a label as it was", () => {
+    expect(resolveCrewStatusLabel({ ...card, statusLabel: undefined })).toBeNull();
+  });
+
+  it("shows only on crew cards", () => {
+    expect(resolveCrewStatusLabel({ ...card, crew: false })).toBeNull();
+  });
+
+  it.each(["approval", "input", "request", "limited", "failed"] as const)(
+    "never hides a %s card, which needs the user",
+    (status) => {
+      expect(resolveCrewStatusLabel({ ...card, status })).toBeNull();
+    },
+  );
+
+  it("never hides a woke card", () => {
+    expect(resolveCrewStatusLabel({ ...card, isWoke: true })).toBeNull();
   });
 });
 

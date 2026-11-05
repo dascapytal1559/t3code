@@ -502,6 +502,8 @@ const LenientThreadOpens = Schema.NullOr(OrchestrationV2ThreadOpens).pipe(
   Schema.catchDecoding(() => Effect.succeedSome(null)),
 );
 
+export const ThreadStatusLabel = TrimmedNonEmptyString.check(Schema.isMaxLength(32));
+
 export const OrchestrationV2AppThread = Schema.Struct({
   ...OrchestrationV2CreationFields,
   id: ThreadId,
@@ -530,6 +532,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
    * upstream clients decode strictly.
    */
   crewOf: Schema.optional(ThreadId),
+  /** A coordinator's short word on this thread's state, shown on its crew card. */
+  statusLabel: Schema.optional(Schema.NullOr(ThreadStatusLabel)),
   lineage: OrchestrationV2AppThreadLineage,
   forkedFrom: Schema.NullOr(
     Schema.Union([
@@ -2160,6 +2164,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   lineage: OrchestrationV2AppThreadLineage,
   coordinator: Schema.optional(Schema.Boolean),
   crewOf: OrchestrationV2AppThread.fields.crewOf,
+  statusLabel: OrchestrationV2AppThread.fields.statusLabel,
   forkedFrom: Schema.NullOr(OrchestrationV2AppThread.fields.forkedFrom),
   activeProviderThreadId: Schema.NullOr(ProviderThreadId),
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),
@@ -3176,6 +3181,8 @@ export const OrchestrationV2Command = Schema.Union([
     /** Link (object) or unlink (null) a pull request; absent leaves it unchanged. */
     linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
     coordinator: Schema.optional(Schema.Boolean),
+    /** Set (string) or clear (null) the label; absent leaves it unchanged. */
+    statusLabel: OrchestrationV2AppThread.fields.statusLabel,
   }),
   Schema.Struct({
     type: Schema.Literal("thread.pull-request.link"),

@@ -834,6 +834,7 @@ function listItemFromShell(
     ...threadSnooze(shell, nowMs),
     ...mcpLineage(shell),
     coordinator: shell.coordinator === true,
+    ...(shell.statusLabel == null ? {} : { statusLabel: shell.statusLabel }),
     itemCount: shell.visibleItemCount,
     createdAt: DateTime.formatIso(shell.createdAt),
     updatedAt: DateTime.formatIso(shell.updatedAt),
@@ -889,6 +890,9 @@ function threadDetail(
     worktreePath: projection.thread.worktreePath,
     ...mcpLineage(projection.thread),
     coordinator: projection.thread.coordinator === true,
+    ...(projection.thread.statusLabel == null
+      ? {}
+      : { statusLabel: projection.thread.statusLabel }),
     runCount: projection.runs.length,
     itemCount,
     pendingRequestCount: projection.runtimeRequests.filter(

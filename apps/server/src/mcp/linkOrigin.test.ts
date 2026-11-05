@@ -409,4 +409,31 @@ it.layer(Layer.provideMerge(layerTools, layerOrchestration))("work a link starts
       }
     }),
   );
+
+  it.effect("sets, reports and clears a thread's card label like any other thread update", () =>
+    Effect.gen(function* () {
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const threadId = yield* launch(claudeCode, "Plain title");
+      const update = (args: Record<string, unknown>) =>
+        call(claudeCode, "t3_thread_update", { threadId, ...args });
+      const readLabel = call(claudeCode, "t3_thread_read", { threadId }).pipe(
+        Effect.map(
+          (read) =>
+            (read.structuredContent as { thread: { statusLabel?: string } }).thread.statusLabel,
+        ),
+      );
+
+      const set = yield* update({ action: "set_status_label", statusLabel: "Testing" });
+      assert.equal(set.isError, false, JSON.stringify(set.content));
+      assert.equal((set.structuredContent as { statusLabel?: string }).statusLabel, "Testing");
+      assert.equal(yield* readLabel, "Testing");
+      const shell = yield* projections.getThreadShell(threadId);
+      assert.equal(shell?.statusLabel, "Testing");
+      assert.equal(shell?.title, "Plain title");
+
+      const clear = yield* update({ action: "clear_status_label" });
+      assert.equal(clear.isError, false, JSON.stringify(clear.content));
+      assert.equal(yield* readLabel, undefined);
+    }),
+  );
 });

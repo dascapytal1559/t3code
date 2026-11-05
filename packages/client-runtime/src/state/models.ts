@@ -148,6 +148,8 @@ export interface EnvironmentThreadShell {
   readonly lineage: OrchestrationV2ThreadShell["lineage"];
   /** The coordinator thread this crew thread works for. */
   readonly crewOf?: ThreadId;
+  /** A coordinator's short word on this thread's state, shown on its crew card. */
+  readonly statusLabel?: string;
   /** Its project's pinned coordinator, which the sidebar shows as one with or without crew. */
   readonly coordinator?: boolean;
   readonly forkedFrom: OrchestrationV2ThreadShell["forkedFrom"];
@@ -306,6 +308,7 @@ export function presentThreadShell(
     branchPullRequest: thread.branchPullRequest ?? null,
     lineage: thread.lineage,
     ...(thread.crewOf === undefined ? {} : { crewOf: thread.crewOf }),
+    ...(thread.statusLabel == null ? {} : { statusLabel: thread.statusLabel }),
     ...(thread.coordinator === true ? { coordinator: true } : {}),
     forkedFrom: thread.forkedFrom,
     linkOrigin: thread.linkOrigin ?? null,

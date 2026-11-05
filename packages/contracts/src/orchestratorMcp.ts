@@ -44,6 +44,7 @@ import {
   OrchestrationV2CreationSource,
   OrchestrationV2RunStatus,
   OrchestrationV2TurnItemStatus,
+  ThreadStatusLabel,
 } from "./orchestrationV2.ts";
 import { ProviderOptionSelection, ProviderOptionSelectionValue } from "./model.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
@@ -380,6 +381,8 @@ export const OrchestratorMcpThreadListItem = Schema.Struct({
   relationshipToParent: Schema.NullOr(Schema.Literals(["fork", "subagent", "crew"])),
   /** Pinned as its project's coordinator. Linked servers without it omit it. */
   coordinator: Schema.optional(Schema.Boolean),
+  /** Its crew card's label, when it has one. Linked servers without it omit it. */
+  statusLabel: Schema.optional(ThreadStatusLabel),
   itemCount: NonNegativeInt,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -452,6 +455,8 @@ export const OrchestratorMcpThreadDetail = Schema.Struct({
   relationshipToParent: Schema.NullOr(Schema.Literals(["fork", "subagent", "crew"])),
   /** Pinned as its project's coordinator. Linked servers without it omit it. */
   coordinator: Schema.optional(Schema.Boolean),
+  /** Its crew card's label, when it has one. Linked servers without it omit it. */
+  statusLabel: Schema.optional(ThreadStatusLabel),
   runCount: NonNegativeInt,
   itemCount: NonNegativeInt,
   pendingRequestCount: NonNegativeInt,

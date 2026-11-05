@@ -186,6 +186,17 @@ because crew usually end their turn to wait on a pipeline run. Other threads
 and auto-settle keep upstream's rule. Code: `threadWaitsOnBackgroundWork` in
 `packages/client-runtime/src/state/models.ts`.
 
+A coordinator can put a short status on a crewmate's card, such as "Waiting for
+captain" or "Testing": `t3_thread_update` with `action:'set_status_label'` and
+`statusLabel` (32 characters at most), and `action:'clear_status_label'` to take
+it off. The label sits where Working or the age would, so the title stays plain.
+Approval, Input, Request, Limited, Failed and Woke still show over it, because a
+label can lag behind a thread that needs the user. A label is stored with the
+thread (`statusLabel`), thread reads report it, forks drop it, and changing it
+does not count as activity. Upstream decoders ignore the field; web and desktop
+show it, and mobile has no crew cards. Code: `resolveCrewStatusLabel` in
+`apps/web/src/components/sidebar/coordinatorGroup.logic.ts`.
+
 A crew thread names its coordinator at launch: `t3_thread_launch` takes an
 optional `parentThreadId`, stored as the thread's `crewOf`. MCP thread reads
 report it as `parentThreadId` with `relationshipToParent: "crew"`. It stays out

@@ -3736,6 +3736,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ...(command.branch === undefined ? {} : { branch: command.branch }),
             ...(command.worktreePath === undefined ? {} : { worktreePath: command.worktreePath }),
             ...(command.coordinator === undefined ? {} : { coordinator: command.coordinator }),
+            ...(command.statusLabel === undefined ? {} : { statusLabel: command.statusLabel }),
             ...(command.linkedPullRequest === undefined
               ? {}
               : {
@@ -3768,7 +3769,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               : command.regenerateTitle === false || command.title !== undefined
                 ? { titleRegeneration: null }
                 : {}),
-            updatedAt: now,
+            // A label is not activity: it must not reorder cards or reset a thread's age.
+            updatedAt: command.statusLabel === undefined ? now : thread.updatedAt,
           };
         }
         case "thread.pull-request.link":

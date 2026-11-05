@@ -79,6 +79,20 @@ function metadataCommand(input: {
         threadId: input.threadId,
         regenerateTitle: true,
       };
+    case "set_status_label":
+      return {
+        type: "thread.metadata.update",
+        commandId: input.commandId,
+        threadId: input.threadId,
+        statusLabel: input.update.statusLabel!,
+      };
+    case "clear_status_label":
+      return {
+        type: "thread.metadata.update",
+        commandId: input.commandId,
+        threadId: input.threadId,
+        statusLabel: null,
+      };
   }
 }
 
@@ -88,7 +102,7 @@ function resultFromThread(input: {
   readonly sequence: number;
   readonly thread: Pick<
     OrchestrationV2AppThread,
-    "id" | "title" | "titleRegeneration" | "linkedPullRequest" | "updatedAt"
+    "id" | "title" | "statusLabel" | "titleRegeneration" | "linkedPullRequest" | "updatedAt"
   >;
 }): ThreadMetadataMcpUpdateResult {
   return {
@@ -97,6 +111,7 @@ function resultFromThread(input: {
     commandId: input.commandId,
     sequence: input.sequence,
     title: input.thread.title,
+    ...(input.thread.statusLabel == null ? {} : { statusLabel: input.thread.statusLabel }),
     titleRegeneration:
       input.thread.titleRegeneration === undefined || input.thread.titleRegeneration === null
         ? null
