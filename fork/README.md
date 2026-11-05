@@ -43,7 +43,9 @@ Three things are still shared with the official app:
 ![The Usage page's 12 months view: a year of daily cost as stacked bars, split by Codex and Claude Code](media/usage-12-months.png)
 
 The Usage page on web and desktop has 6 months (`Cmd+Shift+5`) and 12 months
-(`Cmd+Shift+6`) periods, drawn as stacked daily bars. The mobile app still
+(`Cmd+Shift+6`) periods. Every period draws one stacked bar per day or hour,
+because upstream's overlapping lines turn into a smear over long ranges. The
+mobile app already draws bars and still
 stops at 90 days. The server keeps parsed usage for 367 days instead of 92, so
 usage stays after Claude Code deletes old transcripts. History older than what
 is on disk or in the saved usage today cannot be recovered; twelve months builds
@@ -83,8 +85,7 @@ defaults to `["~/.t3-usage-archive"]` and can be changed in
   as `<host>/home/.claude/projects`.
 - These are read: Claude `projects/`, Codex `sessions/`, Grok
   `.grok/sessions/`, and a T3 server's saved usage
-  (the newest of `usage-scan-cache-v9.json` down to `usage-scan-cache.json`,
-  version 3 on).
+  (the newest `usage-scan-cache*.json` in a folder, version 3 on).
   Saved usage still has usage whose transcripts were deleted. Version 3 caches
   are priced at standard speed. OpenCode, Pi and Antigravity copies are not
   read.
@@ -106,13 +107,13 @@ upstream's handling of WinGet's Claude, in
 
 ## `~` in a provider's executable path
 
-A provider path that starts with `~` works for every provider. OpenCode, Grok,
-Pi, fx, Antigravity, Kiro and the ACP registry used a configured path such as
-`~/.local/bin/opencode` as written. Processes launch without a shell, so
-the provider showed as not installed. Each of those drivers now expands a
+A provider path that starts with `~` works for every provider. Upstream's Grok,
+Pi, fx, Antigravity, Kiro and ACP registry drivers use a configured path such as
+`~/.local/bin/grok` as written. Processes launch without a shell, so
+the provider shows as not installed. Here each of those drivers expands a
 leading `~` with `expandHomePath` before probing, spawning, resolving
-maintenance or reporting status, as Codex, Claude and Muse already did. Cursor
-never runs its `binaryPath`, so it is unchanged. When a sync finds upstream
+maintenance or reporting status, as Codex, Claude, Muse and OpenCode do upstream.
+Cursor never runs its `binaryPath`, so it is unchanged. When a sync finds upstream
 expanding `~` in these drivers, keep upstream's.
 
 ## Idle agent release is a server setting
@@ -153,7 +154,8 @@ It is Excalidraw (MIT), loaded only when the tab shows. Screenshots pasted with
 Cmd+V while focus is in the panel land in the middle of the view. The board is
 saved in the client's IndexedDB, one board per client, shared by every chat's
 Board tab. "Attach to chat" sends the selection, or the whole board, as a PNG to
-the composer of the chat beside the panel. The canvas is marked
+the composer of the chat beside the panel, and "Copy" puts the same PNG on the
+clipboard. The canvas is marked
 `data-editable-canvas` and `role="application"` so its keys (tool letters, Cmd+Z,
 Delete) are not taken by type-to-focus or thread undo. Code:
 `apps/web/src/components/board/`.
@@ -169,15 +171,22 @@ otherwise use. The mobile app has no board.
 
 ## FirstMate crew in the sidebar
 
-<img src="media/firstmate-sidebar.jpg" width="256" alt="The sidebar: a FirstMate session waiting on input at the top, its four crewmate threads in a tree below it, then ordinary threads">
+<img src="media/firstmate-sidebar.jpg" width="255" alt="The sidebar: a FirstMate card reading started 3h ago at the top, with four crewmate threads in a tree below it, two of them showing the status labels Testing and Waiting for captain">
 
 A FirstMate session and the worker threads it launches are grouped above the
-sidebar inbox and kept out of Working. The main session shows as one line led
-by its model icon; its crewmates hang below it as a tree that collapses to a
-count. Crewmate cards have no hover Snooze or Settle (the context menu still
-has both), and crewmate turns raise no sound or notification. Opening the app
-on the home route jumps to a FirstMate session that is still working or waiting
-on input. Without crew threads the sidebar is unchanged.
+sidebar inbox and kept out of Working. The main session is a two-line card: its
+project and status, then "started 3h ago" where a crewmate shows its title,
+because age is what says a long session is due for a fresh one. It never shows a
+branch line. Its crewmates hang below it as a tree that collapses to a count. A
+pinned coordinator (see below) gets this card even with no crew; without any
+coordinator the sidebar is unchanged.
+
+The FirstMate and crew cards have no hover Snooze or Settle (the context menu
+still has both, and snoozing or settling takes a thread out of the group). They
+drag only as chat context, and crewmate turns raise no sound or notification. A
+fresh page load on the home route opens a coordinator whatever its run status,
+the most recently updated if there are several, because a restart ends every
+run. A thread's Lineage panel lists its Crew or Coordinator.
 
 Upstream counts a background command as work only when the agent marks it with
 `t3_background_wait`, so an unmarked one leaves a thread reading Done. A
@@ -189,7 +198,7 @@ and auto-settle keep upstream's rule. Code: `threadWaitsOnBackgroundWork` in
 A coordinator can put a short status on a crewmate's card, such as "Waiting for
 captain" or "Testing": `t3_thread_update` with `action:'set_status_label'` and
 `statusLabel` (32 characters at most), and `action:'clear_status_label'` to take
-it off. The label sits where Working or the age would, so the title stays plain.
+it off. The label sits where Working, Done or the age would, so the title stays plain.
 Approval, Input, Request, Limited, Failed and Woke still show over it, because a
 label can lag behind a thread that needs the user. A label is stored with the
 thread (`statusLabel`), thread reads report it, forks drop it, and changing it
@@ -222,10 +231,23 @@ continuation wakes it). The project's continue-after-update setting
 (`continueThreadsAfterServerUpdate`) switches it off. A thread pinned with
 `t3_thread_configure` `coordinator: true` (one per project; pinning moves it,
 `false` unpins) gets the note after every start even with no crew or while busy,
-and thread reads report `coordinator`. Code:
+thread reads report `coordinator`, and `orchestrator_capabilities` reports
+`coordinatorRestartNote`. Forks and side chats drop the pin and the crew link, so
+forking FirstMate cannot make a second coordinator. Code:
 `notifyCrewCoordinators` in `apps/server/src/orchestration-v2/RestartContinuation.ts`.
 
+## Sidebar cards stay two lines
+
+This one applies to every thread. Upstream gives a card with no branch but a
+linked pull request or running terminal a third line holding just that badge and
+the model icon. Here the meta line appears only for a branch, machine label or
+diff; otherwise those badges sit right-aligned on the title line, which truncates
+before them. Folder multiline rows follow the same rule. Code:
+`isThreadMetaLineEmpty` in `apps/web/src/components/Sidebar.logic.ts`.
+
 ## Refresh context on the FirstMate thread
+
+<img src="media/refresh-context.jpg" width="744" alt="A FirstMate thread with the Refresh context button in its header, a New session divider in the chat, and the message Context refreshed. sent by T3 Code">
 
 The FirstMate thread keeps one id and one chat for its whole life, while the
 agent session behind it is replaced on demand. The thread header of a pinned
@@ -261,12 +283,16 @@ in `apps/server/src/orchestration-v2/threadHistoryPaging.ts`, and
 ## Per-thread environment and instructions
 
 An agent that launches a thread can give it its own environment variables and
-instructions, for any provider. `t3_thread_launch` takes optional `environment`
-(env vars) and `instructions` (kept in the agent's system context), stored on
-the thread so they survive idle release, restarts and forks. Each adapter
-applies them through the channel it already has and declares what it
+instructions. `t3_thread_launch` takes optional `environment` (env vars, at most
+64 and 16 KB, never T3's own names) and `instructions` (kept in the agent's
+system context, at most 16,000 characters), stored on
+the thread so they survive idle release, restarts and forks, though not
+delegated children. Values sit in the database, so they must not be secrets. Each
+adapter applies them through the channel it already has and declares what it
 supports; a launch or later turn that binds something its provider cannot
-apply is refused. `t3_thread_configure` reads them back with the effective
+apply is refused. Kiro's adapter declares neither, so it refuses both. Cursor
+takes instructions only, because it runs inside the server process. The other
+providers take both. `t3_thread_configure` reads them back with the effective
 runtime mode, and `orchestrator_capabilities` reports `threadEnvironment`,
 `threadInstructions` and an ACP registry instance's `agentId`. Code:
 `apps/server/src/orchestration-v2/RuntimePolicy.ts`.
@@ -277,8 +303,9 @@ server's environment in the session's shells, is kept in memory only, and is not
 inherited by subagent sessions. So T3 sends every session, subagents included,
 the environment it started the server with minus `OPENCODE_PASSWORD`, plus the
 thread's variables. It sends this again after the server restarts. An external
-server (`serverUrl`) has an environment T3 does not know, so it stays
-unsupported. Code: `packages/provider-opencode/src/server/v2/adapter.ts`.
+server (`serverUrl`), on either OpenCode adapter, has an environment T3 does not
+know or cannot reach, so it takes instructions only. Code:
+`packages/provider-opencode/src/server/v2/adapter.ts`.
 
 ## Agents answer approvals over MCP
 
@@ -293,6 +320,19 @@ other than the asking thread may answer one. The resolved request and its
 timeline row record `respondedBy: "agent"`, which web and mobile show as
 "answered by agent". `orchestrator_capabilities` reports `approvalResponses`.
 Code: `apps/server/src/mcp/toolkits/thread/handlers.ts`.
+
+## Stopped turns close their approvals
+
+Upstream closes only a stopped turn's questions, so an approval such as a Claude
+command prompt stays pending forever: the app keeps showing a prompt for a tool
+call that no longer exists, and the thread reports a pending request. Here a turn
+that ends interrupted, failed or cancelled expires every pending request it
+raised. A turn that completes still closes only its questions, because a
+background subagent's approval can still be live then. These requests close as
+`expired`, not `cancelled`, and the guard that keeps a just-committed answer from
+being overwritten covers every request kind. Code: `expireTurnRequests` in
+`apps/server/src/orchestration-v2/ProviderEventIngestor.ts` and
+`guardRequestClosures` in `EventSink.ts`.
 
 ## Waits end on a question or approval
 
@@ -318,8 +358,8 @@ clears through `thread.visit`, which only a client sent. `t3_thread_organize`
 now has `action: "mark_read"`, the opposite of `mark_unread`: it dispatches
 `thread.visit` with `visitedAt` set to now, so the thread reads as seen. It does
 not count as the user opening the thread. Clients detect it by `mark_read` in the
-tool's `tools/list` `action` enum. Upstream has no equivalent in the
-version last synced (`cefb544af3`). Code: `apps/server/src/mcp/toolkits/thread/handlers.ts`.
+tool's `tools/list` `action` enum. Upstream main had no equivalent at
+`337c5858c3`. Code: `apps/server/src/mcp/toolkits/thread/handlers.ts`.
 
 ## FirstMate's sign-in lasts 10 years
 
@@ -344,6 +384,14 @@ export does not reach an app opened from the Dock: run
 `launchctl setenv T3CODE_TELEMETRY_ENABLED true` and restart the app, or start
 the app from a terminal that has the variable set. Your own OpenTelemetry export
 and the mobile app's crash reports have their own settings.
+
+## No mobile behavior eval
+
+Upstream's `vp run mobile:behavior` eval is removed here: `scripts/mobile-behavior/`,
+the app's dev-only behavior probe, the script, its knip entry and its ignore
+line. No fork feature uses it, and dropping it avoids sync conflicts. Upstream
+main still has it (`ff71186669`), so a sync that touches those files needs the
+same removal again, or a decision to take it back.
 
 ## Version
 

@@ -393,9 +393,10 @@ set after them. Codex sets them per thread through
 `shell_environment_policy.set`, so its shared app-server never leaks them to
 another thread. An adapter declares what it applies; launching, or later
 running, a thread on one that would drop either field is refused rather than
-silently ignored. Cursor runs in the server process and OpenCode v2 or a
-configured OpenCode server is shared, so they take instructions but no
-environment. `t3_thread_configure` reads both back with `effectiveRuntimeMode`,
+silently ignored. Cursor runs in the server process and a configured OpenCode
+server is already running, so they take instructions but no environment. OpenCode
+v2 shares one server, so it sets each session's environment instead. Kiro
+applies neither. `t3_thread_configure` reads both back with `effectiveRuntimeMode`,
 which shows when a provider runs a mode it lacks as `approval-required`.
 
 ### `t3_thread_list`

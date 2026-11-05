@@ -6,17 +6,29 @@ A fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code), built to host
 
 For FirstMate:
 
-- FirstMate sessions and their workers grouped as a tree in the sidebar.
-- FirstMate can answer a worker's permission prompts, and hears its questions the moment they appear.
-- Per-thread settings for agent-launched workers, and idle agents can be kept for good.
-- FirstMate can mark a worker's thread read, clearing its Done card without opening the app.
-- FirstMate's sign-in lasts 10 years instead of 30 days, so it never needs renewing.
+- [Crew sidebar](fork/README.md#firstmate-crew-in-the-sidebar): FirstMate and its workers as a tree, with short status labels.
+- [Refresh context](fork/README.md#refresh-context-on-the-firstmate-thread): a button swaps FirstMate's session for a fresh one on the same thread.
+- [Approvals over MCP](fork/README.md#agents-answer-approvals-over-mcp): FirstMate answers a worker's permission prompts.
+- [Waits end on a question](fork/README.md#waits-end-on-a-question-or-approval): FirstMate hears a question or approval the moment it appears.
+- [Per-thread settings](fork/README.md#per-thread-environment-and-instructions): each launched worker gets its own environment and instructions.
+- [Idle agents](fork/README.md#idle-agent-release-is-a-server-setting): idle release is a setting, and agents can be kept for good.
+- [Mark read](fork/README.md#mcp-can-mark-a-thread-read): FirstMate clears a worker's Done card without opening the app.
+- [Long sign-in](fork/README.md#firstmates-sign-in-lasts-10-years): FirstMate's sign-in lasts 10 years instead of 30 days, so it never needs renewing.
 
 Also:
 
-- Its own app, T3 Code (Fork), beside the official one. Telemetry off by default.
-- A Board tab to sketch on screenshots, usage up to 12 months, and a note when upstream ships a release.
-- Click a provider on the Usage page to mute it and dial into one provider's usage.
+- [Its own app](fork/README.md#desktop-identity): T3 Code (Fork) runs beside the official one.
+- [Telemetry off](fork/README.md#telemetry-off-by-default): nothing is sent unless you opt in.
+- [Board](fork/README.md#board): a tab to sketch on screenshots and attach them to the chat.
+- [Twelve months of usage](fork/README.md#usage-reaches-twelve-months): longer periods, drawn as stacked bars.
+- [Muted usage rows](fork/README.md#usage-rows-can-be-muted): click a provider on the Usage page to mute it.
+- [Archived usage](fork/README.md#archived-usage): counts machines that no longer run T3.
+- [Upstream release note](fork/README.md#upstream-release-indicator): the sidebar says when upstream ships a release.
+- [App-bundled CLIs](fork/README.md#app-bundled-clis-are-updated-by-their-app): a CLI inside a macOS app is left for that app to update.
+- [`~` in provider paths](fork/README.md#-in-a-providers-executable-path): works for every provider.
+- [Stopped turns](fork/README.md#stopped-turns-close-their-approvals): their approvals close instead of staying pending.
+- [Two-line cards](fork/README.md#sidebar-cards-stay-two-lines): a lone PR badge no longer adds a third line.
+- [No mobile behavior eval](fork/README.md#no-mobile-behavior-eval): upstream's eval is removed here.
 
 Details and pictures: [fork/README.md](fork/README.md).
 
