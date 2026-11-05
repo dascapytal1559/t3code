@@ -1393,3 +1393,16 @@ export function sortScopedProjectsForSidebar<
       left.id.localeCompare(right.id),
   );
 }
+
+/**
+ * Whether a thread row has no meta line of its own, so its badges and icons move up to the
+ * title line. The coordinator card is always two lines, whatever branch its thread records.
+ */
+export function isThreadMetaLineEmpty(input: {
+  coordinator: boolean;
+  branch: string | null;
+  showsScratchMachine: boolean;
+  hasDiff: boolean;
+}): boolean {
+  return input.coordinator || (!input.branch && !input.showsScratchMachine && !input.hasDiff);
+}

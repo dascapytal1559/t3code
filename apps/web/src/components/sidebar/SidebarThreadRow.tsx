@@ -77,6 +77,7 @@ import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import {
   animateSidebarLayoutChanges,
   hasUnseenCompletion,
+  isThreadMetaLineEmpty,
   resolveSidebarRowAccessibility,
   type SidebarDropVerb,
   resolveSidebarThreadStatus,
@@ -1165,7 +1166,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const diff = latestRunDiff(thread);
   // Without a branch or machine to label it, the meta line would hold only trailing
   // badges and icons, so the row moves them to the title line instead.
-  const metaLineEmpty = !thread.branch && !showsScratchMachine && diff === null;
+  const metaLineEmpty = isThreadMetaLineEmpty({
+    coordinator: props.coordinator === true,
+    branch: thread.branch,
+    showsScratchMachine,
+    hasDiff: diff !== null,
+  });
   const metaLine = metaLineEmpty ? null : (
     <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
       {thread.branch ? (

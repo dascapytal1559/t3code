@@ -10,6 +10,7 @@ import {
   deleteSelectedThreadEntries,
   getFallbackThreadIdAfterDelete,
   hasUnseenCompletion,
+  isThreadMetaLineEmpty,
   resolveSidebarRowThreadId,
   belongsInSidebarWorkingShelf,
   isSidebarEnvironmentDisconnected,
@@ -1696,5 +1697,17 @@ describe("shouldCreateNewThreadInCurrentProject", () => {
     expect(shouldCreateNewThreadInCurrentProject(false, 1, 3)).toBe(true);
     expect(shouldCreateNewThreadInCurrentProject(false, 0, 0)).toBe(true);
     expect(shouldCreateNewThreadInCurrentProject(true, 2, 2)).toBe(true);
+  });
+});
+
+describe("isThreadMetaLineEmpty", () => {
+  const row = { coordinator: false, branch: null, showsScratchMachine: false, hasDiff: false };
+
+  it("keeps a meta line for a branch, scratch machine or diff, except on the coordinator card", () => {
+    expect(isThreadMetaLineEmpty(row)).toBe(true);
+    expect(isThreadMetaLineEmpty({ ...row, branch: "main" })).toBe(false);
+    expect(isThreadMetaLineEmpty({ ...row, showsScratchMachine: true })).toBe(false);
+    expect(isThreadMetaLineEmpty({ ...row, hasDiff: true })).toBe(false);
+    expect(isThreadMetaLineEmpty({ ...row, coordinator: true, branch: "main" })).toBe(true);
   });
 });
