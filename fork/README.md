@@ -167,7 +167,10 @@ the props in `ChatView.tsx` and `PullRequestsPage.tsx`, a command palette item, 
 selector in `lib/editableFocus.ts`, the Excalidraw font asset path in
 `apps/web/vite.config.ts`, and licence notices. Excalidraw's canvas fonts are
 served from the app because the desktop CSP blocks the CDN Excalidraw would
-otherwise use. The mobile app has no board.
+otherwise use. Excalidraw pins Radix Tabs 1.0.2, whose React peer range stops
+at 18, and upstream's `strictPeerDependencies` refuses that, so an override in
+`pnpm-workspace.yaml` moves it to a 1.1 release that accepts React 19. The
+mobile app has no board.
 
 ## FirstMate crew in the sidebar
 
@@ -414,7 +417,10 @@ The fork keeps upstream's version number. The desktop app sets up an SSH or
 WSL remote by downloading upstream's `t3` release for its own version
 (`apps/desktop/src/main.ts`), so a version upstream never released, such as
 `0.1.5-fork.1`, has nothing to download. The app name, bundle id and
-data folder tell the fork apart.
+data folder tell the fork apart. A sync to an upstream nightly keeps the stable
+version its source carries (upstream stamps nightly versions only when it
+builds): a `-nightly.` version would turn the build into upstream's "T3 Code
+(Nightly)", with its icons and update track.
 
 ## Build
 
