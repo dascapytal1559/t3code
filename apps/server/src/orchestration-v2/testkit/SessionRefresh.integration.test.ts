@@ -43,6 +43,8 @@ function makeAdapter(input: {
   readonly log: Ref.Ref<ReadonlyArray<string>>;
   readonly injectedHistory: Ref.Ref<number>;
   readonly failedRunOrdinals?: ReadonlySet<number>;
+  /** The session reports background work, such as a running background command. */
+  readonly busy?: boolean;
 }): ProviderAdapter.ProviderAdapterV2["Service"] {
   const modelSelection: ModelSelection = CLAUDE_MODEL_SELECTION;
   const note = (line: string) => Ref.update(input.log, (lines) => [...lines, line]);
@@ -201,6 +203,7 @@ function makeAdapter(input: {
               ];
               for (const event of providerEvents) yield* PubSub.publish(events, event);
             }),
+          ...(input.busy === true ? { hasPendingBackgroundWork: Effect.succeed(true) } : {}),
           steerTurn: () => Effect.void,
           interruptTurn: () => Effect.void,
           respondToRuntimeRequest: () => Effect.void,
@@ -231,7 +234,7 @@ interface RefreshContext {
 
 const run = <E>(
   name: string,
-  options: { readonly failedRunOrdinals?: ReadonlySet<number> },
+  options: { readonly failedRunOrdinals?: ReadonlySet<number>; readonly busy?: boolean },
   body: (context: RefreshContext) => Effect.Effect<void, E>,
 ) =>
   Effect.scoped(
@@ -246,6 +249,7 @@ const run = <E>(
           ...(options.failedRunOrdinals === undefined
             ? {}
             : { failedRunOrdinals: options.failedRunOrdinals }),
+          ...(options.busy === undefined ? {} : { busy: options.busy }),
         }),
       ]);
       yield* Effect.gen(function* () {
@@ -347,18 +351,14 @@ describe("context refresh", () => {
         assert.equal(after.runs[1]!.providerThreadId, oldProviderThreadId);
         assert.notEqual(after.runs[2]!.providerThreadId, oldProviderThreadId);
         assert.equal(after.thread.activeProviderThreadId, after.runs[2]!.providerThreadId);
-        const boundary = after.turnItems.find(
-          (item) => item.type === "system_notice" && item.sessionBoundary === true,
+        // Upstream's fresh session: the opening run is the context boundary, and its message
+        // draws the New session divider.
+        assert.isTrue(after.runs[2]!.freshContext);
+        const opening = after.turnItems.find(
+          (item) => item.type === "user_message" && item.text === "Context refreshed.",
         );
-        assert.isDefined(boundary);
-        const boundaryIndex = after.visibleTurnItems.findIndex(
-          (row) => row.item.id === boundary!.id,
-        );
-        const openingIndex = after.visibleTurnItems.findIndex(
-          (row) => row.item.type === "user_message" && row.item.text === "Context refreshed.",
-        );
-        assert.isAbove(boundaryIndex, 0);
-        assert.isAbove(openingIndex, boundaryIndex);
+        assert.isTrue(opening?.type === "user_message" && opening.freshContext === true);
+        assert.isFalse(after.turnItems.some((item) => item.type === "system_notice"));
 
         // Fresh: nothing was injected, and the new native thread is not the old one.
         assert.equal(yield* Ref.get(injectedHistory), 0);
@@ -402,10 +402,39 @@ describe("context refresh", () => {
         assert.equal(after.runs[1]!.status, "failed");
         assert.equal(after.thread.activeProviderThreadId, before.thread.activeProviderThreadId);
         const notice = after.turnItems.find((item) => item.type === "system_notice");
-        assert.equal(notice?.type === "system_notice" ? notice.sessionBoundary : true, undefined);
         assert.include(
           notice?.type === "system_notice" ? notice.message : "",
           "The agent session was kept.",
+        );
+        assert.isFalse((yield* Ref.get(log)).some((line) => line.startsWith("closed:")));
+      }),
+    ),
+  );
+
+  it.live("keeps the session and says so when the agent is still busy", () =>
+    run("busy-session", { busy: true }, ({ orchestrator, log, send, waitRun }) =>
+      Effect.gen(function* () {
+        yield* send(1, "Hello");
+        yield* waitRun(1);
+        const before = yield* orchestrator.getThreadProjection(threadId);
+
+        yield* refresh(orchestrator);
+        yield* waitRun(2);
+        yield* orchestrator.streamStoredEvents.pipe(
+          Stream.filter(
+            ({ event }) =>
+              event.type === "turn-item.updated" && event.payload.type === "system_notice",
+          ),
+          Stream.runHead,
+        );
+
+        const after = yield* orchestrator.getThreadProjection(threadId);
+        assert.equal(after.runs.length, 2);
+        assert.equal(after.thread.activeProviderThreadId, before.thread.activeProviderThreadId);
+        const notice = after.turnItems.find((item) => item.type === "system_notice");
+        assert.equal(
+          notice?.type === "system_notice" ? notice.message : "",
+          "Context refresh stopped: the agent was still busy. The agent session was kept.",
         );
         assert.isFalse((yield* Ref.get(log)).some((line) => line.startsWith("closed:")));
       }),

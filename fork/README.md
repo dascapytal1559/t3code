@@ -167,7 +167,10 @@ the props in `ChatView.tsx` and `PullRequestsPage.tsx`, a command palette item, 
 selector in `lib/editableFocus.ts`, the Excalidraw font asset path in
 `apps/web/vite.config.ts`, and licence notices. Excalidraw's canvas fonts are
 served from the app because the desktop CSP blocks the CDN Excalidraw would
-otherwise use. The mobile app has no board.
+otherwise use. Excalidraw pins Radix Tabs 1.0.2, whose React peer range stops
+at 18, and upstream's `strictPeerDependencies` refuses that, so an override in
+`pnpm-workspace.yaml` moves it to a 1.1 release that accepts React 19. The
+mobile app has no board.
 
 ## FirstMate crew in the sidebar
 
@@ -293,29 +296,27 @@ coordinator thread (`t3_thread_configure` `coordinator: true`) has a Refresh
 context button, greyed out while a turn runs. Clicking it:
 
 1. sends one `/stow` turn to the current session, attributed to T3 Code;
-2. when that turn completes, ends the agent's process and waits for it to exit,
-   because FirstMate's session lock belongs to the live process and a session
-   that loses it comes up read-only;
-3. drops the thread's active provider thread, so the next turn opens a fresh
-   session with no earlier chat (no handoff, no resume), and writes a dated
-   "New session" divider into the chat;
-4. sends `Context refreshed.` as the fresh session's first message. A first
-   message is what starts the session; it is not `ahoy`, so FirstMate does not
-   run Bearings on the new session.
+2. when that turn completes, sends `Context refreshed.` with upstream's
+   `freshContext`, the same fresh session `/clear` starts. Upstream ends the old
+   session before the new turn starts, draws its "New session" divider above the
+   message, and keeps earlier turns out of the new session. `Context refreshed.`
+   is not `ahoy`, so FirstMate does not run Bearings on the new session.
 
-If the `/stow` turn fails, is stopped, or the agent is still busy, nothing is
-swapped and a notice under that turn says so. A server restart in the middle of
-a refresh drops it; press the button again. The thread opens at its latest
-divider, and "Load previous session" pages back one session at a time through
-the existing history paging; the divider is a `system_notice` item with
-`sessionBoundary: true`, which upstream decoders ignore, so the App Store mobile
-app shows it as a plain notice and pages the same way. Mobile has no button.
-Idle compaction and the idle release of the agent are unchanged. The Claude
-adapter now waits for its CLI process to exit when a session closes, for every
-release path. Code: `thread.session.refresh` in
+The old process must be gone before the new session opens, because FirstMate's
+session lock belongs to the live process and a session that loses it comes up
+read-only. Upstream's fresh send queues the old session's detach ahead of the
+new turn on the same thread, and the fork's Claude adapter waits for its CLI
+process to exit whenever a session closes, for every release path.
+
+If the `/stow` turn fails, is stopped, or the agent is still busy (background
+work in the session), nothing is swapped and a notice under that turn says so.
+A server restart in the middle of a refresh drops it; press the button again.
+Mobile has no button but shows upstream's divider. Idle compaction and the idle
+release of the agent are unchanged. The fork's first version wrote its own
+event, `thread.session-replaced`; nothing writes it now, and the contracts keep
+it so stored events still decode. Code: `thread.session.refresh` in
 `apps/server/src/orchestration-v2/Orchestrator.ts`,
-`apps/server/src/orchestration-v2/SessionRefreshService.ts`, the boundary stop
-in `apps/server/src/orchestration-v2/threadHistoryPaging.ts`, and
+`apps/server/src/orchestration-v2/SessionRefreshService.ts`, and
 `ChatHeader.tsx` on the web.
 
 <img src="media/context-window-refresh.jpg" width="272" alt="The Context Window box on a FirstMate thread, with a blue Refresh FirstMate context button and a small Compact context link under it">
@@ -442,7 +443,10 @@ The fork keeps upstream's version number. The desktop app sets up an SSH or
 WSL remote by downloading upstream's `t3` release for its own version
 (`apps/desktop/src/main.ts`), so a version upstream never released, such as
 `0.1.5-fork.1`, has nothing to download. The app name, bundle id and
-data folder tell the fork apart.
+data folder tell the fork apart. A sync to an upstream nightly keeps the stable
+version its source carries (upstream stamps nightly versions only when it
+builds): a `-nightly.` version would turn the build into upstream's "T3 Code
+(Nightly)", with its icons and update track.
 
 ## Build
 

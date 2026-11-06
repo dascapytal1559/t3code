@@ -2,6 +2,7 @@ import {
   MessageId,
   NodeId,
   RunId,
+  RuntimeRequestId,
   ThreadId,
   TurnItemId,
   type OrchestrationV2ProjectedTurnItem,
@@ -817,6 +818,69 @@ describe("threadHistoryPaging", () => {
     ).toBe(2_097_152);
   });
 
+  it.each([40_000, 80_000])(
+    "reserves pending question cards before visible history: %s bytes",
+    (questionBytes) => {
+      const rows = Array.from({ length: 20 }, (_, index) =>
+        makeRow(index + 1, { outputBytes: 1_500 }),
+      );
+      const requestId = RuntimeRequestId.make("pending-question");
+      const card: OrchestrationV2TurnItem = {
+        id: TurnItemId.make("pending-question-card"),
+        type: "user_input_request",
+        threadId: THREAD,
+        runId: null,
+        nodeId: NODE,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: 1,
+        status: "completed",
+        title: null,
+        requestId,
+        responseMode: "message",
+        questions: [
+          { id: "scope", header: "Scope", question: "q".repeat(questionBytes), options: [] },
+        ],
+        startedAt: NOW,
+        completedAt: NOW,
+        updatedAt: NOW,
+      };
+      const projection = {
+        ...makeProjection(rows),
+        turnItems: [card, ...rows.map((row) => row.item)],
+        runtimeRequests: [
+          {
+            id: requestId,
+            nodeId: NODE,
+            providerTurnId: null,
+            nativeRequestRef: null,
+            kind: "user_input" as const,
+            status: "pending" as const,
+            responseCapability: { type: "message" as const },
+            createdAt: NOW,
+            resolvedAt: null,
+          },
+        ],
+      };
+      const policy = { ...THREAD_HISTORY_PAGE_POLICY, maxEncodedBytes: 64_000 };
+
+      const bounded = buildBoundedThreadProjection({ projection, snapshotSequence: 9, policy });
+
+      expect(bounded.projection.turnItems).toContain(card);
+      expect(bounded.projection.visibleTurnItems.length).toBeGreaterThan(0);
+      expect(bounded.hasMoreHistory).toBe(true);
+      if (questionBytes < policy.maxEncodedBytes) {
+        expect(Buffer.byteLength(JSON.stringify(bounded.projection), "utf8")).toBeLessThanOrEqual(
+          policy.maxEncodedBytes,
+        );
+      } else {
+        expect(bounded.projection.visibleTurnItems).toHaveLength(1);
+      }
+    },
+  );
+
   it("preserves oversized actionable state", () => {
     const projection = makeProjection([makeRow(0)]);
     const actionable = {
@@ -840,39 +904,46 @@ describe("threadHistoryPaging", () => {
     expect(bounded.projection.visibleTurnItems).toEqual(actionable.visibleTurnItems);
   });
 
-  it("keeps agent-only turns visible when checkpoint file lists fill the byte budget", () => {
-    const items = Array.from({ length: 3 }, (_, turn) => {
-      const first = makeRow(turn * 5);
-      const prompt = {
-        ...first,
-        item: {
-          ...first.item,
-          type: "user_message" as const,
-          createdBy: "agent" as const,
-          creationSource: "provider" as const,
-          inputIntent: "turn_start" as const,
-          messageId: MessageId.make(`agent-prompt-${turn}`),
-          text: `Step ${turn}`,
-          attachments: [],
-        },
-      } as OrchestrationV2ProjectedTurnItem;
-      return [prompt, ...Array.from({ length: 4 }, (_, index) => makeRow(turn * 5 + index + 1))];
-    }).flat();
-    const files = Array.from(
-      { length: 15_000 },
-      (_, index) =>
-        `work/ws-${index % 40}/.jj/repo/store/extra/${index.toString(16).padStart(40, "0")}`,
-    );
-    const projection = {
-      ...makeProjection(items),
-      checkpoints: [{ id: "checkpoint-1", files }],
-    } as unknown as ReturnType<typeof makeProjection>;
+  it.each([false, true])(
+    "keeps agent-only turns visible when checkpoint file lists fill the byte budget (stored interrupt request: %s)",
+    (withInterruptRequest) => {
+      const items = Array.from({ length: 3 }, (_, turn) => {
+        const first = makeRow(turn * 5);
+        const prompt = {
+          ...first,
+          item: {
+            ...first.item,
+            type: "user_message" as const,
+            createdBy: "agent" as const,
+            creationSource: "provider" as const,
+            inputIntent: "turn_start" as const,
+            messageId: MessageId.make(`agent-prompt-${turn}`),
+            text: `Step ${turn}`,
+            attachments: [],
+          },
+        } as OrchestrationV2ProjectedTurnItem;
+        return [prompt, ...Array.from({ length: 4 }, (_, index) => makeRow(turn * 5 + index + 1))];
+      }).flat();
+      const files = Array.from(
+        { length: 15_000 },
+        (_, index) =>
+          `work/ws-${index % 40}/.jj/repo/store/extra/${index.toString(16).padStart(40, "0")}`,
+      );
+      const base = makeProjection(items);
+      const projection = {
+        ...base,
+        turnItems: withInterruptRequest
+          ? [interruptItem("old-interrupt-req", "run_interrupt_request", 0), ...base.turnItems]
+          : base.turnItems,
+        checkpoints: [{ id: "checkpoint-1", files }],
+      } as unknown as ReturnType<typeof makeProjection>;
 
-    const bounded = buildBoundedThreadProjection({ projection, snapshotSequence: 1 });
+      const bounded = buildBoundedThreadProjection({ projection, snapshotSequence: 1 });
 
-    expect(bounded.projection.visibleTurnItems).toHaveLength(items.length);
-    expect(bounded.hasMoreHistory).toBe(false);
-  });
+      expect(bounded.projection.visibleTurnItems).toHaveLength(items.length);
+      expect(bounded.hasMoreHistory).toBe(false);
+    },
+  );
 
   it("keeps paged historical plan detail in the turn item and only status in its artifact", () => {
     const detail = "Implement the historical plan exactly.\n".repeat(1_000);
@@ -915,111 +986,5 @@ describe("threadHistoryPaging", () => {
       markdown: "",
       detailInTurnItem: true,
     });
-  });
-
-  it("opens at the latest session boundary and pages one earlier session at a time", () => {
-    const boundary = (index: number): OrchestrationV2ProjectedTurnItem => {
-      const row = makeRow(index);
-      return {
-        ...row,
-        item: {
-          ...row.item,
-          type: "system_notice",
-          message: "New session",
-          sessionBoundary: true,
-        },
-      } as OrchestrationV2ProjectedTurnItem;
-    };
-    // Forty sessions of a hundred user turns each, a divider before every session but the first.
-    const sessionTurns = 100;
-    const sessions = 40;
-    const items: OrchestrationV2ProjectedTurnItem[] = [];
-    const boundaryIds: string[] = [];
-    for (let session = 0; session < sessions; session += 1) {
-      if (session > 0) {
-        const divider = boundary(items.length);
-        boundaryIds.push(String(divider.sourceItemId));
-        items.push(divider);
-      }
-      for (let turn = 0; turn < sessionTurns; turn += 1) {
-        items.push(makeTurnStart(items.length, "user"), makeRow(items.length + 1));
-      }
-    }
-    // Generous limits, so only the boundary decides where a page ends.
-    const generous = { maxUserTurns: 10_000, maxItems: 100_000, maxEncodedBytes: 100_000_000 };
-    const full = makeProjection(items);
-    const bounded = buildBoundedThreadProjection({
-      projection: full,
-      snapshotSequence: 1,
-      policy: generous,
-    });
-    const opened = bounded.projection.visibleTurnItems;
-    expect(String(opened[0]?.sourceItemId)).toBe(boundaryIds.at(-1));
-    expect(opened).toHaveLength(sessionTurns * 2 + 1);
-    expect(bounded.hasMoreHistory).toBe(true);
-
-    // Each earlier page is exactly one session, back to the thread's start.
-    const pageStarts: string[] = [];
-    let cursor = bounded.historyCursor;
-    while (cursor !== null) {
-      const page = selectHistoryPageFromCursor({
-        items,
-        cursor,
-        snapshotSequence: 1,
-        policy: generous,
-      });
-      pageStarts.push(String(page.items[0]?.sourceItemId));
-      expect(page.items).toHaveLength(sessionTurns * 2 + (page.hasMoreHistory ? 1 : 0));
-      cursor = page.hasMoreHistory ? page.nextCursor : null;
-    }
-    expect(pageStarts).toEqual([
-      ...boundaryIds.slice(0, -1).reverse(),
-      String(items[0]!.sourceItemId),
-    ]);
-
-    // A targeted page reaches its entry across a boundary; an untargeted one stops there.
-    const short = [
-      makeTurnStart(0, "user"),
-      makeRow(1),
-      boundary(2),
-      makeTurnStart(3, "user"),
-      makeRow(4),
-      boundary(5),
-      makeTurnStart(6, "user"),
-      makeRow(7),
-    ];
-    const shortCursor = encodeThreadHistoryCursor({
-      snapshotSequence: 1,
-      sourceThreadId: THREAD,
-      sourceItemId: short[5]!.sourceItemId,
-      position: 5,
-    });
-    const target = short[0]!;
-    const targeted = selectHistoryPageFromCursor({
-      items: short,
-      cursor: shortCursor,
-      snapshotSequence: 1,
-      throughEntryId: String(target.item.type === "user_message" ? target.item.messageId : ""),
-    });
-    expect(targeted.items.map((row) => String(row.sourceItemId))).toEqual(
-      short.slice(0, 5).map((row) => String(row.sourceItemId)),
-    );
-    const untargeted = selectHistoryPageFromCursor({
-      items: short,
-      cursor: shortCursor,
-      snapshotSequence: 1,
-    });
-    expect(untargeted.items.map((row) => String(row.sourceItemId))).toEqual(
-      short.slice(2, 5).map((row) => String(row.sourceItemId)),
-    );
-
-    // Ordinary page limits still cut inside a session longer than a page.
-    const limited = selectHistoryPageFromCursor({
-      items,
-      cursor: bounded.historyCursor!,
-      snapshotSequence: 1,
-    });
-    expect(limited.items.length).toBeLessThan(sessionTurns);
-    expect(limited.items.some((row) => boundaryIds.includes(String(row.sourceItemId)))).toBe(false);
   });
 });

@@ -5,6 +5,7 @@ import type {
   ThreadId,
   TurnItemId,
 } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 
 /**
  * Every window stops at the byte budget. A window that holds a user turn also
@@ -69,14 +70,8 @@ type HistoryRow = Pick<
     readonly attemptStatus?: string | null | undefined;
     readonly persistentOutput?: boolean;
     readonly deferredWork?: OrchestrationV2TurnItem["deferredWork"];
-    readonly sessionBoundary?: true | undefined;
   };
 };
-
-/** The notice a context refresh wrote where its fresh agent session began. */
-function isSessionBoundaryItem(item: HistoryRow["item"]): boolean {
-  return item.type === "system_notice" && item.sessionBoundary === true;
-}
 export type SelectTimelinePageResult<Row extends HistoryRow = OrchestrationV2ProjectedTurnItem> = {
   readonly items: ReadonlyArray<Row>;
   readonly nextCursor: string | null;
@@ -90,11 +85,12 @@ export type BoundedProjectionResult = {
   readonly latestLocalTurnOrdinal: number | null;
 };
 
-export class InvalidThreadHistoryCursorError extends Error {
-  readonly _tag = "InvalidThreadHistoryCursorError";
-  constructor(message = "Invalid thread history cursor.") {
-    super(message);
-    this.name = "InvalidThreadHistoryCursorError";
+export class InvalidThreadHistoryCursorError extends Schema.TaggedError<InvalidThreadHistoryCursorError>()(
+  "InvalidThreadHistoryCursorError",
+  {},
+) {
+  override get message(): string {
+    return "Invalid thread history cursor.";
   }
 }
 
@@ -309,8 +305,6 @@ export function isThreadHistoryUserTurn(item: HistoryRow["item"]): boolean {
 
 /**
  * Always admit at least one row so oversized items cannot deadlock paging.
- * A page ends at a session boundary, so a thread opens at its latest fresh
- * session and each earlier page is at most one session.
  */
 function selectOlderTimelinePage<Row extends HistoryRow>(input: {
   readonly items: ReadonlyArray<Row>;
@@ -318,8 +312,6 @@ function selectOlderTimelinePage<Row extends HistoryRow>(input: {
   readonly snapshotSequence: number;
   readonly policy?: ThreadHistoryPagePolicy | undefined;
   readonly rowEncodedBytes?: ((row: Row) => number) | undefined;
-  /** Off for a targeted page, which must reach its entry wherever it is. */
-  readonly stopAtSessionBoundary?: boolean | undefined;
 }): SelectTimelinePageResult<Row> {
   const policy = input.policy ?? THREAD_HISTORY_PAGE_POLICY;
   const rowCost = input.rowEncodedBytes ?? projectedRowEncodedBytes;
@@ -355,7 +347,6 @@ function selectOlderTimelinePage<Row extends HistoryRow>(input: {
     encodedBytes += rowBytes;
     if (isThreadHistoryUserTurn(row.item)) userTurns += 1;
     if (turnStarts[index]) rawTurns += 1;
-    if (input.stopAtSessionBoundary !== false && isSessionBoundaryItem(row.item)) break;
   }
   // Inside a turn longer than the window, no selected row starts a user turn.
   // Later pages and the snapshot query see only such rows and use `maxItems`,
@@ -475,7 +466,6 @@ export function selectHistoryPageFromCursor<Row extends HistoryRow>(input: {
     snapshotSequence: input.snapshotSequence,
     ...(input.rowEncodedBytes === undefined ? {} : { rowEncodedBytes: input.rowEncodedBytes }),
     policy: olderHistoryPagePolicy(input),
-    stopAtSessionBoundary: input.throughEntryId === undefined,
   });
 }
 
@@ -685,10 +675,9 @@ export function buildBoundedThreadProjection(input: {
     turnItems: [],
     visibleTurnItems: [],
   });
-  // Control state (checkpoint file lists, the latest task list) cannot be paged, so it may claim at most
-  // half the budget; past that the window would shrink to the one row every page admits.
+  // Control state cannot be paged, so the window keeps half the budget; dependency cards take their reserve from that half.
   const windowBudget = Math.max(
-    policy.maxEncodedBytes / 2,
+    Math.max(policy.maxEncodedBytes / 2 - dependencyReserve, 0),
     policy.maxEncodedBytes - dependencyReserve - controlBytes - 1_024,
   );
   const windowPolicy: ThreadHistoryPagePolicy = { ...policy, maxEncodedBytes: windowBudget };
