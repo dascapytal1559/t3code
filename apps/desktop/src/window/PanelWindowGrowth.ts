@@ -58,7 +58,8 @@ export function setWindowPanelOpen(
     const next = growForPanel(
       bounds,
       Electron.screen.getDisplayMatching(bounds).workArea,
-      panelWidth,
+      // The renderer measures in CSS pixels; window bounds are in screen points.
+      panelWidth * window.webContents.getZoomFactor(),
     );
     if (next === null) return;
     growthByWindow.set(window, next.growth);

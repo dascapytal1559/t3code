@@ -391,10 +391,17 @@ width, and opening a document used to squeeze the chat to make room.
   restart with the panel open grows once.
 - The window follows whether the panel is showing, so switching between a
   thread with the panel open and one without resizes it.
+- The panel opens inside the narrower window and caps itself to it, then
+  returns to its remembered width once the window has grown. Upstream's
+  `useResizableWidth` kept the width capped at mount, which made the window
+  grow by more than the panel took and widened the chat.
+- The growth is converted from CSS pixels to screen points, so it matches the
+  panel at any app zoom.
 
 Code: `apps/desktop/src/window/PanelWindowGrowth.ts` (the width arithmetic and
-its tests), the `setRightPanelOpen` bridge method, and the effect in
-`apps/web/src/components/chat/ChatRightPanel.tsx`.
+its tests), the `setRightPanelOpen` bridge method, the effect in
+`apps/web/src/components/chat/ChatRightPanel.tsx`, and the unclamped saved
+width in `apps/web/src/hooks/useResizableWidth.ts` (its browser test).
 
 ## A closed Claude session waits for its CLI to exit
 

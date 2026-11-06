@@ -40,11 +40,11 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
     return Math.max(minWidth, Math.min(maxWidth, value));
   };
 
+  // Unclamped: the bounds at mount can be narrower than later ones, such as a desktop window still growing for the panel.
   const readWidth = (): number | null => {
     if (typeof window === "undefined") return null;
     try {
-      const stored = getLocalStorageItem(storageKey, WidthSchema);
-      return stored === null ? null : clamp(stored);
+      return getLocalStorageItem(storageKey, WidthSchema);
     } catch (error) {
       console.error("Could not read persisted panel width.", error);
       return null;

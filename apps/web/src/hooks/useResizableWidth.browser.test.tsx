@@ -5,12 +5,12 @@ import { RESIZABLE_WIDTH_PROPERTY, useResizableWidth } from "./useResizableWidth
 
 const STORAGE_KEY = "test:responsive-panel-width";
 
-function Panel({ defaultWidth }: { defaultWidth: number }) {
+function Panel({ defaultWidth, maxWidth = 560 }: { defaultWidth: number; maxWidth?: number }) {
   const { width, setWidth, handlers } = useResizableWidth({
     storageKey: STORAGE_KEY,
     defaultWidth,
     minWidth: 160,
-    maxWidth: 560,
+    maxWidth,
     edge: "left",
   });
   return (
@@ -39,6 +39,24 @@ describe("useResizableWidth", () => {
       await screen.unmount();
       await using restored = await render(<Panel defaultWidth={200} />, { router: false });
       expect(restored.container.textContent).toBe("350");
+    } finally {
+      if (previous === null) localStorage.removeItem(STORAGE_KEY);
+      else localStorage.setItem(STORAGE_KEY, previous);
+    }
+  });
+
+  it("returns to the saved width when the bounds it mounted under widen", async () => {
+    const previous = localStorage.getItem(STORAGE_KEY);
+    localStorage.setItem(STORAGE_KEY, "500");
+    try {
+      // The desktop window grows for the panel after it mounts at the narrower cap.
+      // This hook only needs browser storage and React; no navigation is involved.
+      await using screen = await render(<Panel defaultWidth={240} maxWidth={300} />, {
+        router: false,
+      });
+      expect(screen.container.textContent).toBe("300");
+      await screen.rerender(<Panel defaultWidth={240} maxWidth={800} />);
+      expect(screen.container.textContent).toBe("500");
     } finally {
       if (previous === null) localStorage.removeItem(STORAGE_KEY);
       else localStorage.setItem(STORAGE_KEY, previous);
