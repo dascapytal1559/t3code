@@ -1,6 +1,7 @@
 import type { ProjectThreadAwarenessV2Input } from "@t3tools/shared/agentAwareness";
 import {
   pendingGuestMessageCount,
+  threadDecisionChangedAt,
   threadDecisionSince,
   threadDecisionUpdatedAt,
 } from "@t3tools/contracts";
@@ -1544,17 +1545,19 @@ function decisionShellFields(
   thread: Pick<OrchestrationV2AppThread, "decisionOf" | "decision">,
 ): Pick<
   OrchestrationV2ThreadShell,
-  "decisionOf" | "decisionUpdatedAt" | "decisionProjectName" | "decisionSince"
+  "decisionOf" | "decisionUpdatedAt" | "decisionProjectName" | "decisionSince" | "decisionChangedAt"
 > {
   if (thread.decisionOf === undefined) return {};
   const decisionUpdatedAt = threadDecisionUpdatedAt(thread.decision);
   const decisionProjectName = thread.decision?.projectName;
   const decisionSince = threadDecisionSince(thread.decision);
+  const decisionChangedAt = threadDecisionChangedAt(thread.decision);
   return {
     decisionOf: thread.decisionOf,
     ...(decisionUpdatedAt === null ? {} : { decisionUpdatedAt }),
     ...(decisionProjectName === undefined ? {} : { decisionProjectName }),
     ...(decisionSince === null ? {} : { decisionSince }),
+    ...(decisionChangedAt === null ? {} : { decisionChangedAt }),
   };
 }
 

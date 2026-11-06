@@ -315,17 +315,17 @@ unchanged, and mobile has no lock. Code: `crewLocked` in
 
 ## Needs me
 
-![A chat with the Needs me tab beside it: four open decisions, one marked Updated, two answered today and four under Later with their wake dates](media/needs-me-list.jpg)
+![A chat with the Needs me tab beside it: four open decisions, two answered today and four under Later with their wake dates](media/needs-me-list.jpg)
 
 Something FirstMate needs from the captain is a decision, listed in the right
 panel's "Needs me" tab, beside any chat. It opens from the panel's launcher or
 "+" menu (N), or "Open Needs me" in the command palette. On phone web it opens
 as a sheet like the other right-panel tabs. The tab lists open decisions,
-newest update first, each with its project, title and, in gray, how long the
-call has waited (`decision.since`, else its raised entry, else when it was
-made), so rewording a decision does not make it look new. A decision never
-opened reads "New"; one FirstMate changed since it was last opened reads
-"Updated" with the day, and the mark clears when it is opened. Snoozed
+newest update first, each with its project, title and, in gray, the time since
+FirstMate's latest change (an `update` entry), else since the call started
+waiting (`decision.since`, else its raised entry, else when it was made), so an
+update an hour ago reads "1h ago" while rewording the raised context does not
+reset the age. Rows carry no New or Updated mark. Snoozed
 decisions wait under "Later" with their wake date ("no date" for an undated
 snooze), and ones settled today stay under "Answered today" until the day
 ends. The project is the one the decision names in `decision.projectName`;

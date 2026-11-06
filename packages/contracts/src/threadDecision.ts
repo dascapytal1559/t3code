@@ -74,15 +74,30 @@ export const ThreadDecisionInput = Schema.Struct({
 });
 export type ThreadDecisionInput = typeof ThreadDecisionInput.Type;
 
-/** The time of the decision's latest entry, which Needs me sorts by and marks updates with. */
-export function threadDecisionUpdatedAt(
-  decision: Pick<ThreadDecision, "entries"> | null | undefined,
+function latestEntryAt(
+  entries: ReadonlyArray<Pick<ThreadDecisionEntry, "at" | "kind">>,
+  kind?: ThreadDecisionEntry["kind"],
 ): string | null {
   let latest: string | null = null;
-  for (const entry of decision?.entries ?? []) {
+  for (const entry of entries) {
+    if (kind !== undefined && entry.kind !== kind) continue;
     if (latest === null || Date.parse(entry.at) > Date.parse(latest)) latest = entry.at;
   }
   return latest;
+}
+
+/** The time of the decision's latest entry, which Needs me sorts by. */
+export function threadDecisionUpdatedAt(
+  decision: Pick<ThreadDecision, "entries"> | null | undefined,
+): string | null {
+  return latestEntryAt(decision?.entries ?? []);
+}
+
+/** The time of the latest real change (an `update` entry), so rewording the raise ages nothing. */
+export function threadDecisionChangedAt(
+  decision: Pick<ThreadDecision, "entries"> | null | undefined,
+): string | null {
+  return latestEntryAt(decision?.entries ?? [], "update");
 }
 
 /** When the decision began waiting: its `since`, else its earliest entry (the raised one). */

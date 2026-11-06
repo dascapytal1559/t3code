@@ -2194,6 +2194,8 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   decisionProjectName: ThreadDecision.fields.projectName,
   /** When the decision began waiting on the user; its Needs me row's age counts from it. */
   decisionSince: Schema.optional(IsoDateTime),
+  /** The decision's latest `update` entry; the row's age counts from it once there is one. */
+  decisionChangedAt: Schema.optional(IsoDateTime),
   forkedFrom: Schema.NullOr(OrchestrationV2AppThread.fields.forkedFrom),
   activeProviderThreadId: Schema.NullOr(ProviderThreadId),
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),

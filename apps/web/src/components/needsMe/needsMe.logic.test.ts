@@ -1,7 +1,7 @@
 import { ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { decisionAgeTimestamp, decisionMark, groupNeedsMeDecisions } from "./needsMe.logic";
+import { decisionAgeTimestamp, groupNeedsMeDecisions } from "./needsMe.logic";
 
 // Local times, so "today" means the same calendar day wherever the test runs.
 const at = (day: number, hour: number) => new Date(2026, 10, day, hour).toISOString();
@@ -63,20 +63,23 @@ describe("groupNeedsMeDecisions", () => {
   });
 });
 
-describe("decisionMark", () => {
-  it.each([
-    ["never opened", undefined, at(5, 9), "new"],
-    ["changed since it was opened", at(5, 8), at(5, 9), "updated"],
-    ["opened since it last changed", at(5, 10), at(5, 9), null],
-  ] as const)("marks a decision %s", (_name, lastVisitedAt, decisionUpdatedAt, mark) => {
-    expect(decisionMark({ decisionUpdatedAt }, lastVisitedAt)).toBe(mark);
-  });
-});
-
 describe("decisionAgeTimestamp", () => {
-  it("counts from when the call began waiting, else from its creation", () => {
+  it("counts from the latest real change, else from when the call began waiting, else creation", () => {
     const createdAt = at(1, 9);
+    expect(
+      decisionAgeTimestamp({ decisionChangedAt: at(7, 11), decisionSince: at(2, 9), createdAt }),
+    ).toBe(at(7, 11));
     expect(decisionAgeTimestamp({ decisionSince: at(2, 9), createdAt })).toBe(at(2, 9));
     expect(decisionAgeTimestamp({ createdAt })).toBe(createdAt);
+  });
+
+  it("does not let a change from before the call began waiting reset the age", () => {
+    expect(
+      decisionAgeTimestamp({
+        decisionChangedAt: at(2, 9),
+        decisionSince: at(3, 9),
+        createdAt: at(1, 9),
+      }),
+    ).toBe(at(3, 9));
   });
 });

@@ -160,6 +160,8 @@ export interface EnvironmentThreadShell {
   readonly decisionProjectName?: string;
   /** ISO time the decision began waiting on the user. */
   readonly decisionSince?: string;
+  /** ISO time of the decision's latest `update` entry. */
+  readonly decisionChangedAt?: string;
   /** Its project's pinned coordinator, which the sidebar shows as one with or without crew. */
   readonly coordinator?: boolean;
   readonly forkedFrom: OrchestrationV2ThreadShell["forkedFrom"];
@@ -329,6 +331,9 @@ export function presentThreadShell(
       ? {}
       : { decisionProjectName: thread.decisionProjectName }),
     ...(thread.decisionSince === undefined ? {} : { decisionSince: thread.decisionSince }),
+    ...(thread.decisionChangedAt === undefined
+      ? {}
+      : { decisionChangedAt: thread.decisionChangedAt }),
     ...(thread.coordinator === true ? { coordinator: true } : {}),
     forkedFrom: thread.forkedFrom,
     linkOrigin: thread.linkOrigin ?? null,

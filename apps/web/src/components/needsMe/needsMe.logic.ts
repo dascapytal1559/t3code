@@ -70,20 +70,18 @@ export function groupNeedsMeDecisions<T extends DecisionShell>(
   };
 }
 
-/** When the call began waiting on the user, not its latest edit, so rewording keeps its age. */
+/**
+ * Where a row's age counts from: FirstMate's latest real change, else when the call began
+ * waiting. Rewording the original context is neither, so it keeps its age.
+ */
 export function decisionAgeTimestamp(
-  thread: Pick<EnvironmentThreadShell, "decisionSince" | "createdAt">,
+  thread: Pick<EnvironmentThreadShell, "decisionChangedAt" | "decisionSince" | "createdAt">,
 ): string {
-  return thread.decisionSince ?? thread.createdAt;
-}
-
-/** "new" until the decision is first opened, then "updated" while FirstMate changed it since. */
-export function decisionMark(
-  thread: Pick<EnvironmentThreadShell, "decisionUpdatedAt">,
-  lastVisitedAt: string | undefined,
-): "new" | "updated" | null {
-  if (lastVisitedAt === undefined) return "new";
-  return ms(thread.decisionUpdatedAt) > ms(lastVisitedAt) ? "updated" : null;
+  const { decisionChangedAt } = thread;
+  const since = thread.decisionSince ?? thread.createdAt;
+  return decisionChangedAt !== undefined && ms(decisionChangedAt) > ms(since)
+    ? decisionChangedAt
+    : since;
 }
 
 const PICTURE_PATH = /\.(?:png|jpe?g|gif|webp|avif|svg)$/i;

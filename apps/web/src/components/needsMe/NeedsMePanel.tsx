@@ -12,12 +12,9 @@ import { useNowMinute } from "../../hooks/useNowMinute";
 import { cn } from "../../lib/utils";
 import { useProject, useQuietThreadShells } from "../../state/entities";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
-import { useUiStateStore } from "../../uiStateStore";
 import { ProjectFavicon, ProjectNameMonogram } from "../ProjectFavicon";
-import { resolveThreadLastVisitedAt } from "../Sidebar.logic";
-import { Badge } from "../ui/badge";
 import { DecisionDetail, formatDay } from "./DecisionDetail";
-import { decisionAgeTimestamp, decisionMark, groupNeedsMeDecisions } from "./needsMe.logic";
+import { decisionAgeTimestamp, groupNeedsMeDecisions } from "./needsMe.logic";
 import { useNeedsMeOpenRow } from "./needsMeReveal";
 
 type RowGroup = "open" | "later" | "answered";
@@ -87,16 +84,11 @@ function NeedsMeRow(props: {
   const key = scopedThreadKey(decisionRef);
   const open = useNeedsMeOpenRow((state) => state.openKey === key);
   const setOpenKey = useNeedsMeOpenRow((state) => state.setOpenKey);
-  const localLastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[key]);
   const project = useProject(
     thread.decisionProjectName === undefined
       ? scopeProjectRef(thread.environmentId, thread.projectId)
       : null,
   );
-  const mark =
-    props.group === "open"
-      ? decisionMark(thread, resolveThreadLastVisitedAt(thread.lastVisitedAt, localLastVisitedAt))
-      : null;
   const projectName = thread.decisionProjectName ?? project?.title ?? null;
   const detail =
     props.group === "later"
@@ -128,13 +120,6 @@ function NeedsMeRow(props: {
             <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
               {thread.title}
             </span>
-            {mark === null ? null : (
-              <Badge variant={mark === "new" ? "info" : "warning"} size="sm">
-                {mark === "new"
-                  ? "New"
-                  : `Updated ${formatDay(thread.decisionUpdatedAt ?? thread.updatedAt)}`}
-              </Badge>
-            )}
           </span>
           <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
             {thread.decisionProjectName !== undefined ? (
