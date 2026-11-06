@@ -44,6 +44,14 @@ import {
 import { AuthMcpClientAccess } from "./auth.ts";
 import { ChatAttachment } from "./chatAttachment.ts";
 import { ThreadGuestShare } from "./guestShare.ts";
+import {
+  ThreadDecision,
+  ThreadDecisionInput,
+  ThreadDecisionReplyInput,
+  ThreadDecisionReplyResult,
+  ThreadDecisionUndoReplyInput,
+  ThreadDecisionUndoReplyResult,
+} from "./threadDecision.ts";
 import { StoredThreadTags, ThreadTag } from "./threadTags.ts";
 import {
   OrchestrationSearchThreadsInput,
@@ -536,6 +544,13 @@ export const OrchestrationV2AppThread = Schema.Struct({
   statusLabel: Schema.optional(Schema.NullOr(ThreadStatusLabel)),
   /** When the current label was first set; re-sending the same label keeps it. */
   statusLabelSince: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
+  /**
+   * The coordinator this thread holds a decision for. Such a thread has no agent: replies go to
+   * the coordinator. Kept out of `lineage` for the same reason as `crewOf`.
+   */
+  decisionOf: Schema.optional(ThreadId),
+  /** The decision itself; null once the coordinator clears it. */
+  decision: Schema.optional(Schema.NullOr(ThreadDecision)),
   lineage: OrchestrationV2AppThreadLineage,
   forkedFrom: Schema.NullOr(
     Schema.Union([
@@ -2173,6 +2188,9 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   crewOf: OrchestrationV2AppThread.fields.crewOf,
   statusLabel: OrchestrationV2AppThread.fields.statusLabel,
   statusLabelSince: OrchestrationV2AppThread.fields.statusLabelSince,
+  decisionOf: OrchestrationV2AppThread.fields.decisionOf,
+  /** The decision's latest entry; the shell leaves the payload itself to the thread read. */
+  decisionUpdatedAt: Schema.optional(IsoDateTime),
   forkedFrom: Schema.NullOr(OrchestrationV2AppThread.fields.forkedFrom),
   activeProviderThreadId: Schema.NullOr(ProviderThreadId),
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),
@@ -3053,6 +3071,9 @@ export const OrchestrationV2Command = Schema.Union([
     delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
     /** A thread in this environment that this one works for; the sidebar lists it under that coordinator. */
     crewOf: Schema.optional(ThreadId),
+    /** With `decision`: a thread holding that decision for this coordinator, with no agent. */
+    decisionOf: Schema.optional(ThreadId),
+    decision: Schema.optional(ThreadDecisionInput),
     environment: Schema.optional(OrchestrationV2ThreadEnvironment),
     instructions: Schema.optional(OrchestrationV2ThreadInstructions),
     importedNativeThread: Schema.optional(
@@ -3195,6 +3216,8 @@ export const OrchestrationV2Command = Schema.Union([
     coordinator: Schema.optional(Schema.Boolean),
     /** Set (string) or clear (null) the label; absent leaves it unchanged. */
     statusLabel: OrchestrationV2AppThread.fields.statusLabel,
+    /** Replace (object) or clear (null) a decision thread's decision; absent leaves it unchanged. */
+    decision: Schema.optional(Schema.NullOr(ThreadDecisionInput)),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.pull-request.link"),
@@ -3729,6 +3752,8 @@ export const ORCHESTRATION_V2_WS_METHODS = {
   getNativeChildWork: "orchestration.getNativeChildWork",
   stopWorkflow: "orchestration.stopWorkflow",
   forceStopThread: "orchestration.forceStopThread",
+  replyToDecision: "orchestration.replyToDecision",
+  undoDecisionReply: "orchestration.undoDecisionReply",
   getTurnItem: "orchestration.getTurnItem",
   launchThread: "orchestration.launchThread",
   subscribeShell: "orchestration.subscribeShell",
@@ -4400,6 +4425,14 @@ export const OrchestrationV2RpcSchemas = {
   forceStopThread: {
     input: OrchestrationV2ForceStopThreadInput,
     output: OrchestrationV2ForceStopThreadResult,
+  },
+  replyToDecision: {
+    input: ThreadDecisionReplyInput,
+    output: ThreadDecisionReplyResult,
+  },
+  undoDecisionReply: {
+    input: ThreadDecisionUndoReplyInput,
+    output: ThreadDecisionUndoReplyResult,
   },
   getWorkflowScript: {
     input: OrchestrationV2GetWorkflowScriptInput,

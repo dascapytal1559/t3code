@@ -7,6 +7,7 @@ import { Navigate, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import ChatView from "./ChatView";
+import { DecisionThreadView } from "./decision/DecisionThreadView";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
 import { SidebarInset } from "./ui/sidebar";
 import { useComposerDraftStore } from "../composerDraftStore";
@@ -192,6 +193,14 @@ export function ThreadRouteView({
   } else if (offShellBlocked) {
     // Before the shell bootstraps, a listed visible thread can still look off-shell.
     if (bootstrapComplete && unlistedThread !== null) redirect = <Navigate to="/" replace />;
+  } else if (serverThreadShell?.decisionOf !== undefined) {
+    // A decision thread has no agent, so it gets its own view instead of a timeline and composer.
+    view = (
+      <DecisionThreadView
+        environmentId={target.threadRef.environmentId}
+        threadId={target.threadRef.threadId}
+      />
+    );
   } else if (renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)) {
     view = (
       <ChatView

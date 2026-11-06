@@ -838,6 +838,7 @@ function listItemFromShell(
     ...mcpLineage(shell),
     coordinator: shell.coordinator === true,
     ...(shell.statusLabel == null ? {} : { statusLabel: shell.statusLabel }),
+    ...(shell.decisionOf === undefined ? {} : { decisionOf: shell.decisionOf }),
     itemCount: shell.visibleItemCount,
     createdAt: DateTime.formatIso(shell.createdAt),
     updatedAt: DateTime.formatIso(shell.updatedAt),
@@ -896,6 +897,9 @@ function threadDetail(
     ...(projection.thread.statusLabel == null
       ? {}
       : { statusLabel: projection.thread.statusLabel }),
+    ...(projection.thread.decisionOf === undefined
+      ? {}
+      : { decisionOf: projection.thread.decisionOf, decision: projection.thread.decision ?? null }),
     runCount: projection.runs.length,
     itemCount,
     pendingRequestCount: projection.runtimeRequests.filter(

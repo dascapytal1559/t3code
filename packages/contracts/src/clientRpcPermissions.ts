@@ -64,6 +64,9 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [ORCHESTRATION_V2_WS_METHODS.stopWorkflow]: AuthOrchestrationOperateScope,
   // Force stop kills agent processes, as Stop on a terminal does.
   [ORCHESTRATION_V2_WS_METHODS.forceStopThread]: AuthOrchestrationOperateScope,
+  // A decision reply is a message to the coordinator, as the composer's send is.
+  [ORCHESTRATION_V2_WS_METHODS.replyToDecision]: AuthOrchestrationOperateScope,
+  [ORCHESTRATION_V2_WS_METHODS.undoDecisionReply]: AuthOrchestrationOperateScope,
   // A guest link hands thread access to someone outside, like a pairing link.
   [WS_METHODS.guestShareCreate]: AuthAccessWriteScope,
   [WS_METHODS.peerLinksLink]: AuthAccessWriteScope,

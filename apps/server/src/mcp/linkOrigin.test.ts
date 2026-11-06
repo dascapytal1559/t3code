@@ -97,6 +97,8 @@ const layerLaunches = Layer.effect(
             worktreePath: null,
             ...(input.linkOrigin === undefined ? {} : { linkOrigin: input.linkOrigin }),
             ...(input.delegatedFrom === undefined ? {} : { delegatedFrom: input.delegatedFrom }),
+            ...(input.decisionOf === undefined ? {} : { decisionOf: input.decisionOf }),
+            ...(input.decision === undefined ? {} : { decision: input.decision }),
             createdBy: input.createdBy,
             creationSource: input.creationSource,
           })
@@ -434,6 +436,53 @@ it.layer(Layer.provideMerge(layerTools, layerOrchestration))("work a link starts
       const clear = yield* update({ action: "clear_status_label" });
       assert.equal(clear.isError, false, JSON.stringify(clear.content));
       assert.equal(yield* readLabel, undefined);
+    }),
+  );
+
+  it.effect("launches a decision thread with no turn, and sets and reads its decision", () =>
+    Effect.gen(function* () {
+      const coordinator = yield* launch(claudeCode, "FirstMate");
+      const decision = {
+        taskId: "rituals-leftover-records",
+        title: "Rituals leftovers",
+        question: "Clear the change log lines? Drop the Sunday fish check?",
+        options: [{ label: "Yes to both" }],
+        entries: [{ at: "2026-11-05T05:43:00.000Z", kind: "raised", text: "Rituals: two calls." }],
+      };
+      const launched = yield* call(claudeCode, "t3_thread_launch", {
+        title: "Rituals leftovers",
+        decisionOf: coordinator,
+        decision,
+      });
+      assert.equal(launched.isError, false, JSON.stringify(launched.content));
+      const { threadId, runId } = launched.structuredContent as {
+        threadId: ThreadId;
+        runId: string | null;
+      };
+      assert.equal(runId, null);
+
+      const withMessage = yield* call(claudeCode, "t3_thread_launch", {
+        title: "Rituals leftovers",
+        decisionOf: coordinator,
+        decision,
+        message: "Ask the captain",
+      });
+      assert.equal(failureCode(withMessage), "invalid_request");
+
+      const set = yield* call(claudeCode, "t3_thread_update", {
+        threadId,
+        action: "set_decision",
+        decision: { ...decision, question: "Drop the Sunday fish check?" },
+      });
+      assert.equal(set.isError, false, JSON.stringify(set.content));
+      assert.equal((set.structuredContent as { decisionRevision?: number }).decisionRevision, 2);
+      const read = yield* call(claudeCode, "t3_thread_read", { threadId });
+      const { thread } = read.structuredContent as {
+        thread: { decisionOf?: ThreadId; decision?: { question: string; revision: number } };
+      };
+      assert.equal(thread.decisionOf, coordinator);
+      assert.equal(thread.decision?.question, "Drop the Sunday fish check?");
+      assert.equal(thread.decision?.revision, 2);
     }),
   );
 });

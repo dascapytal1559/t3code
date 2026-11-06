@@ -99,12 +99,14 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
           cause: forkableSourceRunStatusError(sourceRun),
         });
       }
-      // The coordinator pin (one per project), the crew link, its card label and the remote
-      // parent's delegation name the source thread's role only.
+      // The coordinator pin (one per project), the crew link, its card label, a decision and the
+      // remote parent's delegation name the source thread's role only.
       const {
         coordinator: _coordinator,
         crewOf: _crewOf,
         statusLabel: _statusLabel,
+        decisionOf: _decisionOf,
+        decision: _decision,
         statusLabelSince: _statusLabelSince,
         delegatedFrom: _delegatedFrom,
         ...inherited

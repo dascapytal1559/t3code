@@ -255,6 +255,7 @@ import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrom
 import {
   coordinatorGroupSlot,
   resolveAppCoordinatorGroup,
+  sortDecisionThreads,
   type CoordinatorGroup,
 } from "./sidebar/coordinatorGroup.logic";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
@@ -506,6 +507,7 @@ function useSidebarThreads(input: {
   const {
     coordinatorThreads,
     crewThreads,
+    decisionThreads,
     pinnedThreads,
     activeThreads,
     workingThreads,
@@ -570,6 +572,7 @@ function useSidebarThreads(input: {
   const orderedThreads = [
     ...coordinatorThreads,
     ...visibleCrewThreads,
+    ...decisionThreads,
     ...pinnedThreads,
     ...(projectFolders === null
       ? activeThreads
@@ -582,6 +585,7 @@ function useSidebarThreads(input: {
   for (const [list, section] of [
     [coordinatorThreads, "crew"],
     [crewThreads, "crew"],
+    [decisionThreads, "decision"],
     [pinnedThreads, "pinned"],
     [activeThreads, "active"],
     [workingThreads, "working"],
@@ -597,6 +601,7 @@ function useSidebarThreads(input: {
     searchableThreads: [
       ...coordinatorThreads,
       ...crewThreads,
+      ...decisionThreads,
       ...pinnedThreads,
       ...activeThreads,
       ...workingThreads,
@@ -674,9 +679,16 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
   const settled: EnvironmentThreadShell[] = [];
   const coordinators: EnvironmentThreadShell[] = [];
   const crew: EnvironmentThreadShell[] = [];
+  const decisions: EnvironmentThreadShell[] = [];
   const crewList = (thread: EnvironmentThreadShell, section: SidebarSection) => {
     const slot = coordinatorGroupSlot(coordinatorGroup, thread, section);
-    return slot === "coordinator" ? coordinators : slot === "crew" ? crew : null;
+    return slot === "coordinator"
+      ? coordinators
+      : slot === "crew"
+        ? crew
+        : slot === "decision"
+          ? decisions
+          : null;
   };
   const { draggableThreadKeys, activeReorderableThreadKeys } = resolveSidebarReorderableThreadKeys({
     threads: visible,
@@ -731,6 +743,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
   return {
     coordinatorThreads: coordinators.toSorted(newestFirst),
     crewThreads: crew.toSorted(newestFirst),
+    decisionThreads: sortDecisionThreads(decisions),
     pinnedThreads:
       optimisticDrop?.section !== "pinned" || optimisticDrop.order === null
         ? sortedPinned
@@ -1344,6 +1357,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     crewShelfExpanded,
     toggleCrewShelf,
     visibleCrewThreads,
+    decisionThreads,
     pinnedThreads,
     draggableThreadKeys,
     activeReorderableThreadKeys,
@@ -1769,7 +1783,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const isContextDrag =
     dragState?.contextDrag === true ||
     dragState?.activeSection === "working" ||
-    dragState?.activeSection === "crew";
+    dragState?.activeSection === "crew" ||
+    dragState?.activeSection === "decision";
   const dragTargetSection = isContextDrag ? null : (dragState?.targetSection ?? null);
   const finishThreadDrag = (started: boolean) => {
     dragSensorRef.current = null;
@@ -1979,6 +1994,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       !hasProjectFolders &&
       coordinatorThreads.length +
         crewThreads.length +
+        decisionThreads.length +
         pinnedThreads.length +
         activeThreads.length +
         workingThreads.length +
@@ -1993,6 +2009,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       items.push({ kind: "marker", marker: "crew-toggle" });
       items.push(...rowsOf(visibleCrewThreads, "crew"));
     }
+    items.push(...rowsOf(decisionThreads, "decision"));
     items.push({ kind: "marker", marker: "pinned-header" });
     const pinnedRows = rowsOf(pinnedThreads, "pinned");
     items.push(...pinnedRows);
@@ -3387,6 +3404,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         );
                         const isCard =
                           section === "crew" ||
+                          section === "decision" ||
                           section === "active" ||
                           section === "pinned" ||
                           section === "working";

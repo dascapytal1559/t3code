@@ -21,6 +21,7 @@ import {
   OrchestratorMcpFailure,
   SourceControlCloneRepositoryInput,
   SourceControlCloneRepositoryResult,
+  ThreadDecisionInput,
 } from "@t3tools/contracts";
 import * as FileSystem from "effect/FileSystem";
 import * as DocumentText from "../../../provider/DocumentText.ts";
@@ -170,6 +171,13 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
           "A thread here this one works for. The sidebar lists it as that thread's crew; stopping or archiving stays separate.",
       }),
     ),
+    decisionOf: Schema.optional(
+      ThreadId.annotate({
+        description:
+          "With `decision`: a thread holding a decision for this coordinator, in its project, with no agent and no turn. The user's reply arrives in the coordinator's chat. Not with `message`.",
+      }),
+    ),
+    decision: Schema.optional(ThreadDecisionInput),
     clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
     /** Set by a linked environment launching its agent's delegated task here; ignored otherwise. */
     delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),

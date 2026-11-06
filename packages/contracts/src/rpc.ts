@@ -231,6 +231,7 @@ import {
   OrchestrationV2RpcSchemas,
   OrchestrationV2ThreadLaunchError,
 } from "./orchestrationV2.ts";
+import { ThreadDecisionReplyError } from "./threadDecision.ts";
 import {
   ProjectCreateNewInput,
   ProjectCreateNewResult,
@@ -1825,6 +1826,21 @@ const WsOrchestrationV2ForceStopThreadRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS
   error: Schema.Union([OrchestrationV2ForceStopThreadError, EnvironmentAuthorizationError]),
 });
 
+const WsOrchestrationV2ReplyToDecisionRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.replyToDecision, {
+  payload: OrchestrationV2RpcSchemas.replyToDecision.input,
+  success: OrchestrationV2RpcSchemas.replyToDecision.output,
+  error: Schema.Union([ThreadDecisionReplyError, EnvironmentAuthorizationError]),
+});
+
+const WsOrchestrationV2UndoDecisionReplyRpc = Rpc.make(
+  ORCHESTRATION_V2_WS_METHODS.undoDecisionReply,
+  {
+    payload: OrchestrationV2RpcSchemas.undoDecisionReply.input,
+    success: OrchestrationV2RpcSchemas.undoDecisionReply.output,
+    error: Schema.Union([ThreadDecisionReplyError, EnvironmentAuthorizationError]),
+  },
+);
+
 const WsOrchestrationV2GetWorkflowScriptRpc = Rpc.make(
   ORCHESTRATION_V2_WS_METHODS.getWorkflowScript,
   {
@@ -2194,6 +2210,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationV2GetNativeChildWorkRpc,
   WsOrchestrationV2StopWorkflowRpc,
   WsOrchestrationV2ForceStopThreadRpc,
+  WsOrchestrationV2ReplyToDecisionRpc,
+  WsOrchestrationV2UndoDecisionReplyRpc,
   WsOrchestrationV2GetTurnItemRpc,
   WsOrchestrationV2GetTurnDiffRpc,
   WsOrchestrationV2GetFullThreadDiffRpc,

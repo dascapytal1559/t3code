@@ -47,17 +47,27 @@ export function resolveCoordinatorGroup<T extends GroupThread>(
 
 /**
  * Where a thread the sidebar would otherwise list in `section` goes instead, if anywhere. It runs
- * before the Working split, so neither ever reaches Working. Snoozing or settling is the way out
- * of the group; pinning changes nothing because the group already sits above Pinned.
+ * before the Working split, so none ever reaches Working. Snoozing or settling is the way out
+ * of the group; pinning changes nothing because the group already sits above Pinned. A decision
+ * thread needs the user, so it sits at the top level right after the crew tree.
  */
-export function coordinatorGroupSlot<T>(
+export function coordinatorGroupSlot<T extends Pick<EnvironmentThreadShell, "decisionOf">>(
   group: CoordinatorGroup<T>,
   thread: T,
   section: SidebarSection,
-): "coordinator" | "crew" | null {
+): "coordinator" | "crew" | "decision" | null {
   if (section === "snoozed" || section === "settled") return null;
   if (group.coordinators.has(thread)) return "coordinator";
-  return group.crew.has(thread) ? "crew" : null;
+  if (group.crew.has(thread)) return "crew";
+  return thread.decisionOf === undefined ? null : "decision";
+}
+
+/** Newest update first, so a decision whose context just changed comes to the top. */
+export function sortDecisionThreads<
+  T extends Pick<EnvironmentThreadShell, "decisionUpdatedAt" | "createdAt">,
+>(threads: readonly T[]): T[] {
+  const at = (thread: T) => Date.parse(thread.decisionUpdatedAt ?? thread.createdAt);
+  return threads.toSorted((left, right) => at(right) - at(left));
 }
 
 type CrewThread = GroupThread & Pick<EnvironmentThreadShell, "crewOf">;

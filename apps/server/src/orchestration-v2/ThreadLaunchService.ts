@@ -20,6 +20,7 @@ import {
   type RunId,
   type RuntimeMode,
   type ScheduledTaskId,
+  type ThreadDecisionInput,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -109,6 +110,9 @@ export interface ThreadLaunchInput {
   readonly instructions?: string;
   /** The coordinator thread this one works for, in the same environment. */
   readonly crewOf?: ThreadId;
+  /** With `decision`: the coordinator this thread holds that decision for. It gets no agent. */
+  readonly decisionOf?: ThreadId;
+  readonly decision?: ThreadDecisionInput;
 }
 
 type PreparationInput = Pick<
@@ -966,6 +970,8 @@ const make = Effect.gen(function* () {
                 ...(input.environment === undefined ? {} : { environment: input.environment }),
                 ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
                 ...(input.crewOf === undefined ? {} : { crewOf: input.crewOf }),
+                ...(input.decisionOf === undefined ? {} : { decisionOf: input.decisionOf }),
+                ...(input.decision === undefined ? {} : { decision: input.decision }),
                 createdBy: input.createdBy,
                 creationSource: input.creationSource,
               });

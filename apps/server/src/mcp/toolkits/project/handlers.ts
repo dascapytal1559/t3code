@@ -121,19 +121,44 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           });
         // Reading the parent is enough: naming it grants nothing on it.
         if (input.parentThreadId !== undefined) yield* readThread(input.parentThreadId, []);
+        if ((input.decisionOf === undefined) !== (input.decision === undefined))
+          return yield* new OrchestratorMcpFailure({
+            code: "invalid_request",
+            message: "Pass decisionOf and decision together.",
+          });
+        if (
+          input.decisionOf !== undefined &&
+          (input.message !== undefined ||
+            attachments.length > 0 ||
+            input.scratch === true ||
+            input.parentThreadId !== undefined ||
+            (input.workspaceStrategy !== undefined && input.workspaceStrategy.type !== "root"))
+        )
+          return yield* new OrchestratorMcpFailure({
+            code: "invalid_request",
+            message:
+              "A decision thread has no agent: omit message, attachments, scratch, parentThreadId and workspaceStrategy.",
+          });
+        // A decision lives in its coordinator's project unless the caller names another.
+        const decisionCoordinator =
+          input.decisionOf === undefined
+            ? undefined
+            : (yield* readThread(input.decisionOf, [])).projection.thread;
         const projectId =
-          input.scratch === true
-            ? (yield* ManagedProjectFolders.ManagedProjectFolders.pipe(
-                Effect.flatMap((folders) => folders.ensureScratchProject),
-                Effect.mapError(
-                  (error) =>
-                    new OrchestratorMcpFailure({
-                      code: "orchestration_error",
-                      message: error.message,
-                    }),
-                ),
-              )).projectId
-            : yield* resolveProjectId(context, input.projectId);
+          input.projectId === undefined && decisionCoordinator !== undefined
+            ? decisionCoordinator.projectId
+            : input.scratch === true
+              ? (yield* ManagedProjectFolders.ManagedProjectFolders.pipe(
+                  Effect.flatMap((folders) => folders.ensureScratchProject),
+                  Effect.mapError(
+                    (error) =>
+                      new OrchestratorMcpFailure({
+                        code: "orchestration_error",
+                        message: error.message,
+                      }),
+                  ),
+                )).projectId
+              : yield* resolveProjectId(context, input.projectId);
         const readProject = Project.ProjectService.pipe(
           Effect.flatMap((projects) => projects.getById(projectId)),
           Effect.mapError(unavailable),
@@ -196,6 +221,8 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
         const modelSelection =
           input.modelSelection ??
           launchedModel ??
+          // A decision runs no agent, so its coordinator's model is only a placeholder.
+          decisionCoordinator?.modelSelection ??
           caller?.modelSelection ??
           (projectDefaults
             ? resolveNewThreadModelSelection({
@@ -242,6 +269,9 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           workspaceStrategy: input.workspaceStrategy ?? { type: "root" },
           ...(input.environment === undefined ? {} : { environment: input.environment }),
           ...(input.parentThreadId === undefined ? {} : { crewOf: input.parentThreadId }),
+          ...(input.decisionOf === undefined || input.decision === undefined
+            ? {}
+            : { decisionOf: input.decisionOf, decision: input.decision }),
           ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
           ...(input.message === undefined && attachments.length === 0
             ? {}

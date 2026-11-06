@@ -62,6 +62,7 @@ import {
   OrchestrationV2GetShellSnapshotError,
   OrchestrationV2GetThreadProjectionError,
   OrchestrationV2ThreadLaunchError,
+  ThreadDecisionReplyError,
   type OrchestrationProjectShell,
   type OrchestrationV2ShellSnapshot,
   type OrchestrationV2ThreadStreamItem,
@@ -127,6 +128,7 @@ import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
 import * as GuestShareService from "./guest/GuestShareService.ts";
+import * as DecisionReplyService from "./orchestration-v2/DecisionReplyService.ts";
 import {
   bufferShellLiveStream,
   coalesceShellApplicationEvents,
@@ -275,6 +277,13 @@ import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as AgentSessionImporter from "./project/AgentSessionImporter.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import { requestUrl } from "./requestUrl.ts";
+
+const decisionReplyStartupError =
+  (input: { readonly threadId: ThreadId }) =>
+  (cause: ServerRuntimeStartup.ServerRuntimeStartupError) =>
+    Effect.fail(
+      new ThreadDecisionReplyError({ threadId: input.threadId, reason: "failed", cause }),
+    );
 
 const CONFIG_DISCOVERY_TIMEOUT = Duration.seconds(5);
 const isProviderUploadFeedbackError = Schema.is(ProviderUploadFeedbackError);
@@ -1443,6 +1452,7 @@ export const layerWsRpc = (
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
       const secretRequests = yield* SecretRequests.SecretRequests;
       const guestShares = yield* GuestShareService.GuestShareService;
+      const decisionReplies = yield* DecisionReplyService.DecisionReplyService;
       const pullRequests = yield* PullRequestService.PullRequestService;
       const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
@@ -2096,6 +2106,18 @@ export const layerWsRpc = (
         [ORCHESTRATION_V2_WS_METHODS.stopWorkflow]: (input) => threadManagement.stopWorkflow(input),
         [ORCHESTRATION_V2_WS_METHODS.forceStopThread]: (input) =>
           threadManagement.forceStopThread(input),
+        [ORCHESTRATION_V2_WS_METHODS.replyToDecision]: (input) =>
+          startup
+            .enqueueCommand(decisionReplies.reply(input))
+            .pipe(
+              Effect.catchTags({ ServerRuntimeStartupError: decisionReplyStartupError(input) }),
+            ),
+        [ORCHESTRATION_V2_WS_METHODS.undoDecisionReply]: (input) =>
+          startup
+            .enqueueCommand(decisionReplies.undoReply(input))
+            .pipe(
+              Effect.catchTags({ ServerRuntimeStartupError: decisionReplyStartupError(input) }),
+            ),
         [ORCHESTRATION_V2_WS_METHODS.getWorkflowScript]: (input) =>
           readWorkflowScript({ scriptPath: input.scriptPath }),
         [ORCHESTRATION_V2_WS_METHODS.getNativeChildWork]: (input) =>

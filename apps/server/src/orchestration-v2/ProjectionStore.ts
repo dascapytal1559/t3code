@@ -1,5 +1,5 @@
 import type { ProjectThreadAwarenessV2Input } from "@t3tools/shared/agentAwareness";
-import { pendingGuestMessageCount } from "@t3tools/contracts";
+import { pendingGuestMessageCount, threadDecisionUpdatedAt } from "@t3tools/contracts";
 import { applyThreadPullRequestLinkUpdate } from "../sourceControl/threadPullRequests.ts";
 import { projectTurnItemForWire } from "./WireProjection.ts";
 import * as Stream from "effect/Stream";
@@ -1528,6 +1528,17 @@ const linkCardStillAsks = (
   latestUserAuthoredMessageAt === null ||
   !DateTime.isGreaterThan(latestUserAuthoredMessageAt, item.startedAt ?? item.updatedAt);
 
+function decisionShellFields(
+  thread: Pick<OrchestrationV2AppThread, "decisionOf" | "decision">,
+): Pick<OrchestrationV2ThreadShell, "decisionOf" | "decisionUpdatedAt"> {
+  if (thread.decisionOf === undefined) return {};
+  const decisionUpdatedAt = threadDecisionUpdatedAt(thread.decision);
+  return {
+    decisionOf: thread.decisionOf,
+    ...(decisionUpdatedAt === null ? {} : { decisionUpdatedAt }),
+  };
+}
+
 export function threadShellFromProjection(
   projection: OrchestrationV2ThreadProjection,
 ): OrchestrationV2ThreadShell {
@@ -1634,6 +1645,7 @@ export function threadShellFromProjection(
     ...(projection.thread.statusLabelSince == null
       ? {}
       : { statusLabelSince: projection.thread.statusLabelSince }),
+    ...decisionShellFields(projection.thread),
     forkedFrom: projection.thread.forkedFrom,
     activeProviderThreadId: projection.thread.activeProviderThreadId,
     ...(projection.thread.historyOrigin === undefined
@@ -1923,6 +1935,7 @@ function shellFromState(input: {
     ...(input.state.thread.statusLabelSince == null
       ? {}
       : { statusLabelSince: input.state.thread.statusLabelSince }),
+    ...decisionShellFields(input.state.thread),
     forkedFrom: input.state.thread.forkedFrom,
     activeProviderThreadId: input.state.thread.activeProviderThreadId,
     ...(input.state.thread.historyOrigin === undefined

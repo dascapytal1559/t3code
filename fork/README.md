@@ -284,6 +284,81 @@ thread reads report `coordinator`, and `orchestrator_capabilities` reports
 forking FirstMate cannot make a second coordinator. Code:
 `notifyCrewCoordinators` in `apps/server/src/orchestration-v2/RestartContinuation.ts`.
 
+## Decision threads
+
+![The sidebar: the FirstMate card and its crew, then three decision threads marked with a raised hand, then ordinary threads. The open decision shows its question and options, FirstMate's message, an Updated divider with what changed, and a reply box with option chips](media/decision-thread.png)
+
+Something FirstMate needs from the captain is its own thread: a real thread in
+FirstMate's project with no agent and no turn. The sidebar lists decision
+threads at the top level, right after the FirstMate card and its crew tree and
+before Pinned and ordinary threads; crew stay one level down. A card shows a
+raised hand where the project icon goes and, in the usual gray, the time since
+the decision's latest entry, not since the thread was made. Snooze, Settle,
+unread and archive work as on any thread; a snoozed or settled decision goes to
+those shelves.
+
+Opening one shows the decision view in place of the timeline and composer: the
+question and options, then FirstMate's messages as sent, each with "In
+FirstMate's chat", an "Updated" divider with the one-line what-changed before
+each update, and attachments (pictures inline, reports and links as file
+chips, paths relative to FirstMate's project). Option chips and "Later" fill
+the reply box. "Send to FirstMate" puts one ordinary user message into
+FirstMate's chat, queued behind a running turn as the composer's Queue does or
+starting a turn when FirstMate is idle, and settles the decision. The toast's
+Undo takes the message back while it is still queued and unsettles the
+decision; once FirstMate has started on it, it stays sent.
+
+The records, for FirstMate's side:
+
+- `t3_thread_launch` with `decisionOf` (FirstMate's thread id) and `decision`
+  creates the thread with no turn. It refuses `message`, attachments, `scratch`,
+  `parentThreadId` and a workspace strategy other than root. `projectId` and
+  the model default to the coordinator's. The thread's title follows
+  `decision.title`.
+- `decision` is `{ taskId, title, question, options[{label, detail?}],
+  entries[{at, kind: raised|update, changed?, text, message?{thread, id?},
+  attachments?[{kind, path, label?}]}], revision }`: entry text at most 8,192
+  characters, 24 entries, 12 options, 12 attachments per entry. `revision` is
+  optional on input: given, it is stored as is; omitted, the server stores the
+  previous one plus one (1 at launch).
+- `t3_thread_update` `set_decision` with `decision` replaces it (and the
+  title) and counts as activity; `clear_decision` sets it to null and the view
+  says nothing is waiting. Both work only on a thread launched with
+  `decisionOf`; the result reports `decisionRevision`. Thread reads report
+  `decisionOf` and `decision`; thread lists report `decisionOf` only.
+- The reply message reads `**Decision · <title>**`, then the line
+  `needs-me-task: <taskId>`, a blank line, the question quoted with `> `, a
+  blank line, then the captain's words. Upstream renders user messages without
+  raw HTML, so the header is plain Markdown, not a `<details>` fold.
+- A reply carries the revision the captain read; if FirstMate updated the
+  decision meanwhile, nothing is sent and the captain is told to read the
+  update.
+
+Upstream's sidebar is an inbox of threads, and every thread is a conversation
+with its own agent. A thread with no agent whose reply goes to another thread
+is new, so the fork refuses any agent turn on a decision thread server-side
+(`message.dispatch` in `Orchestrator.ts`): upstream-built clients, such as the
+App Store mobile app, list it as an ordinary empty thread, and typing there
+gets an error instead of starting an agent. The fields stay out of `lineage`
+for the same reason as `crewOf`, and forks drop them. The shell carries only
+`decisionOf` and `decisionUpdatedAt`; the payload rides on the thread read, so
+the thread list stays small. The mobile app has no decision view yet: it needs
+one, plus crew nesting under FirstMate, before the phone follows the "top level
+needs the captain" rule.
+
+Code: `packages/contracts/src/threadDecision.ts`,
+`apps/server/src/orchestration-v2/DecisionReplyService.ts` (the
+`orchestration.replyToDecision` and `orchestration.undoDecisionReply` RPCs) and
+`apps/web/src/components/decision/`. Shared files it touches, for syncs: the
+optional fields in `orchestrationV2.ts`, `orchestratorMcp.ts` and
+`threadMetadataMcp.ts`; create, update and the turn refusal in `Orchestrator.ts`;
+`ProjectionStore.ts` shells; the launch handler and tool in
+`mcp/toolkits/project/`; `ThreadMetadataMcpService.ts`; the decision slot in
+`coordinatorGroup.logic.ts`, `Sidebar.tsx`, `Sidebar.logic.ts` and
+`Sidebar.drag.ts`; the hand, time and hidden model icon in
+`SidebarThreadRow.tsx`; and the switch in `ThreadRouteView.tsx`, which keeps
+`ChatView.tsx` and `ChatComposer.tsx` untouched.
+
 ## Sidebar cards stay two lines
 
 This one applies to every thread. Upstream gives a card with no branch but a

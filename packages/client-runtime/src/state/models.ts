@@ -152,6 +152,10 @@ export interface EnvironmentThreadShell {
   readonly statusLabel?: string;
   /** ISO time the current label was first set. */
   readonly statusLabelSince?: string;
+  /** The coordinator this thread holds a decision for; such a thread has no agent. */
+  readonly decisionOf?: ThreadId;
+  /** ISO time of the decision's latest entry. */
+  readonly decisionUpdatedAt?: string;
   /** Its project's pinned coordinator, which the sidebar shows as one with or without crew. */
   readonly coordinator?: boolean;
   readonly forkedFrom: OrchestrationV2ThreadShell["forkedFrom"];
@@ -313,6 +317,10 @@ export function presentThreadShell(
     ...(thread.crewOf === undefined ? {} : { crewOf: thread.crewOf }),
     ...(thread.statusLabel == null ? {} : { statusLabel: thread.statusLabel }),
     ...(thread.statusLabelSince == null ? {} : { statusLabelSince: iso(thread.statusLabelSince) }),
+    ...(thread.decisionOf === undefined ? {} : { decisionOf: thread.decisionOf }),
+    ...(thread.decisionUpdatedAt === undefined
+      ? {}
+      : { decisionUpdatedAt: thread.decisionUpdatedAt }),
     ...(thread.coordinator === true ? { coordinator: true } : {}),
     forkedFrom: thread.forkedFrom,
     linkOrigin: thread.linkOrigin ?? null,

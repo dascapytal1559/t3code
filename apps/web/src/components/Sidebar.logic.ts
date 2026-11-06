@@ -171,10 +171,18 @@ export function useRetainedValue<T>(key: string | null, value: T | null): T | nu
 export const animateSidebarLayoutChanges: AnimateLayoutChanges = (args) =>
   args.isSorting ? defaultAnimateLayoutChanges(args) : false;
 
-// Snoozed rows cannot accept drops without a wake time. Working and crew rows only drag out as
-// chat context. Crew rows are coordinators and their crew, listed above Pinned.
+// Snoozed rows cannot accept drops without a wake time. Working, crew and decision rows only drag
+// out as chat context. Crew rows are coordinators and their crew, listed above Pinned; decision
+// rows follow them.
 
-export type SidebarSection = "crew" | "pinned" | "active" | "working" | "snoozed" | "settled";
+export type SidebarSection =
+  | "crew"
+  | "decision"
+  | "pinned"
+  | "active"
+  | "working"
+  | "snoozed"
+  | "settled";
 
 export function resolveSidebarThreadSection(input: {
   readonly snoozed: boolean;
@@ -211,10 +219,12 @@ export function sidebarListItemId(item: SidebarListItem): string {
   return item.kind === "thread" ? item.key : sidebarMarkerId(item.marker);
 }
 
-// Crew rows and their header come first and never move, so the list opens with crew when it has any.
+// Crew and decision rows come first and never move, so drops above Pinned land nowhere.
 function leadingSidebarSection(items: readonly SidebarListItem[]): SidebarSection {
   return items.some((item) =>
-    item.kind === "thread" ? item.section === "crew" : item.marker === "crew-toggle",
+    item.kind === "thread"
+      ? item.section === "crew" || item.section === "decision"
+      : item.marker === "crew-toggle",
   )
     ? "crew"
     : "pinned";
@@ -251,7 +261,14 @@ export function resolveSidebarDropTarget(
   const moved = items.filter((_, index) => index !== activeIndex);
   moved.splice(overIndex, 0, items[activeIndex]!);
   const section = sectionAtSidebarSlot(moved, overIndex);
-  if (section === "crew" || section === "working" || section === "snoozed") return null;
+  if (
+    section === "crew" ||
+    section === "decision" ||
+    section === "working" ||
+    section === "snoozed"
+  ) {
+    return null;
+  }
   const pinnedOrder: string[] = [];
   const activeOrder: string[] = [];
   let currentSection = leadingSidebarSection(moved);
@@ -393,7 +410,9 @@ export function planSidebarThreadDrop(input: {
     activeKeysById,
     activeReorderableKeys,
   } = input;
-  if (activeSection === "crew" || activeSection === "working") return { kind: "none" };
+  if (activeSection === "crew" || activeSection === "decision" || activeSection === "working") {
+    return { kind: "none" };
+  }
   if (input.supportsSettlement === false && (target.section === "settled" || activeSettled)) {
     return { kind: "none" };
   }

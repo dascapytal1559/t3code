@@ -39,6 +39,7 @@ import {
   CircleDotDashedIcon,
   ClockIcon,
   GitBranchIcon,
+  HandIcon,
   MessageCircleQuestionIcon,
   PinIcon,
   PinOffIcon,
@@ -160,7 +161,8 @@ function StartedAgoLabel(props: { timestamp: string }) {
 }
 
 function threadTimeTimestamp(thread: SidebarThreadSummary): string {
-  return thread.latestUserMessageAt ?? thread.updatedAt;
+  // A decision has no messages of its own; its age runs from its latest entry.
+  return thread.decisionUpdatedAt ?? thread.latestUserMessageAt ?? thread.updatedAt;
 }
 
 function JumpHintBadge(props: { label: string }) {
@@ -197,6 +199,8 @@ function SidebarProviderStack(props: {
   thread: SidebarThreadSummary;
   providerEntryByInstanceId: ReadonlyMap<string, SidebarProviderEntry>;
 }) {
+  // A decision runs no agent, so it has no model to show.
+  if (props.thread.decisionOf !== undefined) return null;
   const stack = resolveThreadProviderStack(props.thread);
   const currentInstanceId = stack[stack.length - 1]!;
   const currentEntry = props.providerEntryByInstanceId.get(currentInstanceId) ?? null;
@@ -1509,7 +1513,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             <div className="flex h-5 min-w-0 items-center gap-1.5">
               {/* A coordinator's icon goes first, so the crew tree's guide line stays under it. */}
               {props.coordinator ? null : draftIndicator}
-              {props.project ? (
+              {thread.decisionOf !== undefined ? (
+                <HandIcon aria-label="Decision" className="size-4 shrink-0 text-warning" />
+              ) : props.project ? (
                 <ProjectFavicon project={props.project} className="size-4 shrink-0" />
               ) : null}
               {props.coordinator ? draftIndicator : null}
