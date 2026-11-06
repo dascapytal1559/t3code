@@ -545,6 +545,8 @@ const TOP_STATUS_ICONS = {
   woke: AlarmClockIcon,
 } as const;
 
+const NEEDS_CAPTAIN_LABEL = "Needs captain";
+
 function TopStatusIcon(props: { icon: keyof typeof TOP_STATUS_ICONS; className: string }) {
   const Icon = TOP_STATUS_ICONS[props.icon];
   return <Icon aria-hidden className={cn("shrink-0", props.className)} />;
@@ -809,6 +811,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                         }
                       : null;
   const isWokeStatus = topStatus?.icon === "woke";
+  // A decision runs no agent, so it always waits on the user; a woken snooze still says Woke.
+  const needsCaptain = thread.decisionOf !== undefined && !isWokeStatus;
   const crewStatusLabel = resolveCrewStatusLabel({
     crew: props.crewTree !== undefined,
     statusLabel: thread.statusLabel,
@@ -1053,7 +1057,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
 
   const accessibility = resolveSidebarRowAccessibility({
     title: thread.title,
-    statusLabel: crewStatusLabel ?? (coordinatorShowsAge ? null : topStatus?.label) ?? null,
+    statusLabel:
+      crewStatusLabel ??
+      (needsCaptain ? NEEDS_CAPTAIN_LABEL : coordinatorShowsAge ? null : topStatus?.label) ??
+      null,
     projectDisplayName: props.projectDisplayName,
     isActive: props.isActive,
   });
@@ -1513,9 +1520,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             <div className="flex h-5 min-w-0 items-center gap-1.5">
               {/* A coordinator's icon goes first, so the crew tree's guide line stays under it. */}
               {props.coordinator ? null : draftIndicator}
-              {thread.decisionOf !== undefined ? (
-                <HandIcon aria-label="Decision" className="size-4 shrink-0 text-warning" />
-              ) : props.project ? (
+              {props.project ? (
                 <ProjectFavicon project={props.project} className="size-4 shrink-0" />
               ) : null}
               {props.coordinator ? draftIndicator : null}
@@ -1561,6 +1566,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                             <WorkingDuration startedAt={thread.statusLabelSince ?? null} />
                           </span>
                         ) : null}
+                      </span>
+                    ) : needsCaptain ? (
+                      <span className="inline-flex items-center gap-1 font-medium text-captain-foreground">
+                        <HandIcon aria-hidden className="size-4 shrink-0" />
+                        {NEEDS_CAPTAIN_LABEL}
                       </span>
                     ) : coordinatorShowsAge ? (
                       <StartedAgoLabel timestamp={thread.createdAt} />
@@ -1682,6 +1692,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               ) : null}
               {titleLineBadges}
               {titleLineIcons}
+              {/* The status slot holds Needs captain, so a decision's age ends its title line. */}
+              {needsCaptain ? (
+                <span className="shrink-0 text-xs tabular-nums text-secondary-label">
+                  <RelativeTimeLabel timestamp={threadTimeTimestamp(thread)} />
+                </span>
+              ) : null}
             </div>
             {metaLine}
           </div>

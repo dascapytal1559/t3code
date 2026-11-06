@@ -1,6 +1,7 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { SidebarSection, SidebarThreadStatus } from "../Sidebar.logic";
+import type { CrewTreePlace } from "./SidebarCrewTree";
 
 /**
  * The coordinator a thread names, if any. A coordinator is an unarchived thread pinned as its
@@ -49,7 +50,7 @@ export function resolveCoordinatorGroup<T extends GroupThread>(
  * Where a thread the sidebar would otherwise list in `section` goes instead, if anywhere. It runs
  * before the Working split, so none ever reaches Working. Snoozing or settling is the way out
  * of the group; pinning changes nothing because the group already sits above Pinned. A decision
- * thread needs the user, so it sits at the top level right after the crew tree.
+ * thread is listed with the group, under the crew (see `resolveCrewTreePlace`).
  */
 export function coordinatorGroupSlot<T extends Pick<EnvironmentThreadShell, "decisionOf">>(
   group: CoordinatorGroup<T>,
@@ -60,6 +61,28 @@ export function coordinatorGroupSlot<T extends Pick<EnvironmentThreadShell, "dec
   if (group.coordinators.has(thread)) return "coordinator";
   if (group.crew.has(thread)) return "crew";
   return thread.decisionOf === undefined ? null : "decision";
+}
+
+/**
+ * Where a row sits in the tree under the coordinator card, if it is in the tree. Crewmates hang
+ * on the guide line, which collapses with them. Decisions follow the crew at the same indent but
+ * off the line, so collapsing the crew never hides what needs the user; with no coordinator card
+ * listed they stay at the top level.
+ */
+export function resolveCrewTreePlace(input: {
+  readonly slot: "coordinator" | "crew" | "decision";
+  readonly coordinatorListed: boolean;
+  readonly crewExpanded: boolean;
+  readonly lastCrewmate: boolean;
+}): CrewTreePlace | undefined {
+  switch (input.slot) {
+    case "coordinator":
+      return undefined;
+    case "decision":
+      return input.coordinatorListed ? "indent" : undefined;
+    case "crew":
+      return !input.crewExpanded ? "indent" : input.lastCrewmate ? "last" : "branch";
+  }
 }
 
 /** Newest update first, so a decision whose context just changed comes to the top. */

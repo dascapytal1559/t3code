@@ -8,6 +8,7 @@ import {
   resolveAppCoordinatorGroup,
   resolveCoordinatorGroup,
   resolveCrewStatusLabel,
+  resolveCrewTreePlace,
   resolveLaunchCoordinator,
   showsCoordinatorAge,
   sortDecisionThreads,
@@ -129,7 +130,7 @@ describe("coordinatorGroupSlot", () => {
     ["a snoozed coordinator", lead, "snoozed", null],
     ["a settled crewmate", worker, "settled", null],
     ["any other thread", other, "active", null],
-    // A decision needs the user, so it stays at the top level, never under its coordinator.
+    // A decision stays with the group however it is filed, until it is snoozed or settled.
     ["a decision", decision, "active", "decision"],
     ["a pinned decision", decision, "pinned", "decision"],
     ["a snoozed decision", decision, "snoozed", null],
@@ -148,6 +149,23 @@ describe("coordinatorGroupSlot", () => {
       updatedBefore,
       noEntries,
     ]);
+  });
+});
+
+describe("resolveCrewTreePlace", () => {
+  it.each([
+    ["the coordinator card", "coordinator", true, true, false, undefined],
+    ["a crewmate on the line", "crew", true, true, false, "branch"],
+    ["the last crewmate", "crew", true, true, true, "last"],
+    ["a crewmate shown under collapsed crew", "crew", true, false, false, "indent"],
+    // Decisions hang under the coordinator but off the crew's collapsible line.
+    ["a decision", "decision", true, true, false, "indent"],
+    ["a decision under collapsed crew", "decision", true, false, false, "indent"],
+    ["a decision with no coordinator card listed", "decision", false, true, false, undefined],
+  ] as const)("places %s", (_name, slot, coordinatorListed, crewExpanded, lastCrewmate, place) => {
+    expect(resolveCrewTreePlace({ slot, coordinatorListed, crewExpanded, lastCrewmate })).toBe(
+      place,
+    );
   });
 });
 

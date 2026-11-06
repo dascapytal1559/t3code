@@ -290,16 +290,23 @@ forking FirstMate cannot make a second coordinator. Code:
 
 ## Decision threads
 
-![The sidebar: the FirstMate card and its crew, then three decision threads marked with a raised hand, then ordinary threads. The open decision shows its question and options, FirstMate's message, an Updated divider with what changed, and a reply box with option chips](media/decision-thread.png)
+<img src="media/decision-sidebar.png" width="256" alt="The sidebar: the FirstMate card titled Ahoy!, two crewmates on the tree's guide line below it, then three decision cards at the same indent, each reading firstmate and an orange raised hand with Needs captain, its title, and the gray age at the end of the title line">
 
 Something FirstMate needs from the captain is its own thread: a real thread in
 FirstMate's project with no agent and no turn. The sidebar lists decision
-threads at the top level, right after the FirstMate card and its crew tree and
-before Pinned and ordinary threads; crew stay one level down. A card shows a
-raised hand where the project icon goes and, in the usual gray, the time since
-the decision's latest entry, not since the thread was made. Snooze, Settle,
-unread and archive work as on any thread; a snoozed or settled decision goes to
-those shelves.
+threads one level down under the FirstMate card, after all its crew and before
+Pinned and ordinary threads, newest update first. They sit at the crew's indent
+but off the crew's guide line, so collapsing the crew leaves them in view; with
+no FirstMate card listed they stay at the top level. A card shows its project
+and title like a crewmate's, an orange raised hand reading "Needs captain" in
+the status slot (Woke still shows after a snooze), and, in the usual gray at
+the end of the title line, the time since the decision's latest entry, not
+since the thread was made. The project is the thread's own, which is
+FirstMate's, because the decision record carries no project of its own. Snooze,
+Settle, unread and archive work as on any thread; a snoozed or settled decision
+goes to those shelves.
+
+![The open decision shows its question and options, FirstMate's message, an Updated divider with what changed, and a reply box with option chips](media/decision-thread.png)
 
 Opening one shows the decision view in place of the timeline and composer: the
 question and options, then FirstMate's messages as sent, each with "In
@@ -347,8 +354,8 @@ gets an error instead of starting an agent. The fields stay out of `lineage`
 for the same reason as `crewOf`, and forks drop them. The shell carries only
 `decisionOf` and `decisionUpdatedAt`; the payload rides on the thread read, so
 the thread list stays small. The mobile app has no decision view yet: it needs
-one, plus crew nesting under FirstMate, before the phone follows the "top level
-needs the captain" rule.
+one, plus crew nesting under FirstMate, before the phone lists decisions under
+FirstMate as the web does.
 
 Code: `packages/contracts/src/threadDecision.ts`,
 `apps/server/src/orchestration-v2/DecisionReplyService.ts` (the
@@ -359,8 +366,8 @@ optional fields in `orchestrationV2.ts`, `orchestratorMcp.ts` and
 `ProjectionStore.ts` shells; the launch handler and tool in
 `mcp/toolkits/project/`; `ThreadMetadataMcpService.ts`; the decision slot in
 `coordinatorGroup.logic.ts`, `Sidebar.tsx`, `Sidebar.logic.ts` and
-`Sidebar.drag.ts`; the hand, time and hidden model icon in
-`SidebarThreadRow.tsx`; and the switch in `ThreadRouteView.tsx`, which keeps
+`Sidebar.drag.ts`; the Needs captain status, the age and the hidden model icon
+in `SidebarThreadRow.tsx`; and the switch in `ThreadRouteView.tsx`, which keeps
 `ChatView.tsx` and `ChatComposer.tsx` untouched.
 
 ## Sidebar cards stay two lines

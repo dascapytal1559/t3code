@@ -173,7 +173,7 @@ export const animateSidebarLayoutChanges: AnimateLayoutChanges = (args) =>
 
 // Snoozed rows cannot accept drops without a wake time. Working, crew and decision rows only drag
 // out as chat context. Crew rows are coordinators and their crew, listed above Pinned; decision
-// rows follow them.
+// rows follow the crew, one level down.
 
 export type SidebarSection =
   | "crew"

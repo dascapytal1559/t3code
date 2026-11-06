@@ -255,6 +255,7 @@ import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrom
 import {
   coordinatorGroupSlot,
   resolveAppCoordinatorGroup,
+  resolveCrewTreePlace,
   sortDecisionThreads,
   type CoordinatorGroup,
 } from "./sidebar/coordinatorGroup.logic";
@@ -3433,13 +3434,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             coordinator={isCoordinator}
                             hideHoverActions={!sidebarSectionHasHoverActions(section)}
                             crewTree={
-                              section !== "crew" || isCoordinator
-                                ? undefined
-                                : !crewShelfExpanded
-                                  ? "indent"
-                                  : thread === lastCrewThread
-                                    ? "last"
-                                    : "branch"
+                              section === "crew" || section === "decision"
+                                ? resolveCrewTreePlace({
+                                    slot: isCoordinator ? "coordinator" : section,
+                                    coordinatorListed: coordinatorThreads.length > 0,
+                                    crewExpanded: crewShelfExpanded,
+                                    lastCrewmate: thread === lastCrewThread,
+                                  })
+                                : undefined
                             }
                             crewTreeRoot={thread === crewTreeRootThread}
                             onCrewTreeToggle={toggleCrewTree}
