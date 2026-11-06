@@ -81,7 +81,11 @@ icons: one line per provider the Limits view shows, with its icon, one thin
 bar and the percent left in its weekly window, or its first window when it has
 no weekly one. A provider with several accounts (Claude and Claude2) gets one
 combined bar, not one per account. Model windows such as Weekly · Fable stay
-on the page. The tooltip has each account's figure and reset time; a click opens the Usage page. It reads the same provider
+on the page. Each bar carries the Usage page's pace mark: a small line, in a
+gap cut from the bar, where the bar would end if usage kept pace with the time
+elapsed in the window (for Claude, the mean of its accounts' elapsed time). The
+tooltip adds how much of the window is left and what the line means, plus each
+account's figure and reset time; a click opens the Usage page. It reads the same provider
 statuses as the Limits view and fetches nothing, shows nothing until limits
 arrive, and leaves out providers muted on the page. The phone web sidebar shows
 it too; the mobile app does not.

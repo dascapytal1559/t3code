@@ -21,6 +21,8 @@ vi.mock("@effect/atom-react", async (importOriginal) => ({
 
 const checkedAt = "2026-11-06T00:00:00.000Z";
 const resetsAt = "2026-11-10T00:00:00.000Z";
+// Four of the weekly window's seven days have run, so 43% of it is left.
+const now = Date.parse("2026-11-07T00:00:00.000Z");
 
 function window(id: string, label: string, usedPercent: number): ServerProviderUsageWindow {
   return {
@@ -85,6 +87,7 @@ describe("SidebarUsageMini", () => {
   });
 
   it("leaves out a provider muted on the Usage page, and brings it back when unmuted", async () => {
+    using _now = vi.spyOn(Date, "now").mockReturnValue(now);
     setup([
       codex,
       provider("Claude", "claudeAgent", "b@example.com", [window("seven_day", "Weekly", 47)]),
@@ -92,18 +95,25 @@ describe("SidebarUsageMini", () => {
     saveUsagePagePreferences({ metric: "limits", windowDays: 30, hiddenProviders: ["codex"] });
     await using screen = await render(ui());
     await expect
-      .element(screen.getByRole("button", { name: "Usage: Claude 53% left" }))
+      .element(
+        screen.getByRole("button", { name: "Usage: Claude 53% left, 43% of the window left" }),
+      )
       .toBeVisible();
 
     await act(() =>
       saveUsagePagePreferences({ metric: "limits", windowDays: 30, hiddenProviders: [] }),
     );
     await expect
-      .element(screen.getByRole("button", { name: "Usage: Codex 92% left, Claude 53% left" }))
+      .element(
+        screen.getByRole("button", {
+          name: "Usage: Codex 92% left, 43% of the window left, Claude 53% left, 43% of the window left",
+        }),
+      )
       .toBeVisible();
   });
 
   it("draws a pooled provider as one combined weekly bar and skips session and model rows", async () => {
+    using _now = vi.spyOn(Date, "now").mockReturnValue(now);
     setup([
       provider("Claude", "claudeAgent", "one@example.com", [
         window("five_hour", "Session", 50),
@@ -118,8 +128,46 @@ describe("SidebarUsageMini", () => {
     ]);
     await using screen = await render(ui());
     await expect
-      .element(screen.getByRole("button", { name: "Usage: Claude 53% left" }))
+      .element(
+        screen.getByRole("button", { name: "Usage: Claude 53% left, 43% of the window left" }),
+      )
       .toBeVisible();
     expect(screen.container.querySelectorAll("[data-usage-segment]")).toHaveLength(1);
+  });
+
+  it("marks where even spending would be, from the pooled accounts' mean elapsed time", async () => {
+    using _now = vi.spyOn(Date, "now").mockReturnValue(now);
+    // The test page has no stylesheet, so the bar has no width and the pace mark would be hidden.
+    using _bar = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue(new DOMRect(0, 0, 100, 6));
+    // The second account's window started a day later, so the pool is 3.5 of 7 days in: 50% left.
+    const later: ServerProviderUsageWindow = {
+      ...window("seven_day", "Weekly", 3),
+      resetsAt: "2026-11-11T00:00:00.000Z",
+    };
+    setup([
+      provider("Claude", "claudeAgent", "one@example.com", [window("seven_day", "Weekly", 91)]),
+      provider("Claude2", "claudeAgent", "two@example.com", [later]),
+    ]);
+    await using screen = await render(ui());
+    await expect
+      .element(
+        screen.getByRole("button", { name: "Usage: Claude 53% left, 50% of the window left" }),
+      )
+      .toBeVisible();
+    const mark = screen.container.querySelector<HTMLElement>("[data-usage-pace]");
+    expect(mark?.style.left).toContain("50%");
+  });
+
+  it("draws no mark for a window without a reset clock", async () => {
+    using _now = vi.spyOn(Date, "now").mockReturnValue(now);
+    const { resetsAt: _resetsAt, ...clockless } = window("weekly", "Weekly", 8);
+    setup([provider("Codex", "codex", "a@example.com", [clockless])]);
+    await using screen = await render(ui());
+    await expect
+      .element(screen.getByRole("button", { name: "Usage: Codex 92% left" }))
+      .toBeVisible();
+    expect(screen.container.querySelector("[data-usage-pace]")).toBeNull();
   });
 });
