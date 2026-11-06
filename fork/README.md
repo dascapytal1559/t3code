@@ -346,7 +346,9 @@ the reply box. "Send to FirstMate" puts one ordinary user message into
 FirstMate's chat, queued behind a running turn as the composer's Queue does or
 starting a turn when FirstMate is idle, and settles the decision. The toast's
 Undo takes the message back while it is still queued and unsettles the
-decision; once FirstMate has started on it, it stays sent.
+decision; once FirstMate has started on it, it stays sent. Sending also
+switches the selected thread to FirstMate's chat, and Undo brings you back to
+the decision with your words restored.
 
 The records, for FirstMate's side:
 

@@ -317,8 +317,8 @@ function DecisionReplyBox(props: {
             },
           }
         : {}),
-      data: { secondaryActionProps: { children: "Open chat", onClick: openCoordinator } },
     });
+    openCoordinator();
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
