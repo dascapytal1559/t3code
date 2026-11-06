@@ -2192,6 +2192,8 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   /** The decision's latest entry; the shell leaves the payload itself to the thread read. */
   decisionUpdatedAt: Schema.optional(IsoDateTime),
   decisionProjectName: ThreadDecision.fields.projectName,
+  /** When the decision began waiting on the user; the sidebar card's age counts from it. */
+  decisionSince: Schema.optional(IsoDateTime),
   forkedFrom: Schema.NullOr(OrchestrationV2AppThread.fields.forkedFrom),
   activeProviderThreadId: Schema.NullOr(ProviderThreadId),
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),

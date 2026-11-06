@@ -308,7 +308,10 @@ together, its count covering both; with no FirstMate card listed they stay at
 the top level. A card shows a project and its title like a crewmate's, an
 orange raised hand reading "Needs captain" in the status slot (Woke still shows
 after a snooze), and, in the usual gray at the end of the title line, the time
-since the decision's latest entry, not since the thread was made. The project
+since the call started waiting on the captain (`decision.since`, else its raised
+entry, else the thread's creation), not since its latest edit, so rewriting a
+decision's context does not make it look new. The list still puts the newest
+update first. The decision view's header says "waiting since" the same day. The project
 is the one the decision names in `decision.projectName`, with a monogram drawn
 from that name; without one the card shows the thread's own project, which is
 FirstMate's. Snooze, Settle, unread and archive work as on any thread; a
@@ -334,13 +337,18 @@ The records, for FirstMate's side:
   `parentThreadId` and a workspace strategy other than root. `projectId` and
   the model default to the coordinator's. The thread's title follows
   `decision.title`.
-- `decision` is `{ taskId, title, projectName?, question, options[{label,
+- `decision` is `{ taskId, title, projectName?, since?, question, options[{label,
   detail?}], entries[{at, kind: raised|update, changed?, text,
   message?{thread, id?}, attachments?[{kind, path, label?}]}], revision }`:
   entry text at most 8,192 characters, 24 entries, 12 options, 12 attachments
   per entry. `projectName` (at most 200 characters) is the project the decision
   is about, such as the backlog task's repo, which the sidebar card shows;
-  decisions without it stay valid. `revision` is
+  decisions without it stay valid. `since` is when the call started waiting on
+  the captain, an ISO 8601 date-time such as `2026-10-26T06:53:24.000Z` (any
+  string `Date.parse` reads is accepted; send the full UTC form); the card's
+  age and the view's "waiting since" count from it, falling back to the raised
+  entry. Send it on every `set_decision`, since a replacement without it falls
+  back too. `revision` is
   optional on input: given, it is stored as is; omitted, the server stores the
   previous one plus one (1 at launch).
 - `t3_thread_update` `set_decision` with `decision` replaces it (and the
@@ -363,7 +371,7 @@ is new, so the fork refuses any agent turn on a decision thread server-side
 App Store mobile app, list it as an ordinary empty thread, and typing there
 gets an error instead of starting an agent. The fields stay out of `lineage`
 for the same reason as `crewOf`, and forks drop them. The shell carries only
-`decisionOf`, `decisionUpdatedAt` and `decisionProjectName`; the payload rides
+`decisionOf`, `decisionUpdatedAt`, `decisionSince` and `decisionProjectName`; the payload rides
 on the thread read, so
 the thread list stays small. The mobile app has no decision view yet: it needs
 one, plus crew nesting under FirstMate, before the phone lists decisions under

@@ -79,6 +79,13 @@ export function resolveCrewTreePlace(input: {
   return !input.crewExpanded ? "indent" : input.lastInTree ? "last" : "branch";
 }
 
+/** The time a decision card's age counts from: when the call began waiting, not its last edit. */
+export function decisionAgeTimestamp(
+  thread: Pick<EnvironmentThreadShell, "decisionSince" | "createdAt">,
+): string {
+  return thread.decisionSince ?? thread.createdAt;
+}
+
 /** Newest update first, so a decision whose context just changed comes to the top. */
 export function sortDecisionThreads<
   T extends Pick<EnvironmentThreadShell, "decisionUpdatedAt" | "createdAt">,

@@ -57,6 +57,8 @@ const decisionFields = {
   title: Text(200),
   /** The project the decision is about, which its sidebar card shows instead of the thread's. */
   projectName: Schema.optional(Text(200)),
+  /** When the call started waiting on the user, which the sidebar card counts its age from. */
+  since: Schema.optional(DecisionTime),
   question: Text(4_000),
   options: Schema.Array(ThreadDecisionOption).check(Schema.isMaxLength(12)),
   entries: Schema.Array(ThreadDecisionEntry).check(Schema.isMaxLength(24)),
@@ -81,6 +83,18 @@ export function threadDecisionUpdatedAt(
     if (latest === null || Date.parse(entry.at) > Date.parse(latest)) latest = entry.at;
   }
   return latest;
+}
+
+/** When the decision began waiting: its `since`, else its earliest entry (the raised one). */
+export function threadDecisionSince(
+  decision: Pick<ThreadDecision, "since" | "entries"> | null | undefined,
+): string | null {
+  if (decision?.since !== undefined) return decision.since;
+  let earliest: string | null = null;
+  for (const entry of decision?.entries ?? []) {
+    if (earliest === null || Date.parse(entry.at) < Date.parse(earliest)) earliest = entry.at;
+  }
+  return earliest;
 }
 
 export const ThreadDecisionReplyInput = Schema.Struct({

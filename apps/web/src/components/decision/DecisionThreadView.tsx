@@ -15,6 +15,7 @@ import {
   type ThreadDecision,
   type ThreadDecisionEntry,
   type ThreadId,
+  threadDecisionSince,
 } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import * as Option from "effect/Option";
@@ -115,11 +116,11 @@ export function DecisionThreadView(props: {
 }
 
 function DecisionQuestion(props: { readonly decision: ThreadDecision }) {
-  const raised = props.decision.entries.find((entry) => entry.kind === "raised");
+  const since = threadDecisionSince(props.decision);
   return (
     <section className="rounded-xl border border-border bg-card px-4 py-3">
       <p className="text-2xs font-semibold tracking-wide text-warning uppercase">
-        Needs you{raised === undefined ? "" : ` · raised ${formatDay(raised.at)}`}
+        Needs you{since === null ? "" : ` · waiting since ${formatDay(since)}`}
       </p>
       <p className="mt-1 text-sm font-medium whitespace-pre-wrap text-foreground">
         {props.decision.question}

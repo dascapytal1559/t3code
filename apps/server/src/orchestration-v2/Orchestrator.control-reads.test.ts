@@ -1723,6 +1723,8 @@ it.effect(
       assert.equal(created.shell.decisionUpdatedAt, "2026-11-05T05:11:27.000Z");
       assert.equal(created.thread.decision?.projectName, "home-server");
       assert.equal(created.shell.decisionProjectName, "home-server");
+      // With no `since`, the wait began at the raised entry.
+      assert.equal(created.shell.decisionSince, "2026-10-26T06:53:24.000Z");
       assert.equal(created.shell.latestRunId, null);
 
       // An upstream-built client typing into it must not start an agent.
@@ -1776,6 +1778,7 @@ it.effect(
       assert.equal(cleared.shell.decisionOf, coordinator);
       assert.equal(cleared.shell.decisionUpdatedAt, undefined);
       assert.equal(cleared.shell.decisionProjectName, undefined);
+      assert.equal(cleared.shell.decisionSince, undefined);
     }).pipe(Effect.provide(layerTest)),
 );
 

@@ -110,7 +110,11 @@ import {
   CrewTreeGutter,
   type CrewTreePlace,
 } from "./SidebarCrewTree";
-import { resolveCrewStatusLabel, showsCoordinatorAge } from "./coordinatorGroup.logic";
+import {
+  decisionAgeTimestamp,
+  resolveCrewStatusLabel,
+  showsCoordinatorAge,
+} from "./coordinatorGroup.logic";
 import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
@@ -161,8 +165,9 @@ function StartedAgoLabel(props: { timestamp: string }) {
 }
 
 function threadTimeTimestamp(thread: SidebarThreadSummary): string {
-  // A decision has no messages of its own; its age runs from its latest entry.
-  return thread.decisionUpdatedAt ?? thread.latestUserMessageAt ?? thread.updatedAt;
+  // A decision has no messages of its own; its age runs from when it began waiting.
+  if (thread.decisionOf !== undefined) return decisionAgeTimestamp(thread);
+  return thread.latestUserMessageAt ?? thread.updatedAt;
 }
 
 // A decision's thread lives in the coordinator's project, so a row shows the project the decision

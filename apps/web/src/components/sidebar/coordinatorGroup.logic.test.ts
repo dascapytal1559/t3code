@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   coordinatorGroupSlot,
   crewCoordinatorOf,
+  decisionAgeTimestamp,
   isAppCrewmate,
   resolveAppCoordinatorGroup,
   resolveCoordinatorGroup,
@@ -137,6 +138,14 @@ describe("coordinatorGroupSlot", () => {
     ["a settled decision", decision, "settled", null],
   ] as const)("places %s", (_name, subject, section, slot) => {
     expect(coordinatorGroupSlot(group, subject, section)).toBe(slot);
+  });
+
+  it("counts a decision card's age from when it began waiting, else from its creation", () => {
+    const createdAt = "2026-10-20T10:00:00.000Z";
+    expect(decisionAgeTimestamp({ decisionSince: "2026-09-22T00:00:00.000Z", createdAt })).toBe(
+      "2026-09-22T00:00:00.000Z",
+    );
+    expect(decisionAgeTimestamp({ createdAt })).toBe(createdAt);
   });
 
   it("lists decisions by their latest update, newest first", () => {

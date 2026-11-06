@@ -1,5 +1,9 @@
 import type { ProjectThreadAwarenessV2Input } from "@t3tools/shared/agentAwareness";
-import { pendingGuestMessageCount, threadDecisionUpdatedAt } from "@t3tools/contracts";
+import {
+  pendingGuestMessageCount,
+  threadDecisionSince,
+  threadDecisionUpdatedAt,
+} from "@t3tools/contracts";
 import { applyThreadPullRequestLinkUpdate } from "../sourceControl/threadPullRequests.ts";
 import { projectTurnItemForWire } from "./WireProjection.ts";
 import * as Stream from "effect/Stream";
@@ -1530,14 +1534,19 @@ const linkCardStillAsks = (
 
 function decisionShellFields(
   thread: Pick<OrchestrationV2AppThread, "decisionOf" | "decision">,
-): Pick<OrchestrationV2ThreadShell, "decisionOf" | "decisionUpdatedAt" | "decisionProjectName"> {
+): Pick<
+  OrchestrationV2ThreadShell,
+  "decisionOf" | "decisionUpdatedAt" | "decisionProjectName" | "decisionSince"
+> {
   if (thread.decisionOf === undefined) return {};
   const decisionUpdatedAt = threadDecisionUpdatedAt(thread.decision);
   const decisionProjectName = thread.decision?.projectName;
+  const decisionSince = threadDecisionSince(thread.decision);
   return {
     decisionOf: thread.decisionOf,
     ...(decisionUpdatedAt === null ? {} : { decisionUpdatedAt }),
     ...(decisionProjectName === undefined ? {} : { decisionProjectName }),
+    ...(decisionSince === null ? {} : { decisionSince }),
   };
 }
 
