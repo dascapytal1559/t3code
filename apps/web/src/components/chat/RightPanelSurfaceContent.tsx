@@ -36,6 +36,9 @@ const FilePreviewPanel = lazy(() => import("../files/FilePreviewPanel"));
 const BoardPanel = lazy(() =>
   import("../board/BoardPanel").then((module) => ({ default: module.BoardPanel })),
 );
+const NeedsMePanel = lazy(() =>
+  import("../needsMe/NeedsMePanel").then((module) => ({ default: module.NeedsMePanel })),
+);
 
 type RightPanelTerminalProps = Omit<
   PersistentThreadTerminalPanelProps,
@@ -176,6 +179,12 @@ export function RightPanelSurfaceContent(props: {
       return (
         <Suspense fallback={null}>
           <BoardPanel composerDraftTarget={props.composerDraftTarget} />
+        </Suspense>
+      );
+    case "needs-me":
+      return (
+        <Suspense fallback={null}>
+          <NeedsMePanel threadRef={threadRef} />
         </Suspense>
       );
     case "side-chat":

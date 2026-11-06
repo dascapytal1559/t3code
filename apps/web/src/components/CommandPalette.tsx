@@ -69,6 +69,7 @@ import {
   MessageSquareIcon,
   PaletteIcon,
   PencilRulerIcon,
+  HandIcon,
   RotateCcwIcon,
   SettingsIcon,
   MonitorIcon,
@@ -1621,6 +1622,16 @@ function OpenCommandPaletteDialog(props: {
       icon: <PencilRulerIcon className={ITEM_ICON_CLASS} />,
       run: async () => {
         useRightPanelStore.getState().open(threadRef, "board");
+      },
+    });
+    actionItems.push({
+      kind: "action",
+      value: "action:needs-me",
+      searchTerms: ["needs me", "decisions", "firstmate", "captain", "waiting", "inbox"],
+      title: "Open Needs me",
+      icon: <HandIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        useRightPanelStore.getState().open(threadRef, "needs-me");
       },
     });
   }

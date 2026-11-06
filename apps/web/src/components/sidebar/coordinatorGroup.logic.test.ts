@@ -4,16 +4,13 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   coordinatorGroupSlot,
   crewCoordinatorOf,
-  decisionAgeTimestamp,
   isAppCrewmate,
   isCrewOf,
   resolveAppCoordinatorGroup,
   resolveCoordinatorGroup,
   resolveCrewStatusLabel,
-  resolveCrewTreePlace,
   resolveLaunchCoordinator,
   showsCoordinatorAge,
-  sortDecisionThreads,
 } from "./coordinatorGroup.logic";
 
 const environmentId = EnvironmentId.make("environment-local");
@@ -29,9 +26,6 @@ const thread = (
     crewOf?: string;
     /** Pinned as its project's coordinator. */
     coordinator?: boolean;
-    /** The coordinator this thread holds a decision for. */
-    decisionOf?: string;
-    decisionUpdatedAt?: string;
     /** A thread with a parent that is not a coordinator link. */
     forkOf?: string;
     status?: "running" | "idle" | "completed" | "cancelled" | "failed" | null;
@@ -45,12 +39,6 @@ const thread = (
   archivedAt: overrides.archivedAt ?? null,
   ...(overrides.crewOf === undefined ? {} : { crewOf: ThreadId.make(overrides.crewOf) }),
   ...(overrides.coordinator === undefined ? {} : { coordinator: overrides.coordinator }),
-  ...(overrides.decisionOf === undefined
-    ? {}
-    : { decisionOf: ThreadId.make(overrides.decisionOf) }),
-  ...(overrides.decisionUpdatedAt === undefined
-    ? {}
-    : { decisionUpdatedAt: overrides.decisionUpdatedAt }),
   createdAt: "2026-10-20T10:00:00.000Z",
   lineage:
     overrides.forkOf !== undefined
@@ -118,7 +106,6 @@ describe("coordinatorGroupSlot", () => {
   const lead = thread("lead");
   const worker = thread("worker");
   const other = thread("other");
-  const decision = thread("decision", { decisionOf: "lead" });
   const group = resolveCoordinatorGroup([lead, worker, other], (subject) =>
     subject === other ? null : lead.id,
   );
@@ -132,49 +119,8 @@ describe("coordinatorGroupSlot", () => {
     ["a snoozed coordinator", lead, "snoozed", null],
     ["a settled crewmate", worker, "settled", null],
     ["any other thread", other, "active", null],
-    // A decision stays with the group however it is filed, until it is snoozed or settled.
-    ["a decision", decision, "active", "decision"],
-    ["a pinned decision", decision, "pinned", "decision"],
-    ["a snoozed decision", decision, "snoozed", null],
-    ["a settled decision", decision, "settled", null],
   ] as const)("places %s", (_name, subject, section, slot) => {
     expect(coordinatorGroupSlot(group, subject, section)).toBe(slot);
-  });
-
-  it("counts a decision card's age from when it began waiting, else from its creation", () => {
-    const createdAt = "2026-10-20T10:00:00.000Z";
-    expect(decisionAgeTimestamp({ decisionSince: "2026-09-22T00:00:00.000Z", createdAt })).toBe(
-      "2026-09-22T00:00:00.000Z",
-    );
-    expect(decisionAgeTimestamp({ createdAt })).toBe(createdAt);
-  });
-
-  it("lists decisions by their latest update, newest first", () => {
-    const updatedLast = thread("camera", { decisionUpdatedAt: "2026-11-05T05:11:00.000Z" });
-    const updatedBefore = thread("rituals", { decisionUpdatedAt: "2026-11-04T05:43:00.000Z" });
-    // With no entries, its age runs from when it was made.
-    const noEntries = thread("ideas");
-    expect(sortDecisionThreads([noEntries, updatedBefore, updatedLast])).toEqual([
-      updatedLast,
-      updatedBefore,
-      noEntries,
-    ]);
-  });
-});
-
-describe("resolveCrewTreePlace", () => {
-  it.each([
-    ["the coordinator card", "coordinator", true, true, false, undefined],
-    ["a crewmate on the line", "crew", true, true, false, "branch"],
-    ["the last crewmate", "crew", true, true, true, "last"],
-    ["a crewmate shown under collapsed crew", "crew", true, false, false, "indent"],
-    // Decisions hang on the same line after the crew and collapse with it.
-    ["a decision on the line", "decision", true, true, false, "branch"],
-    ["the last decision", "decision", true, true, true, "last"],
-    ["a decision shown under collapsed crew", "decision", true, false, false, "indent"],
-    ["a decision with no coordinator card listed", "decision", false, true, true, undefined],
-  ] as const)("places %s", (_name, slot, coordinatorListed, crewExpanded, lastInTree, place) => {
-    expect(resolveCrewTreePlace({ slot, coordinatorListed, crewExpanded, lastInTree })).toBe(place);
   });
 });
 

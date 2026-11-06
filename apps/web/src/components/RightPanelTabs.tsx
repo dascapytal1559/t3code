@@ -43,6 +43,7 @@ import {
   FileDiff,
   Files,
   Globe2,
+  Hand,
   PencilRuler,
   MessagesSquare,
   Plus,
@@ -143,6 +144,8 @@ export interface RightPanelTabsProps {
   onAddPullRequests: () => void;
   onAddDevice: () => void;
   onAddBoard: () => void;
+  /** Absent where there is no thread to open it beside. */
+  onAddNeedsMe?: (() => void) | undefined;
   /** Absent where side chats are not offered. */
   onAddSideChat?: (() => void) | undefined;
   browserAvailable: boolean;
@@ -328,6 +331,8 @@ function RightPanelEmptyState(props: {
   onAddPullRequests: () => void;
   onAddDevice: () => void;
   onAddBoard: () => void;
+  /** Absent where there is no thread to open it beside. */
+  onAddNeedsMe?: (() => void) | undefined;
   /** Absent where side chats are not offered. */
   onAddSideChat?: (() => void) | undefined;
   browserAvailable: boolean;
@@ -409,6 +414,18 @@ function RightPanelEmptyState(props: {
       disabledReason: SURFACE_UNAVAILABLE_HINTS.board,
       onClick: props.onAddBoard,
     },
+    ...(props.onAddNeedsMe
+      ? [
+          {
+            label: "Needs me",
+            icon: Hand,
+            shortcut: "N",
+            available: true,
+            disabledReason: "",
+            onClick: props.onAddNeedsMe,
+          },
+        ]
+      : []),
     ...(props.onAddSideChat
       ? [
           {
@@ -607,6 +624,8 @@ function surfaceTitle(
       return "Pull requests";
     case "board":
       return "Board";
+    case "needs-me":
+      return "Needs me";
     case "device":
       return surface.title ?? surface.target?.name ?? "Device";
     case "side-chat":
@@ -701,6 +720,8 @@ function SurfaceIcon({
       return <PullRequestGlyph.link className="size-3 shrink-0" />;
     case "board":
       return <PencilRuler className="size-3 shrink-0" />;
+    case "needs-me":
+      return <Hand className="size-3 shrink-0" />;
     case "side-chat":
       return <SideChatTabIcon environmentId={environmentId} threadId={surface.threadId} />;
     case "device":
@@ -1174,6 +1195,18 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       disabledReason: SURFACE_DISABLED_REASONS.board,
       onClick: props.onAddBoard,
     },
+    ...(props.onAddNeedsMe
+      ? [
+          {
+            label: "Needs me",
+            icon: Hand,
+            shortcut: "N",
+            available: true,
+            disabledReason: "",
+            onClick: props.onAddNeedsMe,
+          },
+        ]
+      : []),
     ...(props.onAddSideChat
       ? [
           {
@@ -1561,6 +1594,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddPullRequests={props.onAddPullRequests}
             onAddDevice={props.onAddDevice}
             onAddBoard={props.onAddBoard}
+            onAddNeedsMe={props.onAddNeedsMe}
             onAddSideChat={props.onAddSideChat}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}

@@ -256,8 +256,6 @@ import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrom
 import {
   coordinatorGroupSlot,
   resolveAppCoordinatorGroup,
-  resolveCrewTreePlace,
-  sortDecisionThreads,
   type CoordinatorGroup,
 } from "./sidebar/coordinatorGroup.logic";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
@@ -509,7 +507,6 @@ function useSidebarThreads(input: {
   const {
     coordinatorThreads,
     crewThreads,
-    decisionThreads,
     pinnedThreads,
     activeThreads,
     workingThreads,
@@ -551,12 +548,6 @@ function useSidebarThreads(input: {
   const visibleCrewThreads = crewShelfExpanded
     ? crewThreads
     : routeThreadOnly(crewThreads, routeRowThreadKey);
-  // Decisions hang on the crew's tree, so they need a coordinator card to hang from.
-  const treeDecisionThreads = coordinatorThreads.length > 0 ? decisionThreads : EMPTY_THREADS;
-  const topLevelDecisionThreads = coordinatorThreads.length > 0 ? EMPTY_THREADS : decisionThreads;
-  const visibleTreeDecisionThreads = crewShelfExpanded
-    ? treeDecisionThreads
-    : routeThreadOnly(treeDecisionThreads, routeRowThreadKey);
   const projectFolders =
     folderGroups === null
       ? null
@@ -580,8 +571,6 @@ function useSidebarThreads(input: {
   const orderedThreads = [
     ...coordinatorThreads,
     ...visibleCrewThreads,
-    ...visibleTreeDecisionThreads,
-    ...topLevelDecisionThreads,
     ...pinnedThreads,
     ...(projectFolders === null
       ? activeThreads
@@ -594,7 +583,6 @@ function useSidebarThreads(input: {
   for (const [list, section] of [
     [coordinatorThreads, "crew"],
     [crewThreads, "crew"],
-    [decisionThreads, "decision"],
     [pinnedThreads, "pinned"],
     [activeThreads, "active"],
     [workingThreads, "working"],
@@ -610,7 +598,6 @@ function useSidebarThreads(input: {
     searchableThreads: [
       ...coordinatorThreads,
       ...crewThreads,
-      ...decisionThreads,
       ...pinnedThreads,
       ...activeThreads,
       ...workingThreads,
@@ -635,9 +622,6 @@ function useSidebarThreads(input: {
     crewShelfExpanded,
     toggleCrewShelf: () => setCrewShelfExpanded((value) => !value),
     visibleCrewThreads,
-    treeDecisionThreads,
-    topLevelDecisionThreads,
-    visibleTreeDecisionThreads,
     projectFolders,
     toggleProjectFolder: (group: SidebarProjectSnapshot) => {
       const keys = sidebarFolderExpansionKeys(group);
@@ -691,16 +675,9 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
   const settled: EnvironmentThreadShell[] = [];
   const coordinators: EnvironmentThreadShell[] = [];
   const crew: EnvironmentThreadShell[] = [];
-  const decisions: EnvironmentThreadShell[] = [];
   const crewList = (thread: EnvironmentThreadShell, section: SidebarSection) => {
     const slot = coordinatorGroupSlot(coordinatorGroup, thread, section);
-    return slot === "coordinator"
-      ? coordinators
-      : slot === "crew"
-        ? crew
-        : slot === "decision"
-          ? decisions
-          : null;
+    return slot === "coordinator" ? coordinators : slot === "crew" ? crew : null;
   };
   const { draggableThreadKeys, activeReorderableThreadKeys } = resolveSidebarReorderableThreadKeys({
     threads: visible,
@@ -755,7 +732,6 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
   return {
     coordinatorThreads: coordinators.toSorted(newestFirst),
     crewThreads: crew.toSorted(newestFirst),
-    decisionThreads: sortDecisionThreads(decisions),
     pinnedThreads:
       optimisticDrop?.section !== "pinned" || optimisticDrop.order === null
         ? sortedPinned
@@ -1365,10 +1341,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     crewShelfExpanded,
     toggleCrewShelf,
     visibleCrewThreads,
-    decisionThreads,
-    treeDecisionThreads,
-    topLevelDecisionThreads,
-    visibleTreeDecisionThreads,
     pinnedThreads,
     draggableThreadKeys,
     activeReorderableThreadKeys,
@@ -1423,11 +1395,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       scopedProjectGroups.length > 0 || (group.pinned && !group.archived),
   });
   const toggleCrewTree = useStableCallback(toggleCrewShelf);
-  const crewTreeCount = crewThreads.length + treeDecisionThreads.length;
-  const lastCrewTreeThread = visibleTreeDecisionThreads.at(-1) ?? visibleCrewThreads.at(-1);
+  const lastCrewThread = visibleCrewThreads.at(-1);
   // The crew toggle, and so the guide line, follows the last coordinator card.
   const crewTreeRootThread =
-    crewShelfExpanded && crewTreeCount > 0 ? coordinatorThreads.at(-1) : undefined;
+    crewShelfExpanded && crewThreads.length > 0 ? coordinatorThreads.at(-1) : undefined;
 
   // Ranked across environments as the palette ranks them, so one
   // environment's list does not sit above another's better matches; rows
@@ -1795,8 +1766,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const isContextDrag =
     dragState?.contextDrag === true ||
     dragState?.activeSection === "working" ||
-    dragState?.activeSection === "crew" ||
-    dragState?.activeSection === "decision";
+    dragState?.activeSection === "crew";
   const dragTargetSection = isContextDrag ? null : (dragState?.targetSection ?? null);
   const finishThreadDrag = (started: boolean) => {
     dragSensorRef.current = null;
@@ -2006,7 +1976,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       !hasProjectFolders &&
       coordinatorThreads.length +
         crewThreads.length +
-        decisionThreads.length +
         pinnedThreads.length +
         activeThreads.length +
         workingThreads.length +
@@ -2017,12 +1986,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       return [];
     }
     const items: SidebarListItem[] = rowsOf(coordinatorThreads, "crew");
-    if (crewTreeCount > 0) {
+    if (crewThreads.length > 0) {
       items.push({ kind: "marker", marker: "crew-toggle" });
       items.push(...rowsOf(visibleCrewThreads, "crew"));
-      items.push(...rowsOf(visibleTreeDecisionThreads, "decision"));
     }
-    items.push(...rowsOf(topLevelDecisionThreads, "decision"));
     items.push({ kind: "marker", marker: "pinned-header" });
     const pinnedRows = rowsOf(pinnedThreads, "pinned");
     items.push(...pinnedRows);
@@ -3417,7 +3384,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                         );
                         const isCard =
                           section === "crew" ||
-                          section === "decision" ||
                           section === "active" ||
                           section === "pinned" ||
                           section === "working";
@@ -3446,14 +3412,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             coordinator={isCoordinator}
                             hideHoverActions={!sidebarSectionHasHoverActions(section)}
                             crewTree={
-                              section === "crew" || section === "decision"
-                                ? resolveCrewTreePlace({
-                                    slot: isCoordinator ? "coordinator" : section,
-                                    coordinatorListed: coordinatorThreads.length > 0,
-                                    crewExpanded: crewShelfExpanded,
-                                    lastInTree: thread === lastCrewTreeThread,
-                                  })
-                                : undefined
+                              section !== "crew" || isCoordinator
+                                ? undefined
+                                : !crewShelfExpanded
+                                  ? "indent"
+                                  : thread === lastCrewThread
+                                    ? "last"
+                                    : "branch"
                             }
                             crewTreeRoot={thread === crewTreeRootThread}
                             onCrewTreeToggle={toggleCrewTree}
@@ -3461,12 +3426,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               folderRow ??
                               (section === "working" ||
                               section === "snoozed" ||
-                              section === "settled"
+                              section === "settled" ||
+                              (section === "crew" && !isCoordinator)
                                 ? `shelf:${section}`
-                                : (section === "crew" && !isCoordinator) ||
-                                    (section === "decision" && coordinatorThreads.length > 0)
-                                  ? "shelf:crew"
-                                  : undefined)
+                                : undefined)
                             }
                             variantAction={
                               section === "snoozed"
@@ -3598,7 +3561,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             items.push(
                               <SidebarCrewToggle
                                 key="crew-toggle"
-                                count={crewTreeCount}
+                                count={crewThreads.length}
                                 expanded={crewShelfExpanded}
                                 onToggle={toggleCrewTree}
                               />,

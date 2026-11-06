@@ -55,9 +55,9 @@ export type ThreadDecisionEntry = typeof ThreadDecisionEntry.Type;
 const decisionFields = {
   taskId: Text(200),
   title: Text(200),
-  /** The project the decision is about, which its sidebar card shows instead of the thread's. */
+  /** The project the decision is about, which its Needs me row shows instead of the thread's. */
   projectName: Schema.optional(Text(200)),
-  /** When the call started waiting on the user, which the sidebar card counts its age from. */
+  /** When the call started waiting on the user, which its Needs me row counts its age from. */
   since: Schema.optional(DecisionTime),
   question: Text(4_000),
   options: Schema.Array(ThreadDecisionOption).check(Schema.isMaxLength(12)),
@@ -74,7 +74,7 @@ export const ThreadDecisionInput = Schema.Struct({
 });
 export type ThreadDecisionInput = typeof ThreadDecisionInput.Type;
 
-/** The time of the decision's latest entry, which the sidebar counts its age from. */
+/** The time of the decision's latest entry, which Needs me sorts by and marks updates with. */
 export function threadDecisionUpdatedAt(
   decision: Pick<ThreadDecision, "entries"> | null | undefined,
 ): string | null {

@@ -215,9 +215,9 @@ long session is due for a fresh one; Working, Waiting and anything that needs
 the user show as usual. The age is the thread's, since a `/clear` keeps the
 thread. Neither it nor anything in its tree shows a branch line, since a worker's
 branch matters little inside FirstMate; other threads and the hover card keep it
-(`isThreadMetaLineEmpty` in `apps/web/src/components/Sidebar.logic.ts`). Its crewmates, then its decisions (see
-[Decision threads](#decision-threads)), hang below it as a tree that collapses
-to a count. A pinned coordinator (see below) gets this card even with
+(`isThreadMetaLineEmpty` in `apps/web/src/components/Sidebar.logic.ts`). Its crewmates hang below it as a
+tree that collapses to a count. Its decisions are not in the sidebar; see
+[Needs me](#needs-me). A pinned coordinator (see below) gets this card even with
 no crew; without any coordinator the sidebar is unchanged.
 
 The main session is always titled "Ahoy!", because a generated title for
@@ -313,42 +313,39 @@ server takes messages for crew as before, so FirstMate's MCP messages arrive
 unchanged, and mobile has no lock. Code: `crewLocked` in
 `apps/web/src/components/chat/ChatComposer.tsx`.
 
-## Decision threads
+## Needs me
 
-<img src="media/decision-sidebar.png" width="256" alt="The sidebar: the FirstMate card titled Ahoy!, then on one guide line two crewmates and three decision cards, each decision reading its project (home-server, rituals, or the thread's own when it names none), an orange raised hand with Needs captain, its title, and the gray age at the end of the title line">
+![A chat with the Needs me tab beside it: four open decisions, one marked Updated, two answered today and four under Later with their wake dates](media/needs-me-list.jpg)
 
-Something FirstMate needs from the captain is its own thread: a real thread in
-FirstMate's project with no agent and no turn. The sidebar lists decision
-threads one level down under the FirstMate card, after all its crew and before
-Pinned and ordinary threads, newest update first. They hang on the crew's guide
-line after the crew, and the tree's toggle collapses crew and decisions
-together, its count covering both; with no FirstMate card listed they stay at
-the top level. A card shows a project and its title like a crewmate's, an
-orange raised hand reading "Needs captain" in the status slot (Woke still shows
-after a snooze), and, in the usual gray at the end of the title line, how long
-ago the call started waiting on the captain, read with "ago" like "8h ago" (`decision.since`, else its raised
-entry, else the thread's creation), not since its latest edit, so rewriting a
-decision's context does not make it look new. The list still puts the newest
-update first. The decision view's header says "waiting since" the same day. The project
-is the one the decision names in `decision.projectName`, with a monogram drawn
-from that name; without one the card shows the thread's own project, which is
-FirstMate's. Snooze, Settle, unread and archive work as on any thread; a
-snoozed or settled decision goes to those shelves.
+Something FirstMate needs from the captain is a decision, listed in the right
+panel's "Needs me" tab, beside any chat. It opens from the panel's launcher or
+"+" menu (N), or "Open Needs me" in the command palette. On phone web it opens
+as a sheet like the other right-panel tabs. The tab lists open decisions,
+newest update first, each with its project, title and, in gray, how long the
+call has waited (`decision.since`, else its raised entry, else when it was
+made), so rewording a decision does not make it look new. A decision never
+opened reads "New"; one FirstMate changed since it was last opened reads
+"Updated" with the day, and the mark clears when it is opened. Snoozed
+decisions wait under "Later" with their wake date ("no date" for an undated
+snooze), and ones settled today stay under "Answered today" until the day
+ends. The project is the one the decision names in `decision.projectName`;
+without one it is the thread's own, which is FirstMate's. Nothing in the
+sidebar counts or lists decisions.
 
-![The open decision shows its question and options, FirstMate's message, an Updated divider with what changed, and a reply box with option chips](media/decision-thread.png)
+<img src="media/needs-me-decision.jpg" width="400" alt="An open decision in the Needs me tab: its question and options, then FirstMate's message as sent">
 
-Opening one shows the decision view in place of the timeline and composer: the
-question and options, then FirstMate's messages as sent, each with "In
-FirstMate's chat", an "Updated" divider with the one-line what-changed before
-each update, and attachments (pictures inline, reports and links as file
-chips, paths relative to FirstMate's project). Option chips and "Later" fill
-the reply box. "Send to FirstMate" puts one ordinary user message into
-FirstMate's chat, queued behind a running turn as the composer's Queue does or
-starting a turn when FirstMate is idle, and settles the decision. The toast's
-Undo takes the message back while it is still queued and unsettles the
-decision; once FirstMate has started on it, it stays sent. Sending also
-switches the selected thread to FirstMate's chat, and Undo brings you back to
-the decision with your words restored.
+Opening a row shows the question and options, then FirstMate's messages as
+sent, each with "In FirstMate's chat", an "Updated" divider with the one-line
+what-changed before each update, and attachments (pictures inline, reports and
+links as file chips, paths relative to FirstMate's project). Option chips and
+"Later" fill the reply box. "Send to FirstMate" puts one ordinary user message
+into FirstMate's chat, queued behind a running turn as the composer's Queue
+does or starting a turn when FirstMate is idle, and settles the decision. If
+the chat beside the panel is not FirstMate's, sending switches to it and opens
+Needs me beside it. The toast's Undo takes the message back while it is still
+queued, unsettles the decision and reopens its row with your words restored;
+once FirstMate has started on it, it stays sent. A decision thread's own
+address opens FirstMate's chat with that decision open in the tab.
 
 The records, for FirstMate's side:
 
@@ -362,10 +359,10 @@ The records, for FirstMate's side:
   message?{thread, id?}, attachments?[{kind, path, label?}]}], revision }`:
   entry text at most 8,192 characters, 24 entries, 12 options, 12 attachments
   per entry. `projectName` (at most 200 characters) is the project the decision
-  is about, such as the backlog task's repo, which the sidebar card shows;
-  decisions without it stay valid. `since` is when the call started waiting on
-  the captain, an ISO 8601 date-time such as `2026-10-26T06:53:24.000Z` (any
-  string `Date.parse` reads is accepted; send the full UTC form); the card's
+  is about, such as the backlog task's repo, which its row shows; decisions
+  without it stay valid. `since` is when the call started waiting on the
+  captain, an ISO 8601 date-time such as `2026-10-26T06:53:24.000Z` (any
+  string `Date.parse` reads is accepted; send the full UTC form); the row's
   age and the view's "waiting since" count from it, falling back to the raised
   entry. Send it on every `set_decision`, since a replacement without it falls
   back too. `revision` is
@@ -376,6 +373,8 @@ The records, for FirstMate's side:
   says nothing is waiting. Both work only on a thread launched with
   `decisionOf`; the result reports `decisionRevision`. Thread reads report
   `decisionOf` and `decision`; thread lists report `decisionOf` only.
+- Snooze, settle and archive are the thread's own: a snoozed decision moves to
+  Later, a settled one to Answered today, and an archived one leaves the tab.
 - The reply message reads `**Decision · <title>**`, then the line
   `needs-me-task: <taskId>`, a blank line, the question quoted with `> `, a
   blank line, then the captain's words. Upstream renders user messages without
@@ -384,41 +383,41 @@ The records, for FirstMate's side:
   decision meanwhile, nothing is sent and the captain is told to read the
   update.
 
-Upstream's sidebar is an inbox of threads, and every thread is a conversation
-with its own agent. A thread with no agent whose reply goes to another thread
-is new, so the fork refuses any agent turn on a decision thread server-side
-(`message.dispatch` in `Orchestrator.ts`): upstream-built clients, such as the
-App Store mobile app, list it as an ordinary empty thread, and typing there
-gets an error instead of starting an agent. The fields stay out of `lineage`
-for the same reason as `crewOf`, and forks drop them. The shell carries only
-`decisionOf`, `decisionUpdatedAt`, `decisionSince` and `decisionProjectName`; the payload rides
-on the thread read, so
-the thread list stays small. The mobile app has no decision view yet: it needs
-one, plus crew nesting under FirstMate, before the phone lists decisions under
-FirstMate as the web does.
+Each decision is still a thread with no agent whose reply goes to another
+thread, which upstream has no notion of, so the fork refuses any agent turn on
+a decision thread server-side (`message.dispatch` in `Orchestrator.ts`):
+upstream-built clients, such as the App Store mobile app, list it as an
+ordinary empty thread, and typing there gets an error instead of starting an
+agent. The fields stay out of `lineage` for the same reason as `crewOf`, and
+forks drop them. The shell carries only `decisionOf`, `decisionUpdatedAt`,
+`decisionSince` and `decisionProjectName`; the payload rides on the thread read
+of the open row, so the thread list stays small. The command palette's thread
+search still finds decision threads, and picking one opens it in the tab. The
+mobile app has no Needs me screen yet.
 
 Code: `packages/contracts/src/threadDecision.ts`,
 `apps/server/src/orchestration-v2/DecisionReplyService.ts` (the
 `orchestration.replyToDecision` and `orchestration.undoDecisionReply` RPCs) and
-`apps/web/src/components/decision/`. Shared files it touches, for syncs: the
+`apps/web/src/components/needsMe/`. Shared files it touches, for syncs: the
 optional fields in `orchestrationV2.ts`, `orchestratorMcp.ts` and
 `threadMetadataMcp.ts`; create, update and the turn refusal in `Orchestrator.ts`;
 `ProjectionStore.ts` shells; the launch handler and tool in
-`mcp/toolkits/project/`; `ThreadMetadataMcpService.ts`; the decision slot in
-`coordinatorGroup.logic.ts`, `Sidebar.tsx`, `Sidebar.logic.ts` and
-`Sidebar.drag.ts`; the Needs captain status, the age, the hidden model icon
-and the decision's project in `SidebarThreadRow.tsx`; and the switch in
-`ThreadRouteView.tsx`, which keeps `ChatView.tsx` and `ChatComposer.tsx`
-untouched.
+`mcp/toolkits/project/`; `ThreadMetadataMcpService.ts`; on the web, the
+`needs-me` surface kind in `rightPanelStore.ts` (and `closedViewStore.ts`), the
+launcher and "+" menu entries and tab title and icon in `RightPanelTabs.tsx`,
+`RightPanelSurfaceContent.tsx`, `useRightPanelActions.ts`, the prop in
+`ChatView.tsx`, a command palette item, the sidebar's visibility filter
+(`filterSidebarV2VisibleThreads` in `Sidebar.logic.ts`) and the redirect in
+`ThreadRouteView.tsx`.
 
 ## Snooze with no date
 
 A thread can be snoozed with no wake time: it sits on the Snoozed shelf until
 someone wakes it, and no timer brings it back. FirstMate parks decisions older
-than a day there, so the tree under FirstMate keeps only the last day's calls.
+than a day this way, so they wait under Needs me's Later.
 On the shelf, dated snoozes come first, soonest wake first, then undated ones,
-newest first, each showing its usual age ("3d"; a decision's counts from `since`
-and keeps its "ago", "3d ago") where a dated row shows the alarm and time left ("in 13d"). A question, approval or
+newest first, each showing its usual age ("3d") where a dated row shows the
+alarm and time left ("in 13d"). A question, approval or
 failure still wakes it early, as with a dated snooze. Waking, pinning, settling
 or sending a message ends it.
 

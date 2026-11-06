@@ -1,7 +1,6 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { SidebarSection, SidebarThreadStatus } from "../Sidebar.logic";
-import type { CrewTreePlace } from "./SidebarCrewTree";
 
 /**
  * The coordinator a thread names, if any. A coordinator is an unarchived thread pinned as its
@@ -48,50 +47,17 @@ export function resolveCoordinatorGroup<T extends GroupThread>(
 
 /**
  * Where a thread the sidebar would otherwise list in `section` goes instead, if anywhere. It runs
- * before the Working split, so none ever reaches Working. Snoozing or settling is the way out
- * of the group; pinning changes nothing because the group already sits above Pinned. A decision
- * thread is listed with the group, under the crew (see `resolveCrewTreePlace`).
+ * before the Working split, so neither ever reaches Working. Snoozing or settling is the way out
+ * of the group; pinning changes nothing because the group already sits above Pinned.
  */
-export function coordinatorGroupSlot<T extends Pick<EnvironmentThreadShell, "decisionOf">>(
+export function coordinatorGroupSlot<T>(
   group: CoordinatorGroup<T>,
   thread: T,
   section: SidebarSection,
-): "coordinator" | "crew" | "decision" | null {
+): "coordinator" | "crew" | null {
   if (section === "snoozed" || section === "settled") return null;
   if (group.coordinators.has(thread)) return "coordinator";
-  if (group.crew.has(thread)) return "crew";
-  return thread.decisionOf === undefined ? null : "decision";
-}
-
-/**
- * Where a row sits in the tree under the coordinator card, if it is in the tree. Crewmates and
- * then decisions hang on the guide line and collapse together; with no coordinator card listed,
- * decisions stay at the top level.
- */
-export function resolveCrewTreePlace(input: {
-  readonly slot: "coordinator" | "crew" | "decision";
-  readonly coordinatorListed: boolean;
-  readonly crewExpanded: boolean;
-  readonly lastInTree: boolean;
-}): CrewTreePlace | undefined {
-  if (input.slot === "coordinator") return undefined;
-  if (input.slot === "decision" && !input.coordinatorListed) return undefined;
-  return !input.crewExpanded ? "indent" : input.lastInTree ? "last" : "branch";
-}
-
-/** The time a decision card's age counts from: when the call began waiting, not its last edit. */
-export function decisionAgeTimestamp(
-  thread: Pick<EnvironmentThreadShell, "decisionSince" | "createdAt">,
-): string {
-  return thread.decisionSince ?? thread.createdAt;
-}
-
-/** Newest update first, so a decision whose context just changed comes to the top. */
-export function sortDecisionThreads<
-  T extends Pick<EnvironmentThreadShell, "decisionUpdatedAt" | "createdAt">,
->(threads: readonly T[]): T[] {
-  const at = (thread: T) => Date.parse(thread.decisionUpdatedAt ?? thread.createdAt);
-  return threads.toSorted((left, right) => at(right) - at(left));
+  return group.crew.has(thread) ? "crew" : null;
 }
 
 type CrewThread = GroupThread & Pick<EnvironmentThreadShell, "crewOf">;

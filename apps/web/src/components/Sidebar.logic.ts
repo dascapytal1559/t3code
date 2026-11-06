@@ -5,7 +5,6 @@ import {
   threadWaitsOnBackgroundWork,
 } from "@t3tools/client-runtime/state/models";
 import { isShownUnderParent } from "@t3tools/client-runtime/state/threads";
-import { decisionAgeTimestamp } from "./sidebar/coordinatorGroup.logic";
 import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
 import * as React from "react";
 import {
@@ -172,18 +171,10 @@ export function useRetainedValue<T>(key: string | null, value: T | null): T | nu
 export const animateSidebarLayoutChanges: AnimateLayoutChanges = (args) =>
   args.isSorting ? defaultAnimateLayoutChanges(args) : false;
 
-// Snoozed rows cannot accept drops without a wake time. Working, crew and decision rows only drag
-// out as chat context. Crew rows are coordinators and their crew, listed above Pinned; decision
-// rows follow the crew, one level down.
+// Snoozed rows cannot accept drops without a wake time. Working and crew rows only drag out as
+// chat context. Crew rows are coordinators and their crew, listed above Pinned.
 
-export type SidebarSection =
-  | "crew"
-  | "decision"
-  | "pinned"
-  | "active"
-  | "working"
-  | "snoozed"
-  | "settled";
+export type SidebarSection = "crew" | "pinned" | "active" | "working" | "snoozed" | "settled";
 
 export function resolveSidebarThreadSection(input: {
   readonly snoozed: boolean;
@@ -220,12 +211,10 @@ export function sidebarListItemId(item: SidebarListItem): string {
   return item.kind === "thread" ? item.key : sidebarMarkerId(item.marker);
 }
 
-// Crew and decision rows come first and never move, so drops above Pinned land nowhere.
+// Crew rows and their header come first and never move, so the list opens with crew when it has any.
 function leadingSidebarSection(items: readonly SidebarListItem[]): SidebarSection {
   return items.some((item) =>
-    item.kind === "thread"
-      ? item.section === "crew" || item.section === "decision"
-      : item.marker === "crew-toggle",
+    item.kind === "thread" ? item.section === "crew" : item.marker === "crew-toggle",
   )
     ? "crew"
     : "pinned";
@@ -262,14 +251,7 @@ export function resolveSidebarDropTarget(
   const moved = items.filter((_, index) => index !== activeIndex);
   moved.splice(overIndex, 0, items[activeIndex]!);
   const section = sectionAtSidebarSlot(moved, overIndex);
-  if (
-    section === "crew" ||
-    section === "decision" ||
-    section === "working" ||
-    section === "snoozed"
-  ) {
-    return null;
-  }
+  if (section === "crew" || section === "working" || section === "snoozed") return null;
   const pinnedOrder: string[] = [];
   const activeOrder: string[] = [];
   let currentSection = leadingSidebarSection(moved);
@@ -411,9 +393,7 @@ export function planSidebarThreadDrop(input: {
     activeKeysById,
     activeReorderableKeys,
   } = input;
-  if (activeSection === "crew" || activeSection === "decision" || activeSection === "working") {
-    return { kind: "none" };
-  }
+  if (activeSection === "crew" || activeSection === "working") return { kind: "none" };
   if (input.supportsSettlement === false && (target.section === "settled" || activeSettled)) {
     return { kind: "none" };
   }
@@ -634,8 +614,12 @@ export function resolveSidebarRowThreadId(
  * `delegatedUnderParent` holds the tasks linked environments run for a thread
  * the sidebar lists, by thread key; they show under that thread, as subagents do.
  */
+/** Decision threads are listed in the right panel's Needs me tab, never in the sidebar. */
 export function filterSidebarV2VisibleThreads<
-  T extends Pick<SidebarThreadSummary, "archivedAt" | "environmentId" | "id" | "lineage"> & {
+  T extends Pick<
+    SidebarThreadSummary,
+    "archivedAt" | "decisionOf" | "environmentId" | "id" | "lineage"
+  > & {
     projectId: string;
   },
 >(
@@ -646,6 +630,7 @@ export function filterSidebarV2VisibleThreads<
   return threads.filter(
     (thread) =>
       thread.archivedAt === null &&
+      thread.decisionOf === undefined &&
       !isShownUnderParent(
         { environmentId: thread.environmentId, threadId: thread.id },
         thread.lineage,
@@ -1030,14 +1015,10 @@ function firstValidTimestampMs(...candidates: ReadonlyArray<string | null | unde
   return 0;
 }
 
-type ThreadAgeFields = Pick<
-  SidebarThreadSummary,
-  "decisionOf" | "decisionSince" | "createdAt" | "latestUserMessageAt" | "updatedAt"
->;
+type ThreadAgeFields = Pick<SidebarThreadSummary, "latestUserMessageAt" | "updatedAt">;
 
-/** The time a row's age counts from. A decision has no messages of its own; it ages from when it began waiting. */
+/** The time a row's age counts from. */
 export function threadAgeTimestamp(thread: ThreadAgeFields): string {
-  if (thread.decisionOf !== undefined) return decisionAgeTimestamp(thread);
   return thread.latestUserMessageAt ?? thread.updatedAt;
 }
 

@@ -1732,7 +1732,7 @@ it.effect(
       assert.equal(created.thread.decision?.revision, 1);
       assert.equal(created.thread.title, "First window camera");
       assert.equal(created.shell.decisionOf, coordinator);
-      // The sidebar counts a decision's age from its latest entry, not from when it was made.
+      // Needs me orders decisions by their latest entry, not by when they were made.
       assert.equal(created.shell.decisionUpdatedAt, "2026-11-05T05:11:27.000Z");
       assert.equal(created.thread.decision?.projectName, "home-server");
       assert.equal(created.shell.decisionProjectName, "home-server");

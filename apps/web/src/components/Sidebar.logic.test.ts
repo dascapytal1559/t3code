@@ -29,6 +29,7 @@ import {
   sortScopedProjectsForSidebar,
   sortSnoozedThreads,
   sortSidebarV2ProjectGroups,
+  filterSidebarV2VisibleThreads,
   shouldNavigateAfterThreadPark,
   type SidebarListItem,
   type SidebarListMarker,
@@ -862,31 +863,27 @@ describe("sortSnoozedThreads", () => {
       id: string;
       snoozedUntil?: string;
       latestUserMessageAt?: string;
-      decisionSince?: string;
     }) => ({
       id: input.id,
       snoozedUntil: input.snoozedUntil ?? null,
-      ...(input.decisionSince === undefined
-        ? {}
-        : { decisionOf: ThreadId.make("coordinator"), decisionSince: input.decisionSince }),
-      createdAt: "2026-01-01T00:00:00.000Z",
       latestUserMessageAt: input.latestUserMessageAt ?? null,
-      updatedAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-03-05T00:00:00.000Z",
     });
     const sorted = sortSnoozedThreads([
-      snoozed({ id: "old-decision", decisionSince: "2026-03-01T00:00:00.000Z" }),
+      snoozed({ id: "old-thread", latestUserMessageAt: "2026-03-01T00:00:00.000Z" }),
       snoozed({ id: "wakes-later", snoozedUntil: "2026-03-12T09:00:00.000Z" }),
-      snoozed({ id: "recent-thread", latestUserMessageAt: "2026-03-08T00:00:00.000Z" }),
+      // With no message, its age runs from its last update.
+      snoozed({ id: "no-messages" }),
       snoozed({ id: "wakes-first", snoozedUntil: "2026-03-10T09:00:00.000Z" }),
-      snoozed({ id: "new-decision", decisionSince: "2026-03-09T00:00:00.000Z" }),
+      snoozed({ id: "new-thread", latestUserMessageAt: "2026-03-09T00:00:00.000Z" }),
     ]);
 
     expect(sorted.map((thread) => thread.id)).toEqual([
       "wakes-first",
       "wakes-later",
-      "new-decision",
-      "recent-thread",
-      "old-decision",
+      "new-thread",
+      "no-messages",
+      "old-thread",
     ]);
   });
 });
@@ -1588,6 +1585,33 @@ describe("resolveSidebarRouteReveal", () => {
         findThread,
       }),
     ).toEqual({ pendingKey: hiddenKey, widensScope: false });
+  });
+});
+
+describe("filterSidebarV2VisibleThreads", () => {
+  it("leaves out archived threads and FirstMate's decision threads", () => {
+    const listed = (id: string, extra: { archivedAt?: string; decisionOf?: ThreadId } = {}) => ({
+      environmentId: EnvironmentId.make("environment-test"),
+      id: ThreadId.make(id),
+      projectId: "project-test",
+      lineage: {
+        rootThreadId: ThreadId.make(id),
+        parentThreadId: null,
+        relationshipToParent: null,
+      },
+      archivedAt: extra.archivedAt ?? null,
+      ...(extra.decisionOf === undefined ? {} : { decisionOf: extra.decisionOf }),
+    });
+    const visible = filterSidebarV2VisibleThreads(
+      [
+        listed("firstmate"),
+        listed("decision", { decisionOf: ThreadId.make("firstmate") }),
+        listed("archived", { archivedAt: "2026-11-01T00:00:00.000Z" }),
+      ],
+      null,
+      new Set(),
+    );
+    expect(visible.map((thread) => thread.id)).toEqual(["firstmate"]);
   });
 });
 

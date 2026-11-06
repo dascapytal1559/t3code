@@ -20,11 +20,7 @@ const isShelfHeader = (item: SidebarListItem | undefined) =>
     item.marker === "settled-header");
 
 const isCardSection = (section: SidebarSection) =>
-  section === "crew" ||
-  section === "decision" ||
-  section === "pinned" ||
-  section === "active" ||
-  section === "working";
+  section === "crew" || section === "pinned" || section === "active" || section === "working";
 
 export function restrictBelowSidebarLabel(
   { transform, containerNodeRect, draggingNodeRect }: Parameters<Modifier>[0],
@@ -123,7 +119,6 @@ export function createSidebarSortingStrategy(input: {
     if (!target) return [];
     const groups: Record<SidebarSection, ThreadItem[]> = {
       crew: [],
-      decision: [],
       pinned: [],
       active: [],
       working: [],
