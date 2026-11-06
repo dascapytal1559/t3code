@@ -1407,6 +1407,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                               ? resolveSettledThreadTimestamp(thread)
                               : threadAgeTimestamp(thread)
                           }
+                          keepAgo={thread.decisionOf !== undefined}
                         />
                       </span>
                     )}

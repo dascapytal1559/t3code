@@ -415,8 +415,8 @@ A thread can be snoozed with no wake time: it sits on the Snoozed shelf until
 someone wakes it, and no timer brings it back. FirstMate parks decisions older
 than a day there, so the tree under FirstMate keeps only the last day's calls.
 On the shelf, dated snoozes come first, soonest wake first, then undated ones,
-newest first, each showing its usual age (a decision's counts from `since`)
-where a dated row shows the alarm and time left ("in 13d"). A question, approval or
+newest first, each showing its usual age ("3d"; a decision's counts from `since`
+and keeps its "ago", "3d ago") where a dated row shows the alarm and time left ("in 13d"). A question, approval or
 failure still wakes it early, as with a dated snooze. Waking, pinning, settling
 or sending a message ends it.
 
