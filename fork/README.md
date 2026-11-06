@@ -280,6 +280,19 @@ release path. Code: `thread.session.refresh` in
 in `apps/server/src/orchestration-v2/threadHistoryPaging.ts`, and
 `ChatHeader.tsx` on the web.
 
+<img src="media/context-window-refresh.jpg" width="272" alt="The Context Window box on a FirstMate thread, with a blue Refresh FirstMate context button and a small Compact context link under it">
+
+The Context Window box under the composer's context meter offers the same
+refresh on that thread. Upstream's full-width Compact context button becomes a
+primary Refresh FirstMate context button, greyed out with the header's wording
+while a turn runs, and compacting drops to a small Compact context link under
+it with its usual availability. Upstream offers compacting because that is how
+a long session continues; FirstMate keeps its state in files and stows before a
+refresh, so a fresh session is the better default there. Every other thread
+keeps upstream's box unchanged. Code: `onRefreshContext` in
+`apps/web/src/components/chat/ContextWindowMeter.tsx`, passed down from
+`ChatView.tsx`.
+
 ## Per-thread environment and instructions
 
 An agent that launches a thread can give it its own environment variables and

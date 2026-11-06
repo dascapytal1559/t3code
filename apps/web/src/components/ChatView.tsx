@@ -3736,6 +3736,12 @@ export default function ChatView(props: ChatViewProps) {
                               onPageScrollKeyUp={onComposerPageScrollKeyUpStable}
                               onPageScrollRelease={onComposerPageScrollReleaseStable}
                               onCompactContext={onComposerCompactContextStable}
+                              {...(canRefreshContext
+                                ? {
+                                    onRefreshContext: handleRefreshContextStable,
+                                    refreshContextDisabled,
+                                  }
+                                : {})}
                               onSend={onComposerSendStable}
                               onResume={onComposerResumeStable}
                               onInterrupt={onInterruptStable}
