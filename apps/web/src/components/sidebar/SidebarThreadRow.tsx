@@ -109,7 +109,7 @@ import {
   CrewTreeGutter,
   type CrewTreePlace,
 } from "./SidebarCrewTree";
-import { resolveCrewStatusLabel } from "./coordinatorGroup.logic";
+import { resolveCrewStatusLabel, showsCoordinatorAge } from "./coordinatorGroup.logic";
 import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
@@ -551,7 +551,7 @@ type SidebarThreadRowProps = {
   // "folder" is a one-line row inside a boring sidebar project folder;
   // "folder-multiline" adds the card's branch and PR line under it.
   variant: "card" | "slim" | "folder" | "folder-multiline";
-  // The FirstMate main session: led by its provider's mark.
+  // The FirstMate main session: its age stands in for an idle status.
   coordinator?: boolean | undefined;
   // Hides hover Snooze and Settle; the context menu still offers both.
   hideHoverActions?: boolean | undefined;
@@ -811,6 +811,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     status,
     isWoke,
   });
+  const coordinatorShowsAge = showsCoordinatorAge({
+    coordinator: props.coordinator === true,
+    status,
+    isWoke,
+  });
 
   const branchMismatch = resolveLocalCheckoutBranchMismatch({
     effectiveEnvMode: thread.worktreePath === null ? "local" : "worktree",
@@ -1044,7 +1049,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
 
   const accessibility = resolveSidebarRowAccessibility({
     title: thread.title,
-    statusLabel: crewStatusLabel ?? topStatus?.label ?? null,
+    statusLabel: crewStatusLabel ?? (coordinatorShowsAge ? null : topStatus?.label) ?? null,
     projectDisplayName: props.projectDisplayName,
     isActive: props.isActive,
   });
@@ -1551,6 +1556,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           </span>
                         ) : null}
                       </span>
+                    ) : coordinatorShowsAge ? (
+                      <StartedAgoLabel timestamp={thread.createdAt} />
                     ) : topStatus ? (
                       isWokeStatus ? (
                         <Tooltip>
@@ -1661,17 +1668,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               {props.sweepAction !== null ? dragDestination : null}
             </div>
             <div className="mt-1 flex min-w-0 items-center gap-1.5">
-              {/* A coordinator's age says when to restart it; its title rarely matters. */}
-              {props.coordinator && !isRenaming ? (
-                <span
-                  aria-hidden
-                  className="min-w-0 flex-1 truncate text-secondary-label text-xs tabular-nums"
-                >
-                  <StartedAgoLabel timestamp={thread.createdAt} />
-                </span>
-              ) : (
-                title
-              )}
+              {title}
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
                   Regenerating title

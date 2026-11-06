@@ -9,6 +9,7 @@ import {
   resolveCoordinatorGroup,
   resolveCrewStatusLabel,
   resolveLaunchCoordinator,
+  showsCoordinatorAge,
 } from "./coordinatorGroup.logic";
 
 const environmentId = EnvironmentId.make("environment-local");
@@ -220,6 +221,29 @@ describe("resolveCrewStatusLabel", () => {
 
   it("never hides a woke card", () => {
     expect(resolveCrewStatusLabel({ ...card, isWoke: true })).toBeNull();
+  });
+});
+
+describe("showsCoordinatorAge", () => {
+  const card = { coordinator: true, status: "ready", isWoke: false } as const;
+
+  it("shows the age on an idle coordinator card", () => {
+    expect(showsCoordinatorAge(card)).toBe(true);
+  });
+
+  it.each(["working", "preparing", "waiting", "approval", "input", "failed"] as const)(
+    "keeps a %s card's status",
+    (status) => {
+      expect(showsCoordinatorAge({ ...card, status })).toBe(false);
+    },
+  );
+
+  it("keeps a woke card's status", () => {
+    expect(showsCoordinatorAge({ ...card, isWoke: true })).toBe(false);
+  });
+
+  it("shows only on coordinator cards", () => {
+    expect(showsCoordinatorAge({ ...card, coordinator: false })).toBe(false);
   });
 });
 

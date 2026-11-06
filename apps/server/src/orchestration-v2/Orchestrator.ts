@@ -653,6 +653,14 @@ function pendingThreadTitleGenerationEffect(
   };
 }
 
+/** Fork: FirstMate's main thread carries this title instead of a generated one. */
+const COORDINATOR_THREAD_TITLE = "Ahoy!";
+
+/** Fork: a pinned coordinator that is not itself crew, which rules out FirstMate's secondmates. */
+function isPrimaryCoordinator(thread: Pick<OrchestrationV2AppThread, "coordinator" | "crewOf">) {
+  return thread.coordinator === true && thread.crewOf === undefined;
+}
+
 function delegatedTasksStopEffect(command: {
   readonly commandId: CommandId;
   readonly threadId: ThreadId;
@@ -3849,9 +3857,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                     snooze: command.limitRecovery.snooze ?? previousRecovery?.snooze ?? false,
                     requestId: command.commandId,
                   };
+          // Fork: FirstMate pins its main thread in its first turn, after the first title started.
+          const pinsCoordinator =
+            command.coordinator === true &&
+            thread.coordinator !== true &&
+            thread.crewOf === undefined;
+          const title = pinsCoordinator ? COORDINATOR_THREAD_TITLE : command.title;
           return {
             ...thread,
-            ...(command.title === undefined ? {} : { title: command.title }),
+            ...(title === undefined ? {} : { title }),
             ...(command.limitRecovery === undefined ? {} : { limitRecovery }),
             ...(command.limitRecovery !== undefined &&
             limitRecovery?.snooze === true &&
@@ -3912,7 +3926,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 }),
             ...(command.regenerateTitle === true
               ? { titleRegeneration: { requestId: command.commandId, startedAt: now } }
-              : command.regenerateTitle === false || command.title !== undefined
+              : command.regenerateTitle === false || title !== undefined
                 ? { titleRegeneration: null }
                 : {}),
             // A label is not activity: it must not reorder cards or reset a thread's age.
@@ -5814,19 +5828,29 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const userMessages = projection.messages.filter((message) => message.role === "user");
     const onlyMaintenanceHistory =
       userMessages.length > 0 && userMessages.every(isNativeMaintenanceCommand);
+    // Fork: a fresh session on FirstMate's main thread is named, not generated.
+    const namesCoordinator =
+      command.freshContext === true &&
+      isPrimaryCoordinator(projection.thread) &&
+      !isNativeMaintenanceCommand(command);
     if (
-      !isNativeMaintenanceCommand(command) &&
-      ((command.titleSeed !== undefined &&
-        (yield* projectionStore
-          .getMessageCount(command.threadId)
-          .pipe(mapDispatchError(command))) === 0) ||
-        (command.createdBy === "user" && onlyMaintenanceHistory))
+      namesCoordinator ||
+      (!isNativeMaintenanceCommand(command) &&
+        ((command.titleSeed !== undefined &&
+          (yield* projectionStore
+            .getMessageCount(command.threadId)
+            .pipe(mapDispatchError(command))) === 0) ||
+          (command.createdBy === "user" && onlyMaintenanceHistory)))
     ) {
       const now = yield* DateTime.now;
       const thread: OrchestrationV2AppThread = {
         ...projection.thread,
-        title: command.titleSeed ?? projection.thread.title,
-        titleRegeneration: { requestId: command.commandId, startedAt: now },
+        title: namesCoordinator
+          ? COORDINATOR_THREAD_TITLE
+          : (command.titleSeed ?? projection.thread.title),
+        titleRegeneration: namesCoordinator
+          ? null
+          : { requestId: command.commandId, startedAt: now },
         updatedAt: now,
       };
       const event = yield* emit(
@@ -5839,13 +5863,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         occurredAt: now,
         payload: thread,
       });
-      yield* Ref.update(effects, (existing) => [
-        ...existing,
-        pendingThreadTitleGenerationEffect(command.commandId, command.threadId, {
-          type: "initial",
-          messageId: command.messageId,
-        }),
-      ]);
+      if (!namesCoordinator) {
+        yield* Ref.update(effects, (existing) => [
+          ...existing,
+          pendingThreadTitleGenerationEffect(command.commandId, command.threadId, {
+            type: "initial",
+            messageId: command.messageId,
+          }),
+        ]);
+      }
       projection = applyToProjection(projection, event);
     }
     const modelSelection = command.modelSelection ?? projection.thread.modelSelection;

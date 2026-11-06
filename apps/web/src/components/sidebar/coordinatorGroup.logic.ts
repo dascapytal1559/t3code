@@ -100,6 +100,18 @@ export function resolveCrewStatusLabel(input: {
 }
 
 /**
+ * Whether a coordinator card's status slot shows how long ago it started, which says when it is
+ * due for a fresh session. Busy and needs-the-user statuses keep the slot, as on crew cards.
+ */
+export function showsCoordinatorAge(input: {
+  readonly coordinator: boolean;
+  readonly status: SidebarThreadStatus;
+  readonly isWoke: boolean;
+}): boolean {
+  return input.coordinator && input.status === "ready" && !input.isWoke;
+}
+
+/**
  * The coordinator a fresh page load opens instead of a new draft, whatever its run status: a
  * restart ends every run, so a coordinator kept open all day is rarely live at launch.
  * Several coordinators open the most recently updated.

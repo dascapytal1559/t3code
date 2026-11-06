@@ -195,15 +195,29 @@ mobile app has no board.
 
 ## FirstMate crew in the sidebar
 
-<img src="media/firstmate-sidebar.jpg" width="255" alt="The sidebar: a FirstMate card reading started 3h ago at the top, with four crewmate threads in a tree below it, two of them showing the status labels Testing and Waiting for captain">
+<img src="media/firstmate-sidebar.jpg" width="256" alt="The sidebar: a FirstMate card titled Ahoy! reading started 1d ago at top right, with two crewmate threads in a tree below it">
 
 A FirstMate session and the worker threads it launches are grouped above the
 sidebar inbox and kept out of Working. The main session is a two-line card: its
-project and status, then "started 3h ago" where a crewmate shows its title,
-because age is what says a long session is due for a fresh one. It never shows a
-branch line. Its crewmates hang below it as a tree that collapses to a count. A
-pinned coordinator (see below) gets this card even with no crew; without any
-coordinator the sidebar is unchanged.
+project and status, then its title. While it is idle, the status slot reads
+"started 1d ago" instead of the last activity time, because age is what says a
+long session is due for a fresh one; Working, Waiting and anything that needs
+the user show as usual. The age is the thread's, since a `/clear` keeps the
+thread. It never shows a branch line. Its crewmates hang below it as a tree that
+collapses to a count. A pinned coordinator (see below) gets this card even with
+no crew; without any coordinator the sidebar is unchanged.
+
+The main session is always titled "Ahoy!", because a generated title for
+FirstMate says nothing new. T3 only knows the thread is FirstMate's once it is
+pinned as coordinator, which FirstMate does during its first turn, after
+upstream's title generation has started; so pinning sets the title and drops
+the generation still in flight. A fresh session on it (`/clear`, or
+`t3_thread_send` with `freshContext`) sets "Ahoy!" again instead of generating;
+upstream generates no title there anyway, so a rename by hand lasts until then.
+A secondmate is crew of the main session and keeps upstream's titles, as does
+every other thread. Upstream code it touches, for syncs: two guards in
+`apps/server/src/orchestration-v2/Orchestrator.ts`, on `thread.metadata.update`
+and on the initial title in `message.dispatch` (`isPrimaryCoordinator`).
 
 The FirstMate and crew cards have no hover Snooze or Settle (the context menu
 still has both, and snoozing or settling takes a thread out of the group). They

@@ -120,6 +120,7 @@ function createThread(input: {
   readonly command: string;
   readonly thread: string;
   readonly worktreePath?: string;
+  readonly crewOf?: ThreadId;
 }) {
   return Effect.gen(function* () {
     const threads = yield* ThreadManagement.ThreadManagementService;
@@ -135,6 +136,7 @@ function createThread(input: {
       interactionMode: "default",
       branch: null,
       worktreePath: input.worktreePath ?? null,
+      ...(input.crewOf === undefined ? {} : { crewOf: input.crewOf }),
       createdBy: "user",
       creationSource: "web",
     });
@@ -147,6 +149,8 @@ function dispatchUserMessage(input: {
   readonly threadId: ThreadId;
   readonly text: string;
   readonly attachments?: ReadonlyArray<ChatAttachment>;
+  readonly titleSeed?: string;
+  readonly freshContext?: boolean;
 }) {
   return Effect.gen(function* () {
     const threads = yield* ThreadManagement.ThreadManagementService;
@@ -156,6 +160,8 @@ function dispatchUserMessage(input: {
       threadId: input.threadId,
       messageId: MessageId.make(`${input.command}:message`),
       text: input.text,
+      ...(input.titleSeed === undefined ? {} : { titleSeed: input.titleSeed }),
+      ...(input.freshContext === undefined ? {} : { freshContext: input.freshContext }),
       attachments: input.attachments ?? [],
       modelSelection,
       dispatchMode: { type: "defer_start" },
@@ -511,6 +517,128 @@ describe("ThreadTitleRegenerationService", () => {
         assert.notInclude(call?.forkSource?.history, "Rolled back attempt");
         const fork = yield* threads.getThreadProjection(forkThreadId);
         assert.equal(fork.thread.title, "Generated title");
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("names FirstMate's main thread Ahoy! when pinned, over the title in flight", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      yield* Effect.gen(function* () {
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const titleRegeneration = yield* ThreadTitleRegeneration.ThreadTitleRegenerationService;
+        const threadId = yield* createThread({
+          command: "command:title:pin:create",
+          thread: "thread:title:pin",
+        });
+        yield* dispatchUserMessage({
+          command: "command:title:pin:message",
+          threadId,
+          text: "Ahoy",
+          titleSeed: "Ahoy",
+        });
+        const requestId = CommandId.make("command:title:pin:message");
+        const generating = yield* threads.getThreadProjection(threadId);
+        assert.equal(generating.thread.titleRegeneration?.requestId, requestId);
+
+        yield* threads.setCoordinator({
+          projectId,
+          threadId,
+          commandId: CommandId.make("command:title:pin:pin"),
+          coordinator: true,
+        });
+        yield* titleRegeneration.execute({
+          threadId,
+          requestId,
+          kind: { type: "initial", messageId: MessageId.make("command:title:pin:message:message") },
+        });
+
+        assert.equal(harness.generateThreadTitle.mock.calls.length, 0);
+        const pinned = yield* threads.getThreadProjection(threadId);
+        assert.equal(pinned.thread.title, "Ahoy!");
+        assert.isNotOk(pinned.thread.titleRegeneration);
+
+        // A secondmate is crew of the main thread and keeps its own title.
+        const secondmateId = yield* createThread({
+          command: "command:title:pin:secondmate",
+          thread: "thread:title:pin:secondmate",
+          crewOf: threadId,
+        });
+        yield* threads.setCoordinator({
+          projectId,
+          threadId: secondmateId,
+          commandId: CommandId.make("command:title:pin:secondmate:pin"),
+          coordinator: true,
+        });
+        const secondmate = yield* threads.getThreadProjection(secondmateId);
+        assert.equal(secondmate.thread.title, "Seed title");
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("names a fresh session on FirstMate's main thread Ahoy! and leaves others", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      yield* Effect.gen(function* () {
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const outbox = yield* EffectOutbox.EffectOutboxV2;
+        const coordinatorId = yield* createThread({
+          command: "command:title:clear:create",
+          thread: "thread:title:clear",
+        });
+        yield* threads.setCoordinator({
+          projectId,
+          threadId: coordinatorId,
+          commandId: CommandId.make("command:title:clear:pin"),
+          coordinator: true,
+        });
+        yield* threads.dispatch({
+          type: "thread.metadata.update",
+          commandId: CommandId.make("command:title:clear:rename"),
+          threadId: coordinatorId,
+          title: "Manual title",
+        });
+        yield* dispatchUserMessage({
+          command: "command:title:clear:same-session",
+          threadId: coordinatorId,
+          text: "Carry on",
+        });
+        const renamed = yield* threads.getThreadProjection(coordinatorId);
+        assert.equal(renamed.thread.title, "Manual title");
+
+        yield* dispatchUserMessage({
+          command: "command:title:clear:fresh",
+          threadId: coordinatorId,
+          text: "Start over",
+          freshContext: true,
+        });
+        const fresh = yield* threads.getThreadProjection(coordinatorId);
+        assert.equal(fresh.thread.title, "Ahoy!");
+        assert.isNotOk(fresh.thread.titleRegeneration);
+        assert.deepEqual(
+          (yield* outbox.listByCommandId(CommandId.make("command:title:clear:fresh"))).filter(
+            (effect) => effect.request.type === "thread-title.generate",
+          ),
+          [],
+        );
+
+        const otherId = yield* createThread({
+          command: "command:title:clear:other:create",
+          thread: "thread:title:clear:other",
+        });
+        yield* dispatchUserMessage({
+          command: "command:title:clear:other:message",
+          threadId: otherId,
+          text: "Hello",
+        });
+        yield* dispatchUserMessage({
+          command: "command:title:clear:other:fresh",
+          threadId: otherId,
+          text: "Start over",
+          freshContext: true,
+        });
+        const other = yield* threads.getThreadProjection(otherId);
+        assert.equal(other.thread.title, "Seed title");
       }).pipe(Effect.provide(harness.layer));
     }),
   );
