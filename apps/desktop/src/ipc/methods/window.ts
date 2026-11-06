@@ -41,6 +41,7 @@ import * as ElectronWindow from "../../electron/ElectronWindow.ts";
 import * as Electron from "electron";
 import * as MacPermissions from "../../permissions/MacPermissions.ts";
 import { safariPermissionCheck } from "../../preview/BrowserImport/SafariPermission.ts";
+import { setWindowPanelOpen } from "../../window/PanelWindowGrowth.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 import {
@@ -430,6 +431,25 @@ export const revealWindow = DesktopIpc.makeIpcMethod({
       return;
     }
     yield* electronWindow.reveal(window.value);
+  }),
+});
+
+// Fork: the window grows for the right panel.
+export const setRightPanelOpen = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.SET_RIGHT_PANEL_OPEN_CHANNEL,
+  payload: Schema.Struct({ open: Schema.Boolean, width: Schema.Finite }),
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.window.setRightPanelOpen")(function* (input, event) {
+    const electronWindow = yield* ElectronWindow.ElectronWindow;
+    const window = yield* electronWindow.main;
+    if (
+      event === undefined ||
+      Option.isNone(window) ||
+      window.value.webContents.id !== event.sender.id
+    ) {
+      return;
+    }
+    setWindowPanelOpen(window.value, input.open, input.width);
   }),
 });
 

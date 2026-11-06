@@ -102,6 +102,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     return () => ipcRenderer.removeListener(IpcChannels.TRACKPAD_SCROLL_END_CHANNEL, handler);
   },
   revealWindow: () => ipcRenderer.invoke(IpcChannels.REVEAL_WINDOW_CHANNEL),
+  setRightPanelOpen: (open, width) =>
+    ipcRenderer.invoke(IpcChannels.SET_RIGHT_PANEL_OPEN_CHANNEL, { open, width }),
   getSystemLocale: () => {
     const result = ipcRenderer.sendSync(IpcChannels.GET_SYSTEM_LOCALE_CHANNEL);
     return typeof result === "string" ? result : null;

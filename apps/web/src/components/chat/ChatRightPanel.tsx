@@ -1,4 +1,9 @@
-import { usePreviewPanelInlineSize } from "../../hooks/usePreviewPanelInlineSize";
+import { useEffect } from "react";
+
+import {
+  readPreviewPanelWidth,
+  usePreviewPanelInlineSize,
+} from "../../hooks/usePreviewPanelInlineSize";
 import { RightPanelSheet } from "../RightPanelSheet";
 import { RightPanelTabs, type RightPanelTabsProps } from "../RightPanelTabs";
 
@@ -31,6 +36,15 @@ export function ChatRightPanel(props: ChatRightPanelProps) {
     container: workspaceLayoutElement,
     widthStorageKey,
   });
+  const open = tabs.open === true;
+  // Fork: the desktop window grows by the panel's width instead of squeezing the chat.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- resizes the native desktop window, outside React
+  useEffect(() => {
+    const bridge = window.desktopBridge;
+    if (!open || bridge === undefined) return;
+    void bridge.setRightPanelOpen(true, readPreviewPanelWidth(widthStorageKey)).catch(() => {});
+    return () => void bridge.setRightPanelOpen(false, 0).catch(() => {});
+  }, [open, widthStorageKey]);
   if (!sheet) {
     return <RightPanelTabs {...tabs} mode="inline" maximized={maximized} inlineSize={inlineSize} />;
   }

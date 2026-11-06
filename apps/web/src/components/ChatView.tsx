@@ -3981,7 +3981,12 @@ export default function ChatView(props: ChatViewProps) {
         <ChatRightPanel
           sheet={shouldUsePlanSidebarSheet}
           workspaceLayoutElement={workspaceLayoutElement}
-          widthStorageKey={`t3code:preview-panel-width:${activeThreadKey}`}
+          // Fork: on desktop one remembered width, since the window grows by it.
+          widthStorageKey={
+            isElectron
+              ? "t3code:preview-panel-width"
+              : `t3code:preview-panel-width:${activeThreadKey}`
+          }
           sheetAnimationDurationMs={panelAnimationsActive ? panelAnimationDurationMs : 0}
           onCloseSheet={closePreviewPanelStable}
           open={rightPanelOpen}

@@ -1,5 +1,7 @@
+import * as Schema from "effect/Schema";
 import { useState } from "react";
 
+import { getLocalStorageItem } from "./useLocalStorage";
 import { type ResizableWidthHandlers, useResizableWidth } from "./useResizableWidth";
 import { observeResize } from "../lib/observeResize";
 
@@ -63,6 +65,17 @@ export function usePreviewPanelInlineSize(
     };
   };
   return { width, handlers, observeRow };
+}
+
+/** Fork: the saved width before the window caps it, which the desktop window grows by. */
+export function readPreviewPanelWidth(storageKey = PREVIEW_PANEL_WIDTH_STORAGE_KEY): number {
+  let stored: number | null = null;
+  try {
+    stored = getLocalStorageItem(storageKey, Schema.Finite);
+  } catch {
+    // Unreadable storage falls back to the default, as the panel itself does.
+  }
+  return Math.max(PREVIEW_PANEL_MIN_WIDTH, stored ?? PREVIEW_PANEL_DEFAULT_WIDTH);
 }
 
 function getPreviewPanelMaxWidth(viewportWidth: number, containerWidth?: number): number {
