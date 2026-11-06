@@ -59,9 +59,7 @@ import {
   CircleAlertIcon,
   MessagesSquareIcon,
   Minimize2Icon,
-  RefreshCwIcon,
 } from "lucide-react";
-import { formatDayAwareTimestamp } from "../../timestampFormat";
 import { ChevronDown, ChevronRight } from "lucide";
 import { MorphIcon } from "~/components/MorphIcon";
 import { Skeleton } from "../ui/skeleton";
@@ -1115,12 +1113,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   const listHeader = (
     <>
       {parentThreadLink === null ? listHeaderLeadingContent : null}
-      {historyControls ? (
-        <TimelineHistoryControl
-          {...historyControls}
-          previousSession={rows[0]?.kind === "session-boundary"}
-        />
-      ) : null}
+      {historyControls ? <TimelineHistoryControl {...historyControls} /> : null}
       {parentThreadLink !== null ? listHeaderLeadingContent : null}
     </>
   );
@@ -1380,12 +1373,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   );
 });
 
-function TimelineHistoryControl(
-  props: MessagesTimelineHistoryControls & {
-    /** The loaded history starts at a session boundary, so what is earlier is a previous session. */
-    readonly previousSession: boolean;
-  },
-) {
+function TimelineHistoryControl(props: MessagesTimelineHistoryControls) {
   if (!props.hasMoreHistory && props.error === null) {
     return null;
   }
@@ -1396,19 +1384,13 @@ function TimelineHistoryControl(
           <button
             type="button"
             disabled={props.loading}
-            aria-label={props.previousSession ? "Load previous session" : "Load earlier turns"}
+            aria-label="Load earlier turns"
             onClick={() => props.onLoadEarlier()}
             className="flex w-full cursor-pointer items-center gap-3 py-1.5 text-muted-foreground text-xs hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-default"
           >
             <span aria-hidden="true" className="h-px flex-1 bg-border/70" />
             <span className="shrink-0">
-              {props.loading
-                ? props.previousSession
-                  ? "Loading previous session…"
-                  : "Loading earlier turns…"
-                : props.previousSession
-                  ? "Load previous session"
-                  : "Load earlier turns"}
+              {props.loading ? "Loading earlier turns…" : "Load earlier turns"}
             </span>
             <span aria-hidden="true" className="h-px flex-1 bg-border/70" />
           </button>
@@ -1508,7 +1490,6 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "turn-fold" ? <TurnFoldTimelineRow key={row.id} row={row} /> : null}
       {row.kind === "attempt-fold" ? <AttemptFoldTimelineRow row={row} /> : null}
       {row.kind === "context-compaction" ? <ContextCompactionTimelineRow row={row} /> : null}
-      {row.kind === "session-boundary" ? <SessionBoundaryTimelineRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "user" ? <UserMessageRow row={row} /> : null}
       {row.kind === "message" && row.message.role === "assistant" ? (
         <AssistantTimelineRow row={row} />
@@ -1594,24 +1575,6 @@ function ContextCompactionTimelineRow({
         {row.active ? <ActivityShimmerOverlay>{content}</ActivityShimmerOverlay> : null}
       </span>
       <span className={cn("h-px flex-1", row.failed ? "bg-destructive/30" : "bg-border/70")} />
-    </div>
-  );
-}
-
-function SessionBoundaryTimelineRow({
-  row,
-}: {
-  row: Extract<TimelineRow, { kind: "session-boundary" }>;
-}) {
-  const ctx = use(TimelineRowCtx);
-  const when = formatDayAwareTimestamp(row.createdAt, ctx.timestampFormat);
-  return (
-    <div
-      role="separator"
-      aria-label={when ? `${row.label}, ${when}` : row.label}
-      className="mx-auto w-full max-w-(--chat-content-max-width)"
-    >
-      <TimelineSystemDivider label={row.label} detail={when || null} icon={RefreshCwIcon} />
     </div>
   );
 }

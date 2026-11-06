@@ -5664,7 +5664,6 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       readonly attemptStatus?: string | null;
       readonly persistentOutput?: boolean;
       readonly deferredWork?: OrchestrationV2TurnItem["deferredWork"];
-      readonly sessionBoundary?: true;
     };
     type TimelineIndexRow = {
       readonly sourceThreadId: ThreadId;
@@ -5701,7 +5700,6 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           persistent_output: number;
           attempt_id: string | null;
           attempt_status: string | null;
-          session_boundary: number | null;
         }>`SELECT item.turn_item_id, item.run_id, item.node_id, item.parent_item_id, item.type, item.status, item.ordinal,
           ${includePersistentOutput ? sql`attempt.attempt_id` : sql`NULL`} AS attempt_id,
           ${includePersistentOutput ? sql`attempt.status` : sql`NULL`} AS attempt_status,
@@ -5710,8 +5708,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           } AS persistent_output,
           CASE WHEN item.type = 'user_message' THEN json_extract(item.payload_json, '$.inputIntent') END AS input_intent,
           CASE WHEN item.type = 'user_message' THEN json_extract(item.payload_json, '$.createdBy') END AS created_by,
-          CASE WHEN item.type IN ('user_message', 'assistant_message') THEN json_extract(item.payload_json, '$.messageId') END AS message_id,
-          CASE WHEN item.type = 'system_notice' THEN json_extract(item.payload_json, '$.sessionBoundary') END AS session_boundary
+          CASE WHEN item.type IN ('user_message', 'assistant_message') THEN json_extract(item.payload_json, '$.messageId') END AS message_id
         FROM orchestration_v2_projection_turn_items AS item
         ${
           includePersistentOutput
@@ -5742,7 +5739,6 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           ...(row.input_intent === null ? {} : { inputIntent: row.input_intent }),
           ...(row.created_by === null ? {} : { createdBy: row.created_by }),
           ...(row.message_id === null ? {} : { messageId: MessageId.make(row.message_id) }),
-          ...(row.session_boundary ? { sessionBoundary: true as const } : {}),
         }));
         const local: Array<TimelineIndexRow> = items.map((item) => ({
           sourceThreadId: threadId,

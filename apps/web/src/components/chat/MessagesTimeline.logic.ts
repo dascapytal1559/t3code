@@ -572,13 +572,6 @@ type MessagesTimelineRowContent =
       expanded: boolean;
     }
   | {
-      /** Where a context refresh started a fresh agent session. */
-      kind: "session-boundary";
-      id: string;
-      createdAt: string;
-      label: string;
-    }
-  | {
       kind: "context-compaction";
       id: string;
       createdAt: string;
@@ -1149,13 +1142,6 @@ function deriveTurnFolds(input: {
       }
       if (entry.kind === "work" && entry.entry.itemType === "notification") continue;
       if (entry.kind === "work" && entry.entry.questionAnswer !== undefined) continue;
-      // The session boundary closes the `/stow` turn but divides the thread, so it stays shown.
-      if (
-        entry.kind === "work" &&
-        entry.entry.projectedItem?.item.type === "system_notice" &&
-        entry.entry.projectedItem.item.sessionBoundary === true
-      )
-        continue;
       hiddenEntryIds.add(entry.id);
     }
     if (hiddenEntryIds.size === 0) {
@@ -1706,20 +1692,6 @@ export function deriveMessagesTimelineRows(input: {
 
     if (timelineEntry.id === activeWorkPlacementEntryId) {
       appendActiveWorkRows();
-    }
-
-    if (
-      timelineEntry.kind === "work" &&
-      timelineEntry.entry.projectedItem?.item.type === "system_notice" &&
-      timelineEntry.entry.projectedItem.item.sessionBoundary === true
-    ) {
-      nextRows.push({
-        kind: "session-boundary",
-        id: timelineEntry.id,
-        createdAt: timelineEntry.createdAt,
-        label: timelineEntry.entry.label,
-      });
-      continue;
     }
 
     // A stopped compaction's own divider already says it stopped.
@@ -2450,11 +2422,6 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         anchors.length === nextAnchors.length &&
         anchors.every((id, index) => id === nextAnchors[index])
       );
-    }
-
-    case "session-boundary": {
-      const bs = b as typeof a;
-      return a.createdAt === bs.createdAt && a.label === bs.label;
     }
 
     case "context-compaction": {

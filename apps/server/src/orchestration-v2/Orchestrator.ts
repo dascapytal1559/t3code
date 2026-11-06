@@ -176,9 +176,10 @@ import { ProviderSessionManagerV2 } from "./ProviderSessionManager.ts";
 import { ProviderSwitchServiceV2 } from "./ProviderSwitchService.ts";
 import { isAutomaticCompletionRun, queuedRunsInDeliveryOrder } from "./QueuedRunOrder.ts";
 import {
-  SESSION_BOUNDARY_NOTICE,
+  SESSION_REFRESH_OPENING_TEXT,
   SESSION_REFRESH_STOW_TEXT,
   sessionRefreshKeptNotice,
+  sessionRefreshOpeningMessageId,
   sessionRefreshStowMessageId,
 } from "./SessionRefresh.ts";
 import { isRuntimePolicyAboveCeilingError, RuntimePolicyV2 } from "./RuntimePolicy.ts";
@@ -4559,9 +4560,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       { readonly type: "thread.session.refresh.complete" }
     >,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
   ) {
     const projection = yield* projectionStore
-      .getThreadRecords(command.threadId, ["runs"], { turnItemTypes: [] })
+      .getThreadRecords(command.threadId, ["runs", "providerThreads", "providerSessions"], {
+        turnItemTypes: [],
+      })
       .pipe(
         Effect.mapError(
           (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
@@ -4626,32 +4630,37 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     if (projection.runs.some((run) => isActiveRun(run) || run.status === "queued")) {
       return yield* reject(`Thread ${command.threadId} started a turn during the refresh.`);
     }
-    yield* emit(
-      events,
-      command,
-    )({
-      type: "thread.session-replaced",
-      threadId: command.threadId,
-      providerInstanceId: thread.providerInstanceId,
-      occurredAt: now,
-      payload: { ...thread, activeProviderThreadId: null, updatedAt: now },
-    });
-    yield* emit(
-      events,
-      command,
-    )({
-      type: "turn-item.updated",
-      threadId: command.threadId,
-      runId: stowRun.id,
-      ...(stowRun.rootNodeId === null ? {} : { nodeId: stowRun.rootNodeId }),
-      providerInstanceId: thread.providerInstanceId,
-      occurredAt: now,
-      payload: {
-        ...notice(SESSION_BOUNDARY_NOTICE),
-        ordinal: yield* nextTurnItemOrdinal(projection),
-        sessionBoundary: true,
+    const session = projection.providerSessions.find(
+      (candidate) =>
+        candidate.id ===
+        projection.providerThreads.find(
+          (providerThread) => providerThread.id === command.providerThreadId,
+        )?.providerSessionId,
+    );
+    if (
+      session !== undefined &&
+      (yield* sessionHasBackgroundWork(session, projection.providerThreads))
+    ) {
+      return yield* reject("the agent was still busy.");
+    }
+    // A fresh send detaches the old session before its turn starts, and the detach waits for the
+    // process to exit: FirstMate's session lock belongs to the live process.
+    return yield* dispatchMessage(
+      {
+        type: "message.dispatch",
+        commandId: command.commandId,
+        threadId: command.threadId,
+        messageId: sessionRefreshOpeningMessageId(command.runId),
+        text: SESSION_REFRESH_OPENING_TEXT,
+        attachments: [],
+        freshContext: true,
+        createdBy: "agent",
+        creationSource: "server",
+        dispatchMode: { type: "start_immediately" },
       },
-    });
+      events,
+      effects,
+    );
   });
 
   const dispatchThreadProjectAdoptFolder = Effect.fn(
@@ -13697,7 +13706,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         cancelUnsettledEffects = yield* dispatchSessionRefresh(command, events, effects);
         break;
       case "thread.session.refresh.complete":
-        yield* dispatchSessionRefreshComplete(command, events);
+        cancelUnsettledEffects = yield* dispatchSessionRefreshComplete(command, events, effects);
         break;
       case "thread.project.adopt-folder":
         yield* dispatchThreadProjectAdoptFolder(command, events);

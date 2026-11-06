@@ -70,14 +70,8 @@ type HistoryRow = Pick<
     readonly attemptStatus?: string | null | undefined;
     readonly persistentOutput?: boolean;
     readonly deferredWork?: OrchestrationV2TurnItem["deferredWork"];
-    readonly sessionBoundary?: true | undefined;
   };
 };
-
-/** The notice a context refresh wrote where its fresh agent session began. */
-function isSessionBoundaryItem(item: HistoryRow["item"]): boolean {
-  return item.type === "system_notice" && item.sessionBoundary === true;
-}
 export type SelectTimelinePageResult<Row extends HistoryRow = OrchestrationV2ProjectedTurnItem> = {
   readonly items: ReadonlyArray<Row>;
   readonly nextCursor: string | null;
@@ -311,8 +305,6 @@ export function isThreadHistoryUserTurn(item: HistoryRow["item"]): boolean {
 
 /**
  * Always admit at least one row so oversized items cannot deadlock paging.
- * A page ends at a session boundary, so a thread opens at its latest fresh
- * session and each earlier page is at most one session.
  */
 function selectOlderTimelinePage<Row extends HistoryRow>(input: {
   readonly items: ReadonlyArray<Row>;
@@ -320,8 +312,6 @@ function selectOlderTimelinePage<Row extends HistoryRow>(input: {
   readonly snapshotSequence: number;
   readonly policy?: ThreadHistoryPagePolicy | undefined;
   readonly rowEncodedBytes?: ((row: Row) => number) | undefined;
-  /** Off for a targeted page, which must reach its entry wherever it is. */
-  readonly stopAtSessionBoundary?: boolean | undefined;
 }): SelectTimelinePageResult<Row> {
   const policy = input.policy ?? THREAD_HISTORY_PAGE_POLICY;
   const rowCost = input.rowEncodedBytes ?? projectedRowEncodedBytes;
@@ -357,7 +347,6 @@ function selectOlderTimelinePage<Row extends HistoryRow>(input: {
     encodedBytes += rowBytes;
     if (isThreadHistoryUserTurn(row.item)) userTurns += 1;
     if (turnStarts[index]) rawTurns += 1;
-    if (input.stopAtSessionBoundary !== false && isSessionBoundaryItem(row.item)) break;
   }
   // Inside a turn longer than the window, no selected row starts a user turn.
   // Later pages and the snapshot query see only such rows and use `maxItems`,
@@ -477,7 +466,6 @@ export function selectHistoryPageFromCursor<Row extends HistoryRow>(input: {
     snapshotSequence: input.snapshotSequence,
     ...(input.rowEncodedBytes === undefined ? {} : { rowEncodedBytes: input.rowEncodedBytes }),
     policy: olderHistoryPagePolicy(input),
-    stopAtSessionBoundary: input.throughEntryId === undefined,
   });
 }
 

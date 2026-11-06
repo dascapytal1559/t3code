@@ -1807,8 +1807,6 @@ export const OrchestrationV2TurnItem = Schema.Union([
     ...OrchestrationV2TurnItemBaseFields,
     type: Schema.Literal("system_notice"),
     message: Schema.String,
-    /** Marks where a context refresh started a fresh agent session; history pages stop here. */
-    sessionBoundary: Schema.optional(Schema.Literal(true)),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -1976,6 +1974,7 @@ export const OrchestrationV2DomainEvent = Schema.Union([
       "thread.interaction-mode-updated",
       "thread.model-selection-updated",
       "thread.provider-switched",
+      // Nothing writes it now; the fork's first Refresh context stored it, and those events still decode.
       "thread.session-replaced",
       "thread.guest-share-updated",
     ]),
@@ -2683,7 +2682,6 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     ...OrchestrationV2TurnItemJsonBaseFields,
     type: Schema.Literal("system_notice"),
     message: Schema.String,
-    sessionBoundary: Schema.optional(Schema.Literal(true)),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
@@ -3527,9 +3525,9 @@ export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
 // Excluded from dispatchCommand so only the server can send these.
 const OrchestrationV2InternalCommand = Schema.Union([
   /**
-   * Ends a context refresh once its `/stow` turn settled. `replaced` drops the thread's active
-   * provider thread, so the next turn opens a fresh session, and writes the session boundary
-   * notice; `kept` leaves the session alone and says why in the thread.
+   * Ends a context refresh once its `/stow` turn settled. `replaced` sends `Context refreshed.`
+   * as a `freshContext` message, which ends the old session and opens a new one; `kept` leaves
+   * the session alone and says why in the thread.
    */
   Schema.Struct({
     type: Schema.Literal("thread.session.refresh.complete"),
