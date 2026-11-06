@@ -255,6 +255,34 @@ diff; otherwise those badges sit right-aligned on the title line, which truncate
 before them. Folder multiline rows follow the same rule. Code:
 `isThreadMetaLineEmpty` in `apps/web/src/components/Sidebar.logic.ts`.
 
+## The window grows for the right panel
+
+![The desktop app with a README open in the right panel: the window grew by the panel's width, and the sidebar and chat kept theirs](media/window-grows-for-panel.jpg)
+
+In the desktop app, opening the right panel (a file link, the Files list, any
+surface) widens the window to the right by the panel's width, so the sidebar
+and chat keep the widths you chose. Closing it takes the same width back off.
+Upstream's panel shares the window, so the window never moves or resizes on
+its own. The fork changes that on purpose: the window is kept at a chosen
+width, and opening a document used to squeeze the chat to make room.
+
+- One panel width is remembered on desktop (`t3code:preview-panel-width`)
+  instead of one per thread; the browser keeps upstream's per-thread widths and
+  never resizes anything.
+- Near the screen's right edge the window moves left only as far as it must
+  and moves back on close. A screen too narrow for the full width grows as far
+  as it can and the panel takes the rest, as upstream does. Full screen and
+  maximized windows are left alone.
+- A hand resize while the panel is open is kept: closing takes off only what
+  opening added. The window's saved size leaves the panel's width out, so a
+  restart with the panel open grows once.
+- The window follows whether the panel is showing, so switching between a
+  thread with the panel open and one without resizes it.
+
+Code: `apps/desktop/src/window/PanelWindowGrowth.ts` (the width arithmetic and
+its tests), the `setRightPanelOpen` bridge method, and the effect in
+`apps/web/src/components/chat/ChatRightPanel.tsx`.
+
 ## Refresh context on the FirstMate thread
 
 <img src="media/refresh-context.jpg" width="744" alt="A FirstMate thread with the Refresh context button in its header, a New session divider in the chat, and the message Context refreshed. sent by T3 Code">
