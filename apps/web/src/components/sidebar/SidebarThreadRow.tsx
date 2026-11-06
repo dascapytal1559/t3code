@@ -139,19 +139,20 @@ export type SidebarProviderEntry = Pick<
   | "acpRegistryIconUrl"
   | "models"
 >;
-function compactSidebarTimeLabel(label: string): string {
+function compactSidebarTimeLabel(label: string, keepAgo: boolean): string {
   if (label === "just now") return "now";
-  return label.endsWith(" ago") ? label.slice(0, -4) : label;
+  return !keepAgo && label.endsWith(" ago") ? label.slice(0, -4) : label;
 }
 
 // Subscribes to the minute tick itself, so only the label re-renders each
 // minute. The minute is passed as the clock so it is the formatter's input.
-function RelativeTimeLabel(props: { timestamp: string | null }) {
+function RelativeTimeLabel(props: { timestamp: string | null; keepAgo?: boolean }) {
   const nowMinute = useNowMinute();
   return props.timestamp === null
     ? null
     : compactSidebarTimeLabel(
         formatRelativeTimeLabel(props.timestamp, Date.parse(`${nowMinute}:00.000Z`)),
+        props.keepAgo === true,
       );
 }
 
@@ -1366,7 +1367,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       <span className="inline-flex items-center gap-1 text-xs text-info-foreground tabular-nums">
                         {/* The clock tells a wake time from an age at a glance. */}
                         <AlarmClockIcon aria-hidden className="size-3" />
-                        {props.snoozeWakeLabelText}
+                        {props.snoozeWakeLabelText === "now"
+                          ? "now"
+                          : `in ${props.snoozeWakeLabelText}`}
                       </span>
                     ) : (inFolder ? isWokeStatus : isWoke) ? (
                       <Tooltip>
@@ -1716,7 +1719,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               {/* The status slot holds Needs captain, so a decision's age ends its title line. */}
               {needsCaptain ? (
                 <span className="shrink-0 text-xs tabular-nums text-secondary-label">
-                  <RelativeTimeLabel timestamp={threadAgeTimestamp(thread)} />
+                  <RelativeTimeLabel timestamp={threadAgeTimestamp(thread)} keepAgo />
                 </span>
               ) : null}
             </div>

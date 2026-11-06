@@ -325,8 +325,8 @@ line after the crew, and the tree's toggle collapses crew and decisions
 together, its count covering both; with no FirstMate card listed they stay at
 the top level. A card shows a project and its title like a crewmate's, an
 orange raised hand reading "Needs captain" in the status slot (Woke still shows
-after a snooze), and, in the usual gray at the end of the title line, the time
-since the call started waiting on the captain (`decision.since`, else its raised
+after a snooze), and, in the usual gray at the end of the title line, how long
+ago the call started waiting on the captain, read with "ago" like "8h ago" (`decision.since`, else its raised
 entry, else the thread's creation), not since its latest edit, so rewriting a
 decision's context does not make it look new. The list still puts the newest
 update first. The decision view's header says "waiting since" the same day. The project
@@ -416,7 +416,7 @@ someone wakes it, and no timer brings it back. FirstMate parks decisions older
 than a day there, so the tree under FirstMate keeps only the last day's calls.
 On the shelf, dated snoozes come first, soonest wake first, then undated ones,
 newest first, each showing its usual age (a decision's counts from `since`)
-where a dated row shows the alarm and time left. A question, approval or
+where a dated row shows the alarm and time left ("in 13d"). A question, approval or
 failure still wakes it early, as with a dated snooze. Waking, pinning, settling
 or sending a message ends it.
 
