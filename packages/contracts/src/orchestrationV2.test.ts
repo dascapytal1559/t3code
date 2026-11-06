@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 import { NodeId, RunAttemptId, TrimmedNonEmptyString } from "./index.ts";
 import {
   latestProviderTurnForAttempt,
+  OrchestrationV2Command,
   OrchestrationV2ProviderCapabilities,
   OrchestrationV2ProviderThread,
   OrchestrationV2ProviderThreadJson,
@@ -445,6 +446,16 @@ describe("orchestration V2 contracts", () => {
     expect(runtimeThread.pendingBackgroundTasks).toEqual([]);
     expect(runtimeThread.contextUsage).toBeNull();
     expect(runtimeThread.nativeMetadata).toBeNull();
+  });
+
+  it("decodes a snooze with no wake time, absent or null", () => {
+    const decode = Schema.decodeUnknownSync(OrchestrationV2Command);
+    const snooze = { type: "thread.snooze", commandId: "snooze-1", threadId: "thread-1" };
+    expect(decode(snooze)).toEqual(snooze);
+    expect(decode({ ...snooze, snoozedUntil: null })).toEqual({ ...snooze, snoozedUntil: null });
+    expect(decode({ ...snooze, snoozedUntil: "2026-04-21T09:00:00.000Z" })).toMatchObject({
+      snoozedUntil: "2026-04-21T09:00:00.000Z",
+    });
   });
 });
 

@@ -80,6 +80,15 @@ describe("effectiveSnoozed", () => {
     expect(effectiveSnoozed(makeShell({ snoozedUntil: "not-a-date" }), { now: NOW })).toBe(false);
   });
 
+  it("holds a snooze with no wake time at any clock, until a hand-raise wakes it", () => {
+    const undated = makeShell({ snoozedAt: SNOOZED_AT });
+    expect(effectiveSnoozed(undated, { now: "2099-01-01T00:00:00.000Z" })).toBe(true);
+    expect(threadWokeAt(undated, { now: "2099-01-01T00:00:00.000Z" })).toBeNull();
+    const failed = makeShell({ snoozedAt: SNOOZED_AT, sessionStatus: "error" });
+    expect(effectiveSnoozed(failed, { now: NOW })).toBe(false);
+    expect(threadWokeAt(failed, { now: NOW })).toBe("2026-04-10T11:00:00.000Z");
+  });
+
   it("wakes early when the agent is blocked on the user", () => {
     expect(
       effectiveSnoozed(makeShell({ snoozedUntil: FUTURE_WAKE, pending: "approval" }), {

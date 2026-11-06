@@ -88,6 +88,7 @@ import {
   useRetainedValue,
   useSidebarRowSubscriptionLease,
   setFileDragActive,
+  threadAgeTimestamp,
 } from "../Sidebar.logic";
 import { resolveLocalCheckoutBranchMismatch } from "../BranchToolbar.logic";
 import {
@@ -110,11 +111,7 @@ import {
   CrewTreeGutter,
   type CrewTreePlace,
 } from "./SidebarCrewTree";
-import {
-  decisionAgeTimestamp,
-  resolveCrewStatusLabel,
-  showsCoordinatorAge,
-} from "./coordinatorGroup.logic";
+import { resolveCrewStatusLabel, showsCoordinatorAge } from "./coordinatorGroup.logic";
 import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
@@ -162,12 +159,6 @@ function StartedAgoLabel(props: { timestamp: string }) {
   const nowMinute = useNowMinute();
   const label = formatRelativeTimeLabel(props.timestamp, Date.parse(`${nowMinute}:00.000Z`));
   return label === "" ? null : `started ${label}`;
-}
-
-function threadTimeTimestamp(thread: SidebarThreadSummary): string {
-  // A decision has no messages of its own; its age runs from when it began waiting.
-  if (thread.decisionOf !== undefined) return decisionAgeTimestamp(thread);
-  return thread.latestUserMessageAt ?? thread.updatedAt;
 }
 
 // A decision's thread lives in the coordinator's project, so a row shows the project the decision
@@ -1411,7 +1402,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           timestamp={
                             variantAction === "unsettle"
                               ? resolveSettledThreadTimestamp(thread)
-                              : threadTimeTimestamp(thread)
+                              : threadAgeTimestamp(thread)
                           }
                         />
                       </span>
@@ -1649,7 +1640,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                         </span>
                       )
                     ) : (
-                      <RelativeTimeLabel timestamp={threadTimeTimestamp(thread)} />
+                      <RelativeTimeLabel timestamp={threadAgeTimestamp(thread)} />
                     )}
                   </span>
                   {hasHoverControls ? (
@@ -1725,7 +1716,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               {/* The status slot holds Needs captain, so a decision's age ends its title line. */}
               {needsCaptain ? (
                 <span className="shrink-0 text-xs tabular-nums text-secondary-label">
-                  <RelativeTimeLabel timestamp={threadTimeTimestamp(thread)} />
+                  <RelativeTimeLabel timestamp={threadAgeTimestamp(thread)} />
                 </span>
               ) : null}
             </div>
@@ -1895,7 +1886,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
                 />
               </span>
               <span className="w-8 shrink-0 text-right text-xs text-muted-foreground/55 tabular-nums">
-                <RelativeTimeLabel timestamp={threadTimeTimestamp(thread)} />
+                <RelativeTimeLabel timestamp={threadAgeTimestamp(thread)} />
               </span>
             </span>
             {props.searchMatch ? (

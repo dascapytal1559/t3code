@@ -190,6 +190,7 @@ import {
   ThreadForkServiceV2,
 } from "./ThreadForkService.ts";
 import { planThreadDeletion } from "./ThreadDeletion.ts";
+import { hasSnoozeRecord, snoozeHolds } from "./ThreadSnooze.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
 
@@ -3679,10 +3680,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const projection = yield* loadProjectionForCommand(command, ["runs", "runtimeRequests"], {
         turnItemTypes: [],
       });
-      const parsedSnoozedUntil = DateTime.make(command.snoozedUntil);
+      const parsedSnoozedUntil =
+        command.snoozedUntil == null ? Option.some(null) : DateTime.make(command.snoozedUntil);
       if (
         Option.isNone(parsedSnoozedUntil) ||
-        DateTime.toEpochMillis(parsedSnoozedUntil.value) <= DateTime.toEpochMillis(now)
+        (parsedSnoozedUntil.value !== null &&
+          DateTime.toEpochMillis(parsedSnoozedUntil.value) <= DateTime.toEpochMillis(now))
       ) {
         return yield* new OrchestratorDispatchError({
           commandId: command.commandId,
@@ -3772,10 +3775,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             activeOrderKey: null,
             snoozedUntil: null,
             snoozedAt: null,
-            updatedAt:
-              alreadySettled && thread.snoozedUntil == null && thread.snoozedAt == null
-                ? thread.updatedAt
-                : now,
+            updatedAt: alreadySettled && !hasSnoozeRecord(thread) ? thread.updatedAt : now,
           };
         }
         case "thread.unsettle": {
@@ -3799,7 +3799,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           };
         }
         case "thread.unsnooze": {
-          const alreadyAwake = thread.snoozedUntil == null;
+          const alreadyAwake = !hasSnoozeRecord(thread);
           return {
             ...thread,
             snoozedUntil: null,
@@ -3818,7 +3818,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         }
         case "thread.pin": {
           const alreadyPinned = thread.pinnedAt != null;
-          const promotes = thread.settledOverride === "settled" || thread.snoozedUntil != null;
+          const promotes = thread.settledOverride === "settled" || hasSnoozeRecord(thread);
           return {
             ...thread,
             pinnedAt: alreadyPinned ? thread.pinnedAt : now,
@@ -3831,7 +3831,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ...(thread.settledOverride === "settled" ? { unsettledAt: now } : {}),
             snoozedUntil: null,
             snoozedAt: null,
-            lastSnoozeWakeAt: thread.snoozedUntil == null ? thread.lastSnoozeWakeAt : now,
+            lastSnoozeWakeAt: hasSnoozeRecord(thread) ? now : thread.lastSnoozeWakeAt,
             updatedAt: alreadyPinned && !promotes ? thread.updatedAt : now,
           };
         }
@@ -5747,8 +5747,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         projection.thread.settledOverride === "settled" ||
         projection.thread.providerInstanceId !== run.providerInstanceId ||
         projection.runtimeRequests.some((request) => request.status === "pending") ||
-        (projection.thread.snoozedUntil != null &&
-          DateTime.toEpochMillis(projection.thread.snoozedUntil) > DateTime.toEpochMillis(now))
+        snoozeHolds(projection.thread, DateTime.toEpochMillis(now))
       ) {
         yield* emit(
           events,
@@ -5762,8 +5761,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ...(recovery?.autoResume &&
             recovery.requestId === command.usageLimitRecoveryRequestId &&
             recovery.runId === command.usageLimitContinuationOfRunId &&
-            projection.thread.snoozedUntil != null &&
-            DateTime.toEpochMillis(projection.thread.snoozedUntil) > DateTime.toEpochMillis(now)
+            snoozeHolds(projection.thread, DateTime.toEpochMillis(now))
               ? { limitRecovery: { ...recovery, requestId: command.commandId } }
               : {}),
           },
@@ -5860,7 +5858,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     // only a message someone actually sent ends the snooze.
     const automaticWake =
       command.notification !== undefined || command.delegatedCompletion !== undefined;
-    if (projection.thread.snoozedUntil != null && !automaticWake) {
+    if (hasSnoozeRecord(projection.thread) && !automaticWake) {
       const now = yield* DateTime.now;
       const thread: OrchestrationV2AppThread = {
         ...projection.thread,
@@ -9131,11 +9129,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ...(command.delivery === undefined ? {} : { delivery: command.delivery }),
             secretStatus: command.secretStatus,
           };
-      if (
-        !unchanged &&
-        command.secretStatus === "saved" &&
-        projection.thread.snoozedUntil != null
-      ) {
+      if (!unchanged && command.secretStatus === "saved" && hasSnoozeRecord(projection.thread)) {
         yield* emit(
           events,
           command,
@@ -9273,7 +9267,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             updatedAt: now,
             type: "link_request",
           };
-      if (!unchanged && command.linkStatus === "linked" && projection.thread.snoozedUntil != null) {
+      if (!unchanged && command.linkStatus === "linked" && hasSnoozeRecord(projection.thread)) {
         yield* emit(
           events,
           command,
@@ -9714,7 +9708,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         const thread = yield* projectionStore
           .getThread(command.threadId)
           .pipe(mapDispatchError(command));
-        if (thread.snoozedUntil != null) {
+        if (hasSnoozeRecord(thread)) {
           yield* emitEvent({
             type: "thread.unsnoozed",
             threadId: command.threadId,

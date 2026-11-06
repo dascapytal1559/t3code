@@ -391,6 +391,33 @@ and the decision's project in `SidebarThreadRow.tsx`; and the switch in
 `ThreadRouteView.tsx`, which keeps `ChatView.tsx` and `ChatComposer.tsx`
 untouched.
 
+## Snooze with no date
+
+A thread can be snoozed with no wake time: it sits on the Snoozed shelf until
+someone wakes it, and no timer brings it back. FirstMate parks decisions older
+than a day there, so the tree under FirstMate keeps only the last day's calls.
+On the shelf, dated snoozes come first, soonest wake first, then undated ones,
+newest first, each showing its usual age (a decision's counts from `since`)
+where a dated row shows the alarm and time left. A question, approval or
+failure still wakes it early, as with a dated snooze. Waking, pinning, settling
+or sending a message ends it.
+
+`thread.snooze` takes an absent or null `snoozedUntil`, and so does
+`t3_thread_organize` `snooze`. The thread then stores `snoozedAt` with a null
+`snoozedUntil`; before this, the two were always set and cleared together.
+Undated snoozes hold off auto-settle and limit auto-resume, like dated ones
+before they wake. The thread menus have no "No date" choice yet. Upstream-built clients, such
+as the App Store mobile app, read a null `snoozedUntil` as awake: the thread
+shows in the normal list, without a Woke badge, and nothing wakes it. An
+upstream server rejects the command without a date.
+
+For syncs, keep "is it snoozed" in the helpers, not `snoozedUntil != null`:
+`apps/server/src/orchestration-v2/ThreadSnooze.ts` on the server, and
+`hasSnoozeRecord`, `isUndatedSnooze` and `effectiveSnoozed` in
+`packages/client-runtime/src/state/threadSettled.ts` on clients. The command
+schema is in `orchestrationV2.ts`; the shelf order is `sortSnoozedThreads` in
+`apps/web/src/components/Sidebar.logic.ts`.
+
 ## Sidebar cards stay two lines
 
 This one applies to every thread. Upstream gives a card with no branch but a

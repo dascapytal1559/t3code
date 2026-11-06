@@ -35,6 +35,7 @@ import * as ProjectStore from "./ProjectStore.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
+import { snoozeHolds } from "./ThreadSnooze.ts";
 
 export interface SettlementPullRequest {
   readonly state: "open" | "closed" | "merged";
@@ -172,8 +173,7 @@ export function isSnoozed(
   >,
   nowMs: number,
 ): boolean {
-  const snoozedUntilMs = toMillis(thread.snoozedUntil);
-  if (snoozedUntilMs === null || snoozedUntilMs <= nowMs) return false;
+  if (!snoozeHolds(thread, nowMs)) return false;
   // Same as the client: a waiting guest message wakes the thread, and the snooze stays stored.
   if ((thread.pendingGuestMessageCount ?? 0) > 0) return false;
   const snoozedAtMs = toMillis(thread.snoozedAt);

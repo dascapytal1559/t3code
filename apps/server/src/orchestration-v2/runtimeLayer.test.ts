@@ -80,6 +80,7 @@ import * as RuntimeLayer from "./runtimeLayer.ts";
 import { shellStreamItemFromThreadShell } from "./ShellStream.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
+import { isSnoozed } from "./ThreadSettlementService.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ScratchThreadPromotion from "../project/ScratchThreadPromotion.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
@@ -7332,6 +7333,61 @@ it.layer(layerSharedApplicationDataPlaneTest)("snooze projection", (it) => {
         awakened.thread.titleRegeneration?.requestId,
         CommandId.make("runtime-layer-snoozed-message"),
       );
+    }),
+  );
+
+  it.effect("holds a snooze with no date until it is unsnoozed by hand", () =>
+    Effect.gen(function* () {
+      const projects = yield* ProjectService.ProjectService;
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const projections = yield* ProjectionStore.ProjectionStoreV2.pipe(
+        Effect.provide(ProjectionStore.layer),
+      );
+      const projectId = ProjectId.make("runtime-layer-undated-snooze-project");
+      const threadId = ThreadId.make("runtime-layer-undated-snooze-thread");
+      yield* projects.create({
+        commandId: CommandId.make("runtime-layer-undated-snooze-project-create"),
+        projectId,
+        title: "Undated snooze",
+        workspaceRoot: "/tmp/runtime-layer-undated-snooze-project",
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("runtime-layer-undated-snooze-thread-create"),
+        threadId,
+        projectId,
+        title: "Parked thread",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.snooze",
+        commandId: CommandId.make("runtime-layer-undated-snooze"),
+        threadId,
+      });
+      const snoozedAt = yield* DateTime.now;
+
+      yield* TestClock.adjust("3650 days");
+      const [candidate] = yield* projections.getSettlementCandidates(threadId);
+      assert.isDefined(candidate);
+      assert.isNull(candidate.snoozedUntil);
+      assert.deepEqual(candidate.snoozedAt, snoozedAt);
+      assert.isTrue(isSnoozed(candidate, DateTime.toEpochMillis(yield* DateTime.now)));
+
+      yield* orchestrator.dispatch({
+        type: "thread.unsnooze",
+        commandId: CommandId.make("runtime-layer-undated-snooze-wake"),
+        threadId,
+        reason: "user",
+      });
+      const woken = (yield* orchestrator.getThreadProjection(threadId)).thread;
+      assert.isNull(woken.snoozedAt);
+      assert.deepEqual(woken.lastSnoozeWakeAt, yield* DateTime.now);
     }),
   );
 

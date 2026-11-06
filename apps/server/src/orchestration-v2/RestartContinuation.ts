@@ -17,6 +17,7 @@ import type { ProjectionRuntimeRecoveryState } from "./ProjectionStore.ts";
 
 import * as ServerSettings from "../serverSettings.ts";
 import { isNativeMaintenanceCommand } from "./CommandPolicy.ts";
+import { snoozeHolds } from "./ThreadSnooze.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import {
   awaitingProviderThreadId,
@@ -52,7 +53,7 @@ function restartContinuationBlocked(
     thread.archivedAt !== null ||
     thread.deletedAt !== null ||
     thread.settledOverride === "settled" ||
-    (thread.snoozedUntil != null && DateTime.isGreaterThan(thread.snoozedUntil, now))
+    snoozeHolds(thread, DateTime.toEpochMillis(now))
   )
     return true;
   const turn = latestProviderTurnForAttempt(projection.providerTurns, source.activeAttemptId);
@@ -428,8 +429,7 @@ export const notifyCrewCoordinators = Effect.fn("RestartContinuation.notifyCrewC
         coordinator.settledOverride === "settled" ||
         // A note that starts first would make the orchestrator drop the cut run's continuation.
         cutByRestart(coordinator) ||
-        (coordinator.snoozedUntil != null &&
-          DateTime.isGreaterThan(coordinator.snoozedUntil, now)) ||
+        snoozeHolds(coordinator, DateTime.toEpochMillis(now)) ||
         !resolveProjectSettings(settings, coordinator.projectId).settings
           .continueThreadsAfterServerUpdate
       )

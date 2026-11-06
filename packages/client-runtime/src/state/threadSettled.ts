@@ -154,14 +154,28 @@ export function canSnooze(
   return true;
 }
 
+/** A dated snooze keeps `snoozedUntil` after its wake time passes, until something clears it. */
+export function hasSnoozeRecord(
+  shell: Pick<ThreadSnoozeShell, "snoozedUntil" | "snoozedAt">,
+): boolean {
+  return shell.snoozedUntil != null || shell.snoozedAt != null;
+}
+
+/** A snooze with no wake time (`snoozedAt` alone) holds until the user unsnoozes it. */
+function isUndatedSnooze(shell: Pick<ThreadSnoozeShell, "snoozedUntil" | "snoozedAt">): boolean {
+  return shell.snoozedUntil == null && shell.snoozedAt != null;
+}
+
 export function effectiveSnoozed(
   shell: ThreadSnoozeShell,
   options: { readonly now: string },
 ): boolean {
-  if (shell.snoozedUntil == null) return false;
-  const wakeAtMs = Date.parse(shell.snoozedUntil);
-  if (Number.isNaN(wakeAtMs)) return false;
-  if (wakeAtMs <= Date.parse(options.now)) return false;
+  if (shell.snoozedUntil == null) {
+    if (!isUndatedSnooze(shell)) return false;
+  } else {
+    const wakeAtMs = Date.parse(shell.snoozedUntil);
+    if (Number.isNaN(wakeAtMs) || wakeAtMs <= Date.parse(options.now)) return false;
+  }
   return !threadRaisedHandWhileSnoozed(shell);
 }
 
@@ -169,9 +183,9 @@ export function threadWokeAt(
   shell: ThreadSnoozeShell,
   options: { readonly now: string },
 ): string | null {
-  if (shell.snoozedUntil == null) return null;
-  const wakeAtMs = Date.parse(shell.snoozedUntil);
-  if (Number.isNaN(wakeAtMs)) return null;
+  const { snoozedUntil } = shell;
+  if (snoozedUntil == null && !isUndatedSnooze(shell)) return null;
+  if (snoozedUntil != null && Number.isNaN(Date.parse(snoozedUntil))) return null;
   // An early hand-raise wake stays authoritative even after the scheduled
   // wake time passes: reporting snoozedUntil then would resurface a Woke
   // indicator the user already cleared by visiting (snoozedUntil is newer
@@ -193,7 +207,9 @@ export function threadWokeAt(
     const runtime = shell.runtime ?? shell.session ?? null;
     return runtime?.updatedAt ?? shell.snoozedAt ?? null;
   }
-  return wakeAtMs <= Date.parse(options.now) ? shell.snoozedUntil : null;
+  return snoozedUntil != null && Date.parse(snoozedUntil) <= Date.parse(options.now)
+    ? snoozedUntil
+    : null;
 }
 
 const HOUR_MS = 60 * 60 * 1_000;

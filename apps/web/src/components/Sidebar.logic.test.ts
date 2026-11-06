@@ -27,6 +27,7 @@ import {
   resolveSidebarReorderableThreadKeys,
   sortPinnedThreadsForSidebar,
   sortScopedProjectsForSidebar,
+  sortSnoozedThreads,
   sortSidebarV2ProjectGroups,
   shouldNavigateAfterThreadPark,
   type SidebarListItem,
@@ -852,6 +853,41 @@ describe("sortPinnedThreadsForSidebar", () => {
     ]);
 
     expect(sorted.map((thread) => thread.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("sortSnoozedThreads", () => {
+  it("lists dated snoozes by wake time, then undated ones newest first by the age their rows show", () => {
+    const snoozed = (input: {
+      id: string;
+      snoozedUntil?: string;
+      latestUserMessageAt?: string;
+      decisionSince?: string;
+    }) => ({
+      id: input.id,
+      snoozedUntil: input.snoozedUntil ?? null,
+      ...(input.decisionSince === undefined
+        ? {}
+        : { decisionOf: ThreadId.make("coordinator"), decisionSince: input.decisionSince }),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      latestUserMessageAt: input.latestUserMessageAt ?? null,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+    const sorted = sortSnoozedThreads([
+      snoozed({ id: "old-decision", decisionSince: "2026-03-01T00:00:00.000Z" }),
+      snoozed({ id: "wakes-later", snoozedUntil: "2026-03-12T09:00:00.000Z" }),
+      snoozed({ id: "recent-thread", latestUserMessageAt: "2026-03-08T00:00:00.000Z" }),
+      snoozed({ id: "wakes-first", snoozedUntil: "2026-03-10T09:00:00.000Z" }),
+      snoozed({ id: "new-decision", decisionSince: "2026-03-09T00:00:00.000Z" }),
+    ]);
+
+    expect(sorted.map((thread) => thread.id)).toEqual([
+      "wakes-first",
+      "wakes-later",
+      "new-decision",
+      "recent-thread",
+      "old-decision",
+    ]);
   });
 });
 
