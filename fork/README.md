@@ -206,6 +206,16 @@ does not count as activity. Upstream decoders ignore the field; web and desktop
 show it, and mobile has no crew cards. Code: `resolveCrewStatusLabel` in
 `apps/web/src/components/sidebar/coordinatorGroup.logic.ts`.
 
+A crew card reading "Testing" also shows how long it has read that, with the
+same running timer Working uses. Upstream only times a thread's own run, so a
+card has no clock for anything else; a FirstMate worker in a validation run is
+usually idle while it waits, so without one the card cannot say how long the
+run has taken. The thread stores when its label was first set
+(`statusLabelSince`). FirstMate re-sends the label about once a minute, so the
+same label keeps its time, and only a new label or clearing it resets it.
+Other labels, including "Waiting for captain", show no timer. Code: the crew
+label slot in `apps/web/src/components/sidebar/SidebarThreadRow.tsx`.
+
 A crew thread names its coordinator at launch: `t3_thread_launch` takes an
 optional `parentThreadId`, stored as the thread's `crewOf`. MCP thread reads
 report it as `parentThreadId` with `relationshipToParent: "crew"`. It stays out

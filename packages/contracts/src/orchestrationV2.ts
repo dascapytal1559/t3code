@@ -534,6 +534,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
   crewOf: Schema.optional(ThreadId),
   /** A coordinator's short word on this thread's state, shown on its crew card. */
   statusLabel: Schema.optional(Schema.NullOr(ThreadStatusLabel)),
+  /** When the current label was first set; re-sending the same label keeps it. */
+  statusLabelSince: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   lineage: OrchestrationV2AppThreadLineage,
   forkedFrom: Schema.NullOr(
     Schema.Union([
@@ -2168,6 +2170,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   coordinator: Schema.optional(Schema.Boolean),
   crewOf: OrchestrationV2AppThread.fields.crewOf,
   statusLabel: OrchestrationV2AppThread.fields.statusLabel,
+  statusLabelSince: OrchestrationV2AppThread.fields.statusLabelSince,
   forkedFrom: Schema.NullOr(OrchestrationV2AppThread.fields.forkedFrom),
   activeProviderThreadId: Schema.NullOr(ProviderThreadId),
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),
@@ -2370,6 +2373,7 @@ export const OrchestrationV2StoredAppThreadJson = OrchestrationV2AppThread.mapFi
   unsettledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   snoozedUntil: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   snoozedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
+  statusLabelSince: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   lastSnoozeWakeAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
@@ -2839,6 +2843,7 @@ export const OrchestrationV2ThreadShellJson = OrchestrationV2ThreadShell.mapFiel
   unsettledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   snoozedUntil: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   snoozedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
+  statusLabelSince: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   pinnedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   autoSettleDisabledAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),
   lastVisitedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtcFromString)),

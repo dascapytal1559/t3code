@@ -1537,7 +1537,15 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     )}
                   >
                     {crewStatusLabel !== null ? (
-                      <span className="max-w-32 truncate font-medium">{crewStatusLabel}</span>
+                      <span className="inline-flex max-w-32 items-center gap-1 font-medium">
+                        <span className="min-w-0 truncate">{crewStatusLabel}</span>
+                        {/* FirstMate's validation run can take a while, so it counts like Working. */}
+                        {crewStatusLabel === "Testing" ? (
+                          <span aria-hidden>
+                            <WorkingDuration startedAt={thread.statusLabelSince ?? null} />
+                          </span>
+                        ) : null}
+                      </span>
                     ) : topStatus ? (
                       isWokeStatus ? (
                         <Tooltip>

@@ -150,6 +150,8 @@ export interface EnvironmentThreadShell {
   readonly crewOf?: ThreadId;
   /** A coordinator's short word on this thread's state, shown on its crew card. */
   readonly statusLabel?: string;
+  /** ISO time the current label was first set. */
+  readonly statusLabelSince?: string;
   /** Its project's pinned coordinator, which the sidebar shows as one with or without crew. */
   readonly coordinator?: boolean;
   readonly forkedFrom: OrchestrationV2ThreadShell["forkedFrom"];
@@ -309,6 +311,7 @@ export function presentThreadShell(
     lineage: thread.lineage,
     ...(thread.crewOf === undefined ? {} : { crewOf: thread.crewOf }),
     ...(thread.statusLabel == null ? {} : { statusLabel: thread.statusLabel }),
+    ...(thread.statusLabelSince == null ? {} : { statusLabelSince: iso(thread.statusLabelSince) }),
     ...(thread.coordinator === true ? { coordinator: true } : {}),
     forkedFrom: thread.forkedFrom,
     linkOrigin: thread.linkOrigin ?? null,

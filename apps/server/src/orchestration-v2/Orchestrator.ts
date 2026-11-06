@@ -3744,7 +3744,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ...(command.branch === undefined ? {} : { branch: command.branch }),
             ...(command.worktreePath === undefined ? {} : { worktreePath: command.worktreePath }),
             ...(command.coordinator === undefined ? {} : { coordinator: command.coordinator }),
-            ...(command.statusLabel === undefined ? {} : { statusLabel: command.statusLabel }),
+            ...(command.statusLabel === undefined
+              ? {}
+              : {
+                  statusLabel: command.statusLabel,
+                  // Coordinators re-send a label every cycle; only a new label restarts its clock.
+                  statusLabelSince:
+                    command.statusLabel === null
+                      ? null
+                      : command.statusLabel === thread.statusLabel
+                        ? (thread.statusLabelSince ?? now)
+                        : now,
+                }),
             ...(command.linkedPullRequest === undefined
               ? {}
               : {

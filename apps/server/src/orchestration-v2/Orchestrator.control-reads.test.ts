@@ -1506,9 +1506,14 @@ const UpstreamLineage = Schema.Struct({
   sideChat: Schema.optional(Schema.Boolean),
 });
 const upstreamShaped = <
-  F extends { readonly lineage: Schema.Top; readonly statusLabel: Schema.Top },
+  F extends {
+    readonly lineage: Schema.Top;
+    readonly statusLabel: Schema.Top;
+    readonly statusLabelSince: Schema.Top;
+  },
 >({
   statusLabel: _statusLabel,
+  statusLabelSince: _statusLabelSince,
   ...fields
 }: F) => ({
   ...fields,
@@ -1613,12 +1618,13 @@ it.effect("a status label sets and clears without counting as activity or upsett
     const { shell: unlabeled } = yield* crewReadsDecodeUpstream(threadId, "active");
     assert.equal(unlabeled.statusLabel, undefined);
 
+    let sent = 0;
     const label = (statusLabel: string | null) =>
       TestClock.adjust("1 minute").pipe(
         Effect.andThen(
           orchestrator.dispatch({
             type: "thread.metadata.update",
-            commandId: CommandId.make(`label:${statusLabel}`),
+            commandId: CommandId.make(`label:${(sent += 1)}`),
             threadId,
             statusLabel,
           }),
@@ -1631,9 +1637,21 @@ it.effect("a status label sets and clears without counting as activity or upsett
     assert.equal(labeled.shell.statusLabel, "Testing");
     assert.equal(labeled.shell.title, "Plain title");
     assert.deepEqual(labeled.shell.updatedAt, unlabeled.updatedAt);
+    assert.ok(labeled.shell.statusLabelSince != null);
+
+    // FirstMate re-sends the label every watcher cycle; the card's timer must not restart.
+    const resent = yield* label("Testing");
+    assert.deepEqual(resent.shell.statusLabelSince, labeled.shell.statusLabelSince);
+
+    const changed = yield* label("Waiting for captain");
+    assert.ok(
+      changed.shell.statusLabelSince != null &&
+        DateTime.isGreaterThan(changed.shell.statusLabelSince, labeled.shell.statusLabelSince),
+    );
 
     const cleared = yield* label(null);
     assert.equal(cleared.shell.statusLabel ?? null, null);
+    assert.equal(cleared.shell.statusLabelSince ?? null, null);
     assert.deepEqual(cleared.shell.updatedAt, unlabeled.updatedAt);
   }).pipe(Effect.provide(layerTest)),
 );

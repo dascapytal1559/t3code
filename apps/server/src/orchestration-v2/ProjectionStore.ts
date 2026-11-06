@@ -1594,6 +1594,9 @@ export function threadShellFromProjection(
     ...(projection.thread.statusLabel == null
       ? {}
       : { statusLabel: projection.thread.statusLabel }),
+    ...(projection.thread.statusLabelSince == null
+      ? {}
+      : { statusLabelSince: projection.thread.statusLabelSince }),
     forkedFrom: projection.thread.forkedFrom,
     activeProviderThreadId: projection.thread.activeProviderThreadId,
     ...(projection.thread.historyOrigin === undefined
@@ -1880,6 +1883,9 @@ function shellFromState(input: {
     ...(input.state.thread.statusLabel == null
       ? {}
       : { statusLabel: input.state.thread.statusLabel }),
+    ...(input.state.thread.statusLabelSince == null
+      ? {}
+      : { statusLabelSince: input.state.thread.statusLabelSince }),
     forkedFrom: input.state.thread.forkedFrom,
     activeProviderThreadId: input.state.thread.activeProviderThreadId,
     ...(input.state.thread.historyOrigin === undefined
