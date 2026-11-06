@@ -15,7 +15,6 @@ type DecisionShell = ThreadSnoozeShell &
     | "createdAt"
     | "archivedAt"
     | "settledOverride"
-    | "settledAt"
     | "snoozedUntil"
     | "snoozedAt"
   >;
@@ -26,6 +25,14 @@ export interface NeedsMeGroups<T> {
 }
 
 const ms = (iso: string | null | undefined) => (iso == null ? 0 : Date.parse(iso) || 0);
+
+/** Whether the Needs me tab has a row for this thread: a live decision, open or snoozed. */
+export function isNeedsMeListed(thread: DecisionShell, now: Date): boolean {
+  if (thread.decisionOf === undefined || thread.archivedAt !== null) return false;
+  return (
+    thread.settledOverride !== "settled" || effectiveSnoozed(thread, { now: now.toISOString() })
+  );
+}
 
 /**
  * FirstMate's decision threads as the Needs me tab lists them: open ones newest update first,
@@ -39,9 +46,8 @@ export function groupNeedsMeDecisions<T extends DecisionShell>(
   const open: T[] = [];
   const later: T[] = [];
   for (const thread of threads) {
-    if (thread.decisionOf === undefined || thread.archivedAt !== null) continue;
-    if (effectiveSnoozed(thread, { now: nowIso })) later.push(thread);
-    else if (thread.settledOverride !== "settled") open.push(thread);
+    if (!isNeedsMeListed(thread, now)) continue;
+    (effectiveSnoozed(thread, { now: nowIso }) ? later : open).push(thread);
   }
   return {
     open: open.toSorted(

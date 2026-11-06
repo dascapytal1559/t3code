@@ -344,7 +344,8 @@ the chat beside the panel is not FirstMate's, sending switches to it and opens
 Needs me beside it. The toast's Undo takes the message back while it is still
 queued, unsettles the decision and reopens its row with your words restored;
 once FirstMate has started on it, it stays sent. A decision thread's own
-address opens FirstMate's chat with that decision open in the tab.
+address opens FirstMate's chat with that decision open in the tab; an answered
+one opens FirstMate's chat alone.
 
 The records, for FirstMate's side:
 
@@ -389,10 +390,11 @@ upstream-built clients, such as the App Store mobile app, list it as an
 ordinary empty thread, and typing there gets an error instead of starting an
 agent. The fields stay out of `lineage` for the same reason as `crewOf`, and
 forks drop them. The shell carries only `decisionOf`, `decisionUpdatedAt`,
-`decisionSince` and `decisionProjectName`; the payload rides on the thread read
-of the open row, so the thread list stays small. The command palette's thread
-search still finds decision threads, and picking one opens it in the tab. The
-mobile app has no Needs me screen yet.
+`decisionChangedAt`, `decisionSince` and `decisionProjectName`; the payload
+rides on the thread read of the open row, so the thread list stays small. The
+command palette's thread search still finds decision threads, and picking one
+opens it in the tab, or FirstMate's chat alone for an answered one. The mobile
+app has no Needs me screen yet.
 
 Code: `packages/contracts/src/threadDecision.ts`,
 `apps/server/src/orchestration-v2/DecisionReplyService.ts` (the

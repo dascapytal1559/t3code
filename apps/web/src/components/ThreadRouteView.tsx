@@ -199,6 +199,7 @@ export function ThreadRouteView({
       <DecisionRedirect
         decisionRef={target.threadRef}
         coordinatorId={serverThreadShell.decisionOf}
+        shell={serverThreadShell}
       />
     );
   } else if (renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)) {

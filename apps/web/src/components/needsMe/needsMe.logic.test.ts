@@ -1,9 +1,8 @@
 import { ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { decisionAgeTimestamp, groupNeedsMeDecisions } from "./needsMe.logic";
+import { decisionAgeTimestamp, groupNeedsMeDecisions, isNeedsMeListed } from "./needsMe.logic";
 
-// Local times, so "today" means the same calendar day wherever the test runs.
 const at = (day: number, hour: number) => new Date(2026, 10, day, hour).toISOString();
 const now = new Date(2026, 10, 7, 12);
 
@@ -13,7 +12,7 @@ const decision = (
     decisionOf?: string | null;
     decisionUpdatedAt?: string;
     archivedAt?: string;
-    settledAt?: string;
+    settled?: boolean;
     snoozedUntil?: string;
     snoozedAt?: string;
   } = {},
@@ -27,8 +26,7 @@ const decision = (
     : { decisionUpdatedAt: overrides.decisionUpdatedAt }),
   createdAt: at(1, 9),
   archivedAt: overrides.archivedAt ?? null,
-  settledOverride: overrides.settledAt === undefined ? null : ("settled" as const),
-  settledAt: overrides.settledAt ?? null,
+  settledOverride: overrides.settled === true ? ("settled" as const) : null,
   snoozedUntil: overrides.snoozedUntil ?? null,
   snoozedAt: overrides.snoozedAt ?? (overrides.snoozedUntil === undefined ? null : at(6, 9)),
   hasPendingApprovals: false,
@@ -50,15 +48,28 @@ describe("groupNeedsMeDecisions", () => {
         decision("back-soon", { snoozedUntil: at(19, 9) }),
         // A snooze whose wake time passed is open again.
         decision("woke", { snoozedUntil: at(7, 8), decisionUpdatedAt: at(3, 9) }),
-        decision("answered-yesterday", { settledAt: at(6, 20) }),
-        decision("answered-this-morning", { settledAt: at(7, 8) }),
-        decision("answered-just-now", { settledAt: at(7, 11) }),
+        decision("answered", { settled: true }),
+        decision("answered-then-snoozed", { settled: true, snoozedUntil: at(21, 9) }),
       ],
       now,
     );
     const ids = (list: ReadonlyArray<{ id: string }>) => list.map((thread) => thread.id);
     expect(ids(groups.open)).toEqual(["updated-last", "updated-before", "woke", "no-entries"]);
-    expect(ids(groups.later)).toEqual(["back-soon", "back-later", "undated-snooze"]);
+    expect(ids(groups.later)).toEqual([
+      "back-soon",
+      "back-later",
+      "answered-then-snoozed",
+      "undated-snooze",
+    ]);
+  });
+});
+
+describe("isNeedsMeListed", () => {
+  it("is false for a decision the tab has no row for, so its address does not open the tab", () => {
+    expect(isNeedsMeListed(decision("open"), now)).toBe(true);
+    expect(isNeedsMeListed(decision("answered", { settled: true }), now)).toBe(false);
+    expect(isNeedsMeListed(decision("archived", { archivedAt: at(6, 9) }), now)).toBe(false);
+    expect(isNeedsMeListed(decision("ordinary-thread", { decisionOf: null }), now)).toBe(false);
   });
 });
 
