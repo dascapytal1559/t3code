@@ -185,6 +185,8 @@ function run(threadId: ThreadId, id: RunId, ordinal: number, userMessageId: stri
 export interface FakeThread {
   /** Makes this a side chat of that thread. */
   readonly sideChatOf?: ThreadId;
+  /** Makes this a FirstMate crewmate of that thread. */
+  readonly crewOf?: ThreadId;
   readonly id: ThreadId;
   readonly title: string;
   readonly runs: ReadonlyArray<OrchestrationV2Run>;
@@ -234,6 +236,7 @@ function shellOf(thread: FakeThread): OrchestrationV2ThreadShell {
       ...(thread.sideChatOf ? { sideChat: true } : {}),
     },
     forkedFrom: null,
+    ...(thread.crewOf ? { crewOf: thread.crewOf } : {}),
     createdBy: "user",
     creationSource: "web",
     latestRunId: latest?.id ?? null,

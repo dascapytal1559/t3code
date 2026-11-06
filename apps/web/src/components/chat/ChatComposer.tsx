@@ -238,7 +238,7 @@ import { observeResize } from "~/lib/observeResize";
 
 const isEnvironmentRequestInvalidError = Schema.is(EnvironmentRequestInvalidError);
 import { toastManager } from "../ui/toast";
-import { BuildingIcon, PlayIcon } from "lucide-react";
+import { BuildingIcon, LockIcon, PlayIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { useManagedPolicy } from "../../state/managedPolicy";
 import { proposedPlanTitle } from "@t3tools/shared/proposedPlanText";
@@ -396,6 +396,8 @@ export interface ChatComposerProps {
     readonly connection: EnvironmentConnectionPresentation;
   } | null;
 
+  /** A FirstMate crewmate, which FirstMate steers, so the box opens locked. */
+  isCrewThread: boolean;
   activePendingApproval: PendingApproval | null;
   pendingApprovals: PendingApproval[];
   onHeldRequestIdsChange: (requestIds: ReadonlySet<string>) => void;
@@ -510,6 +512,7 @@ export interface ChatComposerProps {
 
 const NO_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const NO_PROVIDER_SLASH_COMMANDS: ServerProvider["slashCommands"] = [];
+const CREW_LOCK_NOTICE = "FirstMate's worker: messages go through FirstMate";
 
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
   const {
@@ -540,6 +543,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isPreparingWorktree,
     isCompacting,
     environmentUnavailable,
+    isCrewThread,
     activePendingApproval: incomingPendingApproval,
     pendingApprovals,
     onHeldRequestIdsChange,
@@ -643,6 +647,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const activePendingIsResponding = !holdingUserInput && incomingPendingIsResponding;
   const isLiteralPendingAnswer = activePendingProgress?.activeQuestion?.initialAnswer !== undefined;
   const isEditingQueuedMessage = editingQueuedAttachments !== null;
+  // "Type anyway" lasts until the user leaves the thread. Approvals and questions stay answerable.
+  const [crewUnlockedKey, setCrewUnlockedKey] = useState<string | null>(null);
+  if (crewUnlockedKey !== null && crewUnlockedKey !== composerDraftTargetKey) {
+    setCrewUnlockedKey(null);
+  }
+  const crewLocked =
+    isCrewThread &&
+    crewUnlockedKey !== composerDraftTargetKey &&
+    activePendingApproval === null &&
+    pendingUserInputs.length === 0;
+  const unlockCrewComposer = () => {
+    setCrewUnlockedKey(composerDraftTargetKey);
+    window.requestAnimationFrame(() => composerEditorRef.current?.focusAtEnd());
+  };
   const composerDraft = useComposerThreadDraft(composerDraftTarget);
   const composerDraftTargetKeyRef = useRef("");
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes the committed draft target key to a ref read by async handlers
@@ -946,6 +964,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const sendDisabledReason =
     externalSendDisabledReason ??
+    (crewLocked ? CREW_LOCK_NOTICE : null) ??
     (multipleModelSelections?.length === 0 ? "Select at least one model." : null) ??
     (activePendingProgress
       ? attachmentBlockReason
@@ -1844,6 +1863,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const dictationDisabled =
     !canOperateThread ||
+    crewLocked ||
     environmentUnavailable !== null ||
     projectSelectionRequired ||
     isComposerApprovalState ||
@@ -2475,7 +2495,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   // An open question owns the space above the composer. Only a machine problem,
   // which is why an answer could not go through, stays beside it.
-  const bannerItems: readonly ComposerBannerStackItem[] =
+  const baseBannerItems: readonly ComposerBannerStackItem[] =
     runtimeModeCeilingDenial === undefined || activePendingProgress
       ? props.bannerItems
       : [
@@ -2500,6 +2520,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 }),
           },
         ];
+  const bannerItems: readonly ComposerBannerStackItem[] = crewLocked
+    ? [
+        ...baseBannerItems,
+        {
+          id: "crew-lock",
+          variant: "info",
+          icon: <LockIcon />,
+          title: CREW_LOCK_NOTICE,
+          actions: (
+            <Button size="xs" variant="ghost" onClick={unlockCrewComposer}>
+              Type anyway
+            </Button>
+          ),
+        },
+      ]
+    : baseBannerItems;
   const shelfItems = hasBlockingComposerTopDrawer
     ? bannerItems.filter(
         (item) =>
@@ -2518,6 +2554,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   ): boolean => {
     if (
       text.length === 0 ||
+      crewLocked ||
       activePendingIsResponding ||
       (pendingUserInputs.length > 0 && !activePendingProgress?.activeQuestion) ||
       projectSelectionRequired ||
@@ -3532,13 +3569,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             : "Type your own answer, or leave this blank to use the selected option"
                           : showPlanFollowUpPrompt && activeProposedPlan
                             ? "Add feedback to refine the plan, or leave this blank to implement it"
-                            : projectSelectionRequired
-                              ? "Choose a project above to start a thread"
-                              : showProviderUnavailable
-                                ? "Enable a provider in Settings to send a message"
-                                : DEFAULT_COMPOSER_PLACEHOLDER
+                            : crewLocked
+                              ? "FirstMate steers this worker"
+                              : projectSelectionRequired
+                                ? "Choose a project above to start a thread"
+                                : showProviderUnavailable
+                                  ? "Enable a provider in Settings to send a message"
+                                  : DEFAULT_COMPOSER_PLACEHOLDER
                     }
                     disabled={
+                      crewLocked ||
                       projectSelectionRequired ||
                       isChoiceOnlyPendingQuestion ||
                       activePendingIsResponding ||

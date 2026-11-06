@@ -1,4 +1,5 @@
 import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
+import { isCrewOf } from "./sidebar/coordinatorGroup.logic";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
@@ -983,6 +984,12 @@ export default function ChatView(props: ChatViewProps) {
   );
   const browserAvailable = isPreviewSupportedInRuntime() || activeEnvironmentServerBrowser;
   const activeThreadShell = serverThread;
+  const crewCoordinator = useQuietThreadShell(
+    activeThreadShell?.crewOf === undefined
+      ? null
+      : scopeThreadRef(activeThreadShell.environmentId, activeThreadShell.crewOf),
+  );
+  const isCrewThread = activeThreadShell !== null && isCrewOf(activeThreadShell, crewCoordinator);
   const timelineThreadError =
     serverRuntime?.status === "failed" &&
     serverRuntime.lastErrorClass === "usage_limit" &&
@@ -3670,6 +3677,7 @@ export default function ChatView(props: ChatViewProps) {
                                   : undefined
                               }
                               environmentUnavailable={activeEnvironmentUnavailableState}
+                              isCrewThread={isCrewThread}
                               activePendingApproval={activePendingApproval}
                               pendingApprovals={pendingApprovals}
                               onHeldRequestIdsChange={onHeldRequestIdsChange}

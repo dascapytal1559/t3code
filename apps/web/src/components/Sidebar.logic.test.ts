@@ -1709,13 +1709,13 @@ describe("shouldCreateNewThreadInCurrentProject", () => {
 });
 
 describe("isThreadMetaLineEmpty", () => {
-  const row = { coordinator: false, branch: null, showsScratchMachine: false, hasDiff: false };
+  const row = { inFirstMateGroup: false, branch: null, showsScratchMachine: false, hasDiff: false };
 
-  it("keeps a meta line for a branch, scratch machine or diff, except on the coordinator card", () => {
+  it("keeps a meta line for a branch, scratch machine or diff, except in FirstMate's group", () => {
     expect(isThreadMetaLineEmpty(row)).toBe(true);
     expect(isThreadMetaLineEmpty({ ...row, branch: "main" })).toBe(false);
     expect(isThreadMetaLineEmpty({ ...row, showsScratchMachine: true })).toBe(false);
     expect(isThreadMetaLineEmpty({ ...row, hasDiff: true })).toBe(false);
-    expect(isThreadMetaLineEmpty({ ...row, coordinator: true, branch: "main" })).toBe(true);
+    expect(isThreadMetaLineEmpty({ ...row, inFirstMateGroup: true, branch: "main" })).toBe(true);
   });
 });

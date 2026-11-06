@@ -1594,6 +1594,19 @@ it.effect(
       yield* create(crew, coordinator);
       const reads = yield* crewReadsDecodeUpstream(crew, "active");
       for (const read of Object.values(reads)) assert.equal(read.crewOf, coordinator);
+      // The web composer's crew lock is client-only: FirstMate's MCP messages still start runs.
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make("dispatch:crew-member"),
+        threadId: crew,
+        messageId: MessageId.make("dispatch:crew-member"),
+        text: "Doorbell: an instruction is waiting",
+        attachments: [],
+        dispatchMode: { type: "defer_start" },
+        createdBy: "agent",
+        creationSource: "mcp",
+      });
+      assert.equal((yield* projections.getThreadProjection(crew)).runs.length, 1);
 
       for (const [threadId, crewOf] of [
         [ThreadId.make("thread:crew-orphan"), ThreadId.make("thread:crew-missing")],

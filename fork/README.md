@@ -213,7 +213,9 @@ project and status, then its title. While it is idle, the status slot reads
 "started 1d ago" instead of the last activity time, because age is what says a
 long session is due for a fresh one; Working, Waiting and anything that needs
 the user show as usual. The age is the thread's, since a `/clear` keeps the
-thread. It never shows a branch line. Its crewmates, then its decisions (see
+thread. Neither it nor anything in its tree shows a branch line, since a worker's
+branch matters little inside FirstMate; other threads and the hover card keep it
+(`isThreadMetaLineEmpty` in `apps/web/src/components/Sidebar.logic.ts`). Its crewmates, then its decisions (see
 [Decision threads](#decision-threads)), hang below it as a tree that collapses
 to a count. A pinned coordinator (see below) gets this card even with
 no crew; without any coordinator the sidebar is unchanged.
@@ -294,6 +296,22 @@ thread reads report `coordinator`, and `orchestrator_capabilities` reports
 `coordinatorRestartNote`. Forks and side chats drop the pin and the crew link, so
 forking FirstMate cannot make a second coordinator. Code:
 `notifyCrewCoordinators` in `apps/server/src/orchestration-v2/RestartContinuation.ts`.
+
+## A crewmate's composer opens locked
+
+FirstMate steers its workers through its own inbox and a message it sends over
+MCP, so a message typed into a worker by accident cuts across that. A crew
+thread (the sidebar's crew membership, snoozed or settled too) opens with its composer
+locked: no typing, sending or dictation, and a line above it reading
+"FirstMate's worker: messages go through FirstMate". "Type anyway" unlocks it
+until you open another thread; coming back locks it again. Stop still works,
+and so do the worker's approvals and questions, which unlock the box while they
+wait because its feedback and custom answers use it. FirstMate's own thread and
+ordinary threads never lock, and a thread stops locking once it leaves the crew
+(its coordinator or itself archived). The lock is web and desktop only: the
+server takes messages for crew as before, so FirstMate's MCP messages arrive
+unchanged, and mobile has no lock. Code: `crewLocked` in
+`apps/web/src/components/chat/ChatComposer.tsx`.
 
 ## Decision threads
 

@@ -7,6 +7,7 @@ A fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code), built to host
 For FirstMate:
 
 - [Crew sidebar](fork/README.md#firstmate-crew-in-the-sidebar): FirstMate and its workers as a tree, with short status labels.
+- [Locked worker composer](fork/README.md#a-crewmates-composer-opens-locked): a worker's message box opens locked, so you do not message it by accident.
 - [Approvals over MCP](fork/README.md#agents-answer-approvals-over-mcp): FirstMate answers a worker's permission prompts.
 - [Waits end on a question](fork/README.md#waits-end-on-a-question-or-approval): FirstMate hears a question or approval the moment it appears.
 - [Per-thread settings](fork/README.md#per-thread-environment-and-instructions): each launched worker gets its own environment and instructions.

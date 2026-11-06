@@ -1424,13 +1424,14 @@ export function sortScopedProjectsForSidebar<
 
 /**
  * Whether a thread row has no meta line of its own, so its badges and icons move up to the
- * title line. The coordinator card is always two lines, whatever branch its thread records.
+ * title line. FirstMate's card and the rows on its tree line are always two lines, whatever
+ * branch their threads record.
  */
 export function isThreadMetaLineEmpty(input: {
-  coordinator: boolean;
+  inFirstMateGroup: boolean;
   branch: string | null;
   showsScratchMachine: boolean;
   hasDiff: boolean;
 }): boolean {
-  return input.coordinator || (!input.branch && !input.showsScratchMachine && !input.hasDiff);
+  return input.inFirstMateGroup || (!input.branch && !input.showsScratchMachine && !input.hasDiff);
 }

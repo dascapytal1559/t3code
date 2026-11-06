@@ -118,6 +118,11 @@ export function isAppCrewmate<T extends CrewThread>(
   return false;
 }
 
+/** Whether a thread is crew, judged from it and the coordinator it names, as the sidebar does. */
+export function isCrewOf<T extends CrewThread>(thread: T, coordinator: T | null): boolean {
+  return coordinator !== null && resolveAppCoordinatorGroup([thread, coordinator]).crew.has(thread);
+}
+
 /**
  * The label a crew card shows in its status slot. It stands in for a calm status or the age only:
  * a label is a coordinator's note and can lag, so a thread that needs the user still says so.

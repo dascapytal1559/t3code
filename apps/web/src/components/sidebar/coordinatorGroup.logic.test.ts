@@ -6,6 +6,7 @@ import {
   crewCoordinatorOf,
   decisionAgeTimestamp,
   isAppCrewmate,
+  isCrewOf,
   resolveAppCoordinatorGroup,
   resolveCoordinatorGroup,
   resolveCrewStatusLabel,
@@ -226,7 +227,13 @@ describe("crewCoordinatorOf", () => {
 describe("isAppCrewmate", () => {
   const crewmatesOf = (threads: readonly ReturnType<typeof thread>[]) =>
     threads
-      .filter((subject) => isAppCrewmate(threads, subject.environmentId, subject.id))
+      .filter((subject) => {
+        const crew = isAppCrewmate(threads, subject.environmentId, subject.id);
+        // The composer lock reads only the thread and its coordinator; it must agree.
+        const coordinator = threads.find((other) => other.id === subject.crewOf) ?? null;
+        expect(isCrewOf(subject, coordinator)).toBe(crew);
+        return crew;
+      })
       .map((subject) => subject.title);
 
   it("silences crewmates in any project and leaves the coordinator and other threads notifying", () => {
@@ -234,10 +241,23 @@ describe("isAppCrewmate", () => {
     const crewInHome = thread("Fix the docs", { crewOf: "Captain's session" });
     const crewElsewhere = thread("Login fix", { crewOf: "Captain's session", projectId: appId });
     const userThread = thread("Refactor login", { projectId: appId });
-    expect(crewmatesOf([main, crewInHome, crewElsewhere, userThread])).toEqual([
-      "Fix the docs",
-      "Login fix",
-    ]);
+    const secondmate = thread("Secondmate", { crewOf: "Captain's session" });
+    const secondmateWorker = thread("Port the API", { crewOf: "Secondmate" });
+    const archivedCrew = thread("Old fix", {
+      crewOf: "Captain's session",
+      archivedAt: "2026-10-28T11:00:00.000Z",
+    });
+    expect(
+      crewmatesOf([
+        main,
+        crewInHome,
+        crewElsewhere,
+        userThread,
+        secondmate,
+        secondmateWorker,
+        archivedCrew,
+      ]),
+    ).toEqual(["Fix the docs", "Login fix", "Secondmate", "Port the API"]);
   });
 
   it("silences nothing when the coordinator is archived", () => {

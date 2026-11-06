@@ -1216,7 +1216,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   // Without a branch or machine to label it, the meta line would hold only trailing
   // badges and icons, so the row moves them to the title line instead.
   const metaLineEmpty = isThreadMetaLineEmpty({
-    coordinator: props.coordinator === true,
+    inFirstMateGroup: props.coordinator === true || props.crewTree !== undefined,
     branch: thread.branch,
     showsScratchMachine,
     hasDiff: diff !== null,
