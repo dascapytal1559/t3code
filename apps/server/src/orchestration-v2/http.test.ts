@@ -1,6 +1,7 @@
 import {
   AuthSessionId,
   type AuthEnvironmentScope,
+  DECISION_THREADS_CAPABILITY,
   EnvironmentAuthenticatedAuth,
   EnvironmentAuthenticatedPrincipal,
   EnvironmentHttpApi,
@@ -12,6 +13,7 @@ import {
   OrchestrationV2TurnItem,
   OrchestrationV2ThreadTranscript,
   PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+  SETTINGS_SECRET_REFERENCES_CAPABILITY,
   ThreadId,
 } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
@@ -253,9 +255,10 @@ it.effect("exports full history with size, scope, and missing-thread checks", ()
 it.effect("leaves older settled threads out of the HTTP shell only when asked", () =>
   Effect.gen(function* () {
     const { eventSink, handler } = yield* serveOrchestrationHttp(() => true);
+    // The newest settled thread is FirstMate's decision; only a client with Needs me gets it.
     yield* eventSink.write({
-      events: Array.from({ length: 26 }, (_, index) => {
-        const id = ThreadId.make(`settled-${index}`);
+      events: Array.from({ length: 27 }, (_, index) => {
+        const id = ThreadId.make(index === 26 ? "decision" : `settled-${index}`);
         return {
           id: EventId.make(`create-${id}`),
           type: "thread.created" as const,
@@ -267,6 +270,7 @@ it.effect("leaves older settled threads out of the HTTP shell only when asked", 
             lineage: { ...thread.lineage, rootThreadId: id },
             settledOverride: "settled" as const,
             settledAt: DateTime.makeUnsafe(Date.UTC(2026, 8, 1 + index)),
+            ...(index === 26 ? { decisionOf: thread.id } : {}),
           },
         };
       }),
@@ -286,7 +290,12 @@ it.effect("leaves older settled threads out of the HTTP shell only when asked", 
 
     const full = yield* shell("");
     expect(full.threads).toHaveLength(27);
+    expect(full.threads.map((row) => row.id)).not.toContain("decision");
     expect(full.olderSettled).toBeUndefined();
+    const withDecisions = yield* shell(
+      `?clientCapabilities=${SETTINGS_SECRET_REFERENCES_CAPABILITY},${DECISION_THREADS_CAPABILITY}`,
+    );
+    expect(withDecisions.threads.map((row) => row.id)).toContain("decision");
     const cut = yield* shell("?omitOlderSettled=1");
     expect(cut.threads.map((row) => row.id).toSorted()).toEqual(
       [thread.id, ...Array.from({ length: 25 }, (_, index) => `settled-${index + 1}`)].toSorted(),

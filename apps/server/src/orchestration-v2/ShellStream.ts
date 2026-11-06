@@ -12,6 +12,7 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 import {
+  DECISION_THREADS_CAPABILITY,
   isListedThreadLineage,
   isLiveSubagentShell,
   isOlderSettledThreadShell,
@@ -229,9 +230,25 @@ export function omitOlderSettledShells(input: {
   return omitOlderSettledShellsWith(input, shellTrimFacts(input.threads));
 }
 
+/**
+ * Fork: a decision thread (`decisionOf`) has no agent and replies through FirstMate's thread, so
+ * only clients that declare `decisionThreads` (the web app's Needs me) receive one. Anything else,
+ * such as upstream's mobile app, would list it as an ordinary empty thread.
+ */
+export function omitsDecisionThreads(clientCapabilities: string | null | undefined): boolean {
+  return clientCapabilities?.split(",").includes(DECISION_THREADS_CAPABILITY) !== true;
+}
+
+export function withoutDecisionThreads<A extends Pick<OrchestrationV2ThreadShell, "decisionOf">>(
+  rows: ReadonlyArray<A>,
+): ReadonlyArray<A> {
+  return rows.filter((row) => row.decisionOf === undefined);
+}
+
 interface ShellSubscriberOptions {
   readonly omitIdleSubagents: boolean;
   readonly omitOlderSettled: boolean;
+  readonly omitDecisions: boolean;
 }
 
 function trimShellSnapshot(
@@ -303,10 +320,13 @@ export const loadSubscriberShellSnapshot = Effect.fn("ShellStream.loadSubscriber
     readonly options: ShellSubscriberOptions;
   }) {
     const trims = input.options.omitIdleSubagents || input.options.omitOlderSettled;
+    const listed = <A extends Pick<OrchestrationV2ThreadShell, "decisionOf">>(
+      rows: ReadonlyArray<A>,
+    ) => (input.options.omitDecisions ? withoutDecisionThreads(rows) : rows);
     const read = yield* input.sql
       .withTransaction(
         Effect.gen(function* () {
-          const index = trims ? yield* input.listShellIndex : null;
+          const index = trims ? listed(yield* input.listShellIndex) : null;
           return {
             index,
             decodeThreads: yield* input.readThreads(
@@ -318,9 +338,10 @@ export const loadSubscriberShellSnapshot = Effect.fn("ShellStream.loadSubscriber
         }),
       )
       .pipe(NodeSqliteClient.readOnly);
+    const threads = yield* read.decodeThreads;
     const base = buildActiveShellSnapshot({
       projects: read.projects,
-      threads: yield* read.decodeThreads,
+      threads: { ...threads, threads: listed(threads.threads) },
       snapshotSequence: read.snapshotSequence,
     });
     const facts = shellTrimFacts(read.index ?? base.threads);
@@ -669,12 +690,17 @@ export function skipUnchangedThreadShells<A extends OrchestrationV2ShellStreamIt
 export function shellStreamItemFromThreadShell(input: {
   readonly stored: Extract<ShellApplicationEvent, { readonly event: unknown }>;
   readonly shell: OrchestrationV2ThreadShell | null;
+  readonly omitDecisions: boolean;
 }): Extract<
   OrchestrationV2ShellStreamItem,
   { readonly kind: "thread.updated" | "thread.removed" }
 > {
   if (input.shell !== null) {
-    if (input.shell.archivedAt !== null) {
+    // A removal also clears a decision thread the client cached before it was left out.
+    if (
+      input.shell.archivedAt !== null ||
+      (input.omitDecisions && input.shell.decisionOf !== undefined)
+    ) {
       return {
         kind: "thread.removed",
         sequence: input.stored.sequence,

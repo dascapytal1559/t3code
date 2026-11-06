@@ -136,7 +136,14 @@ const assertShellIndexCoversShells = Effect.fnUntraced(function* () {
   const trimmed = (
     row: Pick<
       ProjectionStore.ActiveShellIndexEntry,
-      "id" | "projectId" | "lineage" | "settledOverride" | "settledAt" | "pinnedAt" | "snoozedUntil"
+      | "id"
+      | "projectId"
+      | "lineage"
+      | "settledOverride"
+      | "settledAt"
+      | "pinnedAt"
+      | "snoozedUntil"
+      | "decisionOf"
     >,
   ) => ({
     id: row.id,
@@ -146,6 +153,7 @@ const assertShellIndexCoversShells = Effect.fnUntraced(function* () {
     settledAt: iso(row.settledAt),
     pinnedAt: iso(row.pinnedAt),
     snoozedUntil: iso(row.snoozedUntil),
+    decisionOf: row.decisionOf,
   });
   assert.deepEqual(index.map(trimmed), shells.map(trimmed));
   shells.forEach((shell, position) => {
@@ -1942,6 +1950,7 @@ it.effect("SQL list older settled threads below a cursor", () =>
       readonly subagent?: boolean;
       readonly archived?: boolean;
       readonly snoozedUntilDay?: number;
+      readonly decision?: boolean;
     }) =>
       store.apply({
         id: EventId.make(`event:older:${input.name}`),
@@ -1975,6 +1984,7 @@ it.effect("SQL list older settled threads below a cursor", () =>
           snoozedUntil: input.snoozedUntilDay === undefined ? null : at(input.snoozedUntilDay),
           lastVisitedAt: null,
           deletedAt: null,
+          ...(input.decision === true ? { decisionOf: id("a") } : {}),
         },
       });
     yield* createThread({ name: "a", settledDay: 5 });
@@ -2020,6 +2030,20 @@ it.effect("SQL list older settled threads below a cursor", () =>
       threadIds: [],
       counts: [{ projectId: ProjectId.make("project:b"), count: 1 }],
     });
+
+    yield* createThread({ name: "decision", settledDay: 6, decision: true });
+    yield* assertShellIndexCoversShells();
+    assert.deepEqual((yield* list(before, 1)).threadIds, [id("decision")]);
+    const omitting = (limit: number) =>
+      store.listOlderSettledThreads({ before, limit, omitDecisions: true });
+    assert.deepEqual((yield* omitting(1)).threadIds, [id("a")]);
+    assert.sameDeepMembers(
+      [...(yield* omitting(0)).counts],
+      [
+        { projectId: ProjectId.make("project:a"), count: 4 },
+        { projectId: ProjectId.make("project:b"), count: 1 },
+      ],
+    );
   }).pipe(Effect.provide(layerTest)),
 );
 

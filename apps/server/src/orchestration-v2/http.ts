@@ -31,7 +31,7 @@ import {
 } from "./threadHistoryPaging.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ProjectStore from "./ProjectStore.ts";
-import { loadSubscriberShellSnapshot } from "./ShellStream.ts";
+import { loadSubscriberShellSnapshot, omitsDecisionThreads } from "./ShellStream.ts";
 import { boundedSnapshotResponseFields } from "./ThreadStream.ts";
 import { projectThreadProjectionForWire } from "./WireProjection.ts";
 
@@ -80,6 +80,7 @@ export const layer = HttpApiBuilder.group(
       function* (options: {
         readonly omitIdleSubagents: boolean;
         readonly omitOlderSettled: boolean;
+        readonly omitDecisions: boolean;
       }) {
         const { snapshot } = yield* loadSubscriberShellSnapshot({
           sql,
@@ -169,6 +170,7 @@ export const layer = HttpApiBuilder.group(
           return yield* loadShellSnapshot({
             omitIdleSubagents: args.query.omitIdleSubagents === "1",
             omitOlderSettled: args.query.omitOlderSettled === "1",
+            omitDecisions: omitsDecisionThreads(args.query.clientCapabilities),
           }).pipe(
             traceLocalHandlerWork,
             Effect.catch((cause) =>

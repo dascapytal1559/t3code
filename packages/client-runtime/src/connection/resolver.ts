@@ -270,6 +270,7 @@ export const make = Effect.gen(function* () {
   const relay = yield* makeRelayBroker();
   const ssh = yield* makeSshBroker();
   const httpClient = yield* HttpClient.HttpClient;
+  const presentation = yield* ClientCapabilities.ClientPresentation;
 
   const authorize = Effect.fn("clientRuntime.connection.broker.authorize")(function* (
     entry: ConnectionCatalogEntry,
@@ -321,7 +322,7 @@ export const make = Effect.gen(function* () {
     }
     return {
       ...prepared,
-      socketUrl: appendOrchestrationProtocol(prepared.socketUrl),
+      socketUrl: appendOrchestrationProtocol(prepared.socketUrl, presentation.metadata.surface),
     };
   });
 

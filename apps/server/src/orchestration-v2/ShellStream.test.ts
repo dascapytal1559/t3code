@@ -24,6 +24,7 @@ import {
   omitIdleSubagentShells,
   omitOlderSettledShells,
   shellStreamItemFromEnrichmentRefresh,
+  shellStreamItemFromThreadShell,
   shellStreamItemsFromInitialSnapshot,
   shouldPublishShellApplicationEvent,
   skipUnchangedThreadShells,
@@ -315,6 +316,23 @@ describe("omitOlderSettledShells", () => {
       "side-chat",
     ]);
     expect(result.olderSettled.counts).toEqual([{ projectId: "project-a", count: 5 }]);
+  });
+});
+
+describe("shellStreamItemFromThreadShell", () => {
+  it("removes a decision thread for a client without Needs me, including one it cached", () => {
+    const decision = {
+      id: ThreadId.make("decision"),
+      archivedAt: null,
+      decisionOf: ThreadId.make("firstmate"),
+    } as OrchestrationV2ThreadShell;
+    const stored = { sequence: 4, event: { threadId: decision.id } };
+    expect(
+      shellStreamItemFromThreadShell({ stored, shell: decision, omitDecisions: true }),
+    ).toEqual({ kind: "thread.removed", sequence: 4, location: "active", threadId: decision.id });
+    expect(
+      shellStreamItemFromThreadShell({ stored, shell: decision, omitDecisions: false }).kind,
+    ).toBe("thread.updated");
   });
 });
 

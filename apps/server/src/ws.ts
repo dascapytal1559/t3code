@@ -140,9 +140,11 @@ import {
   shellStreamItemFromThreadShell,
   shellStreamItemsFromInitialSnapshot,
   loadSubscriberShellSnapshot,
+  omitsDecisionThreads,
   shellStreamItemsFromResumeSnapshot,
   shouldPublishShellApplicationEvent,
   skipUnchangedThreadShells,
+  withoutDecisionThreads,
   toShellApplicationEvent,
   type ShellApplicationEvent,
 } from "./orchestration-v2/ShellStream.ts";
@@ -1130,7 +1132,9 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
     readonly requestCompletionMarker?: boolean;
     readonly omitIdleSubagents?: boolean;
     readonly omitOlderSettled?: boolean;
+    readonly omitDecisions?: boolean;
   }) {
+    const omitDecisions = input.omitDecisions === true;
     const sql = yield* SqlClient.SqlClient;
     const threadManagement = yield* ThreadManagementService.ThreadManagementService;
     const applicationEvents = yield* OrchestrationEventStore.OrchestrationEventStore;
@@ -1171,6 +1175,7 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
         options: {
           omitIdleSubagents: input.omitIdleSubagents === true,
           omitOlderSettled: input.omitOlderSettled === true,
+          omitDecisions,
         },
       });
       subagentThreadIds = forSubscriber.subagentThreadIds;
@@ -1242,7 +1247,7 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
               batchedShells === null
                 ? yield* threadManagement.getThreadShell(threadId)
                 : (batchedShells.get(threadId) ?? null);
-            return shellStreamItemFromThreadShell({ stored, shell });
+            return shellStreamItemFromThreadShell({ stored, shell, omitDecisions });
           }),
         { concurrency: 8 },
       );
@@ -1403,6 +1408,7 @@ export const layerWsRpc = (
   serverBrowser: ServerBrowser.ServerBrowser["Service"],
   reportProfiles: ServerBrowser.ProfileReporter,
   settingsClient: { readonly secretReferences: boolean },
+  omitDecisions: boolean,
 ) =>
   Layer.effectContext(
     Effect.gen(function* () {
@@ -2011,7 +2017,9 @@ export const layerWsRpc = (
           schemaVersion: threads.schemaVersion,
           snapshotSequence,
           projects,
-          threads: threads.archivedThreads,
+          threads: omitDecisions
+            ? withoutDecisionThreads(threads.archivedThreads)
+            : threads.archivedThreads,
         } as const;
       }).pipe(
         Effect.flatMap((snapshot) =>
@@ -2044,7 +2052,10 @@ export const layerWsRpc = (
               (cause) => new OrchestrationV2GetShellSnapshotError({ message, cause }),
             ),
           );
-          return { snapshotSequence, threads: threads.threads };
+          return {
+            snapshotSequence,
+            threads: omitDecisions ? withoutDecisionThreads(threads.threads) : threads.threads,
+          };
         },
       );
 
@@ -2171,6 +2182,11 @@ export const layerWsRpc = (
               threadManagement.readShellSnapshot({ location: "active", threadIds }),
             latestSequence: applicationEvents.latestApplicationSequence,
           }).pipe(
+            Effect.map((result) =>
+              omitDecisions && result.threads !== undefined
+                ? { ...result, threads: withoutDecisionThreads(result.threads) }
+                : result,
+            ),
             Effect.mapError(
               (cause) =>
                 new OrchestrationSearchThreadsError({
@@ -2196,7 +2212,7 @@ export const layerWsRpc = (
         [ORCHESTRATION_V2_WS_METHODS.getOlderSettledThreads]: (input) =>
           loadOlderSettledThreadsPage({
             sql,
-            listThreads: threadManagement.listOlderSettledThreads(input),
+            listThreads: threadManagement.listOlderSettledThreads({ ...input, omitDecisions }),
             readThreads: (threadIds) =>
               threadManagement.readShellSnapshot({ location: "active", threadIds }),
             latestSequence: applicationEvents.latestApplicationSequence,
@@ -2343,7 +2359,7 @@ export const layerWsRpc = (
             ),
           ),
         [ORCHESTRATION_V2_WS_METHODS.subscribeShell]: (input) =>
-          Stream.unwrap(subscribeOrchestrationV2Shell(input)),
+          Stream.unwrap(subscribeOrchestrationV2Shell({ ...input, omitDecisions })),
         [ORCHESTRATION_V2_WS_METHODS.subscribeThread]: (input) =>
           Stream.unwrap(
             Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId }).pipe(
@@ -3595,6 +3611,7 @@ export const layer = Layer.unwrap(
               serverBrowser,
               reportProfiles,
               readSettingsClient(url.value),
+              omitsDecisionThreads(url.value.searchParams.get(CLIENT_CAPABILITIES_QUERY_PARAM)),
             ).pipe(
               Layer.provideMerge(RpcSerialization.layerJson),
               // Handler-context reporters see only request defects, not server-wide defects.

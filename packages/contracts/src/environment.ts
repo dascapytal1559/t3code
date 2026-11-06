@@ -19,6 +19,8 @@ export const ORCHESTRATION_PROTOCOL_HEADER = "x-t3-orchestration-protocol";
 export const CLIENT_CAPABILITIES_QUERY_PARAM = "clientCapabilities";
 /** Secret fields may hold a secret provider reference instead of a string. */
 export const SETTINGS_SECRET_REFERENCES_CAPABILITY = "settingsSecretReferences";
+/** Fork: the client lists decision threads (`decisionOf`) in Needs me; others never receive them. */
+export const DECISION_THREADS_CAPABILITY = "decisionThreads";
 
 export const ExecutionEnvironmentPlatformOs = Schema.Literals([
   "darwin",

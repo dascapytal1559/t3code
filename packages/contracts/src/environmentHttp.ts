@@ -669,6 +669,8 @@ const EnvironmentOrchestrationThreadSnapshotParams = Schema.Struct({
 const EnvironmentOrchestrationShellSnapshotQuery = Schema.Struct({
   omitIdleSubagents: Schema.optionalKey(Schema.String),
   omitOlderSettled: Schema.optionalKey(Schema.String),
+  /** The socket's `clientCapabilities`, so the snapshot agrees with the stream. */
+  clientCapabilities: Schema.optionalKey(Schema.String),
 });
 
 const EnvironmentOrchestrationThreadBoundedSnapshotQuery = Schema.Struct({

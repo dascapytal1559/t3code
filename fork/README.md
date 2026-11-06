@@ -384,17 +384,23 @@ The records, for FirstMate's side:
   update.
 
 Each decision is still a thread with no agent whose reply goes to another
-thread, which upstream has no notion of, so the fork refuses any agent turn on
-a decision thread server-side (`message.dispatch` in `Orchestrator.ts`):
-upstream-built clients, such as the App Store mobile app, list it as an
-ordinary empty thread, and typing there gets an error instead of starting an
-agent. The fields stay out of `lineage` for the same reason as `crewOf`, and
-forks drop them. The shell carries only `decisionOf`, `decisionUpdatedAt`,
-`decisionChangedAt`, `decisionSince` and `decisionProjectName`; the payload
-rides on the thread read of the open row, so the thread list stays small. The
-command palette's thread search still finds decision threads, and picking one
-opens it in the tab, or FirstMate's chat alone for an answered one. The mobile
-app has no Needs me screen yet.
+thread, which upstream has no notion of, so the server sends decision threads
+only to clients that declare the `decisionThreads` capability on their socket
+(`clientCapabilities`): the web app, also inside desktop. Every other client,
+such as the App Store mobile app or app.t3.codes, gets none in its thread list,
+older-settled pages and counts, archive, search or thread families, and a
+change to one reaches it as a removal, which clears any it cached. The HTTP
+shell snapshot repeats the socket's capabilities so the two agree. MCP is
+unaffected, so FirstMate still reads and writes them. Decision threads never
+run, so they raise no notifications. The fork also refuses any agent turn on a
+decision thread server-side (`message.dispatch` in `Orchestrator.ts`), for a
+client that reaches one by id. The fields stay out of `lineage` for the same
+reason as `crewOf`, and forks drop them. The shell carries only `decisionOf`,
+`decisionUpdatedAt`, `decisionChangedAt`, `decisionSince` and
+`decisionProjectName`; the payload rides on the thread read of the open row, so
+the thread list stays small. The command palette's thread search still finds
+decision threads, and picking one opens it in the tab, or FirstMate's chat
+alone for an answered one. The mobile app has no Needs me screen yet.
 
 Code: `packages/contracts/src/threadDecision.ts`,
 `apps/server/src/orchestration-v2/DecisionReplyService.ts` (the
@@ -402,7 +408,12 @@ Code: `packages/contracts/src/threadDecision.ts`,
 `apps/web/src/components/needsMe/`. Shared files it touches, for syncs: the
 optional fields in `orchestrationV2.ts`, `orchestratorMcp.ts` and
 `threadMetadataMcp.ts`; create, update and the turn refusal in `Orchestrator.ts`;
-`ProjectionStore.ts` shells; the launch handler and tool in
+`ProjectionStore.ts` shells, shell index and older-settled listing; the
+capability filter in `ShellStream.ts`, `ws.ts` and `orchestration-v2/http.ts`,
+`DECISION_THREADS_CAPABILITY` in `environment.ts`, its query field in
+`environmentHttp.ts`, and on clients `appendOrchestrationProtocol` in
+`connection/compatibility.ts` (with its caller in `resolver.ts`) and
+`shellSnapshotHttp.ts`; the launch handler and tool in
 `mcp/toolkits/project/`; `ThreadMetadataMcpService.ts`; on the web, the
 `needs-me` surface kind in `rightPanelStore.ts` (and `closedViewStore.ts`), the
 launcher and "+" menu entries and tab title and icon in `RightPanelTabs.tsx`,

@@ -1,6 +1,7 @@
 import {
   EnvironmentId,
   ORCHESTRATION_PROTOCOL_VERSION,
+  type ClientSurface,
   type ExecutionEnvironmentDescriptor,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
@@ -25,15 +26,29 @@ describe("orchestration protocol compatibility", () => {
       orchestrationProtocolCompatibilityError(descriptor(ORCHESTRATION_PROTOCOL_VERSION)),
     ).toBeNull();
 
-    const socketUrl = new URL(
-      appendOrchestrationProtocol("wss://host.test/ws?wsTicket=secret&connectionMethod=relay"),
-    );
-    expect(socketUrl.searchParams.get("orchestrationProtocol")).toBe(
+    const socketUrl = (surface: ClientSurface | undefined) =>
+      new URL(
+        appendOrchestrationProtocol(
+          "wss://host.test/ws?wsTicket=secret&connectionMethod=relay",
+          surface,
+        ),
+      );
+    const mobile = socketUrl("mobile");
+    expect(mobile.searchParams.get("orchestrationProtocol")).toBe(
       String(ORCHESTRATION_PROTOCOL_VERSION),
     );
-    expect(socketUrl.searchParams.get("clientCapabilities")).toBe("settingsSecretReferences");
-    expect(socketUrl.searchParams.get("wsTicket")).toBe("secret");
-    expect(socketUrl.searchParams.get("connectionMethod")).toBe("relay");
+    expect(mobile.searchParams.get("clientCapabilities")).toBe("settingsSecretReferences");
+    expect(mobile.searchParams.get("wsTicket")).toBe("secret");
+    expect(mobile.searchParams.get("connectionMethod")).toBe("relay");
+    // Fork: only clients with Needs me receive decision threads.
+    for (const surface of ["web", "desktop"] as const) {
+      expect(socketUrl(surface).searchParams.get("clientCapabilities")).toBe(
+        "settingsSecretReferences,decisionThreads",
+      );
+    }
+    expect(socketUrl(undefined).searchParams.get("clientCapabilities")).toBe(
+      "settingsSecretReferences",
+    );
   });
 
   it("treats missing metadata as protocol 1", () => {

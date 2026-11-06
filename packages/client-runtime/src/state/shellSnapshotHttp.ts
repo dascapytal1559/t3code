@@ -1,4 +1,4 @@
-import { EnvironmentHttpCommonError } from "@t3tools/contracts";
+import { CLIENT_CAPABILITIES_QUERY_PARAM, EnvironmentHttpCommonError } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -36,10 +36,14 @@ export const fetchEnvironmentShellSnapshot = Effect.fn(
   readonly omitIdleSubagents?: boolean;
   readonly omitOlderSettled?: boolean;
 }) {
+  const clientCapabilities = new URL(input.prepared.socketUrl).searchParams.get(
+    CLIENT_CAPABILITIES_QUERY_PARAM,
+  );
   const endpoint = {
     query: {
       ...(input.omitIdleSubagents === true ? { omitIdleSubagents: "1" } : {}),
       ...(input.omitOlderSettled === true ? { omitOlderSettled: "1" } : {}),
+      ...(clientCapabilities === null ? {} : { clientCapabilities }),
     },
   };
   return yield* executeAuthenticatedEnvironmentHttpRequest({
