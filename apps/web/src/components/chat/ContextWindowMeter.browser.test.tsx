@@ -3,7 +3,7 @@ import * as Schema from "effect/Schema";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
-import { deriveLatestContextWindowSnapshot } from "~/lib/contextWindow";
+import { deriveLatestContextWindowSnapshot } from "@t3tools/client-runtime/state/context-window";
 import { render } from "../../../test/render";
 import { ContextWindowMeter } from "./ContextWindowMeter";
 
