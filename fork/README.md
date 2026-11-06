@@ -315,7 +315,7 @@ unchanged, and mobile has no lock. Code: `crewLocked` in
 
 ## Needs me
 
-![A chat with the Needs me tab beside it: four open decisions, two answered today and four under Later with their wake dates](media/needs-me-list.jpg)
+![A chat with the Needs me tab beside it: four open decisions and four under Later with their wake dates](media/needs-me-list.jpg)
 
 Something FirstMate needs from the captain is a decision, listed in the right
 panel's "Needs me" tab, beside any chat. It opens from the panel's launcher or
@@ -327,8 +327,7 @@ waiting (`decision.since`, else its raised entry, else when it was made), so an
 update an hour ago reads "1h ago" while rewording the raised context does not
 reset the age. Rows carry no New or Updated mark. Snoozed
 decisions wait under "Later" with their wake date ("no date" for an undated
-snooze), and ones settled today stay under "Answered today" until the day
-ends. The project is the one the decision names in `decision.projectName`;
+snooze). A settled decision is not listed. The project is the one the decision names in `decision.projectName`;
 without one it is the thread's own, which is FirstMate's. Nothing in the
 sidebar counts or lists decisions.
 
@@ -374,7 +373,7 @@ The records, for FirstMate's side:
   `decisionOf`; the result reports `decisionRevision`. Thread reads report
   `decisionOf` and `decision`; thread lists report `decisionOf` only.
 - Snooze, settle and archive are the thread's own: a snoozed decision moves to
-  Later, a settled one to Answered today, and an archived one leaves the tab.
+  Later, and a settled or archived one leaves the tab.
 - The reply message reads `**Decision · <title>**`, then the line
   `needs-me-task: <taskId>`, a blank line, the question quoted with `> `, a
   blank line, then the captain's words. Upstream renders user messages without

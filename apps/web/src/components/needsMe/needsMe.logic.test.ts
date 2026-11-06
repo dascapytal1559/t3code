@@ -36,7 +36,7 @@ const decision = (
 });
 
 describe("groupNeedsMeDecisions", () => {
-  it("lists open decisions newest update first, Later by wake date, and only today's answers", () => {
+  it("lists open decisions newest update first and Later by wake date, and drops settled ones", () => {
     const groups = groupNeedsMeDecisions(
       [
         decision("ordinary-thread", { decisionOf: null }),
@@ -59,7 +59,6 @@ describe("groupNeedsMeDecisions", () => {
     const ids = (list: ReadonlyArray<{ id: string }>) => list.map((thread) => thread.id);
     expect(ids(groups.open)).toEqual(["updated-last", "updated-before", "woke", "no-entries"]);
     expect(ids(groups.later)).toEqual(["back-soon", "back-later", "undated-snooze"]);
-    expect(ids(groups.answeredToday)).toEqual(["answered-just-now", "answered-this-morning"]);
   });
 });
 

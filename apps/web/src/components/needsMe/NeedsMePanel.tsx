@@ -5,7 +5,7 @@ import {
 } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import { CheckIcon, ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { useNowMinute } from "../../hooks/useNowMinute";
@@ -17,9 +17,9 @@ import { DecisionDetail, formatDay } from "./DecisionDetail";
 import { decisionAgeTimestamp, groupNeedsMeDecisions } from "./needsMe.logic";
 import { useNeedsMeOpenRow } from "./needsMeReveal";
 
-type RowGroup = "open" | "later" | "answered";
+type RowGroup = "open" | "later";
 
-/** FirstMate's open decisions beside any chat, with snoozed ones under Later and today's answers. */
+/** FirstMate's open decisions beside any chat, with snoozed ones under Later. */
 export function NeedsMePanel(props: { readonly threadRef: ScopedThreadRef }) {
   const shells = useQuietThreadShells();
   const nowMinute = useNowMinute();
@@ -44,11 +44,6 @@ export function NeedsMePanel(props: { readonly threadRef: ScopedThreadRef }) {
           groups.open.map(row("open"))
         )}
       </NeedsMeSection>
-      {groups.answeredToday.length === 0 ? null : (
-        <NeedsMeSection title="Answered today" count={groups.answeredToday.length}>
-          {groups.answeredToday.map(row("answered"))}
-        </NeedsMeSection>
-      )}
       {groups.later.length === 0 ? null : (
         <NeedsMeSection title="Later" count={groups.later.length}>
           {groups.later.map(row("later"))}
@@ -95,9 +90,7 @@ function NeedsMeRow(props: {
       ? thread.snoozedUntil == null
         ? "no date"
         : `back ${formatDay(thread.snoozedUntil)}`
-      : props.group === "answered" && thread.settledAt !== null
-        ? `answered ${formatRelativeTimeLabel(thread.settledAt, props.nowMs)}`
-        : formatRelativeTimeLabel(decisionAgeTimestamp(thread), props.nowMs);
+      : formatRelativeTimeLabel(decisionAgeTimestamp(thread), props.nowMs);
 
   return (
     <div className={cn("rounded-lg", open && "bg-accent/40")}>
@@ -107,14 +100,10 @@ function NeedsMeRow(props: {
         className="flex w-full cursor-pointer items-start gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none"
         onClick={() => setOpenKey(open ? null : key)}
       >
-        {props.group === "answered" ? (
-          <CheckIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-success-foreground" />
-        ) : (
-          <ChevronRightIcon
-            aria-hidden
-            className={cn("mt-0.5 size-4 shrink-0 text-muted-foreground", open && "rotate-90")}
-          />
-        )}
+        <ChevronRightIcon
+          aria-hidden
+          className={cn("mt-0.5 size-4 shrink-0 text-muted-foreground", open && "rotate-90")}
+        />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="flex min-w-0 items-center gap-2">
             <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">

@@ -23,32 +23,25 @@ type DecisionShell = ThreadSnoozeShell &
 export interface NeedsMeGroups<T> {
   readonly open: T[];
   readonly later: T[];
-  readonly answeredToday: T[];
 }
 
 const ms = (iso: string | null | undefined) => (iso == null ? 0 : Date.parse(iso) || 0);
 
 /**
  * FirstMate's decision threads as the Needs me tab lists them: open ones newest update first,
- * snoozed ones under Later by wake date (undated last), and ones settled today, which leave
- * when the local day ends.
+ * snoozed ones under Later by wake date (undated last). Settled ones are not listed.
  */
 export function groupNeedsMeDecisions<T extends DecisionShell>(
   threads: readonly T[],
   now: Date,
 ): NeedsMeGroups<T> {
   const nowIso = now.toISOString();
-  const today = now.toDateString();
   const open: T[] = [];
   const later: T[] = [];
-  const answeredToday: T[] = [];
   for (const thread of threads) {
     if (thread.decisionOf === undefined || thread.archivedAt !== null) continue;
     if (effectiveSnoozed(thread, { now: nowIso })) later.push(thread);
     else if (thread.settledOverride !== "settled") open.push(thread);
-    else if (thread.settledAt !== null && new Date(thread.settledAt).toDateString() === today) {
-      answeredToday.push(thread);
-    }
   }
   return {
     open: open.toSorted(
@@ -64,9 +57,6 @@ export function groupNeedsMeDecisions<T extends DecisionShell>(
       }
       return ms(left.snoozedUntil) - ms(right.snoozedUntil);
     }),
-    answeredToday: answeredToday.toSorted(
-      (left, right) => ms(right.settledAt) - ms(left.settledAt),
-    ),
   };
 }
 
