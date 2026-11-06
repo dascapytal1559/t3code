@@ -7,6 +7,7 @@ import { Navigate, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import ChatView from "./ChatView";
+import { isNeedsMeListed } from "./needsMe/needsMe.logic";
 import { DecisionRedirect } from "./needsMe/needsMeReveal";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
 import { SidebarInset } from "./ui/sidebar";
@@ -199,7 +200,7 @@ export function ThreadRouteView({
       <DecisionRedirect
         decisionRef={target.threadRef}
         coordinatorId={serverThreadShell.decisionOf}
-        shell={serverThreadShell}
+        listed={isNeedsMeListed(serverThreadShell)}
       />
     );
   } else if (renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)) {

@@ -55,21 +55,22 @@ describe("groupNeedsMeDecisions", () => {
     );
     const ids = (list: ReadonlyArray<{ id: string }>) => list.map((thread) => thread.id);
     expect(ids(groups.open)).toEqual(["updated-last", "updated-before", "woke", "no-entries"]);
-    expect(ids(groups.later)).toEqual([
-      "back-soon",
-      "back-later",
-      "answered-then-snoozed",
-      "undated-snooze",
-    ]);
+    expect(ids(groups.later)).toEqual(["back-soon", "back-later", "undated-snooze"]);
   });
 });
 
 describe("isNeedsMeListed", () => {
   it("is false for a decision the tab has no row for, so its address does not open the tab", () => {
-    expect(isNeedsMeListed(decision("open"), now)).toBe(true);
-    expect(isNeedsMeListed(decision("answered", { settled: true }), now)).toBe(false);
-    expect(isNeedsMeListed(decision("archived", { archivedAt: at(6, 9) }), now)).toBe(false);
-    expect(isNeedsMeListed(decision("ordinary-thread", { decisionOf: null }), now)).toBe(false);
+    expect(isNeedsMeListed(decision("open"))).toBe(true);
+    expect(isNeedsMeListed(decision("snoozed", { snoozedUntil: at(20, 9) }))).toBe(true);
+    expect(isNeedsMeListed(decision("answered", { settled: true }))).toBe(false);
+    expect(
+      isNeedsMeListed(
+        decision("answered-then-snoozed", { settled: true, snoozedUntil: at(20, 9) }),
+      ),
+    ).toBe(false);
+    expect(isNeedsMeListed(decision("archived", { archivedAt: at(6, 9) }))).toBe(false);
+    expect(isNeedsMeListed(decision("ordinary-thread", { decisionOf: null }))).toBe(false);
   });
 });
 
