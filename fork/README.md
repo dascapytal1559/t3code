@@ -73,6 +73,27 @@ adds: `excludedProviders` in `apps/web/src/state/usage.ts` and the rows in
 provider's Limits cards, so a row muted here hides them too. The mobile app
 has no row toggles.
 
+## Usage limits in the sidebar
+
+The captain wants usage visible without opening the Usage page, so the web and
+desktop sidebar shows a small readout between the Settled row and the bottom
+icons: one line per provider the Limits view shows, with its icon, a thin bar
+split per account (Claude and Claude2 side by side) and the percent left in its
+weekly window, or its first window when it has no weekly one. Model windows
+such as Weekly · Fable stay on the page. The tooltip has each account's figure
+and reset time; a click opens the Usage page. It reads the same provider
+statuses as the Limits view and fetches nothing, shows nothing until limits
+arrive, and leaves out providers muted on the page. The phone web sidebar shows
+it too; the mobile app does not.
+
+Upstream code it touches, for syncs: `useLimitPresentations` is the Limits
+view's environment and muted-provider filter, moved out of
+`UsageLimitsSection` in `apps/web/src/components/usage/UsageLimits.tsx`, and
+`saveUsagePagePreferences` now writes through `writeLocalStorageValue` so the
+sidebar hears a mute in the same tab (`usagePagePreferences.ts`). The mount is
+one line in `SidebarChromeFooter`. Code:
+`apps/web/src/components/sidebar/SidebarUsageMini.tsx`.
+
 ## Archived usage
 
 Usage includes copies of history from machines and accounts that no longer run

@@ -1,7 +1,11 @@
 import { UsageProviderKind } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
-import { getLocalStorageItem, setLocalStorageItem } from "../../hooks/useLocalStorage";
+import {
+  getLocalStorageItem,
+  useLocalStorage,
+  writeLocalStorageValue,
+} from "../../hooks/useLocalStorage";
 
 const STORAGE_KEY = "t3code:usage-page-preferences:v1";
 const UsagePagePreferencesSchema = Schema.Struct({
@@ -22,10 +26,16 @@ export function readUsagePagePreferences(): UsagePagePreferences {
   }
 }
 
+/** Notifies `useUsageHiddenProviders` readers in this tab too. */
 export function saveUsagePagePreferences(preferences: UsagePagePreferences): void {
-  try {
-    setLocalStorageItem(STORAGE_KEY, preferences, UsagePagePreferencesSchema);
-  } catch (error) {
-    console.error("Could not save Usage page preferences.", error);
-  }
+  writeLocalStorageValue(STORAGE_KEY, preferences, DEFAULT_PREFERENCES, UsagePagePreferencesSchema);
+}
+
+export function useUsageHiddenProviders(): ReadonlySet<UsageProviderKind> {
+  const [preferences] = useLocalStorage(
+    STORAGE_KEY,
+    DEFAULT_PREFERENCES,
+    UsagePagePreferencesSchema,
+  );
+  return new Set(preferences.hiddenProviders);
 }

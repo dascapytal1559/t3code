@@ -372,12 +372,21 @@ export function UsageLimitsSection({
   readonly now: number;
   readonly cursorPrompt?: ReactNode;
 }) {
+  const presentations = useLimitPresentations(selectedEnvironmentIds, hiddenProviders);
+  return <UsageLimitsPooled presentations={presentations} now={now} cursorPrompt={cursorPrompt} />;
+}
+
+/** The limits the Usage page shows for these environments, without hidden providers. */
+export function useLimitPresentations(
+  selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null,
+  hiddenProviders: ReadonlySet<UsageProviderKind>,
+) {
   const presentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
   const hiddenDrivers = new Set<ServerProvider["driver"]>(
     [...hiddenProviders].map((provider) => PROVIDER_PRESENTATION[provider].driverKind),
   );
   const isVisible = (driver: ServerProvider["driver"]) => !hiddenDrivers.has(driver);
-  const selected = new Map(
+  return new Map(
     [...presentations].flatMap(([id, presentation]) => {
       if (selectedEnvironmentIds !== null && !selectedEnvironmentIds.has(id)) return [];
       const config = presentation.serverConfig;
@@ -402,5 +411,4 @@ export function UsageLimitsSection({
       ];
     }),
   );
-  return <UsageLimitsPooled presentations={selected} now={now} cursorPrompt={cursorPrompt} />;
 }
