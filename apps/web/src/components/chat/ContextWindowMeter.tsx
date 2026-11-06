@@ -6,7 +6,7 @@ import {
   formatContextWindowCompactionMessage,
   formatContextWindowCost,
 } from "./ContextWindowMeter.logic";
-import { Minimize2Icon, RefreshCwIcon } from "lucide-react";
+import { Minimize2Icon } from "lucide-react";
 import { composerFloatingLayerProps } from "./composerEventScope";
 
 function formatPercentage(value: number | null): string | null {
@@ -25,19 +25,8 @@ export function ContextWindowMeter(props: {
   onCompact?: (() => void) | undefined;
   compactDisabled?: boolean | undefined;
   compactDisabledReason?: string | null | undefined;
-  /** FirstMate's coordinator thread: refresh leads and compact becomes a link. */
-  onRefreshContext?: (() => void) | undefined;
-  refreshContextDisabled?: boolean | undefined;
 }) {
-  const {
-    usage,
-    modelDisplayName,
-    onCompact,
-    compactDisabled,
-    compactDisabledReason,
-    onRefreshContext,
-    refreshContextDisabled,
-  } = props;
+  const { usage, modelDisplayName, onCompact, compactDisabled, compactDisabledReason } = props;
   const usedPercentage = formatPercentage(usage.usedPercentage);
   const normalizedPercentage = Math.max(0, Math.min(100, usage.usedPercentage ?? 0));
   const radius = 9.75;
@@ -55,7 +44,7 @@ export function ContextWindowMeter(props: {
       <PopoverTrigger
         openOnHover
         delay={150}
-        closeDelay={onCompact || onRefreshContext ? 150 : 0}
+        closeDelay={onCompact ? 150 : 0}
         render={
           <Button
             size="icon-sm"
@@ -161,41 +150,7 @@ export function ContextWindowMeter(props: {
               {formatContextWindowCompactionMessage(modelDisplayName, usage.autoCompactThreshold)}
             </div>
           ) : null}
-          {onRefreshContext ? (
-            <>
-              <Button
-                size="xs"
-                className="mt-1 w-full justify-center"
-                disabled={refreshContextDisabled}
-                onClick={onRefreshContext}
-              >
-                <RefreshCwIcon aria-hidden="true" />
-                Refresh FirstMate context
-              </Button>
-              {refreshContextDisabled ? (
-                <div className="text-pretty text-secondary-label text-2xs">
-                  Refresh context once the turn ends
-                </div>
-              ) : null}
-              {onCompact ? (
-                <>
-                  <button
-                    type="button"
-                    className="cursor-pointer self-center rounded-sm text-2xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:cursor-default disabled:opacity-50 disabled:hover:text-muted-foreground disabled:hover:no-underline"
-                    disabled={compactDisabled}
-                    onClick={onCompact}
-                  >
-                    Compact context
-                  </button>
-                  {compactDisabled && compactDisabledReason ? (
-                    <div className="text-center text-pretty text-secondary-label text-2xs">
-                      {compactDisabledReason}
-                    </div>
-                  ) : null}
-                </>
-              ) : null}
-            </>
-          ) : onCompact ? (
+          {onCompact ? (
             <>
               <Button
                 size="xs"

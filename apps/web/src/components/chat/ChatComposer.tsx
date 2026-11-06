@@ -470,8 +470,6 @@ export interface ChatComposerProps {
   onRemoveEditingQueuedAttachment: (attachmentId: string) => void;
 
   onCompactContext: () => void;
-  onRefreshContext?: (() => void) | undefined;
-  refreshContextDisabled?: boolean | undefined;
   onSend: (
     e?: { preventDefault: () => void },
     dispatchMode?: ComposerDispatchMode,
@@ -588,8 +586,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onPageScrollKeyUp,
     onPageScrollRelease,
     onCompactContext,
-    onRefreshContext,
-    refreshContextDisabled,
     onSend,
     onResume,
     onInterrupt,
@@ -3682,8 +3678,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     {...(compactCommandAvailable
                       ? { onCompactContext: compactThreadContextStable }
                       : {})}
-                    onRefreshContext={onRefreshContext}
-                    refreshContextDisabled={refreshContextDisabled}
                   >
                     {speechInput.available ? (
                       <>

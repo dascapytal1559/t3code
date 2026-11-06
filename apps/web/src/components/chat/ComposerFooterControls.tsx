@@ -283,8 +283,6 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
   onCompactContext?: (() => void) | undefined;
   compactDisabled: boolean;
   compactDisabledReason: string | null;
-  onRefreshContext?: (() => void) | undefined;
-  refreshContextDisabled?: boolean | undefined;
   compactBeforeSendTokens: number | null;
   keepFullHistory: boolean;
   onToggleKeepFullHistory: () => void;
@@ -298,8 +296,6 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
           onCompact={props.onCompactContext}
           compactDisabled={props.compactDisabled}
           compactDisabledReason={props.compactDisabledReason}
-          onRefreshContext={props.onRefreshContext}
-          refreshContextDisabled={props.refreshContextDisabled}
         />
       ) : props.reserveContextWindowMeter ? (
         <ContextWindowMeterPlaceholder />

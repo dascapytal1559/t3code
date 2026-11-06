@@ -350,7 +350,6 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { assetEnvironment } from "../state/assets";
 import { readEnvironmentScope, readPreparedConnection } from "../state/session";
 import { useAtomCommand } from "../state/use-atom-command";
-import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/models";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { observeResize } from "~/lib/observeResize";
@@ -457,9 +456,6 @@ export default function ChatView(props: ChatViewProps) {
     refresh: true,
   });
   const interruptThreadTurn = useOrchestrationCommand(threadEnvironment.interruptTurn, {
-    reportFailure: false,
-  });
-  const refreshThreadSession = useOrchestrationCommand(threadEnvironment.refreshSession, {
     reportFailure: false,
   });
   const loadEarlierThreadHistory = useAtomCommand(threadEnvironment.loadEarlierHistory, {
@@ -987,28 +983,6 @@ export default function ChatView(props: ChatViewProps) {
   );
   const browserAvailable = isPreviewSupportedInRuntime() || activeEnvironmentServerBrowser;
   const activeThreadShell = serverThread;
-  // FirstMate's pinned coordinator thread gets the Refresh context button.
-  const canRefreshContext = isServerThread && activeThreadShell?.coordinator === true;
-  const refreshContextDisabled =
-    !canOperateThread ||
-    activeThreadShell?.archivedAt != null ||
-    threadRuntimeIsActive(activeRuntime);
-  const handleRefreshContext = () => {
-    if (activeThreadRef === null) return;
-    void refreshThreadSession({
-      environmentId: activeThreadRef.environmentId,
-      input: { threadId: activeThreadRef.threadId },
-    }).then((result) => {
-      if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
-      const error = squashAtomCommandFailure(result);
-      toastManager.add({
-        type: "error",
-        title: "Could not refresh the context",
-        description: error instanceof Error ? error.message : "An error occurred.",
-      });
-    });
-  };
-  const handleRefreshContextStable = useStableCallback(handleRefreshContext);
   const timelineThreadError =
     serverRuntime?.status === "failed" &&
     serverRuntime.lastErrorClass === "usage_limit" &&
@@ -3383,12 +3357,6 @@ export default function ChatView(props: ChatViewProps) {
                 ? { onOpenProjectSettings: handleOpenDraftProjectSettingsStable }
                 : {})}
               {...(threadFindEnabled ? { onFindInThread: openThreadFindStable } : {})}
-              {...(canRefreshContext
-                ? {
-                    onRefreshContext: handleRefreshContextStable,
-                    refreshContextDisabled,
-                  }
-                : {})}
             />
           </header>
         )}
@@ -3757,12 +3725,6 @@ export default function ChatView(props: ChatViewProps) {
                               onPageScrollKeyUp={onComposerPageScrollKeyUpStable}
                               onPageScrollRelease={onComposerPageScrollReleaseStable}
                               onCompactContext={onComposerCompactContextStable}
-                              {...(canRefreshContext
-                                ? {
-                                    onRefreshContext: handleRefreshContextStable,
-                                    refreshContextDisabled,
-                                  }
-                                : {})}
                               onSend={onComposerSendStable}
                               onResume={onComposerResumeStable}
                               onInterrupt={onInterruptStable}

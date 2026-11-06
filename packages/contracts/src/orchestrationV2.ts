@@ -1974,7 +1974,7 @@ export const OrchestrationV2DomainEvent = Schema.Union([
       "thread.interaction-mode-updated",
       "thread.model-selection-updated",
       "thread.provider-switched",
-      // Nothing writes it now; the fork's first Refresh context stored it, and those events still decode.
+      // Nothing writes it; the fork's removed Refresh context stored it, and those events still decode.
       "thread.session-replaced",
       "thread.guest-share-updated",
     ]),
@@ -3114,15 +3114,6 @@ export const OrchestrationV2Command = Schema.Union([
     threadId: ThreadId,
     reason: Schema.Literal("user"),
   }),
-  /**
-   * Starts a context refresh: one `/stow` turn on the current agent session, then a fresh
-   * session on the same thread whose first message is `Context refreshed.`. Refused while a turn runs.
-   */
-  Schema.Struct({
-    type: Schema.Literal("thread.session.refresh"),
-    commandId: CommandId,
-    threadId: ThreadId,
-  }),
   Schema.Struct({
     type: Schema.Literal("thread.snooze"),
     commandId: CommandId,
@@ -3524,21 +3515,6 @@ export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
 
 // Excluded from dispatchCommand so only the server can send these.
 const OrchestrationV2InternalCommand = Schema.Union([
-  /**
-   * Ends a context refresh once its `/stow` turn settled. `replaced` sends `Context refreshed.`
-   * as a `freshContext` message, which ends the old session and opens a new one; `kept` leaves
-   * the session alone and says why in the thread.
-   */
-  Schema.Struct({
-    type: Schema.Literal("thread.session.refresh.complete"),
-    commandId: CommandId,
-    threadId: ThreadId,
-    /** The provider thread the `/stow` turn ran on; the refresh is void if it is no longer active. */
-    providerThreadId: Schema.NullOr(ProviderThreadId),
-    runId: RunId,
-    outcome: Schema.Literals(["replaced", "kept"]),
-    detail: Schema.optional(Schema.String),
-  }),
   // Guest share commands the server issues after checking T3 Connect and the guest token.
   Schema.Struct({
     type: Schema.Literal("thread.guest-share.open"),

@@ -421,8 +421,7 @@ function simpleThreadCommand(
     | "thread.settle"
     | "thread.pin"
     | "thread.unpin"
-    | "thread.guest-share.close"
-    | "thread.session.refresh",
+    | "thread.guest-share.close",
   input: ThreadCommandInput,
 ) {
   return allocateCommandId(input).pipe(
@@ -497,14 +496,6 @@ export const settleThread = Effect.fn("EnvironmentCommands.settleThread")(functi
 ) {
   return yield* simpleThreadCommand("thread.settle", input);
 });
-
-export type RefreshThreadSessionInput = ThreadCommandInput;
-/** Stows the agent session and opens a fresh one on the same thread. */
-export const refreshThreadSession = Effect.fn("EnvironmentCommands.refreshThreadSession")(
-  function* (input: RefreshThreadSessionInput) {
-    return yield* simpleThreadCommand("thread.session.refresh", input);
-  },
-);
 
 export const pinThread = Effect.fn("EnvironmentCommands.pinThread")(function* (
   input: PinThreadInput,

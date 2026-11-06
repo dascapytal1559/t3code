@@ -286,51 +286,19 @@ Code: `apps/desktop/src/window/PanelWindowGrowth.ts` (the width arithmetic and
 its tests), the `setRightPanelOpen` bridge method, and the effect in
 `apps/web/src/components/chat/ChatRightPanel.tsx`.
 
-## Refresh context on the FirstMate thread
+## A closed Claude session waits for its CLI to exit
 
-<img src="media/refresh-context.jpg" width="744" alt="A FirstMate thread with the Refresh context button in its header, a New session divider in the chat, and the message Context refreshed. sent by T3 Code">
+Upstream's `/clear` ends the thread's agent session and opens a fresh one. On
+the FirstMate thread the old Claude CLI process must be gone first: FirstMate's
+session lock belongs to the live process, and a new session that loses it comes
+up read-only. Upstream's close only schedules the CLI's SIGTERM, so the fork's
+Claude adapter also waits for the process to exit, up to 15 seconds, whenever a
+session closes. Code: `awaitExit` in
+`apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts`.
 
-The FirstMate thread keeps one id and one chat for its whole life, while the
-agent session behind it is replaced on demand. The thread header of a pinned
-coordinator thread (`t3_thread_configure` `coordinator: true`) has a Refresh
-context button, greyed out while a turn runs. Clicking it:
-
-1. sends one `/stow` turn to the current session, attributed to T3 Code;
-2. when that turn completes, sends `Context refreshed.` with upstream's
-   `freshContext`, the same fresh session `/clear` starts. Upstream ends the old
-   session before the new turn starts, draws its "New session" divider above the
-   message, and keeps earlier turns out of the new session. `Context refreshed.`
-   is not `ahoy`, so FirstMate does not run Bearings on the new session.
-
-The old process must be gone before the new session opens, because FirstMate's
-session lock belongs to the live process and a session that loses it comes up
-read-only. Upstream's fresh send queues the old session's detach ahead of the
-new turn on the same thread, and the fork's Claude adapter waits for its CLI
-process to exit whenever a session closes, for every release path.
-
-If the `/stow` turn fails, is stopped, or the agent is still busy (background
-work in the session), nothing is swapped and a notice under that turn says so.
-A server restart in the middle of a refresh drops it; press the button again.
-Mobile has no button but shows upstream's divider. Idle compaction and the idle
-release of the agent are unchanged. The fork's first version wrote its own
-event, `thread.session-replaced`; nothing writes it now, and the contracts keep
-it so stored events still decode. Code: `thread.session.refresh` in
-`apps/server/src/orchestration-v2/Orchestrator.ts`,
-`apps/server/src/orchestration-v2/SessionRefreshService.ts`, and
-`ChatHeader.tsx` on the web.
-
-<img src="media/context-window-refresh.jpg" width="272" alt="The Context Window box on a FirstMate thread, with a blue Refresh FirstMate context button and a small Compact context link under it">
-
-The Context Window box under the composer's context meter offers the same
-refresh on that thread. Upstream's full-width Compact context button becomes a
-primary Refresh FirstMate context button, greyed out with the header's wording
-while a turn runs, and compacting drops to a small Compact context link under
-it with its usual availability. Upstream offers compacting because that is how
-a long session continues; FirstMate keeps its state in files and stows before a
-refresh, so a fresh session is the better default there. Every other thread
-keeps upstream's box unchanged. Code: `onRefreshContext` in
-`apps/web/src/components/chat/ContextWindowMeter.tsx`, passed down from
-`ChatView.tsx`.
+The fork once had a Refresh context button for this. Its first version wrote a
+`thread.session-replaced` event; nothing writes it now, and the contracts keep
+it so stored events still decode.
 
 ## Per-thread environment and instructions
 
