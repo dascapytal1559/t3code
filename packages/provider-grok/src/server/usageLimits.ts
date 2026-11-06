@@ -39,6 +39,7 @@ const GrokUsageResponse = Schema.Struct({
   ),
 });
 const GrokErrorResponse = Schema.Struct({ error: Schema.String });
+const WEEK_MINUTES = 7 * 24 * 60;
 
 function parsePeriodBoundary(value: string | undefined) {
   if (
@@ -82,12 +83,24 @@ export function grokUsageResponseToLimits(
     return makeUsageLimits({ checkedAt, windows: [] });
   }
   const reset = period?.end ? DateTime.make(period.end) : Option.none();
+  const startMs =
+    typeof period?.start === "string" ? parsePeriodBoundary(period.start) : Number.NaN;
+  const endMs = parsePeriodBoundary(period?.end);
+  // The pace mark needs the window length. Grok's own boundaries cover a week that began on an
+  // upgrade day and monthly periods; only a weekly period without usable ones falls back to 7 days.
+  const windowDurationMins =
+    startMs < endMs
+      ? Math.round((endMs - startMs) / 60_000)
+      : kind === "weekly"
+        ? WEEK_MINUTES
+        : undefined;
   const window: ServerProviderUsageWindow = {
     id: "subscription",
     kind,
     label: kind === "weekly" ? "Weekly" : kind === "monthly" ? "Monthly" : "Subscription",
     usedPercent: clampPercent(usedPercent),
     ...(Option.isSome(reset) ? { resetsAt: DateTime.formatIso(reset.value) } : {}),
+    ...(windowDurationMins !== undefined ? { windowDurationMins } : {}),
   };
   return makeUsageLimits({ checkedAt, windows: [window] });
 }

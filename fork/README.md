@@ -90,6 +90,12 @@ statuses as the Limits view and fetches nothing, shows nothing until limits
 arrive, and leaves out providers muted on the page. The phone web sidebar shows
 it too; the mobile app does not.
 
+Grok's window carries its length so the pace mark shows for it (upstream's Grok
+window has a reset time but no length, so no mark). The length is the period's
+end minus start, and a weekly period without a valid start falls back to seven
+days. This deviates from upstream's `grokUsageResponseToLimits` in
+`packages/provider-grok/src/server/usageLimits.ts`; syncs must carry it.
+
 Upstream code it touches, for syncs: `useLimitPresentations` is the Limits
 view's environment and muted-provider filter, moved out of
 `UsageLimitsSection` in `apps/web/src/components/usage/UsageLimits.tsx`, and
