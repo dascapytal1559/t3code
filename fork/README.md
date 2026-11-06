@@ -385,14 +385,6 @@ export does not reach an app opened from the Dock: run
 the app from a terminal that has the variable set. Your own OpenTelemetry export
 and the mobile app's crash reports have their own settings.
 
-## No mobile behavior eval
-
-Upstream's `vp run mobile:behavior` eval is removed here: `scripts/mobile-behavior/`,
-the app's dev-only behavior probe, the script, its knip entry and its ignore
-line. No fork feature uses it, and dropping it avoids sync conflicts. Upstream
-main still has it (`ff71186669`), so a sync that touches those files needs the
-same removal again, or a decision to take it back.
-
 ## Version
 
 The fork keeps upstream's version number. The desktop app sets up an SSH or

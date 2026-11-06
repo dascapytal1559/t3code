@@ -28,7 +28,6 @@ Also:
 - [`~` in provider paths](fork/README.md#-in-a-providers-executable-path): works for every provider.
 - [Stopped turns](fork/README.md#stopped-turns-close-their-approvals): their approvals close instead of staying pending.
 - [Two-line cards](fork/README.md#sidebar-cards-stay-two-lines): a lone PR badge no longer adds a third line.
-- [No mobile behavior eval](fork/README.md#no-mobile-behavior-eval): upstream's eval is removed here.
 
 Details and pictures: [fork/README.md](fork/README.md).
 
