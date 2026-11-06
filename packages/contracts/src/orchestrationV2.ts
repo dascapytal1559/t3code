@@ -2191,6 +2191,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   decisionOf: OrchestrationV2AppThread.fields.decisionOf,
   /** The decision's latest entry; the shell leaves the payload itself to the thread read. */
   decisionUpdatedAt: Schema.optional(IsoDateTime),
+  decisionProjectName: ThreadDecision.fields.projectName,
   forkedFrom: Schema.NullOr(OrchestrationV2AppThread.fields.forkedFrom),
   activeProviderThreadId: Schema.NullOr(ProviderThreadId),
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),

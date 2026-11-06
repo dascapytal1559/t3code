@@ -64,25 +64,19 @@ export function coordinatorGroupSlot<T extends Pick<EnvironmentThreadShell, "dec
 }
 
 /**
- * Where a row sits in the tree under the coordinator card, if it is in the tree. Crewmates hang
- * on the guide line, which collapses with them. Decisions follow the crew at the same indent but
- * off the line, so collapsing the crew never hides what needs the user; with no coordinator card
- * listed they stay at the top level.
+ * Where a row sits in the tree under the coordinator card, if it is in the tree. Crewmates and
+ * then decisions hang on the guide line and collapse together; with no coordinator card listed,
+ * decisions stay at the top level.
  */
 export function resolveCrewTreePlace(input: {
   readonly slot: "coordinator" | "crew" | "decision";
   readonly coordinatorListed: boolean;
   readonly crewExpanded: boolean;
-  readonly lastCrewmate: boolean;
+  readonly lastInTree: boolean;
 }): CrewTreePlace | undefined {
-  switch (input.slot) {
-    case "coordinator":
-      return undefined;
-    case "decision":
-      return input.coordinatorListed ? "indent" : undefined;
-    case "crew":
-      return !input.crewExpanded ? "indent" : input.lastCrewmate ? "last" : "branch";
-  }
+  if (input.slot === "coordinator") return undefined;
+  if (input.slot === "decision" && !input.coordinatorListed) return undefined;
+  return !input.crewExpanded ? "indent" : input.lastInTree ? "last" : "branch";
 }
 
 /** Newest update first, so a decision whose context just changed comes to the top. */

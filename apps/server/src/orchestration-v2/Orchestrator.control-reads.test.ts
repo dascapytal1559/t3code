@@ -1678,6 +1678,7 @@ it.effect(
       const decision = {
         taskId: "camera-view-first-camera",
         title: "First window camera",
+        projectName: "home-server",
         question: "Give the word to buy the first window-view camera?",
         options: [{ label: "Buy it" }, { label: "Not yet" }],
         entries: [
@@ -1720,6 +1721,8 @@ it.effect(
       assert.equal(created.shell.decisionOf, coordinator);
       // The sidebar counts a decision's age from its latest entry, not from when it was made.
       assert.equal(created.shell.decisionUpdatedAt, "2026-11-05T05:11:27.000Z");
+      assert.equal(created.thread.decision?.projectName, "home-server");
+      assert.equal(created.shell.decisionProjectName, "home-server");
       assert.equal(created.shell.latestRunId, null);
 
       // An upstream-built client typing into it must not start an agent.
@@ -1772,6 +1775,7 @@ it.effect(
       assert.equal(cleared.thread.decision, null);
       assert.equal(cleared.shell.decisionOf, coordinator);
       assert.equal(cleared.shell.decisionUpdatedAt, undefined);
+      assert.equal(cleared.shell.decisionProjectName, undefined);
     }).pipe(Effect.provide(layerTest)),
 );
 

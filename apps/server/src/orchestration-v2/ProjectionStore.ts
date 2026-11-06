@@ -1530,12 +1530,14 @@ const linkCardStillAsks = (
 
 function decisionShellFields(
   thread: Pick<OrchestrationV2AppThread, "decisionOf" | "decision">,
-): Pick<OrchestrationV2ThreadShell, "decisionOf" | "decisionUpdatedAt"> {
+): Pick<OrchestrationV2ThreadShell, "decisionOf" | "decisionUpdatedAt" | "decisionProjectName"> {
   if (thread.decisionOf === undefined) return {};
   const decisionUpdatedAt = threadDecisionUpdatedAt(thread.decision);
+  const decisionProjectName = thread.decision?.projectName;
   return {
     decisionOf: thread.decisionOf,
     ...(decisionUpdatedAt === null ? {} : { decisionUpdatedAt }),
+    ...(decisionProjectName === undefined ? {} : { decisionProjectName }),
   };
 }
 

@@ -55,6 +55,8 @@ export type ThreadDecisionEntry = typeof ThreadDecisionEntry.Type;
 const decisionFields = {
   taskId: Text(200),
   title: Text(200),
+  /** The project the decision is about, which its sidebar card shows instead of the thread's. */
+  projectName: Schema.optional(Text(200)),
   question: Text(4_000),
   options: Schema.Array(ThreadDecisionOption).check(Schema.isMaxLength(12)),
   entries: Schema.Array(ThreadDecisionEntry).check(Schema.isMaxLength(24)),

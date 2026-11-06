@@ -213,8 +213,9 @@ project and status, then its title. While it is idle, the status slot reads
 "started 1d ago" instead of the last activity time, because age is what says a
 long session is due for a fresh one; Working, Waiting and anything that needs
 the user show as usual. The age is the thread's, since a `/clear` keeps the
-thread. It never shows a branch line. Its crewmates hang below it as a tree that
-collapses to a count. A pinned coordinator (see below) gets this card even with
+thread. It never shows a branch line. Its crewmates, then its decisions (see
+[Decision threads](#decision-threads)), hang below it as a tree that collapses
+to a count. A pinned coordinator (see below) gets this card even with
 no crew; without any coordinator the sidebar is unchanged.
 
 The main session is always titled "Ahoy!", because a generated title for
@@ -296,21 +297,22 @@ forking FirstMate cannot make a second coordinator. Code:
 
 ## Decision threads
 
-<img src="media/decision-sidebar.png" width="256" alt="The sidebar: the FirstMate card titled Ahoy!, two crewmates on the tree's guide line below it, then three decision cards at the same indent, each reading firstmate and an orange raised hand with Needs captain, its title, and the gray age at the end of the title line">
+<img src="media/decision-sidebar.png" width="256" alt="The sidebar: the FirstMate card titled Ahoy!, then on one guide line two crewmates and three decision cards, each decision reading its project (home-server, rituals, or the thread's own when it names none), an orange raised hand with Needs captain, its title, and the gray age at the end of the title line">
 
 Something FirstMate needs from the captain is its own thread: a real thread in
 FirstMate's project with no agent and no turn. The sidebar lists decision
 threads one level down under the FirstMate card, after all its crew and before
-Pinned and ordinary threads, newest update first. They sit at the crew's indent
-but off the crew's guide line, so collapsing the crew leaves them in view; with
-no FirstMate card listed they stay at the top level. A card shows its project
-and title like a crewmate's, an orange raised hand reading "Needs captain" in
-the status slot (Woke still shows after a snooze), and, in the usual gray at
-the end of the title line, the time since the decision's latest entry, not
-since the thread was made. The project is the thread's own, which is
-FirstMate's, because the decision record carries no project of its own. Snooze,
-Settle, unread and archive work as on any thread; a snoozed or settled decision
-goes to those shelves.
+Pinned and ordinary threads, newest update first. They hang on the crew's guide
+line after the crew, and the tree's toggle collapses crew and decisions
+together, its count covering both; with no FirstMate card listed they stay at
+the top level. A card shows a project and its title like a crewmate's, an
+orange raised hand reading "Needs captain" in the status slot (Woke still shows
+after a snooze), and, in the usual gray at the end of the title line, the time
+since the decision's latest entry, not since the thread was made. The project
+is the one the decision names in `decision.projectName`, with a monogram drawn
+from that name; without one the card shows the thread's own project, which is
+FirstMate's. Snooze, Settle, unread and archive work as on any thread; a
+snoozed or settled decision goes to those shelves.
 
 ![The open decision shows its question and options, FirstMate's message, an Updated divider with what changed, and a reply box with option chips](media/decision-thread.png)
 
@@ -332,10 +334,13 @@ The records, for FirstMate's side:
   `parentThreadId` and a workspace strategy other than root. `projectId` and
   the model default to the coordinator's. The thread's title follows
   `decision.title`.
-- `decision` is `{ taskId, title, question, options[{label, detail?}],
-  entries[{at, kind: raised|update, changed?, text, message?{thread, id?},
-  attachments?[{kind, path, label?}]}], revision }`: entry text at most 8,192
-  characters, 24 entries, 12 options, 12 attachments per entry. `revision` is
+- `decision` is `{ taskId, title, projectName?, question, options[{label,
+  detail?}], entries[{at, kind: raised|update, changed?, text,
+  message?{thread, id?}, attachments?[{kind, path, label?}]}], revision }`:
+  entry text at most 8,192 characters, 24 entries, 12 options, 12 attachments
+  per entry. `projectName` (at most 200 characters) is the project the decision
+  is about, such as the backlog task's repo, which the sidebar card shows;
+  decisions without it stay valid. `revision` is
   optional on input: given, it is stored as is; omitted, the server stores the
   previous one plus one (1 at launch).
 - `t3_thread_update` `set_decision` with `decision` replaces it (and the
@@ -358,7 +363,8 @@ is new, so the fork refuses any agent turn on a decision thread server-side
 App Store mobile app, list it as an ordinary empty thread, and typing there
 gets an error instead of starting an agent. The fields stay out of `lineage`
 for the same reason as `crewOf`, and forks drop them. The shell carries only
-`decisionOf` and `decisionUpdatedAt`; the payload rides on the thread read, so
+`decisionOf`, `decisionUpdatedAt` and `decisionProjectName`; the payload rides
+on the thread read, so
 the thread list stays small. The mobile app has no decision view yet: it needs
 one, plus crew nesting under FirstMate, before the phone lists decisions under
 FirstMate as the web does.
@@ -372,9 +378,10 @@ optional fields in `orchestrationV2.ts`, `orchestratorMcp.ts` and
 `ProjectionStore.ts` shells; the launch handler and tool in
 `mcp/toolkits/project/`; `ThreadMetadataMcpService.ts`; the decision slot in
 `coordinatorGroup.logic.ts`, `Sidebar.tsx`, `Sidebar.logic.ts` and
-`Sidebar.drag.ts`; the Needs captain status, the age and the hidden model icon
-in `SidebarThreadRow.tsx`; and the switch in `ThreadRouteView.tsx`, which keeps
-`ChatView.tsx` and `ChatComposer.tsx` untouched.
+`Sidebar.drag.ts`; the Needs captain status, the age, the hidden model icon
+and the decision's project in `SidebarThreadRow.tsx`; and the switch in
+`ThreadRouteView.tsx`, which keeps `ChatView.tsx` and `ChatComposer.tsx`
+untouched.
 
 ## Sidebar cards stay two lines
 

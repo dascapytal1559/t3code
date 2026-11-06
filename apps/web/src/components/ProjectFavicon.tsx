@@ -115,6 +115,14 @@ function AutomaticProjectFavicon(input: Parameters<typeof ProjectFavicon>[0]) {
   );
 }
 
+/** The monogram a project without a favicon gets, for a project known only by name. */
+export function ProjectNameMonogram(props: { name: string; className?: string | undefined }) {
+  const identity = deriveProjectIdentity(props.name);
+  return (
+    <ProjectMonogram text={identity.monogram} color={identity.color} className={props.className} />
+  );
+}
+
 function ProjectFaviconFallback({
   className,
   icon: Icon,
@@ -127,10 +135,7 @@ function ProjectFaviconFallback({
   readonly projectName?: string | undefined;
 }) {
   if (projectName && projectName.trim().length > 0) {
-    const identity = deriveProjectIdentity(projectName);
-    return (
-      <ProjectMonogram text={identity.monogram} color={identity.color} className={className} />
-    );
+    return <ProjectNameMonogram name={projectName} className={className} />;
   }
 
   if (emoji) {

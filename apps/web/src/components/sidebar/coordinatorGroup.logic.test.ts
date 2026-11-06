@@ -158,14 +158,13 @@ describe("resolveCrewTreePlace", () => {
     ["a crewmate on the line", "crew", true, true, false, "branch"],
     ["the last crewmate", "crew", true, true, true, "last"],
     ["a crewmate shown under collapsed crew", "crew", true, false, false, "indent"],
-    // Decisions hang under the coordinator but off the crew's collapsible line.
-    ["a decision", "decision", true, true, false, "indent"],
-    ["a decision under collapsed crew", "decision", true, false, false, "indent"],
-    ["a decision with no coordinator card listed", "decision", false, true, false, undefined],
-  ] as const)("places %s", (_name, slot, coordinatorListed, crewExpanded, lastCrewmate, place) => {
-    expect(resolveCrewTreePlace({ slot, coordinatorListed, crewExpanded, lastCrewmate })).toBe(
-      place,
-    );
+    // Decisions hang on the same line after the crew and collapse with it.
+    ["a decision on the line", "decision", true, true, false, "branch"],
+    ["the last decision", "decision", true, true, true, "last"],
+    ["a decision shown under collapsed crew", "decision", true, false, false, "indent"],
+    ["a decision with no coordinator card listed", "decision", false, true, true, undefined],
+  ] as const)("places %s", (_name, slot, coordinatorListed, crewExpanded, lastInTree, place) => {
+    expect(resolveCrewTreePlace({ slot, coordinatorListed, crewExpanded, lastInTree })).toBe(place);
   });
 });
 

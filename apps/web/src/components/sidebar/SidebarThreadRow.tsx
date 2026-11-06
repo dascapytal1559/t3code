@@ -103,7 +103,7 @@ import {
 } from "../ThreadStatusIndicators";
 import { pickSnoozePreset, resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
 import { useThreadShell } from "../../state/entities";
-import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
+import { ProjectFavicon, ProjectNameMonogram, type ProjectFaviconProject } from "../ProjectFavicon";
 import {
   CREW_TREE_INDENT_CLASS_NAME,
   CREW_TREE_TRUNK_CLASS_NAME,
@@ -163,6 +163,30 @@ function StartedAgoLabel(props: { timestamp: string }) {
 function threadTimeTimestamp(thread: SidebarThreadSummary): string {
   // A decision has no messages of its own; its age runs from its latest entry.
   return thread.decisionUpdatedAt ?? thread.latestUserMessageAt ?? thread.updatedAt;
+}
+
+// A decision's thread lives in the coordinator's project, so a row shows the project the decision
+// names instead, when it names one.
+function threadProjectName(
+  thread: SidebarThreadSummary,
+  projectDisplayName: string | null,
+): string | null {
+  return thread.decisionProjectName ?? projectDisplayName;
+}
+
+function ThreadProjectIcon(props: {
+  thread: SidebarThreadSummary;
+  project: ProjectFaviconProject | null;
+  className: string;
+}) {
+  if (props.thread.decisionProjectName !== undefined) {
+    return (
+      <ProjectNameMonogram name={props.thread.decisionProjectName} className={props.className} />
+    );
+  }
+  return props.project ? (
+    <ProjectFavicon project={props.project} className={props.className} />
+  ) : null;
 }
 
 function JumpHintBadge(props: { label: string }) {
@@ -296,7 +320,7 @@ function SidebarThreadTooltip({
       >
         {projectDisplayName ? (
           <div className="flex min-w-0 items-center gap-2">
-            {project ? <ProjectFavicon project={project} className="size-3 shrink-0" /> : null}
+            <ThreadProjectIcon thread={thread} project={project} className="size-3 shrink-0" />
             <div className="min-w-0 truncate text-foreground/75">{projectDisplayName}</div>
           </div>
         ) : null}
@@ -681,6 +705,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     variant,
     variantAction,
   } = props;
+  const projectDisplayName = threadProjectName(thread, props.projectDisplayName);
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
   const threadKey = scopedThreadKey(threadRef);
   const canOperateThread = useEnvironmentScope(thread.environmentId, AuthOrchestrationOperateScope);
@@ -852,7 +877,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     <SidebarThreadTooltip
       thread={thread}
       project={props.project}
-      projectDisplayName={props.projectDisplayName}
+      projectDisplayName={projectDisplayName}
       environmentLabel={props.environmentLabel}
       environmentMachine={props.environmentMachine}
       providerEntry={providerEntry}
@@ -1061,7 +1086,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       crewStatusLabel ??
       (needsCaptain ? NEEDS_CAPTAIN_LABEL : coordinatorShowsAge ? null : topStatus?.label) ??
       null,
-    projectDisplayName: props.projectDisplayName,
+    projectDisplayName,
     isActive: props.isActive,
   });
 
@@ -1311,9 +1336,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       "opacity-40 grayscale group-focus-within/sidebar-row:opacity-100 group-focus-within/sidebar-row:grayscale-0 group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
                   )}
                 >
-                  {props.project ? (
-                    <ProjectFavicon project={props.project} className="size-4" />
-                  ) : null}
+                  <ThreadProjectIcon thread={thread} project={props.project} className="size-4" />
                 </span>
               )}
               {draftIndicator}
@@ -1520,18 +1543,20 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             <div className="flex h-5 min-w-0 items-center gap-1.5">
               {/* A coordinator's icon goes first, so the crew tree's guide line stays under it. */}
               {props.coordinator ? null : draftIndicator}
-              {props.project ? (
-                <ProjectFavicon project={props.project} className="size-4 shrink-0" />
-              ) : null}
+              <ThreadProjectIcon
+                thread={thread}
+                project={props.project}
+                className="size-4 shrink-0"
+              />
               {props.coordinator ? draftIndicator : null}
               {/* Left of the status slot, the pin would slide when hover swaps the
                 label for the wider row controls. */}
               {pinIndicator}
-              {props.projectDisplayName ? (
+              {projectDisplayName ? (
                 <span
                   className={cn("min-w-0 flex-1 truncate font-normal text-secondary-label text-xs")}
                 >
-                  {props.projectDisplayName}
+                  {projectDisplayName}
                 </span>
               ) : (
                 <span className="flex-1" />
@@ -1743,10 +1768,11 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
 }) {
   const thread =
     useThreadShell(scopeThreadRef(props.thread.environmentId, props.thread.id)) ?? props.thread;
+  const projectDisplayName = threadProjectName(thread, props.projectDisplayName);
   const accessibility = resolveSidebarRowAccessibility({
     title: thread.title,
     statusLabel: null,
-    projectDisplayName: props.projectDisplayName,
+    projectDisplayName,
     isActive: props.isRouteActive,
   });
   const threadRef = scopeThreadRef(thread.environmentId, thread.id);
@@ -1830,18 +1856,17 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
             />
           }
         >
-          {props.project ? (
-            <ProjectFavicon
-              project={props.project}
-              className={cn(
-                "size-4 shrink-0 transition-opacity",
-                props.isSettled &&
-                  !props.isRouteActive &&
-                  !props.isHighlighted &&
-                  "opacity-40 grayscale group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
-              )}
-            />
-          ) : null}
+          <ThreadProjectIcon
+            thread={thread}
+            project={props.project}
+            className={cn(
+              "size-4 shrink-0 transition-opacity",
+              props.isSettled &&
+                !props.isRouteActive &&
+                !props.isHighlighted &&
+                "opacity-40 grayscale group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
+            )}
+          />
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="flex min-w-0 items-center gap-2.5">
               <span
@@ -1882,7 +1907,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
         <SidebarThreadTooltip
           thread={thread}
           project={props.project}
-          projectDisplayName={props.projectDisplayName}
+          projectDisplayName={projectDisplayName}
           environmentLabel={props.environmentLabel}
           environmentMachine={props.environmentMachine}
           providerEntry={providerEntry}

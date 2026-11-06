@@ -13,6 +13,8 @@ For FirstMate:
 - [Idle agents](fork/README.md#idle-agent-release-is-a-server-setting): idle release is a setting, and agents can be kept for good.
 - [Mark read](fork/README.md#mcp-can-mark-a-thread-read): FirstMate clears a worker's Done card without opening the app.
 - [Long sign-in](fork/README.md#firstmates-sign-in-lasts-10-years): FirstMate's sign-in lasts 10 years instead of 30 days, so it never needs renewing.
+- [Decision threads](fork/README.md#decision-threads): each call FirstMate needs from you is a thread under FirstMate, reading Needs captain.
+- [Clean session close](fork/README.md#a-closed-claude-session-waits-for-its-cli-to-exit): a closed Claude session waits for its CLI to exit, so FirstMate's next one keeps its lock.
 
 Also:
 
@@ -21,12 +23,14 @@ Also:
 - [Board](fork/README.md#board): a tab to sketch on screenshots and attach them to the chat.
 - [Twelve months of usage](fork/README.md#usage-reaches-twelve-months): longer periods, drawn as stacked bars.
 - [Muted usage rows](fork/README.md#usage-rows-can-be-muted): click a provider on the Usage page to mute it.
+- [Usage in the sidebar](fork/README.md#usage-limits-in-the-sidebar): one bar per provider shows what is left this week.
 - [Archived usage](fork/README.md#archived-usage): counts machines that no longer run T3.
 - [Upstream release note](fork/README.md#upstream-release-indicator): the sidebar says when upstream ships a release.
 - [App-bundled CLIs](fork/README.md#app-bundled-clis-are-updated-by-their-app): a CLI inside a macOS app is left for that app to update.
 - [`~` in provider paths](fork/README.md#-in-a-providers-executable-path): works for every provider.
 - [Stopped turns](fork/README.md#stopped-turns-close-their-approvals): their approvals close instead of staying pending.
 - [Two-line cards](fork/README.md#sidebar-cards-stay-two-lines): a lone PR badge no longer adds a third line.
+- [Window grows for the panel](fork/README.md#the-window-grows-for-the-right-panel): opening the right panel widens the desktop window, so the chat keeps its width.
 
 Details and pictures: [fork/README.md](fork/README.md).
 
