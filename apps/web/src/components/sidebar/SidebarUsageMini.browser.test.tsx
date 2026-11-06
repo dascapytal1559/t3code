@@ -103,7 +103,7 @@ describe("SidebarUsageMini", () => {
       .toBeVisible();
   });
 
-  it("splits a pooled provider's weekly bar by account and skips session and model rows", async () => {
+  it("draws a pooled provider as one combined weekly bar and skips session and model rows", async () => {
     setup([
       provider("Claude", "claudeAgent", "one@example.com", [
         window("five_hour", "Session", 50),
@@ -120,6 +120,6 @@ describe("SidebarUsageMini", () => {
     await expect
       .element(screen.getByRole("button", { name: "Usage: Claude 53% left" }))
       .toBeVisible();
-    expect(screen.container.querySelectorAll("[data-usage-segment]")).toHaveLength(2);
+    expect(screen.container.querySelectorAll("[data-usage-segment]")).toHaveLength(1);
   });
 });

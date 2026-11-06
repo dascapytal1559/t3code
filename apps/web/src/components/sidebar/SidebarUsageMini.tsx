@@ -4,7 +4,6 @@ import {
   collectLimitPools,
   displayLimitWindows,
   formatResetsIn,
-  type LimitAccount,
   type LimitPool,
   type LimitPoolWindow,
   type LimitPresentations,
@@ -37,8 +36,12 @@ function usageRows(presentations: LimitPresentations, now: number): readonly Usa
   });
 }
 
-function accountColor(account: LimitAccount): string {
-  return normalizeProviderAccentColor(account.accentColor) ?? barColor(account.driver);
+/** The first account's accent, so a single-account row keeps its colour; pooled accounts share it. */
+function rowColor(row: UsageRow): string {
+  const account = row.window.columns[0]?.account;
+  return (
+    (account && normalizeProviderAccentColor(account.accentColor)) ?? barColor(row.pool.driver)
+  );
 }
 
 export function SidebarUsageMini() {
@@ -78,31 +81,18 @@ export function SidebarUsageMini() {
               iconClassName="size-3.5 text-sidebar-muted-foreground"
             />
             <span
-              className="grid min-w-0 flex-1 gap-x-0.5"
-              style={{
-                gridTemplateColumns: `repeat(${row.window.columns.length}, minmax(0, 1fr))`,
-              }}
+              data-usage-segment
+              className="relative h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-foreground/8"
             >
-              {row.window.columns.map((column) => {
-                const remaining = column.window ? remainingPercent(column.window) : 0;
-                return (
-                  <span
-                    key={column.account.key}
-                    data-usage-segment
-                    className="relative h-1.5 overflow-hidden rounded-full bg-foreground/8"
-                  >
-                    {remaining > 0 ? (
-                      <span
-                        className="absolute inset-y-0 left-0 rounded-full opacity-60"
-                        style={{
-                          width: `${remaining}%`,
-                          backgroundColor: accountColor(column.account),
-                        }}
-                      />
-                    ) : null}
-                  </span>
-                );
-              })}
+              {row.window.remainingPercent > 0 ? (
+                <span
+                  className="absolute inset-y-0 left-0 rounded-full opacity-60"
+                  style={{
+                    width: `${row.window.remainingPercent}%`,
+                    backgroundColor: rowColor(row),
+                  }}
+                />
+              ) : null}
             </span>
             <span className="w-8 shrink-0 text-right text-2xs text-sidebar-muted-foreground tabular-nums">
               {row.window.remainingPercent}%

@@ -77,11 +77,11 @@ has no row toggles.
 
 The captain wants usage visible without opening the Usage page, so the web and
 desktop sidebar shows a small readout between the Settled row and the bottom
-icons: one line per provider the Limits view shows, with its icon, a thin bar
-split per account (Claude and Claude2 side by side) and the percent left in its
-weekly window, or its first window when it has no weekly one. Model windows
-such as Weekly · Fable stay on the page. The tooltip has each account's figure
-and reset time; a click opens the Usage page. It reads the same provider
+icons: one line per provider the Limits view shows, with its icon, one thin
+bar and the percent left in its weekly window, or its first window when it has
+no weekly one. A provider with several accounts (Claude and Claude2) gets one
+combined bar, not one per account. Model windows such as Weekly · Fable stay
+on the page. The tooltip has each account's figure and reset time; a click opens the Usage page. It reads the same provider
 statuses as the Limits view and fetches nothing, shows nothing until limits
 arrive, and leaves out providers muted on the page. The phone web sidebar shows
 it too; the mobile app does not.
