@@ -3,9 +3,17 @@ import {
   effectiveSnoozed,
   type ThreadSnoozeShell,
 } from "@t3tools/client-runtime/state/thread-settled";
-import { CommandId, type ThreadDecisionAttachment } from "@t3tools/contracts";
+import {
+  CommandId,
+  type EnvironmentId,
+  type Objectives,
+  type ScopedThreadRef,
+  type ServerSettings,
+  type ThreadDecisionAttachment,
+} from "@t3tools/contracts";
 
 import { randomUUID } from "../../lib/utils";
+import { formatRelativeTimeLabel } from "../../timestampFormat";
 
 type DecisionShell = ThreadSnoozeShell &
   Pick<
@@ -68,6 +76,16 @@ export function groupNeedsMeDecisions<T extends DecisionShell>(
 }
 
 /**
+ * When the call was first raised: `decision.since` (FirstMate's hold start), else its raised
+ * entry, as the shell's `decisionSince` carries them, else when the thread was made.
+ */
+function decisionRaisedAt(
+  thread: Pick<EnvironmentThreadShell, "decisionSince" | "createdAt">,
+): string {
+  return thread.decisionSince ?? thread.createdAt;
+}
+
+/**
  * Where a row's age counts from: FirstMate's latest real change, else when the call began
  * waiting. Rewording the original context is neither, so it keeps its age.
  */
@@ -75,10 +93,79 @@ export function decisionAgeTimestamp(
   thread: Pick<EnvironmentThreadShell, "decisionChangedAt" | "decisionSince" | "createdAt">,
 ): string {
   const { decisionChangedAt } = thread;
-  const since = thread.decisionSince ?? thread.createdAt;
+  const since = decisionRaisedAt(thread);
   return decisionChangedAt !== undefined && ms(decisionChangedAt) > ms(since)
     ? decisionChangedAt
     : since;
+}
+
+const dayLabel = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
+export const formatDay = (iso: string) => dayLabel.format(Date.parse(iso));
+/** A `YYYY-MM-DD` day as the same label, read in local time so it never shifts a day. */
+export const formatCalendarDay = (day: string) => formatDay(`${day}T00:00:00`);
+
+/** The gray detail on a row: Needs you its age, Later the day it was raised, Scheduled its wake day. */
+export function needsMeRowDetail(
+  thread: Pick<
+    EnvironmentThreadShell,
+    "decisionChangedAt" | "decisionSince" | "createdAt" | "snoozedUntil"
+  >,
+  section: keyof NeedsMeGroups<unknown>,
+  nowMs: number,
+): string {
+  switch (section) {
+    case "open":
+      return formatRelativeTimeLabel(decisionAgeTimestamp(thread), nowMs);
+    case "later":
+      return `raised ${formatDay(decisionRaisedAt(thread))}`;
+    case "scheduled":
+      return thread.snoozedUntil == null ? "" : `back ${formatDay(thread.snoozedUntil)}`;
+  }
+}
+
+/**
+ * The objectives the Bridge shows: the host chat's environment's, else the first connected
+ * environment that has some. FirstMate normally sets them on one environment only.
+ */
+export function bridgeObjectives(
+  settingsByEnvironment: ReadonlyMap<
+    EnvironmentId,
+    { readonly settings: Pick<ServerSettings, "objectives"> }
+  >,
+  hostEnvironmentId: EnvironmentId,
+): Objectives | null {
+  const host = settingsByEnvironment.get(hostEnvironmentId)?.settings.objectives;
+  if (host != null) return host;
+  for (const config of settingsByEnvironment.values()) {
+    if (config.settings.objectives != null) return config.settings.objectives;
+  }
+  return null;
+}
+
+/**
+ * How a decision's Markdown links files. A click opens the file in the panel the user is looking
+ * at, the host chat's, so paths are made relative to that chat's workspace; relative links still
+ * resolve against the decision's own project. Another environment's host cannot read its files.
+ */
+export function decisionMarkdownScope(input: {
+  readonly decisionRef: ScopedThreadRef;
+  readonly hostRef: ScopedThreadRef;
+  readonly decisionRoot: string | undefined;
+  readonly hostRoot: string | undefined;
+}): {
+  readonly threadRef: ScopedThreadRef;
+  readonly cwd: string | undefined;
+  readonly imageBaseDir: string | undefined;
+} {
+  const { decisionRoot } = input;
+  if (input.hostRef.environmentId !== input.decisionRef.environmentId) {
+    return { threadRef: input.decisionRef, cwd: decisionRoot, imageBaseDir: decisionRoot };
+  }
+  return {
+    threadRef: input.hostRef,
+    cwd: input.hostRoot ?? decisionRoot,
+    imageBaseDir: decisionRoot ?? input.hostRoot,
+  };
 }
 
 const PICTURE_PATH = /\.(?:png|jpe?g|gif|webp|avif|svg)$/i;

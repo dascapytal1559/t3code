@@ -1,4 +1,8 @@
-import { OrchestratorMcpFailure, type ServerSettings } from "@t3tools/contracts";
+import {
+  OrchestratorMcpFailure,
+  type ServerSettings,
+  type ServerSettingsPatch,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Environment from "../../../environment/ServerEnvironment.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
@@ -40,6 +44,22 @@ const access = Effect.gen(function* () {
     });
   return { ...context, descriptor, settings: yield* Settings.ServerSettingsService };
 });
+const updateSettings = Effect.fn("EnvironmentMcp.updateSettings")(function* <E, R>(
+  patch: ServerSettingsPatch,
+  check: Effect.Effect<unknown, E, R>,
+) {
+  const scope = yield* McpInvocationContext.McpInvocationContext;
+  const executor = yield* ThreadCommandExecutor.ThreadCommandExecutor;
+  const update = Effect.gen(function* () {
+    // The turn may have ended, or the thread's modes changed, while this waited for the lock.
+    yield* check;
+    const { settings } = yield* access;
+    return yield* settings.updateSettings(patch).pipe(Effect.mapError(unavailable));
+  });
+  return yield* scope.thread === undefined
+    ? update
+    : executor.withLock(scope.thread.threadId, update);
+});
 export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
   t3_environment_read: McpToolAccess.reads(() =>
     Effect.gen(function* () {
@@ -55,20 +75,17 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
     }),
   ),
   t3_environment_preferences_update: McpToolAccess.writesEnvironment((patch, check) =>
-    Effect.gen(function* () {
-      const scope = yield* McpInvocationContext.McpInvocationContext;
-      const executor = yield* ThreadCommandExecutor.ThreadCommandExecutor;
-      const update = Effect.gen(function* () {
-        // The turn may have ended, or the thread's modes changed, while this waited for the lock.
-        yield* check;
-        const { settings } = yield* access;
-        return preferences(
-          yield* settings.updateSettings(patch).pipe(Effect.mapError(unavailable)),
-        );
-      });
-      return yield* scope.thread === undefined
-        ? update
-        : executor.withLock(scope.thread.threadId, update);
-    }),
+    updateSettings(patch, check).pipe(Effect.map(preferences)),
+  ),
+  t3_objectives_set: McpToolAccess.writesEnvironment(({ markdown, lastReviewed }, check) =>
+    updateSettings(
+      {
+        objectives:
+          markdown === null
+            ? null
+            : { markdown, ...(lastReviewed === undefined ? {} : { lastReviewed }) },
+      },
+      check,
+    ).pipe(Effect.map(({ objectives }) => ({ objectives }))),
   ),
 });

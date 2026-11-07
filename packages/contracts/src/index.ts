@@ -46,6 +46,7 @@ export * from "./orchestratorMcp.ts";
 export * from "./peerLink.ts";
 export * from "./threadMetadataMcp.ts";
 export * from "./threadDecision.ts";
+export * from "./objectives.ts";
 export * from "./threadPullRequest.ts";
 export * from "./threadSearch.ts";
 export * from "./threadTags.ts";

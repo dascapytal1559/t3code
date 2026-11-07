@@ -2,6 +2,8 @@ import {
   BackgroundActivityProfile,
   BackgroundActivityProfileSelection,
   ExecutionEnvironmentDescriptor,
+  Objectives,
+  ObjectivesDay,
   OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpFailure,
   ServerSettings,
@@ -67,4 +69,20 @@ const EnvironmentPreferencesTool = Tool.make("t3_environment_preferences_update"
   }),
   success: Schema.Struct(PreferenceFields),
 }).annotate(Tool.Destructive, true);
-export const EnvironmentToolkit = Toolkit.make(EnvironmentReadTool, EnvironmentPreferencesTool);
+const ObjectivesSetTool = Tool.make("t3_objectives_set", {
+  ...shared,
+  description:
+    "Replace the user's high level objectives, shown atop T3's Bridge tab. `markdown`: the whole list, one bullet each (**Name** then a sentence or two); null clears them.",
+  parameters: Schema.Struct({
+    markdown: Schema.NullOr(Objectives.fields.markdown),
+    lastReviewed: Schema.optionalKey(
+      ObjectivesDay.annotate({ description: "Day last reviewed, YYYY-MM-DD." }),
+    ),
+  }),
+  success: Schema.Struct({ objectives: Schema.NullOr(Objectives) }),
+}).annotate(Tool.Destructive, true);
+export const EnvironmentToolkit = Toolkit.make(
+  EnvironmentReadTool,
+  EnvironmentPreferencesTool,
+  ObjectivesSetTool,
+);

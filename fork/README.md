@@ -217,7 +217,7 @@ thread. Neither it nor anything in its tree shows a branch line, since a worker'
 branch matters little inside FirstMate; other threads and the hover card keep it
 (`isThreadMetaLineEmpty` in `apps/web/src/components/Sidebar.logic.ts`). Its crewmates hang below it as a
 tree that collapses to a count. Its decisions are not in the sidebar; see
-[Needs me](#needs-me). A pinned coordinator (see below) gets this card even with
+[Bridge](#bridge). A pinned coordinator (see below) gets this card even with
 no crew; without any coordinator the sidebar is unchanged.
 
 The main session is always titled "Ahoy!", because a generated title for
@@ -313,35 +313,53 @@ server takes messages for crew as before, so FirstMate's MCP messages arrive
 unchanged, and mobile has no lock. Code: `crewLocked` in
 `apps/web/src/components/chat/ChatComposer.tsx`.
 
-## Needs me
+## Bridge
 
-![A chat with the Needs me tab beside it: four open decisions and four under Later with their wake dates](media/needs-me-list.jpg)
+![A chat with the Bridge tab beside it: four objectives on top, then three decisions under Needs you, two under Later with the day each was raised, and one under Scheduled with its return day](media/bridge-list.jpg)
 
-Something FirstMate needs from the captain is a decision, listed in the right
-panel's "Needs me" tab, beside any chat. It opens from the panel's launcher or
-"+" menu (N), or "Open Needs me" in the command palette. On phone web it opens
-as a sheet like the other right-panel tabs. The tab lists open decisions,
-newest update first, each with its project, title and, in gray, the time since
-FirstMate's latest change (an `update` entry), else since the call started
-waiting (`decision.since`, else its raised entry, else when it was made), so an
-update an hour ago reads "1h ago" while rewording the raised context does not
-reset the age. Rows carry no New or Updated mark. Snoozed
-decisions wait under "Later" with their wake date ("no date" for an undated
-snooze). A settled decision is not listed, even while snoozed. The project is the one the decision names in `decision.projectName`;
-without one it is the thread's own, which is FirstMate's. Nothing in the
-sidebar counts or lists decisions.
+The right panel's "Bridge" tab (once "Needs me") is the captain's overview
+beside any chat: his objectives on top, then what FirstMate needs from him. It
+opens from the panel's launcher or "+" menu (N), or "Open Bridge" in the
+command palette, which still finds it by "needs me". On phone web it opens as a
+sheet like the other right-panel tabs. Internal names (`needs-me` surface kind,
+`components/needsMe/`) keep the old name.
 
-<img src="media/needs-me-decision.jpg" width="400" alt="An open decision in the Needs me tab: its question and options, then FirstMate's message as sent">
+Objectives are a short Markdown list FirstMate pushes (see the records below),
+shown read-only under "Objectives · reviewed <day>". Each objective is clamped
+to two lines and the list to a short height, so Needs you stays in view;
+clicking the heading expands it. With none set the section is hidden. The tab
+shows the objectives of the chat's own environment, else of the first
+connected environment that has some.
+
+Something FirstMate needs from the captain is a decision. "Needs you" lists open
+decisions, newest update first, each with its project, title and, in gray, the
+time since FirstMate's latest change (an `update` entry), else since the call
+started waiting (`decision.since`, else its raised entry, else when it was
+made), so an update an hour ago reads "1h ago" while rewording the raised
+context does not reset the age. Rows carry no New or Updated mark. Undated
+snoozes wait under "Later", most recently snoozed first, each with the day the
+call was raised ("raised 2 Nov", from the same `since`, raised entry or
+creation); dated ones wait under "Scheduled", soonest first, with their wake day
+("back 12 Nov"). A settled decision is not listed, even while snoozed. The
+project is the one the decision names in `decision.projectName`; without one it
+is the thread's own, which is FirstMate's. Nothing in the sidebar counts or
+lists decisions.
+
+<img src="media/bridge-decision.jpg" width="400" alt="An open decision in the Bridge tab: its question and options, then FirstMate's messages as sent with their file attachments">
 
 Opening a row shows the question and options, then FirstMate's messages as
 sent, each with "In FirstMate's chat", an "Updated" divider with the one-line
 what-changed before each update, and attachments (pictures inline, reports and
-links as file chips, paths relative to FirstMate's project). Option chips and
-"Later" fill the reply box. "Send to FirstMate" puts one ordinary user message
-into FirstMate's chat, queued behind a running turn as the composer's Queue
-does or starting a turn when FirstMate is idle, and settles the decision. If
-the chat beside the panel is not FirstMate's, sending switches to it and opens
-Needs me beside it. The toast's Undo takes the message back while it is still
+links as file chips, paths relative to FirstMate's project). A file chip or
+file link opens the file in a tab of this same panel, as a chat's file links
+do: paths are taken relative to the chat beside it, while relative links still
+resolve against FirstMate's project (`decisionMarkdownScope`). A host chat on
+another environment cannot read FirstMate's files, so there a click does
+nothing visible. Option chips and "Later" fill the reply box. "Send to
+FirstMate" puts one ordinary user message into FirstMate's chat, queued behind
+a running turn as the composer's Queue does or starting a turn when FirstMate
+is idle, and settles the decision. If the chat beside the panel is not
+FirstMate's, sending switches to it and opens the Bridge beside it. The toast's Undo takes the message back while it is still
 queued, unsettles the decision and reopens its row with your words restored;
 once FirstMate has started on it, it stays sent. A decision thread's own
 address opens FirstMate's chat with that decision open in the tab; an answered
@@ -374,7 +392,21 @@ The records, for FirstMate's side:
   `decisionOf`; the result reports `decisionRevision`. Thread reads report
   `decisionOf` and `decision`; thread lists report `decisionOf` only.
 - Snooze, settle and archive are the thread's own: a snoozed decision moves to
-  Later, and a settled or archived one leaves the tab, snoozed or not.
+  Later (no wake time) or Scheduled (with one), and a settled or archived one
+  leaves the tab, snoozed or not.
+- `t3_objectives_set` replaces the objectives, which T3 keeps in this
+  environment's server settings (`objectives` in `settings.json`), so they
+  survive a restart and reach every connected client on the settings stream.
+  Input: `{ markdown: string | null, lastReviewed?: "YYYY-MM-DD" }`.
+  `markdown` is the whole list, at most 8,192 characters, trimmed and not
+  empty, normally one bullet per objective: `- **Name** — a sentence or two`;
+  send the list only, with no heading or "Last reviewed" line. `lastReviewed`
+  is the calendar day they were last reviewed; leaving it out stores none.
+  `markdown: null` clears them and ignores `lastReviewed`. Each call replaces
+  the whole value. The result is `{ objectives: { markdown, lastReviewed? } |
+  null }`, the stored value. Like `t3_environment_preferences_update` it needs
+  a full-access client or a live full-access caller thread, and refuses a
+  linked environment's caller. The captain cannot edit them in T3.
 - The reply message reads `**Decision · <title>**`, then the line
   `needs-me-task: <taskId>`, a blank line, the question quoted with `> `, a
   blank line, then the captain's words. Upstream renders user messages without
@@ -400,7 +432,7 @@ reason as `crewOf`, and forks drop them. The shell carries only `decisionOf`,
 `decisionProjectName`; the payload rides on the thread read of the open row, so
 the thread list stays small. The command palette's thread search still finds
 decision threads, and picking one opens it in the tab, or FirstMate's chat
-alone for an answered one. The mobile app has no Needs me screen yet.
+alone for an answered one. The mobile app has no Bridge screen yet.
 
 Code: `packages/contracts/src/threadDecision.ts`,
 `apps/server/src/orchestration-v2/DecisionReplyService.ts` (the
@@ -420,13 +452,18 @@ launcher and "+" menu entries and tab title and icon in `RightPanelTabs.tsx`,
 `RightPanelSurfaceContent.tsx`, `useRightPanelActions.ts`, the prop in
 `ChatView.tsx`, a command palette item, the sidebar's visibility filter
 (`filterSidebarV2VisibleThreads` in `Sidebar.logic.ts`) and the redirect in
-`ThreadRouteView.tsx`.
+`ThreadRouteView.tsx`. Objectives: `packages/contracts/src/objectives.ts`, the
+`objectives` field in `ServerSettings` and `ServerSettingsPatch`
+(`settings.ts`), its whole-value replace in `applyServerSettingsPatch`
+(`packages/shared/src/serverSettings.ts`), the tool in
+`mcp/toolkits/environment/`, its row in `t3McpToolPresentation.ts` and the
+larger `agentContextBudget.json`.
 
 ## Snooze with no date
 
 A thread can be snoozed with no wake time: it sits on the Snoozed shelf until
 someone wakes it, and no timer brings it back. FirstMate parks decisions older
-than a day this way, so they wait under Needs me's Later.
+than a day this way, so they wait under the Bridge's Later.
 On the shelf, dated snoozes come first, soonest wake first, then undated ones,
 newest first, each showing its usual age ("3d") where a dated row shows the
 alarm and time left ("in 13d"). A question, approval or

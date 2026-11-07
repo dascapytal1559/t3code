@@ -33,6 +33,7 @@ import {
   ProviderOptionSelections,
 } from "./model.ts";
 import { ModelSelection } from "./modelSelection.ts";
+import { Objectives } from "./objectives.ts";
 import { ProjectScript, type ProjectMutation } from "./project.ts";
 import { DEFAULT_RUNTIME_MODE, RuntimeMode } from "./providerPolicy.ts";
 import { BrowserProfile, BrowserProfileId, DEFAULT_BROWSER_PROFILE_ID } from "./browserProfile.ts";
@@ -1445,6 +1446,10 @@ export const ServerSettings = Schema.Struct({
   usageArchiveDirs: Schema.Array(TrimmedNonEmptyString).pipe(
     Schema.withDecodingDefault(Effect.succeed(["~/.t3-usage-archive"])),
   ),
+
+  // Fork feature: set over MCP by `t3_objectives_set`. Kept here so they persist and reach every
+  // client on the settings stream.
+  objectives: Schema.NullOr(Objectives).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -1792,6 +1797,8 @@ export const ServerSettingsPatch = Schema.Struct({
     Schema.Record(TrimmedNonEmptyString, Schema.NullOr(TrimmedNonEmptyString)),
   ),
   usageArchiveDirs: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
+  /** Replaced whole; null clears them. */
+  objectives: Schema.optionalKey(Schema.NullOr(Objectives)),
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 

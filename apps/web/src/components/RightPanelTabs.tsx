@@ -43,7 +43,7 @@ import {
   FileDiff,
   Files,
   Globe2,
-  Hand,
+  ShipWheel,
   PencilRuler,
   MessagesSquare,
   Plus,
@@ -417,8 +417,8 @@ function RightPanelEmptyState(props: {
     ...(props.onAddNeedsMe
       ? [
           {
-            label: "Needs me",
-            icon: Hand,
+            label: "Bridge",
+            icon: ShipWheel,
             shortcut: "N",
             available: true,
             disabledReason: "",
@@ -625,7 +625,7 @@ function surfaceTitle(
     case "board":
       return "Board";
     case "needs-me":
-      return "Needs me";
+      return "Bridge";
     case "device":
       return surface.title ?? surface.target?.name ?? "Device";
     case "side-chat":
@@ -721,7 +721,7 @@ function SurfaceIcon({
     case "board":
       return <PencilRuler className="size-3 shrink-0" />;
     case "needs-me":
-      return <Hand className="size-3 shrink-0" />;
+      return <ShipWheel className="size-3 shrink-0" />;
     case "side-chat":
       return <SideChatTabIcon environmentId={environmentId} threadId={surface.threadId} />;
     case "device":
@@ -1198,8 +1198,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     ...(props.onAddNeedsMe
       ? [
           {
-            label: "Needs me",
-            icon: Hand,
+            label: "Bridge",
+            icon: ShipWheel,
             shortcut: "N",
             available: true,
             disabledReason: "",

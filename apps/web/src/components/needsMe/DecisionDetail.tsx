@@ -16,6 +16,7 @@ import {
   type ThreadId,
   threadDecisionSince,
 } from "@t3tools/contracts";
+import { projectScriptCwd } from "@t3tools/shared/projectScripts";
 import { useNavigate } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import { ArrowUpIcon, ClockIcon, CornerDownLeftIcon } from "lucide-react";
@@ -34,16 +35,18 @@ import { ThreadVisitWatermark } from "../chat/ThreadVisitWatermark";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
-import { decisionAttachmentsMarkdown, decisionReplyCommandId } from "./needsMe.logic";
+import {
+  decisionAttachmentsMarkdown,
+  decisionMarkdownScope,
+  decisionReplyCommandId,
+  formatDay,
+} from "./needsMe.logic";
 import { revealDecision, useNeedsMeOpenRow } from "./needsMeReveal";
 
 // Words an Undo took back, so the reply box shows them again even after the row remounted.
 const restoredDrafts = new Map<string, string>();
 
 const LATER_DRAFT = "Later: ask me again next week.";
-
-const dayLabel = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
-export const formatDay = (iso: string) => dayLabel.format(Date.parse(iso));
 
 /**
  * One FirstMate decision, open in the Needs me tab: the question and options, then FirstMate's
@@ -62,6 +65,22 @@ export function DecisionDetail(props: {
   const project = useProject(
     shell === null ? null : scopeProjectRef(decisionRef.environmentId, shell.projectId),
   );
+  const hostShell = useQuietThreadShell(props.hostRef);
+  const hostProject = useProject(
+    hostShell === null ? null : scopeProjectRef(props.hostRef.environmentId, hostShell.projectId),
+  );
+  const markdownScope = decisionMarkdownScope({
+    decisionRef,
+    hostRef: props.hostRef,
+    decisionRoot: project?.workspaceRoot,
+    hostRoot:
+      hostProject === null
+        ? undefined
+        : projectScriptCwd({
+            project: { cwd: hostProject.workspaceRoot },
+            worktreePath: hostShell?.worktreePath ?? null,
+          }),
+  });
   const decision = thread?.decision ?? null;
   const coordinatorId = thread?.decisionOf ?? shell?.decisionOf ?? null;
 
@@ -81,7 +100,7 @@ export function DecisionDetail(props: {
               key={`${index}:${entry.at}`}
               entry={entry}
               decisionRef={decisionRef}
-              cwd={project?.workspaceRoot}
+              markdownScope={markdownScope}
               project={project}
             />
           ))}
@@ -130,7 +149,7 @@ function DecisionQuestion(props: { readonly decision: ThreadDecision }) {
 function DecisionEntryView(props: {
   readonly entry: ThreadDecisionEntry;
   readonly decisionRef: ScopedThreadRef;
-  readonly cwd: string | undefined;
+  readonly markdownScope: ReturnType<typeof decisionMarkdownScope>;
   readonly project: Parameters<typeof ProjectFavicon>[0]["project"] | null;
 }) {
   const navigate = useNavigate();
@@ -179,20 +198,9 @@ function DecisionEntryView(props: {
           </button>
         )}
       </header>
-      <ChatMarkdown
-        text={entry.text}
-        cwd={props.cwd}
-        threadRef={decisionRef}
-        environmentId={environmentId}
-      />
+      <ChatMarkdown text={entry.text} {...props.markdownScope} environmentId={environmentId} />
       {attachments === null ? null : (
-        <ChatMarkdown
-          text={attachments}
-          cwd={props.cwd}
-          imageBaseDir={props.cwd}
-          threadRef={decisionRef}
-          environmentId={environmentId}
-        />
+        <ChatMarkdown text={attachments} {...props.markdownScope} environmentId={environmentId} />
       )}
     </article>
   );

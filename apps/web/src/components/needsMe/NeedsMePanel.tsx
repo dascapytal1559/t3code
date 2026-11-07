@@ -4,24 +4,34 @@ import {
   scopedThreadKey,
 } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
-import type { ScopedThreadRef } from "@t3tools/contracts";
-import { ChevronRightIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import type { EnvironmentId, Objectives, ScopedThreadRef } from "@t3tools/contracts";
+import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
+import { useState, type ReactNode } from "react";
 
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { cn } from "../../lib/utils";
-import { useProject, useQuietThreadShells } from "../../state/entities";
-import { formatRelativeTimeLabel } from "../../timestampFormat";
+import { useProject, useQuietThreadShells, useServerConfigs } from "../../state/entities";
+import ChatMarkdown from "../ChatMarkdown";
 import { ProjectFavicon, ProjectNameMonogram } from "../ProjectFavicon";
-import { DecisionDetail, formatDay } from "./DecisionDetail";
-import { decisionAgeTimestamp, groupNeedsMeDecisions } from "./needsMe.logic";
+import { DecisionDetail } from "./DecisionDetail";
+import {
+  bridgeObjectives,
+  formatCalendarDay,
+  groupNeedsMeDecisions,
+  needsMeRowDetail,
+  type NeedsMeGroups,
+} from "./needsMe.logic";
 import { useNeedsMeOpenRow } from "./needsMeReveal";
 
-type RowGroup = "open" | "snoozed";
+type RowGroup = keyof NeedsMeGroups<unknown>;
 
-/** FirstMate's open decisions beside any chat, then undated snoozes under Later and dated ones under Scheduled. */
+/**
+ * The Bridge tab: the user's objectives, then FirstMate's open decisions beside any chat, then
+ * undated snoozes under Later and dated ones under Scheduled.
+ */
 export function NeedsMePanel(props: { readonly threadRef: ScopedThreadRef }) {
   const shells = useQuietThreadShells();
+  const objectives = bridgeObjectives(useServerConfigs(), props.threadRef.environmentId);
   const nowMinute = useNowMinute();
   const nowMs = Date.parse(`${nowMinute}:00.000Z`);
   const groups = groupNeedsMeDecisions(shells, new Date(nowMs));
@@ -37,6 +47,9 @@ export function NeedsMePanel(props: { readonly threadRef: ScopedThreadRef }) {
 
   return (
     <div className="h-full min-h-0 overflow-x-hidden overflow-y-auto px-2 py-3">
+      {objectives === null ? null : (
+        <ObjectivesSection objectives={objectives} environmentId={props.threadRef.environmentId} />
+      )}
       <NeedsMeSection title="Needs you" count={groups.open.length}>
         {groups.open.length === 0 ? (
           <p className="px-2 py-3 text-sm text-muted-foreground">Nothing needs you right now.</p>
@@ -46,15 +59,55 @@ export function NeedsMePanel(props: { readonly threadRef: ScopedThreadRef }) {
       </NeedsMeSection>
       {groups.later.length === 0 ? null : (
         <NeedsMeSection title="Later" count={groups.later.length}>
-          {groups.later.map(row("snoozed"))}
+          {groups.later.map(row("later"))}
         </NeedsMeSection>
       )}
       {groups.scheduled.length === 0 ? null : (
         <NeedsMeSection title="Scheduled" count={groups.scheduled.length}>
-          {groups.scheduled.map(row("snoozed"))}
+          {groups.scheduled.map(row("scheduled"))}
         </NeedsMeSection>
       )}
     </div>
+  );
+}
+
+/**
+ * Read-only: FirstMate sets them over MCP. Each objective is clamped to two lines, and the whole
+ * list to a short height, so Needs you stays in view until the user expands it.
+ */
+function ObjectivesSection(props: {
+  readonly objectives: Objectives;
+  readonly environmentId: EnvironmentId;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const { lastReviewed } = props.objectives;
+  return (
+    <section className="mb-4">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        className="flex w-full cursor-pointer items-center gap-1 rounded-md px-2 pb-1 text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none"
+        onClick={() => setExpanded((value) => !value)}
+      >
+        <span>Objectives</span>
+        {lastReviewed === undefined ? null : (
+          <span className="tabular-nums">· reviewed {formatCalendarDay(lastReviewed)}</span>
+        )}
+        <ChevronDownIcon
+          aria-hidden
+          className={cn("ms-auto size-3.5 shrink-0", expanded && "rotate-180")}
+        />
+      </button>
+      <ChatMarkdown
+        text={props.objectives.markdown}
+        cwd={undefined}
+        environmentId={props.environmentId}
+        className={cn(
+          "px-2 [&_li+li]:mt-1.5 [&_ol]:my-0 [&_ul]:my-0",
+          !expanded && "max-h-48 overflow-hidden [&_li]:line-clamp-2 [&_p]:line-clamp-2",
+        )}
+      />
+    </section>
   );
 }
 
@@ -90,12 +143,7 @@ function NeedsMeRow(props: {
       : null,
   );
   const projectName = thread.decisionProjectName ?? project?.title ?? null;
-  const detail =
-    props.group === "snoozed"
-      ? thread.snoozedUntil == null
-        ? "no date"
-        : `back ${formatDay(thread.snoozedUntil)}`
-      : formatRelativeTimeLabel(decisionAgeTimestamp(thread), props.nowMs);
+  const detail = needsMeRowDetail(thread, props.group, props.nowMs);
 
   return (
     <div className={cn("rounded-lg", open && "bg-accent/40")}>

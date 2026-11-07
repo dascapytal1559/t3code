@@ -1,7 +1,15 @@
-import { ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { decisionAgeTimestamp, groupNeedsMeDecisions, isNeedsMeListed } from "./needsMe.logic";
+import {
+  bridgeObjectives,
+  decisionAgeTimestamp,
+  decisionMarkdownScope,
+  formatDay,
+  groupNeedsMeDecisions,
+  isNeedsMeListed,
+  needsMeRowDetail,
+} from "./needsMe.logic";
 
 const at = (day: number, hour: number) => new Date(2026, 10, day, hour).toISOString();
 const now = new Date(2026, 10, 7, 12);
@@ -73,6 +81,91 @@ describe("isNeedsMeListed", () => {
     ).toBe(false);
     expect(isNeedsMeListed(decision("archived", { archivedAt: at(6, 9) }))).toBe(false);
     expect(isNeedsMeListed(decision("ordinary-thread", { decisionOf: null }))).toBe(false);
+  });
+});
+
+describe("needsMeRowDetail", () => {
+  it("shows Needs you rows their age, Later rows the day they were raised, Scheduled rows their wake day", () => {
+    const row = {
+      createdAt: at(1, 9),
+      decisionSince: at(3, 9),
+      decisionChangedAt: at(7, 10),
+      snoozedUntil: at(20, 9),
+    };
+    const nowMs = now.getTime();
+    expect(needsMeRowDetail(row, "open", nowMs)).toBe("2h ago");
+    // Inception, not the last update and not a snooze date.
+    expect(needsMeRowDetail(row, "later", nowMs)).toBe(`raised ${formatDay(at(3, 9))}`);
+    const { decisionSince: _since, ...withoutSince } = row;
+    expect(needsMeRowDetail(withoutSince, "later", nowMs)).toBe(`raised ${formatDay(at(1, 9))}`);
+    expect(needsMeRowDetail(row, "scheduled", nowMs)).toBe(`back ${formatDay(at(20, 9))}`);
+  });
+});
+
+describe("bridgeObjectives", () => {
+  it("shows the host environment's objectives, else another environment's, else none", () => {
+    const host = EnvironmentId.make("host");
+    const other = EnvironmentId.make("other");
+    const config = (markdown: string | null) => ({
+      settings: { objectives: markdown === null ? null : { markdown } },
+    });
+    expect(
+      bridgeObjectives(
+        new Map([
+          [other, config("- **Other**")],
+          [host, config("- **Host**")],
+        ]),
+        host,
+      ),
+    ).toEqual({ markdown: "- **Host**" });
+    expect(
+      bridgeObjectives(
+        new Map([
+          [host, config(null)],
+          [other, config("- **Other**")],
+        ]),
+        host,
+      ),
+    ).toEqual({ markdown: "- **Other**" });
+    expect(bridgeObjectives(new Map([[host, config(null)]]), host)).toBeNull();
+  });
+});
+
+describe("decisionMarkdownScope", () => {
+  const environment = EnvironmentId.make("local");
+  const decisionRef = { environmentId: environment, threadId: ThreadId.make("decision") };
+  const hostRef = { environmentId: environment, threadId: ThreadId.make("host-chat") };
+
+  it("opens a decision's files in the host chat's panel, relative to that chat's workspace", () => {
+    expect(
+      decisionMarkdownScope({
+        decisionRef,
+        hostRef,
+        decisionRoot: "/home/user/firstmate",
+        hostRoot: "/home/user/acme/app",
+      }),
+    ).toEqual({
+      threadRef: hostRef,
+      cwd: "/home/user/acme/app",
+      // Relative links in FirstMate's words still mean FirstMate's project.
+      imageBaseDir: "/home/user/firstmate",
+    });
+  });
+
+  it("keeps the decision's own scope when the host chat is on another environment", () => {
+    const remoteHost = { environmentId: EnvironmentId.make("remote"), threadId: hostRef.threadId };
+    expect(
+      decisionMarkdownScope({
+        decisionRef,
+        hostRef: remoteHost,
+        decisionRoot: "/home/user/firstmate",
+        hostRoot: "/srv/app",
+      }),
+    ).toEqual({
+      threadRef: decisionRef,
+      cwd: "/home/user/firstmate",
+      imageBaseDir: "/home/user/firstmate",
+    });
   });
 });
 
