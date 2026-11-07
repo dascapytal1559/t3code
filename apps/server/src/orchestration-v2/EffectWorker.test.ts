@@ -3,7 +3,9 @@ import {
   CheckpointId,
   CheckpointScopeId,
   CommandId,
+  MessageId,
   NodeId,
+  type OrchestrationV2ServerCommand,
   ProviderSessionId,
   ProviderThreadId,
   ProviderTurnId,
@@ -82,6 +84,7 @@ function layerExecutorFor(input: {
   readonly threads?: Partial<ThreadManagementService.ThreadManagementService["Service"]>;
   readonly continueAfterRestart?: boolean;
   readonly interrupt?: ProviderTurnControlService.ProviderTurnControlServiceV2Shape["interrupt"];
+  readonly steer?: ProviderTurnControlService.ProviderTurnControlServiceV2Shape["steer"];
   readonly rollback?: CheckpointRollbackService.CheckpointRollbackServiceV2Shape["execute"];
   readonly respond?: RuntimeRequestService.RuntimeRequestServiceV2["Service"]["respond"];
 }) {
@@ -91,7 +94,7 @@ function layerExecutorFor(input: {
       ProviderTurnControlService.ProviderTurnControlServiceV2,
       ProviderTurnControlService.ProviderTurnControlServiceV2.of({
         interrupt: input.interrupt ?? (() => Effect.void),
-        steer: () => Effect.void,
+        steer: input.steer ?? (() => Effect.void),
         interruptAndAwaitTerminal: (request) =>
           record(
             request.replacementProviderSessionId === undefined
@@ -214,6 +217,63 @@ it.effect.each([
       });
     }).pipe(Effect.provide(layer));
     assert.deepEqual(yield* Ref.get(events), dispatched);
+  }),
+);
+
+it.effect("re-sends a steer that missed its turn with the sender it recorded", () =>
+  Effect.gen(function* () {
+    const now = yield* DateTime.now;
+    const messageId = MessageId.make("message:effect-worker-steer-follow-up");
+    const origin = { surface: "mobile", deviceType: "mobile" } as const;
+    const dispatched = yield* Ref.make<ReadonlyArray<OrchestrationV2ServerCommand>>([]);
+    const layer = layerExecutorFor({
+      events: yield* Ref.make<ReadonlyArray<string>>([]),
+      steer: () =>
+        new ProviderTurnControlService.ProviderTurnControlError({
+          threadId,
+          operation: "steer",
+          providerTurnId,
+          turnCompleted: true,
+        }),
+      threads: {
+        getThreadRecords: () =>
+          Effect.succeed({
+            messages: [
+              {
+                id: messageId,
+                runId,
+                text: "Also update the docs",
+                attachments: [],
+                createdBy: "user",
+                creationSource: "web",
+                origin,
+              },
+            ],
+            runs: [{ id: runId }],
+          } as never),
+        dispatch: (command) =>
+          Ref.update(dispatched, (current) => [...current, command]).pipe(
+            Effect.as({ sequence: 1, storedEvents: [] }),
+          ),
+      },
+    });
+    yield* Effect.gen(function* () {
+      const executor = yield* EffectWorker.OrchestrationEffectExecutorV2;
+      yield* executor.execute({
+        ...restartEffect(now, { type: "detach" }),
+        request: {
+          type: "provider-turn.steer",
+          providerSessionId: oldSessionId,
+          providerThreadId,
+          providerTurnId,
+          messageId,
+        },
+      });
+    }).pipe(Effect.provide(layer));
+    const [followUp] = yield* Ref.get(dispatched);
+    assert.ok(followUp?.type === "message.dispatch");
+    assert.equal(followUp.messageId, messageId);
+    assert.deepEqual(followUp.origin, origin);
   }),
 );
 
