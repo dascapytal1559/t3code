@@ -1488,7 +1488,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         >
           {accessibleTitle}
           {props.crewTreeRoot ? (
-            // Runs down the card's bottom padding from under its icon; a filled card, hover
+            // Runs down the card's bottom padding on the guide line; a filled card, hover
             // included, never shows the line inside it.
             <span
               aria-hidden
@@ -1506,7 +1506,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             )}
           >
             <div className="flex h-5 min-w-0 items-center gap-1.5">
-              {/* A coordinator's icon goes first, so the crew tree's guide line stays under it. */}
+              {/* A coordinator's project icon stays first, at the card's edge. */}
               {props.coordinator ? null : draftIndicator}
               {props.project ? (
                 <ProjectFavicon project={props.project} className="size-4 shrink-0" />

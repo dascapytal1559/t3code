@@ -9,18 +9,16 @@ export type CrewTreePlace = "branch" | "last" | "indent";
 const CREW_TREE_COLOR_CLASS_NAME =
   "pointer-events-none absolute transition-colors [--crew-tree-line:color-mix(in_srgb,var(--contrast-sidebar-muted-foreground)_40%,var(--sidebar))] [[role=tree]:has([data-crew-tree]:hover,[data-crew-tree]:focus-visible)_&]:[--crew-tree-line:color-mix(in_srgb,var(--contrast-sidebar-muted-foreground)_80%,var(--sidebar))]";
 
-// The guide line runs down the centre of the coordinator card's size-4 leading icon, which sits
-// at the card's content inset; crewmate rows start where that icon ends.
-const CREW_TREE_LINE_START_CLASS_NAME =
-  "start-[calc(var(--sidebar-row-content-inset)_+_0.5rem_-_0.5px)]";
+// The 1px guide line sits centred in a 1rem gutter, so the gap from the coordinator card's left
+// edge to the line equals the gap from the line to the crewmate cards.
+const CREW_TREE_LINE_START_CLASS_NAME = "start-[calc(0.5rem_-_0.5px)]";
 export const CREW_TREE_TRUNK_CLASS_NAME = cn(
   CREW_TREE_COLOR_CLASS_NAME,
   CREW_TREE_LINE_START_CLASS_NAME,
   "w-px bg-(--crew-tree-line)",
 );
-export const CREW_TREE_INDENT_CLASS_NAME = "ps-[calc(var(--sidebar-row-content-inset)_+_1rem)]";
-export const CREW_TREE_GUTTER_WIDTH_CLASS_NAME =
-  "w-[calc(var(--sidebar-row-content-inset)_+_1rem)]";
+export const CREW_TREE_INDENT_CLASS_NAME = "ps-4";
+export const CREW_TREE_GUTTER_WIDTH_CLASS_NAME = "w-4";
 
 /** The guide line beside a crewmate row; clicking it collapses the crew. */
 export function CrewTreeGutter(props: { last: boolean; onToggle: () => void }) {

@@ -151,7 +151,7 @@ export function SidebarCrewToggle(props: {
           <span aria-hidden className={cn(CREW_TREE_TRUNK_CLASS_NAME, "top-0 h-[3px]")} />
         ) : (
           <>
-            {/* Centred on the guide line, like the coordinator's icon. */}
+            {/* Centred under the coordinator's icon. */}
             <ChevronRightIcon aria-hidden className="mx-px size-3.5 shrink-0" />
             {props.count}
           </>
