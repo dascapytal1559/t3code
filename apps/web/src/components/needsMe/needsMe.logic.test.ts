@@ -34,7 +34,7 @@ const decision = (
 });
 
 describe("groupNeedsMeDecisions", () => {
-  it("lists open decisions newest update first and Later by wake date, and drops settled ones", () => {
+  it("lists open decisions newest update first, undated snoozes under Later, dated ones under Scheduled soonest first, and drops settled ones", () => {
     const groups = groupNeedsMeDecisions(
       [
         decision("ordinary-thread", { decisionOf: null }),
@@ -44,6 +44,7 @@ describe("groupNeedsMeDecisions", () => {
         decision("updated-before", { decisionUpdatedAt: at(4, 9) }),
         decision("updated-last", { decisionUpdatedAt: at(5, 9) }),
         decision("undated-snooze", { snoozedAt: at(6, 10) }),
+        decision("undated-snooze-earlier", { snoozedAt: at(5, 10) }),
         decision("back-later", { snoozedUntil: at(20, 9) }),
         decision("back-soon", { snoozedUntil: at(19, 9) }),
         // A snooze whose wake time passed is open again.
@@ -55,7 +56,8 @@ describe("groupNeedsMeDecisions", () => {
     );
     const ids = (list: ReadonlyArray<{ id: string }>) => list.map((thread) => thread.id);
     expect(ids(groups.open)).toEqual(["updated-last", "updated-before", "woke", "no-entries"]);
-    expect(ids(groups.later)).toEqual(["back-soon", "back-later", "undated-snooze"]);
+    expect(ids(groups.later)).toEqual(["undated-snooze", "undated-snooze-earlier"]);
+    expect(ids(groups.scheduled)).toEqual(["back-soon", "back-later"]);
   });
 });
 

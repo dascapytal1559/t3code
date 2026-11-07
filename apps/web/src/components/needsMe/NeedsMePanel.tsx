@@ -17,9 +17,9 @@ import { DecisionDetail, formatDay } from "./DecisionDetail";
 import { decisionAgeTimestamp, groupNeedsMeDecisions } from "./needsMe.logic";
 import { useNeedsMeOpenRow } from "./needsMeReveal";
 
-type RowGroup = "open" | "later";
+type RowGroup = "open" | "snoozed";
 
-/** FirstMate's open decisions beside any chat, with snoozed ones under Later. */
+/** FirstMate's open decisions beside any chat, then undated snoozes under Later and dated ones under Scheduled. */
 export function NeedsMePanel(props: { readonly threadRef: ScopedThreadRef }) {
   const shells = useQuietThreadShells();
   const nowMinute = useNowMinute();
@@ -46,7 +46,12 @@ export function NeedsMePanel(props: { readonly threadRef: ScopedThreadRef }) {
       </NeedsMeSection>
       {groups.later.length === 0 ? null : (
         <NeedsMeSection title="Later" count={groups.later.length}>
-          {groups.later.map(row("later"))}
+          {groups.later.map(row("snoozed"))}
+        </NeedsMeSection>
+      )}
+      {groups.scheduled.length === 0 ? null : (
+        <NeedsMeSection title="Scheduled" count={groups.scheduled.length}>
+          {groups.scheduled.map(row("snoozed"))}
         </NeedsMeSection>
       )}
     </div>
@@ -86,7 +91,7 @@ function NeedsMeRow(props: {
   );
   const projectName = thread.decisionProjectName ?? project?.title ?? null;
   const detail =
-    props.group === "later"
+    props.group === "snoozed"
       ? thread.snoozedUntil == null
         ? "no date"
         : `back ${formatDay(thread.snoozedUntil)}`

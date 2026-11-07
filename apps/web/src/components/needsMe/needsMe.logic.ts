@@ -22,6 +22,7 @@ type DecisionShell = ThreadSnoozeShell &
 export interface NeedsMeGroups<T> {
   readonly open: T[];
   readonly later: T[];
+  readonly scheduled: T[];
 }
 
 const ms = (iso: string | null | undefined) => (iso == null ? 0 : Date.parse(iso) || 0);
@@ -39,7 +40,8 @@ export function isNeedsMeListed(
 
 /**
  * FirstMate's decision threads as the Needs me tab lists them: open ones newest update first,
- * snoozed ones under Later by wake date (undated last). Settled ones are not listed, even snoozed.
+ * undated snoozes under Later most recently snoozed first, dated ones under Scheduled soonest
+ * first. Settled ones are not listed, even snoozed.
  */
 export function groupNeedsMeDecisions<T extends DecisionShell>(
   threads: readonly T[],
@@ -48,9 +50,11 @@ export function groupNeedsMeDecisions<T extends DecisionShell>(
   const nowIso = now.toISOString();
   const open: T[] = [];
   const later: T[] = [];
+  const scheduled: T[] = [];
   for (const thread of threads) {
     if (!isNeedsMeListed(thread)) continue;
-    (effectiveSnoozed(thread, { now: nowIso }) ? later : open).push(thread);
+    if (!effectiveSnoozed(thread, { now: nowIso })) open.push(thread);
+    else (thread.snoozedUntil == null ? later : scheduled).push(thread);
   }
   return {
     open: open.toSorted(
@@ -58,14 +62,8 @@ export function groupNeedsMeDecisions<T extends DecisionShell>(
         ms(right.decisionUpdatedAt ?? right.createdAt) -
         ms(left.decisionUpdatedAt ?? left.createdAt),
     ),
-    later: later.toSorted((left, right) => {
-      if (left.snoozedUntil == null || right.snoozedUntil == null) {
-        if (left.snoozedUntil != null) return -1;
-        if (right.snoozedUntil != null) return 1;
-        return ms(right.snoozedAt) - ms(left.snoozedAt);
-      }
-      return ms(left.snoozedUntil) - ms(right.snoozedUntil);
-    }),
+    later: later.toSorted((left, right) => ms(right.snoozedAt) - ms(left.snoozedAt)),
+    scheduled: scheduled.toSorted((left, right) => ms(left.snoozedUntil) - ms(right.snoozedUntil)),
   };
 }
 
