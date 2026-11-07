@@ -9,11 +9,14 @@ const STORAGE_KEY = "test:right-panel-window-width";
 const CHAT_STORAGE_KEY = `${STORAGE_KEY}:chat-column`;
 
 function Panel(props: { row: HTMLElement | null; chatColumn: RefObject<PanelChatColumn | null> }) {
-  const { width, observeRow, keepChatColumn } = usePreviewPanelInlineSize({
+  const { width, observeRow, keepChatColumn, keepPanelWidth } = usePreviewPanelInlineSize({
     container: props.row,
     widthStorageKey: STORAGE_KEY,
   });
-  useImperativeHandle(props.chatColumn, () => ({ keepChatColumn }), [keepChatColumn]);
+  useImperativeHandle(props.chatColumn, () => ({ keepChatColumn, keepPanelWidth }), [
+    keepChatColumn,
+    keepPanelWidth,
+  ]);
   return (
     <div
       ref={(host) => (host === null ? undefined : observeRow(host))}
@@ -145,6 +148,34 @@ describe("useRightPanelWindow", () => {
       expect(widthOf(chat)).toBe(1000);
       await act(() => desktop.requests[1]!.answer(540));
       expect(row.style.width).toBe("");
+    });
+  });
+
+  it("a window resize while open goes to the panel and leaves with it", async () => {
+    await withCleanStorage(async () => {
+      using desktop = fakeDesktopWindow(1000);
+      // The hook only needs React and the desktop bridge; no navigation is involved.
+      await using screen = await render(<Workspace open={false} windowWidth={1000} />, {
+        router: false,
+      });
+      const chat = screen.getByTestId("chat").element();
+      await screen.rerender(<Workspace open windowWidth={1000} />);
+      await screen.rerender(<Workspace open windowWidth={1540} />);
+      await act(() => desktop.resize(1540));
+      expect(widthOf(chat)).toBe(1000);
+
+      await screen.rerender(<Workspace open windowWidth={1740} />);
+      await vi.waitFor(() => expect(widthOf(screen.getByTestId("panel").element())).toBe(740));
+      expect(widthOf(chat)).toBe(1000);
+      await screen.rerender(<Workspace open={false} windowWidth={1740} />);
+      expect(desktop.requests[1]).toMatchObject({ open: false, width: 740 });
+      await screen.rerender(<Workspace open={false} windowWidth={1000} />);
+      await act(() => desktop.resize(1000));
+      expect(widthOf(chat)).toBe(1000);
+
+      // Opening again grows by the panel's last width.
+      await screen.rerender(<Workspace open windowWidth={1000} />);
+      expect(desktop.requests[2]).toMatchObject({ open: true, width: 740 });
     });
   });
 

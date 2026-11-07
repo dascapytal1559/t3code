@@ -17,9 +17,11 @@ export interface PreviewPanelInlineSize {
    * leaves of it, when the desktop window resizes for the panel.
    */
   readonly keepChatColumn: () => void;
+  /** Fork: remembers the panel's width as it is now for the next open, and returns it. */
+  readonly keepPanelWidth: () => number;
 }
 
-export type PanelChatColumn = Pick<PreviewPanelInlineSize, "keepChatColumn">;
+export type PanelChatColumn = Pick<PreviewPanelInlineSize, "keepChatColumn" | "keepPanelWidth">;
 
 const PREVIEW_PANEL_WIDTH_STORAGE_KEY = "t3code:preview-panel-width";
 const PREVIEW_PANEL_MIN_WIDTH = 360;
@@ -150,6 +152,13 @@ export function usePreviewPanelInlineSize(
     keepChatColumnFor(row);
   });
 
+  const keepPanelWidth = useStableCallback(() => {
+    if (enabled && width !== stored.panelWidth) {
+      commit({ panelWidth: width, chatWidth: stored.chatWidth });
+    }
+    return width;
+  });
+
   const restoreWidth = useStableCallback((host: HTMLElement | null) => {
     host?.style.setProperty(RESIZABLE_WIDTH_PROPERTY, `${width}px`);
   });
@@ -209,6 +218,7 @@ export function usePreviewPanelInlineSize(
     },
     observeRow,
     keepChatColumn,
+    keepPanelWidth,
   };
 }
 

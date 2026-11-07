@@ -20,6 +20,12 @@ interface PreviewPanelShellProps {
   inlineSize?: PreviewPanelInlineSize;
   open?: boolean;
   animateOpen?: boolean;
+  /**
+   * Fork: true while the desktop window grows for the panel. macOS shows the grown window
+   * a few frames before Chromium paints it, so the panel fades in from transparent and
+   * those frames look like the start of the fade.
+   */
+  waitingForWindow?: boolean;
   /** Use a distinct key per surface to keep remembered widths independent. */
   widthStorageKey?: string;
   defaultWidth?: number;
@@ -133,6 +139,10 @@ function PreviewPanelShellFrame(
         animated &&
           "[[data-panel-animations=true]_&]:transition-[width] [[data-panel-animations=true]_&]:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:ease-out",
         animated && open && "[[data-panel-animations=true]_&]:starting:w-0!",
+        // Not tied to the panel animation setting: it only has to outlast those frames.
+        // Ease-in stays near transparent while Chromium's first frames are still on their way.
+        props.waitingForWindow !== undefined && "transition-opacity duration-100 ease-in",
+        props.waitingForWindow && "opacity-0",
         collapsible && !open && "pointer-events-none",
       )}
       style={

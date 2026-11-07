@@ -4000,6 +4000,7 @@ export default function ChatView(props: ChatViewProps) {
           onCloseSheet={closePreviewPanelStable}
           open={rightPanelOpen}
           animateOpen={!isElectron}
+          {...(isElectron ? { waitingForWindow: rightPanelWindow.holdingOpen } : {})}
           keybindings={keybindings}
           getShortcutContext={getShortcutContextStable}
           maximized={rightPanelMaximized}

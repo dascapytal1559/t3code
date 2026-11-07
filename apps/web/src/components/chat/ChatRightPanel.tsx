@@ -41,8 +41,11 @@ export function ChatRightPanel(props: ChatRightPanelProps) {
     container: workspaceLayoutElement,
     widthStorageKey,
   });
-  const { keepChatColumn } = inlineSize;
-  useImperativeHandle(chatColumnRef, () => ({ keepChatColumn }), [keepChatColumn]);
+  const { keepChatColumn, keepPanelWidth } = inlineSize;
+  useImperativeHandle(chatColumnRef, () => ({ keepChatColumn, keepPanelWidth }), [
+    keepChatColumn,
+    keepPanelWidth,
+  ]);
   if (!sheet) {
     return <RightPanelTabs {...tabs} mode="inline" maximized={maximized} inlineSize={inlineSize} />;
   }

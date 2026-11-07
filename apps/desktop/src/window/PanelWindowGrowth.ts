@@ -11,6 +11,8 @@ interface Rect {
 
 export interface PanelGrowth {
   readonly added: number;
+  /** What the chat gave up for the panel because the work area stopped the window growing. */
+  readonly gaveWay: number;
   readonly shiftedLeft: number;
   /** The left edge right after growing; any other value means the window was moved by hand. */
   readonly grownX: number;
@@ -23,19 +25,34 @@ export function growForPanel(
   panelWidth: number,
 ): { readonly bounds: Rect; readonly growth: PanelGrowth } | null {
   const areaRight = workArea.x + workArea.width;
-  const wanted = bounds.width + Math.max(0, Math.round(panelWidth));
+  const panel = Math.max(0, Math.round(panelWidth));
+  const wanted = bounds.width + panel;
   const overflow = bounds.x + wanted - areaRight;
   const shiftedLeft = Math.max(0, Math.min(overflow, bounds.x - workArea.x));
   const x = bounds.x - shiftedLeft;
   const width = Math.min(wanted, Math.max(bounds.width, areaRight - x));
   const added = width - bounds.width;
   if (added <= 0) return null;
-  return { bounds: { ...bounds, x, width }, growth: { added, shiftedLeft, grownX: x } };
+  return {
+    bounds: { ...bounds, x, width },
+    growth: { added, gaveWay: panel - added, shiftedLeft, grownX: x },
+  };
 }
 
-/** Takes off only what growing added, so a hand resize while open is kept. */
-export function shrinkAfterPanel(bounds: Rect, growth: PanelGrowth, minWidth: number): Rect {
-  const width = Math.max(minWidth, bounds.width - growth.added);
+/**
+ * Takes off the panel's width as it is now, less what the chat gave up for it, so the
+ * chat keeps its width. A hand resize while open went to the panel, so it goes with it.
+ */
+export function shrinkAfterPanel(
+  bounds: Rect,
+  growth: PanelGrowth,
+  panelWidth: number,
+  minWidth: number,
+): Rect {
+  const width = Math.max(
+    minWidth,
+    bounds.width - Math.max(0, Math.round(panelWidth) - growth.gaveWay),
+  );
   const removed = bounds.width - width;
   const shift = bounds.x === growth.grownX ? Math.min(growth.shiftedLeft, removed) : 0;
   return { ...bounds, x: bounds.x + shift, width };
@@ -46,6 +63,7 @@ const growthByWindow = new WeakMap<Electron.BrowserWindow, PanelGrowth>();
 const isZoomed = (window: Electron.BrowserWindow) => window.isFullScreen() || window.isMaximized();
 
 /**
+ * `panelWidth` is the width to grow by (opening) or the panel's width now (closing).
  * Returns the CSS pixels the window grew by (opening) or shrank by (closing).
  * Null means nothing changed: opening found it already grown, or closing found nothing to undo.
  */
@@ -76,14 +94,27 @@ export function setWindowPanelOpen(
   if (growth === undefined || isZoomed(window)) return null;
   growthByWindow.delete(window);
   const bounds = window.getBounds();
-  const next = shrinkAfterPanel(bounds, growth, window.getMinimumSize()[0] ?? 0);
+  const zoomFactor = window.webContents.getZoomFactor();
+  const next = shrinkAfterPanel(
+    bounds,
+    growth,
+    panelWidth * zoomFactor,
+    window.getMinimumSize()[0] ?? 0,
+  );
   window.setBounds(next);
-  return (bounds.width - next.width) / window.webContents.getZoomFactor();
+  return (bounds.width - next.width) / zoomFactor;
 }
 
-/** Saved bounds leave out the panel's width, so a restart with the panel open grows once. */
+/**
+ * Saved bounds leave out the panel's width at opening, so a restart with the panel open
+ * grows once. The main process does not see later panel resizes, so those are kept.
+ */
 export function boundsWithoutPanel<B extends Rect>(window: Electron.BrowserWindow, bounds: B): B {
   const growth = growthByWindow.get(window);
   if (growth === undefined) return bounds;
-  return { ...bounds, ...shrinkAfterPanel(bounds, growth, window.getMinimumSize()[0] ?? 0) };
+  const panelAtOpen = growth.added + growth.gaveWay;
+  return {
+    ...bounds,
+    ...shrinkAfterPanel(bounds, growth, panelAtOpen, window.getMinimumSize()[0] ?? 0),
+  };
 }

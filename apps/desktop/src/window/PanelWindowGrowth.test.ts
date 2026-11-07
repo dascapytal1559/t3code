@@ -10,20 +10,26 @@ describe("growForPanel", () => {
     {
       name: "room to the right: grows in place",
       bounds: window(100, 1000),
-      expected: { bounds: window(100, 1540), growth: { added: 540, shiftedLeft: 0, grownX: 100 } },
+      expected: {
+        bounds: window(100, 1540),
+        growth: { added: 540, gaveWay: 0, shiftedLeft: 0, grownX: 100 },
+      },
     },
     {
       name: "near the right edge: moves left only as far as needed",
       bounds: window(500, 1000),
       expected: {
         bounds: window(260, 1540),
-        growth: { added: 540, shiftedLeft: 240, grownX: 260 },
+        growth: { added: 540, gaveWay: 0, shiftedLeft: 240, grownX: 260 },
       },
     },
     {
-      name: "screen too narrow: grows as far as it can",
+      name: "screen too narrow: grows as far as it can, the chat gives way for the rest",
       bounds: window(200, 1500),
-      expected: { bounds: window(0, 1800), growth: { added: 300, shiftedLeft: 200, grownX: 0 } },
+      expected: {
+        bounds: window(0, 1800),
+        growth: { added: 300, gaveWay: 240, shiftedLeft: 200, grownX: 0 },
+      },
     },
     {
       name: "already as wide as the screen: no change",
@@ -54,22 +60,30 @@ describe("shrinkAfterPanel", () => {
     { name: "after a partial grow on a narrow screen", start: window(200, 1500) },
   ])("returns to the starting bounds $name", ({ start }) => {
     const { bounds, growth } = grow(start);
-    expect(shrinkAfterPanel(bounds, growth, 840)).toEqual(start);
+    expect(shrinkAfterPanel(bounds, growth, 540, 840)).toEqual(start);
   });
 
-  it("keeps a hand resize and takes off only the panel's width", () => {
+  it.each([
+    { name: "wider", resized: 1740, panel: 740 },
+    { name: "narrower", resized: 1390, panel: 390 },
+  ])("takes a hand resize back with the panel it went to ($name)", ({ resized, panel }) => {
     const { growth } = grow(window(100, 1000));
-    expect(shrinkAfterPanel(window(100, 1700), growth, 840)).toEqual(window(100, 1160));
+    expect(shrinkAfterPanel(window(100, resized), growth, panel, 840)).toEqual(window(100, 1000));
+  });
+
+  it("gives the chat back what it gave up after a partial grow", () => {
+    const { growth } = grow(window(200, 1500));
+    expect(shrinkAfterPanel(window(0, 1700), growth, 440, 840)).toEqual(window(200, 1500));
   });
 
   it("leaves a window moved by hand where it is", () => {
     const { growth } = grow(window(500, 1000));
-    expect(shrinkAfterPanel(window(50, 1540), growth, 840)).toEqual(window(50, 1000));
+    expect(shrinkAfterPanel(window(50, 1540), growth, 540, 840)).toEqual(window(50, 1000));
   });
 
   it("stops at the minimum width and moves back only by what it removed", () => {
     const { growth } = grow(window(500, 1000));
-    expect(shrinkAfterPanel(window(260, 1200), growth, 840)).toEqual(window(500, 840));
-    expect(shrinkAfterPanel(window(260, 900), growth, 840)).toEqual(window(320, 840));
+    expect(shrinkAfterPanel(window(260, 1200), growth, 540, 840)).toEqual(window(500, 840));
+    expect(shrinkAfterPanel(window(260, 900), growth, 540, 840)).toEqual(window(320, 840));
   });
 });

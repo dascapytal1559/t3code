@@ -33,6 +33,11 @@ export function useRightPanelWindow(input: {
   }
   // What the window was last asked for; null until the first request, which never holds.
   const sentOpen = useRef<boolean | null>(null);
+  // Closing takes off the panel's width as it is now, so the chat column keeps its width.
+  const closingPanelWidth = useStableCallback(
+    () =>
+      input.chatColumn.current?.keepPanelWidth() ?? readPreviewPanelWidth(input.widthStorageKey),
+  );
 
   const syncWindow = useStableCallback((open: boolean, held: boolean) => {
     if (bridge === undefined) return;
@@ -42,7 +47,7 @@ export function useRightPanelWindow(input: {
     sentOpen.current = open;
     if (!open && firstRequest) return;
     const { row, chatColumn } = input;
-    const panelWidth = readPreviewPanelWidth(input.widthStorageKey);
+    const panelWidth = open ? readPreviewPanelWidth(input.widthStorageKey) : closingPanelWidth();
     const release =
       held && row !== null ? holdRowWidth(row, row.clientWidth + (open ? panelWidth : 0)) : noop;
     if (held && open) chatColumn.current?.keepChatColumn();
@@ -69,9 +74,9 @@ export function useRightPanelWindow(input: {
     () => () => {
       if (sentOpen.current !== true || bridge === undefined) return;
       sentOpen.current = null;
-      releaseGrowthSoon(bridge);
+      releaseGrowthSoon(bridge, closingPanelWidth());
     },
-    [bridge],
+    [bridge, closingPanelWidth],
   );
   return { holdingOpen: holding && open, holdingClose: holding && !open };
 }
@@ -85,13 +90,13 @@ const noop = () => {};
  */
 let pendingRelease: { cancelled: boolean } | null = null;
 
-function releaseGrowthSoon(bridge: NonNullable<Window["desktopBridge"]>) {
+function releaseGrowthSoon(bridge: NonNullable<Window["desktopBridge"]>, panelWidth: number) {
   const release = { cancelled: false };
   pendingRelease = release;
   queueMicrotask(() => {
     if (release.cancelled) return;
     pendingRelease = null;
-    void bridge.setRightPanelOpen(false, 0).catch(noop);
+    void bridge.setRightPanelOpen(false, panelWidth).catch(noop);
   });
 }
 
