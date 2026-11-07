@@ -32,7 +32,9 @@ Also:
 - [Stopped turns](fork/README.md#stopped-turns-close-their-approvals): their approvals close instead of staying pending.
 - [Snooze with no date](fork/README.md#snooze-with-no-date): a thread waits on the Snoozed shelf until you wake it; FirstMate parks decisions older than a day there.
 - [Two-line cards](fork/README.md#sidebar-cards-stay-two-lines): a lone PR badge no longer adds a third line.
+- [Thread details hidden](fork/README.md#thread-details-open-hidden): new threads open without the details card; a setting shows it.
 - [Window grows for the panel](fork/README.md#the-window-grows-for-the-right-panel): opening the right panel widens the desktop window, so the chat keeps its width.
+- [Message origin](fork/README.md#messages-record-which-client-sent-them): each user message records which client sent it.
 
 Details and pictures: [fork/README.md](fork/README.md).
 

@@ -494,6 +494,16 @@ diff; otherwise those badges sit right-aligned on the title line, which truncate
 before them. Folder multiline rows follow the same rule. Code:
 `isThreadMetaLineEmpty` in `apps/web/src/components/Sidebar.logic.ts`.
 
+## Thread details open hidden
+
+Upstream shows the thread details card on every thread until you hide it. Here a
+thread you have not toggled opens with the card hidden, unless **Settings →
+Appearance → Show thread details by default** is on. Each thread remembers when
+you show or hide it, whichever way the setting points. Code:
+`threadDetailsDefaultOpen` in `packages/contracts/src/settings.ts` and
+`defaultThreadPanelVisibility` in `apps/web/src/rightPanelStore.ts`, whose
+persisted map now keeps open choices too.
+
 ## The window grows for the right panel
 
 ![The desktop app with a README open in the right panel: the window grew by the panel's width, and the sidebar and chat kept theirs](media/window-grows-for-panel.jpg)

@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
 import { type PanelChatColumn, readPreviewPanelWidth } from "./usePreviewPanelInlineSize";
@@ -40,14 +40,13 @@ export function useRightPanelWindow(input: {
   const chatColumn = useRef<PanelChatColumn | null>(null);
   // A panel unmounting in the commit that closes it is gone before the close is sent.
   const lastChatColumn = useRef<PanelChatColumn | null>(null);
-  const chatColumnRef = useCallback((handle: PanelChatColumn | null) => {
+  const chatColumnRef = useStableCallback((handle: PanelChatColumn | null) => {
     chatColumn.current = handle;
     if (handle !== null) lastChatColumn.current = handle;
-  }, []);
+  });
   // Closing takes off the panel's width as it is now, so the chat column keeps its width.
   const closingPanelWidth = useStableCallback(
-    () =>
-      lastChatColumn.current?.keepPanelWidth() ?? readPreviewPanelWidth(input.widthStorageKey),
+    () => lastChatColumn.current?.keepPanelWidth() ?? readPreviewPanelWidth(input.widthStorageKey),
   );
 
   const syncWindow = useStableCallback((open: boolean, held: boolean) => {
