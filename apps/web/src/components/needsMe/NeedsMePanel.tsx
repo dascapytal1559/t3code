@@ -19,6 +19,7 @@ import {
   formatCalendarDay,
   groupNeedsMeDecisions,
   needsMeRowDetail,
+  splitObjectives,
   type NeedsMeGroups,
 } from "./needsMe.logic";
 import { useNeedsMeOpenRow } from "./needsMeReveal";
@@ -72,8 +73,9 @@ export function NeedsMePanel(props: { readonly threadRef: ScopedThreadRef }) {
 }
 
 /**
- * Read-only: FirstMate sets them over MCP. Each objective is clamped to two lines, and the whole
- * list to a short height, so Needs you stays in view until the user expands it.
+ * Read-only: FirstMate sets them over MCP. Each objective is its own card, capped at a readable
+ * line length. Collapsed, each is clamped to two lines (on the inner text, so the card's padding is
+ * never clipped) and the list to a short height, so Needs you stays in view.
  */
 function ObjectivesSection(props: {
   readonly objectives: Objectives;
@@ -82,7 +84,7 @@ function ObjectivesSection(props: {
   const [expanded, setExpanded] = useState(false);
   const { lastReviewed } = props.objectives;
   return (
-    <section className="mb-4">
+    <section className="mb-4 max-w-[720px]">
       <button
         type="button"
         aria-expanded={expanded}
@@ -98,15 +100,21 @@ function ObjectivesSection(props: {
           className={cn("ms-auto size-3.5 shrink-0", expanded && "rotate-180")}
         />
       </button>
-      <ChatMarkdown
-        text={props.objectives.markdown}
-        cwd={undefined}
-        environmentId={props.environmentId}
-        className={cn(
-          "px-2 [&_li+li]:mt-1.5 [&_ol]:my-0 [&_ul]:my-0",
-          !expanded && "max-h-48 overflow-hidden [&_li]:line-clamp-2 [&_p]:line-clamp-2",
-        )}
-      />
+      <div className={cn("flex flex-col gap-2", !expanded && "max-h-72 overflow-hidden")}>
+        {splitObjectives(props.objectives.markdown).map((entry) => (
+          <div
+            key={entry}
+            className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm"
+          >
+            <ChatMarkdown
+              text={entry}
+              cwd={undefined}
+              environmentId={props.environmentId}
+              className={cn("[&_p]:my-0", !expanded && "[&_p]:line-clamp-2")}
+            />
+          </div>
+        ))}
+      </div>
     </section>
   );
 }

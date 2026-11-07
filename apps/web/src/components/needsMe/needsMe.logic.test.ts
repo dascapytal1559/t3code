@@ -9,6 +9,7 @@ import {
   groupNeedsMeDecisions,
   isNeedsMeListed,
   needsMeRowDetail,
+  splitObjectives,
 } from "./needsMe.logic";
 
 const at = (day: number, hour: number) => new Date(2026, 10, day, hour).toISOString();
@@ -128,6 +129,23 @@ describe("bridgeObjectives", () => {
       ),
     ).toEqual({ markdown: "- **Other**" });
     expect(bridgeObjectives(new Map([[host, config(null)]]), host)).toBeNull();
+  });
+});
+
+describe("splitObjectives", () => {
+  it("makes one entry per top-level bullet, keeping nested lines, else the whole text", () => {
+    expect(
+      splitObjectives(
+        "- **Archive** — get it done\n  more detail\n    - nested\n\n* **Fleet** — keep it small\n1. **Third**",
+      ),
+    ).toEqual([
+      "**Archive** — get it done\n  more detail\n    - nested",
+      "**Fleet** — keep it small",
+      "**Third**",
+    ]);
+    expect(splitObjectives("Focus this week\n- **One**")).toEqual(["Focus this week", "**One**"]);
+    expect(splitObjectives("  Just prose.  ")).toEqual(["Just prose."]);
+    expect(splitObjectives("")).toEqual([]);
   });
 });
 

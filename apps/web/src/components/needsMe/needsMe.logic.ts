@@ -123,6 +123,28 @@ export function needsMeRowDetail(
   }
 }
 
+const OBJECTIVE_BULLET = /^\s{0,3}(?:[-*+]|\d+[.)])\s+/;
+
+/**
+ * One markdown entry per objective: each top-level bullet with its continuation lines. Markdown
+ * with no bullets is a single entry.
+ */
+export function splitObjectives(markdown: string): ReadonlyArray<string> {
+  const items: string[][] = [];
+  const preamble: string[] = [];
+  for (const line of markdown.split("\n")) {
+    if (OBJECTIVE_BULLET.test(line)) {
+      items.push([line.replace(OBJECTIVE_BULLET, "")]);
+    } else {
+      (items.at(-1) ?? preamble).push(line);
+    }
+  }
+  if (items.length === 0) return markdown.trim() === "" ? [] : [markdown.trim()];
+  const entries = items.map((lines) => lines.join("\n").trim());
+  const intro = preamble.join("\n").trim();
+  return (intro === "" ? entries : [intro, ...entries]).filter((entry) => entry !== "");
+}
+
 /**
  * The objectives the Bridge shows: the host chat's environment's, else the first connected
  * environment that has some. FirstMate normally sets them on one environment only.
