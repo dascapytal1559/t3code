@@ -101,8 +101,6 @@ export function decisionAgeTimestamp(
 
 const dayLabel = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
 export const formatDay = (iso: string) => dayLabel.format(Date.parse(iso));
-/** A `YYYY-MM-DD` day as the same label, read in local time so it never shifts a day. */
-export const formatCalendarDay = (day: string) => formatDay(`${day}T00:00:00`);
 
 /** The gray detail on a row: Needs you its age, Later the day it was raised, Scheduled its wake day. */
 export function needsMeRowDetail(
@@ -143,6 +141,19 @@ export function splitObjectives(markdown: string): ReadonlyArray<string> {
   const entries = items.map((lines) => lines.join("\n").trim());
   const intro = preamble.join("\n").trim();
   return (intro === "" ? entries : [intro, ...entries]).filter((entry) => entry !== "");
+}
+
+const OBJECTIVE_LEAD = /^\*\*(.+?)\*\*\s*(?:[:—–-]\s*)?([\s\S]*)$/;
+
+/**
+ * An objective's bold lead as its name and the rest, past a dash or colon, as its text: the
+ * `**Name** — text` shape FirstMate writes. An entry with no bold lead is all text.
+ */
+export function parseObjective(entry: string): { readonly name?: string; readonly text: string } {
+  const match = OBJECTIVE_LEAD.exec(entry);
+  const name = match?.[1]?.trim().replace(/:$/, "");
+  if (match === null || name === undefined || name === "") return { text: entry.trim() };
+  return { name, text: (match[2] ?? "").trim() };
 }
 
 /**

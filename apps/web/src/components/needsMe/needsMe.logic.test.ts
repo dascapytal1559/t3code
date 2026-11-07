@@ -9,6 +9,7 @@ import {
   groupNeedsMeDecisions,
   isNeedsMeListed,
   needsMeRowDetail,
+  parseObjective,
   splitObjectives,
 } from "./needsMe.logic";
 
@@ -146,6 +147,29 @@ describe("splitObjectives", () => {
     expect(splitObjectives("Focus this week\n- **One**")).toEqual(["Focus this week", "**One**"]);
     expect(splitObjectives("  Just prose.  ")).toEqual(["Just prose."]);
     expect(splitObjectives("")).toEqual([]);
+  });
+});
+
+describe("parseObjective", () => {
+  it("takes the bold lead as the name and the rest, past a dash or colon, as the text", () => {
+    expect(
+      parseObjective(
+        "**Modular life archive** — get the life archive to where its parts can be shared individually.",
+      ),
+    ).toEqual({
+      name: "Modular life archive",
+      text: "get the life archive to where its parts can be shared individually.",
+    });
+    expect(
+      parseObjective("**Creating content**: “creating content should be an objective”"),
+    ).toEqual({ name: "Creating content", text: "“creating content should be an objective”" });
+    expect(parseObjective("**Fleet:** keep it small\n  more detail")).toEqual({
+      name: "Fleet",
+      text: "keep it small\n  more detail",
+    });
+    expect(parseObjective("**Third**")).toEqual({ name: "Third", text: "" });
+    expect(parseObjective("Just prose.")).toEqual({ text: "Just prose." });
+    expect(parseObjective("** ** nothing")).toEqual({ text: "** ** nothing" });
   });
 });
 
