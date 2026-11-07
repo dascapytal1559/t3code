@@ -1,6 +1,10 @@
 /* Clerk injects its component styles into the clerk layer (clerkAppearance.cssLayerName). */
 @layer theme, base, clerk, components, utilities;
 @import "tailwindcss";
+/* Fork: code says `container`, so Tailwind emits an unused .container with 1280px and 1536px
+   media rules. The window crosses them when it grows for the right panel, and Chromium
+   restyles and relays out the whole document when any media rule in this layered sheet flips. */
+@source not inline("{,!}container");
 
 @custom-variant dark (&:is(.dark, .dark *));
 @custom-variant light (&:not(.dark, .dark *));
