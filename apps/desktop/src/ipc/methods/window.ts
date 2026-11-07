@@ -447,7 +447,7 @@ export const revealWindow = DesktopIpc.makeIpcMethod({
 export const setRightPanelOpen = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.SET_RIGHT_PANEL_OPEN_CHANNEL,
   payload: Schema.Struct({ open: Schema.Boolean, width: Schema.Finite }),
-  result: Schema.Void,
+  result: Schema.NullOr(Schema.Finite),
   handler: Effect.fn("desktop.ipc.window.setRightPanelOpen")(function* (input, event) {
     const electronWindow = yield* ElectronWindow.ElectronWindow;
     const window = yield* electronWindow.main;
@@ -456,9 +456,9 @@ export const setRightPanelOpen = DesktopIpc.makeIpcMethod({
       Option.isNone(window) ||
       window.value.webContents.id !== event.sender.id
     ) {
-      return;
+      return null;
     }
-    setWindowPanelOpen(window.value, input.open, input.width);
+    return setWindowPanelOpen(window.value, input.open, input.width);
   }),
 });
 

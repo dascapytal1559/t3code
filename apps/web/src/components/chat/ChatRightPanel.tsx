@@ -32,19 +32,31 @@ export function ChatRightPanel(props: ChatRightPanelProps) {
     layoutControls,
     ...tabs
   } = props;
+  const open = tabs.open === true;
   const inlineSize = usePreviewPanelInlineSize({
+    enabled: open && !sheet && !maximized,
     container: workspaceLayoutElement,
     widthStorageKey,
   });
-  const open = tabs.open === true;
+  const { beginWindowGrowth } = inlineSize;
   // Fork: the desktop window grows by the panel's width instead of squeezing the chat.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- resizes the native desktop window, outside React
   useEffect(() => {
     const bridge = window.desktopBridge;
     if (!open || bridge === undefined) return;
-    void bridge.setRightPanelOpen(true, readPreviewPanelWidth(widthStorageKey)).catch(() => {});
-    return () => void bridge.setRightPanelOpen(false, 0).catch(() => {});
-  }, [open, widthStorageKey]);
+    let active = true;
+    const settle = beginWindowGrowth();
+    void bridge
+      .setRightPanelOpen(true, readPreviewPanelWidth(widthStorageKey))
+      .then((added) => {
+        if (active) settle(added);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+      void bridge.setRightPanelOpen(false, 0).catch(() => {});
+    };
+  }, [open, widthStorageKey, beginWindowGrowth]);
   if (!sheet) {
     return <RightPanelTabs {...tabs} mode="inline" maximized={maximized} inlineSize={inlineSize} />;
   }

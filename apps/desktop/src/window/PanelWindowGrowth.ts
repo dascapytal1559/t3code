@@ -45,31 +45,35 @@ const growthByWindow = new WeakMap<Electron.BrowserWindow, PanelGrowth>();
 
 const isZoomed = (window: Electron.BrowserWindow) => window.isFullScreen() || window.isMaximized();
 
+/** Opening returns the CSS pixels the window grew by, or null when it was already grown. */
 export function setWindowPanelOpen(
   window: Electron.BrowserWindow,
   open: boolean,
   panelWidth: number,
-): void {
-  if (window.isDestroyed()) return;
+): number | null {
+  if (window.isDestroyed()) return null;
   const growth = growthByWindow.get(window);
   if (open) {
-    if (growth !== undefined || isZoomed(window)) return;
+    if (growth !== undefined) return null;
+    if (isZoomed(window)) return 0;
     const bounds = window.getBounds();
+    // The renderer measures in CSS pixels; window bounds are in screen points.
+    const zoomFactor = window.webContents.getZoomFactor();
     const next = growForPanel(
       bounds,
       Electron.screen.getDisplayMatching(bounds).workArea,
-      // The renderer measures in CSS pixels; window bounds are in screen points.
-      panelWidth * window.webContents.getZoomFactor(),
+      panelWidth * zoomFactor,
     );
-    if (next === null) return;
+    if (next === null) return 0;
     growthByWindow.set(window, next.growth);
     window.setBounds(next.bounds);
-    return;
+    return next.growth.added / zoomFactor;
   }
   // A zoomed window keeps its growth, so its normal bounds still account for it.
-  if (growth === undefined || isZoomed(window)) return;
+  if (growth === undefined || isZoomed(window)) return null;
   growthByWindow.delete(window);
   window.setBounds(shrinkAfterPanel(window.getBounds(), growth, window.getMinimumSize()[0] ?? 0));
+  return null;
 }
 
 /** Saved bounds leave out the panel's width, so a restart with the panel open grows once. */
