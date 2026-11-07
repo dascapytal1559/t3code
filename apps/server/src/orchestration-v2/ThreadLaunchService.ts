@@ -7,6 +7,7 @@ import {
   type ChatAttachment,
   type MessageId,
   type ModelSelection,
+  type OrchestrationClientOrigin,
   type OrchestrationV2Actor,
   type OrchestrationV2CreationSource,
   type OrchestrationV2DelegatedFrom,
@@ -78,6 +79,7 @@ export interface ThreadLaunchInitialMessage {
   readonly text: string;
   readonly attachments: ReadonlyArray<ChatAttachment>;
   readonly context?: import("@t3tools/contracts").OrchestrationMessageContext | undefined;
+  readonly origin?: OrchestrationClientOrigin;
 }
 
 export interface ThreadLaunchInput {
@@ -1017,6 +1019,7 @@ const make = Effect.gen(function* () {
                 : { senderThreadId: input.initialMessage.senderThreadId }),
               attachments: input.initialMessage.attachments,
               ...(input.initialMessage.context ? { context: input.initialMessage.context } : {}),
+              ...(input.initialMessage.origin ? { origin: input.initialMessage.origin } : {}),
               ...(input.generateTitle === true ? { titleSeed: input.title } : {}),
               modelSelection: input.modelSelection,
               dispatchMode: { type: "defer_start", workspaceStrategy },

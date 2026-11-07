@@ -11,13 +11,16 @@ import {
   ProviderItemId,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
+import { AuthClientMetadataDeviceType } from "./auth.ts";
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
 import { ModelSelection } from "./modelSelection.ts";
 import type { OrchestrationV2StoredEvent } from "./orchestrationV2.ts";
 import { ProjectScript, StoredProjectIcon } from "./project.ts";
 
+/** The client that sent a command. Only the server stamps it; absent means unknown. */
 export const OrchestrationClientOrigin = Schema.Struct({
-  surface: Schema.optional(ClientSurface),
+  surface: Schema.optional(Schema.Literals([...ClientSurface.literals, "mcp"])),
+  deviceType: Schema.optional(AuthClientMetadataDeviceType),
   appVersion: Schema.optional(TrimmedNonEmptyString),
 });
 export type OrchestrationClientOrigin = typeof OrchestrationClientOrigin.Type;

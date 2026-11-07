@@ -193,6 +193,10 @@ function metadataForV2Event(event: OrchestrationV2DomainEvent): Record<string, u
       ? {}
       : { providerInstanceId: event.providerInstanceId }),
     ...(event.rawEventId === undefined ? {} : { rawEventId: event.rawEventId }),
+    // Same place as v1 events, so origin queries read both without parsing payloads.
+    ...(event.type === "message.updated" && event.payload.origin !== undefined
+      ? { origin: event.payload.origin }
+      : {}),
   };
 }
 

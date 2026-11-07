@@ -19,6 +19,7 @@ import {
   type OrchestrationV2ForceStopThreadInput,
   type OrchestrationV2ForceStopThreadResult,
   type ModelSelection,
+  type OrchestrationClientOrigin,
   type OrchestrationV2Actor,
   type OrchestrationV2Command,
   type OrchestrationV2GetTurnItemResult,
@@ -80,6 +81,7 @@ export interface ThreadManagementProvenance {
 export function withCreationProvenance(
   command: OrchestrationV2Command,
   provenance: ThreadManagementProvenance,
+  origin?: OrchestrationClientOrigin,
 ): OrchestrationV2Command {
   switch (command.type) {
     case "thread.create": {
@@ -87,7 +89,10 @@ export function withCreationProvenance(
       const { linkOrigin: _linkOrigin, delegatedFrom: _delegatedFrom, ...rest } = command;
       return { ...rest, ...provenance };
     }
-    case "message.dispatch":
+    case "message.dispatch": {
+      const { origin: _origin, ...rest } = command;
+      return { ...rest, ...provenance, ...(origin === undefined ? {} : { origin }) };
+    }
     case "thread.fork":
     case "thread.merge_back":
     case "delegated_task.request":

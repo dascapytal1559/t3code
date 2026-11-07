@@ -39,6 +39,7 @@ import {
   type DiscoveredLocalServerList,
   type EditorId,
   type FileManagerRevealKind,
+  type OrchestrationClientOrigin,
   type OrchestrationV2Command,
   type GitActionProgressEvent,
   type GitManagerServiceError,
@@ -1404,7 +1405,7 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
 
 export const layerWsRpc = (
   currentSession: EnvironmentAuth.AuthenticatedSession,
-  clientAnalyticsProps: Readonly<Record<string, unknown>>,
+  clientAnalyticsProps: ReturnType<typeof readClientAnalyticsProps>,
   serverBrowser: ServerBrowser.ServerBrowser["Service"],
   reportProfiles: ServerBrowser.ProfileReporter,
   settingsClient: { readonly secretReferences: boolean },
@@ -1435,6 +1436,11 @@ export const layerWsRpc = (
       const mcpAppRequests = yield* McpAppRequests.McpAppRequests;
       const analytics = yield* AnalyticsService.AnalyticsService;
       const originProps = clientAnalyticsProps;
+      const clientOrigin: OrchestrationClientOrigin = {
+        ...(originProps.surface === undefined ? {} : { surface: originProps.surface }),
+        deviceType: currentSession.deviceType,
+        ...(originProps.appVersion === undefined ? {} : { appVersion: originProps.appVersion }),
+      };
       const recordClientCommandAnalytics = (command: OrchestrationV2Command) => {
         const usage = commandFeatureUsage(command);
         return Effect.all(
@@ -2088,11 +2094,15 @@ export const layerWsRpc = (
                   (command.type === "prepared-run.retry"
                     ? threadLaunch.retryPreparation(command)
                     : ThreadMessageIntake.dispatchCommand(
-                        ThreadManagementService.withCreationProvenance(command, {
-                          createdBy: "user",
-                          creationSource:
-                            "creationSource" in command ? command.creationSource : "web",
-                        }),
+                        ThreadManagementService.withCreationProvenance(
+                          command,
+                          {
+                            createdBy: "user",
+                            creationSource:
+                              "creationSource" in command ? command.creationSource : "web",
+                          },
+                          clientOrigin,
+                        ),
                       )
                   ).pipe(Effect.provide(intakeContext)),
                 )
@@ -2119,7 +2129,7 @@ export const layerWsRpc = (
           threadManagement.forceStopThread(input),
         [ORCHESTRATION_V2_WS_METHODS.replyToDecision]: (input) =>
           startup
-            .enqueueCommand(decisionReplies.reply(input))
+            .enqueueCommand(decisionReplies.reply(input, clientOrigin))
             .pipe(
               Effect.catchTags({ ServerRuntimeStartupError: decisionReplyStartupError(input) }),
             ),
@@ -2296,6 +2306,7 @@ export const layerWsRpc = (
                             ...(input.initialMessage.context === undefined
                               ? {}
                               : { context: input.initialMessage.context }),
+                            origin: clientOrigin,
                           },
                         }),
                     createdBy: "user",

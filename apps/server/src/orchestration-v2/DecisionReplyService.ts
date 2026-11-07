@@ -1,6 +1,7 @@
 import {
   CommandId,
   MessageId,
+  type OrchestrationClientOrigin,
   ThreadDecisionReplyError,
   formatThreadDecisionReply,
   type ThreadDecisionReplyInput,
@@ -26,6 +27,7 @@ export class DecisionReplyService extends Context.Service<
   {
     readonly reply: (
       input: ThreadDecisionReplyInput,
+      origin?: OrchestrationClientOrigin,
     ) => Effect.Effect<ThreadDecisionReplyResult, ThreadDecisionReplyError>;
     /** Takes a reply back while it is still queued, and unsettles the decision. */
     readonly undoReply: (
@@ -79,6 +81,7 @@ const make = Effect.gen(function* () {
 
   const reply = Effect.fn("DecisionReplyService.reply")(function* (
     input: ThreadDecisionReplyInput,
+    origin?: OrchestrationClientOrigin,
   ) {
     yield* Effect.annotateCurrentSpan({ "orchestration_v2.thread_id": input.threadId });
     const { thread, coordinatorId } = yield* readDecisionThread(input.threadId);
@@ -115,6 +118,7 @@ const make = Effect.gen(function* () {
         dispatchMode: { type: "queue_after_active" },
         createdBy: "user",
         creationSource: input.creationSource ?? "web",
+        ...(origin === undefined ? {} : { origin }),
       })
       .pipe(Effect.mapError(failed(input.threadId)));
     yield* threads

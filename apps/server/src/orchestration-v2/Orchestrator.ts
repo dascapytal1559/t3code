@@ -1,5 +1,7 @@
 import type {
   GuestShareId,
+  OrchestrationClientOrigin,
+  OrchestrationV2CreationSource,
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
   OrchestrationV2ThreadHistoryPage,
@@ -716,6 +718,23 @@ function mayStartSubagentFollowup(
     command.creationSource === "mcp" ||
     command.usageLimitContinuationOfRunId !== undefined
   );
+}
+
+const MCP_CLIENT_ORIGIN: OrchestrationClientOrigin = { surface: "mcp", deviceType: "bot" };
+
+// Client transports stamp `origin`; every MCP send path is server code that sets "mcp".
+// A scheduled run keeps its task's creationSource but nobody sent it.
+function messageOrigin(command: {
+  readonly origin?: OrchestrationClientOrigin | undefined;
+  readonly creationSource: OrchestrationV2CreationSource;
+  readonly scheduledTaskId?: unknown;
+}): { readonly origin?: OrchestrationClientOrigin } {
+  const origin =
+    command.origin ??
+    (command.creationSource === "mcp" && command.scheduledTaskId === undefined
+      ? MCP_CLIENT_ORIGIN
+      : undefined);
+  return origin === undefined ? {} : { origin };
 }
 
 /** Waiting runs only drain post-terminal output; their agent turn is over and still needs a wake. */
@@ -4991,6 +5010,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     readonly scheduledTaskId?: OrchestrationV2ConversationMessage["scheduledTaskId"];
     readonly senderThreadId?: OrchestrationV2ConversationMessage["senderThreadId"];
     readonly idleCompaction?: OrchestrationV2ConversationMessage["idleCompaction"];
+    readonly origin?: OrchestrationClientOrigin;
     readonly delegatedCompletion?: OrchestrationV2ConversationMessage["delegatedCompletion"];
     readonly notification?: OrchestrationV2ConversationMessage["notification"];
     readonly forceRestart: boolean;
@@ -5152,6 +5172,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             : { scheduledTaskId: input.scheduledTaskId }),
           ...(input.senderThreadId === undefined ? {} : { senderThreadId: input.senderThreadId }),
           ...(input.idleCompaction === undefined ? {} : { idleCompaction: input.idleCompaction }),
+          ...(input.origin === undefined ? {} : { origin: input.origin }),
           id: input.messageId,
           threadId: input.command.threadId,
           runId: messageInput.runId,
@@ -6185,6 +6206,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : { scheduledTaskId: command.scheduledTaskId }),
         ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
         ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
+        ...messageOrigin(command),
         forceRestart: dispatchMode.type === "restart_active",
       });
       return;
@@ -6422,6 +6444,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : { scheduledTaskId: command.scheduledTaskId }),
         ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
         ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
+        ...messageOrigin(command),
         id: command.messageId,
         threadId: command.threadId,
         runId,
@@ -6806,6 +6829,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : { scheduledTaskId: command.scheduledTaskId }),
         ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
         ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
+        ...messageOrigin(command),
         id: command.messageId,
         threadId: command.threadId,
         runId,
@@ -7588,6 +7612,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         : { scheduledTaskId: command.scheduledTaskId }),
       ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
       ...(command.idleCompaction === undefined ? {} : { idleCompaction: command.idleCompaction }),
+      ...messageOrigin(command),
       id: command.messageId,
       threadId: command.threadId,
       runId,
@@ -10054,6 +10079,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ...(queuedMessage.idleCompaction === undefined
         ? {}
         : { idleCompaction: queuedMessage.idleCompaction }),
+      ...(queuedMessage.origin === undefined ? {} : { origin: queuedMessage.origin }),
       forceRestart: false,
     });
   });

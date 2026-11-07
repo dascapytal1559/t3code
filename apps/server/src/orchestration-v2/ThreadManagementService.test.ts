@@ -80,6 +80,29 @@ it("stamps authoritative provenance on commands that create threads or messages"
   });
   expect(stamped).not.toHaveProperty("linkOrigin");
   expect(stamped).not.toHaveProperty("delegatedFrom");
+
+  // A client cannot claim another client's origin either; the connection's replaces it.
+  const message: OrchestrationV2Command = {
+    type: "message.dispatch",
+    createdBy: "user",
+    creationSource: "web",
+    origin: { surface: "mcp", deviceType: "bot" },
+    commandId: CommandId.make("command:thread-management:message"),
+    threadId: ThreadId.make("thread:thread-management:create"),
+    messageId: MessageId.make("message:thread-management:origin"),
+    text: "Hello",
+    attachments: [],
+    dispatchMode: { type: "start_immediately" },
+  };
+  const provenance = { createdBy: "user", creationSource: "mobile" } as const;
+  const phone = { surface: "mobile", deviceType: "mobile", appVersion: "1.4.0" } as const;
+  expect(ThreadManagementService.withCreationProvenance(message, provenance, phone)).toMatchObject({
+    creationSource: "mobile",
+    origin: phone,
+  });
+  expect(ThreadManagementService.withCreationProvenance(message, provenance)).not.toHaveProperty(
+    "origin",
+  );
 });
 
 const layerReceiptsTest = CommandReceiptStore.layer.pipe(

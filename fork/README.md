@@ -636,6 +636,26 @@ renewal job was more machinery than it saved. The match is on the exact label
 `firstmate`, which is the `client_name` FirstMate signs in with. Code:
 `apps/server/src/auth/EnvironmentAuth.ts` (`FIRSTMATE_SESSION_TTL`).
 
+## Messages record which client sent them
+
+Every user message records the client that sent it, so an outside reader can
+count prompts from the phone against the computer without parsing text. This
+extends upstream's existing origin stamping: v1 events carried
+`metadata_json.origin` `{ surface, appVersion }`, and the v2 orchestrator
+dropped it. Here the server stamps `origin: { surface, deviceType, appVersion }`
+on the message (`orchestration_v2_projection_messages.payload_json`) and on its
+`message.updated` event's `metadata_json`. `surface` comes from the sending
+socket (`desktop`, `mobile`, `web`), `deviceType` from that socket's auth
+session (`desktop`, `mobile`, `tablet`, `bot`, `unknown`), so a phone browser
+reads `web` + `mobile`. Messages sent through T3's MCP tools (FirstMate's
+sends and launch briefs, the `t3 thread` CLI) read `surface: "mcp"`,
+`deviceType: "bot"`. A client cannot set its own origin. Server-made messages
+(scheduled tasks, continuations) and messages from before this change have
+none, which means unknown; nothing is backfilled. A run's sender is its
+`userMessageId`'s origin. Code: `withCreationProvenance` in
+`apps/server/src/orchestration-v2/ThreadManagementService.ts`, `messageOrigin`
+in `Orchestrator.ts`, `clientOrigin` in `apps/server/src/ws.ts`.
+
 ## Telemetry off by default
 
 The fork sends no product analytics and no T3 Connect relay traces unless you

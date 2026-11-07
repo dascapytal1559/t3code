@@ -523,6 +523,8 @@ it.effect("retains automation and sender attribution while a message waits in th
     const message = projection.messages.find((item) => item.id === queued.message.id);
     assert.equal(message?.scheduledTaskId, scheduledTaskId);
     assert.equal(message?.senderThreadId, senderThreadId);
+    // A scheduled run keeps its task's creationSource, but no client sent it.
+    assert.isUndefined(message?.origin);
     assert.equal(message?.text, "Run the audit");
     // A fresh send queues instead of steering, so it needs no steerable run.
     const fresh = yield* threads.sendToThread({
@@ -539,8 +541,78 @@ it.effect("retains automation and sender attribution while a message waits in th
     });
     assert.equal(fresh.delivery, "queued");
     assert.isTrue(fresh.run.freshContext);
+    assert.deepStrictEqual(fresh.message.origin, { surface: "mcp", deviceType: "bot" });
   }).pipe(Effect.provide(harness.layer));
 });
+
+it.effect.each([
+  {
+    client: "the desktop app",
+    origin: { surface: "desktop", deviceType: "desktop", appVersion: "0.0.40" },
+    creationSource: "web",
+    expected: { surface: "desktop", deviceType: "desktop", appVersion: "0.0.40" },
+  },
+  {
+    client: "the mobile app",
+    origin: { surface: "mobile", deviceType: "mobile", appVersion: "1.4.0" },
+    creationSource: "mobile",
+    expected: { surface: "mobile", deviceType: "mobile", appVersion: "1.4.0" },
+  },
+  {
+    client: "a phone browser",
+    origin: { surface: "web", deviceType: "mobile" },
+    creationSource: "web",
+    expected: { surface: "web", deviceType: "mobile" },
+  },
+  {
+    client: "a computer browser",
+    origin: { surface: "web", deviceType: "desktop" },
+    creationSource: "web",
+    expected: { surface: "web", deviceType: "desktop" },
+  },
+  {
+    client: "an MCP client",
+    origin: undefined,
+    creationSource: "mcp",
+    expected: { surface: "mcp", deviceType: "bot" },
+  },
+  { client: "the server", origin: undefined, creationSource: "server", expected: undefined },
+] as const)(
+  "records that $client sent a message",
+  ({ client, origin, creationSource, expected }) => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const launches = yield* ThreadLaunch.ThreadLaunchService;
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const sql = yield* SqlClient.SqlClient;
+      const input = launchInput({
+        command: `command:origin:${client}`,
+        thread: `thread:origin:${client}`,
+        message: `Hello from ${client}`,
+      });
+      const launched = yield* launches.launch({
+        ...input,
+        creationSource,
+        initialMessage: { ...input.initialMessage!, ...(origin === undefined ? {} : { origin }) },
+      });
+      const projection = yield* threads.getThreadProjection(launched.threadId);
+      const message = projection.messages.find(
+        (item) => item.id === input.initialMessage!.messageId,
+      );
+      assert.deepStrictEqual(message?.origin, expected);
+      const rows = yield* sql<{ readonly origin: string | null }>`
+      SELECT json_extract(metadata_json, '$.origin') AS origin
+      FROM orchestration_events
+      WHERE event_type = 'message.updated'
+        AND json_extract(payload_json, '$.id') = ${input.initialMessage!.messageId}
+    `;
+      assert.isAbove(rows.length, 0);
+      for (const row of rows) {
+        assert.deepStrictEqual(row.origin === null ? undefined : JSON.parse(row.origin), expected);
+      }
+    }).pipe(Effect.provide(harness.layer));
+  },
+);
 
 it.effect("provisions independent launches concurrently instead of behind a global semaphore", () =>
   Effect.gen(function* () {
