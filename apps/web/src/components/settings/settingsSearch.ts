@@ -339,6 +339,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["wide full width column layout messages composer monitor"],
   },
   {
+    id: "thread-details-default-open",
+    title: "Show thread details by default",
+    to: "/settings/appearance",
+    searchTerms: ["open closed hidden new thread panel card remember"],
+  },
+  {
     id: "thread-details-items",
     title: "Thread details",
     to: "/settings/appearance",

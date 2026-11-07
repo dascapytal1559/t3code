@@ -289,6 +289,32 @@ export function AppearanceSettingsPanel() {
             </div>
           }
         />
+        <SettingsRow
+          {...searchableSetting("thread-details-default-open")}
+          description="Open new threads with the thread details card shown. Each thread remembers when you show or hide it."
+          resetAction={
+            settings.threadDetailsDefaultOpen !==
+            DEFAULT_UNIFIED_SETTINGS.threadDetailsDefaultOpen ? (
+              <SettingResetButton
+                label="show thread details by default"
+                onClick={() =>
+                  updateSettings({
+                    threadDetailsDefaultOpen: DEFAULT_UNIFIED_SETTINGS.threadDetailsDefaultOpen,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.threadDetailsDefaultOpen}
+              onCheckedChange={(checked) =>
+                updateSettings({ threadDetailsDefaultOpen: Boolean(checked) })
+              }
+              aria-label="Show thread details by default"
+            />
+          }
+        />
         <ThreadDetailsItemsRow />
         <SettingsRow
           {...searchableSetting("effort-display")}

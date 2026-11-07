@@ -13,6 +13,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import { useDiffPanelStore } from "../../diffPanelStore";
+import { getClientSettings } from "../../hooks/useSettings";
 import { type ThreadPanelPresentation } from "../../rightPanelLayout";
 import {
   selectActiveRightPanel,
@@ -244,6 +245,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
         store.threadPanelVisibilityByThreadKey,
         activeThreadRef,
         "inline",
+        getClientSettings().threadDetailsDefaultOpen,
       );
       if (!open) requestWorkspaceFocus({ area: "details" });
       else if (document.activeElement?.closest('[data-workspace-area="details"]'))

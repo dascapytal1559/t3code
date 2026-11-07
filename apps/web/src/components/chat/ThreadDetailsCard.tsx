@@ -10,7 +10,7 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import { ScrollArea } from "../ui/scroll-area";
 import { cn } from "../../lib/utils";
 import { Popover, PopoverPopup, PopoverCreateHandle } from "../ui/popover";
-import { selectThreadPanelOpen, useRightPanelStore } from "../../rightPanelStore";
+import { useRightPanelStore, useThreadPanelOpen } from "../../rightPanelStore";
 import { useChatCanvas } from "./ChatCanvasContext";
 import {
   THREAD_DETAILS_CARD_GAP,
@@ -41,12 +41,8 @@ export function ThreadDetailsCard({
   const placement = canvas?.detailsCardPlacement ?? null;
   const mode = placement ? "inline" : "popover";
   const topInset = canvas?.detailsCardTopInset ?? 0;
-  const inlineOpen = useRightPanelStore((state) =>
-    selectThreadPanelOpen(state.threadPanelVisibilityByThreadKey, threadRef, "inline"),
-  );
-  const popoverOpen = useRightPanelStore((state) =>
-    selectThreadPanelOpen(state.threadPanelVisibilityByThreadKey, threadRef, "popover"),
-  );
+  const inlineOpen = useThreadPanelOpen(threadRef, "inline");
+  const popoverOpen = useThreadPanelOpen(threadRef, "popover");
   const measurementKey = `${threadRef.environmentId}:${threadRef.threadId}:${preferredPlacement?.width ?? "popup"}:${contentKey}`;
   const [measurements, setMeasurements] = useState({
     key: measurementKey,

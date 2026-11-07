@@ -3,6 +3,8 @@ import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contract
 import { expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 import { act, render } from "../../../test/render";
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import { selectThreadPanelOpen, useRightPanelStore } from "../../rightPanelStore";
 import { PopoverCreateHandle } from "../ui/popover";
 import { ChatCanvasContext } from "./ChatCanvasContext";
@@ -21,6 +23,7 @@ const container = { width: 1200, height: 800 };
 const placement = { x: 908, y: 0, right: 12, width: 280, height: 400 } as const;
 
 function setup() {
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, threadDetailsDefaultOpen: true });
   useRightPanelStore.setState({ threadPanelVisibilityByThreadKey: {} });
   const anchor = document.createElement("div");
   document.body.append(anchor);
@@ -36,6 +39,7 @@ const popoverOpen = (threadRef: ScopedThreadRef) =>
     useRightPanelStore.getState().threadPanelVisibilityByThreadKey,
     threadRef,
     "popover",
+    true,
   );
 
 function Card({

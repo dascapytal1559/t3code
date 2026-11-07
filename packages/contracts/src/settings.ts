@@ -507,6 +507,8 @@ export const ClientSettingsSchema = Schema.Struct({
   ),
   // Retired Labs toggle. Still read as the default for the Usage item in threadDetailsItems.
   threadDetailsUsageEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  // Whether a thread with no remembered choice opens with its details card shown.
+  threadDetailsDefaultOpen: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   // Sparse show/hide overrides for thread details card items. Missing ids use the client's
   // default, so new items appear for everyone and unknown ids survive a downgrade.
   threadDetailsItems: Schema.Record(Schema.String, Schema.Boolean).pipe(
@@ -1901,6 +1903,7 @@ export const ClientSettingsPatch = Schema.Struct({
   boringSidebarEnabled: Schema.optionalKey(Schema.Boolean),
   boringSidebarMultilineRows: Schema.optionalKey(Schema.Boolean),
   threadDetailsUsageEnabled: Schema.optionalKey(Schema.Boolean),
+  threadDetailsDefaultOpen: Schema.optionalKey(Schema.Boolean),
   threadDetailsItems: Schema.optionalKey(Schema.Record(Schema.String, Schema.Boolean)),
   legacySidebarEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarWorkingShelfEnabled: Schema.optionalKey(Schema.Boolean),

@@ -1,8 +1,13 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { type EnvironmentId, RunId, ThreadId } from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import { useClosedViewStore } from "./closedViewStore";
+import {
+  __resetClientSettingsPersistenceForTests,
+  __setClientSettingsForTests,
+} from "./hooks/useSettings";
 import { reopenClosedView } from "./reopenClosedView";
 import {
   hostRightPanel,
@@ -19,7 +24,12 @@ import {
 const refA = scopeThreadRef("env-1" as EnvironmentId, ThreadId.make("thread-A"));
 const refB = scopeThreadRef("env-1" as EnvironmentId, ThreadId.make("thread-B"));
 
+const setDetailsDefaultOpen = (threadDetailsDefaultOpen: boolean) =>
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, threadDetailsDefaultOpen });
+
 beforeEach(() => {
+  __resetClientSettingsPersistenceForTests();
+  setDetailsDefaultOpen(true);
   useClosedViewStore.setState({ entries: [] });
   useRightPanelStore.setState({
     byThreadKey: {},
@@ -689,6 +699,42 @@ describe("rightPanelStore", () => {
     });
   });
 
+  it("hides details on a thread nobody toggled when they are off by default", () => {
+    setDetailsDefaultOpen(false);
+    const visibilityOf = (ref: typeof refA) =>
+      selectThreadPanelVisibility(
+        useRightPanelStore.getState().threadPanelVisibilityByThreadKey,
+        ref,
+        false,
+      );
+    expect(visibilityOf(refA)).toEqual({ inlineOpen: false, popoverOpen: false });
+
+    useRightPanelStore.getState().toggleThreadPanel(refA, "inline");
+    expect(visibilityOf(refA).inlineOpen).toBe(true);
+    expect(visibilityOf(refB).inlineOpen).toBe(false);
+
+    // A remembered choice survives the default changing, in both directions.
+    setDetailsDefaultOpen(true);
+    useRightPanelStore.getState().toggleThreadPanel(refB, "inline");
+    expect(visibilityOf(refB).inlineOpen).toBe(false);
+    setDetailsDefaultOpen(false);
+    expect(visibilityOf(refA).inlineOpen).toBe(true);
+    expect(visibilityOf(refB).inlineOpen).toBe(false);
+  });
+
+  it("keeps a thread's choice across reloads when the default is off", async () => {
+    setDetailsDefaultOpen(false);
+    useRightPanelStore.getState().toggleThreadPanel(refA, "inline");
+    await reloadRightPanelStore();
+    expect(
+      selectThreadPanelVisibility(
+        useRightPanelStore.getState().threadPanelVisibilityByThreadKey,
+        refA,
+        false,
+      ),
+    ).toEqual({ inlineOpen: true, popoverOpen: false });
+  });
+
   it("persists inline preference without restoring an open popover", () => {
     expect(
       migratePersistedRightPanelState({
@@ -701,6 +747,7 @@ describe("rightPanelStore", () => {
       byThreadKey: {},
       threadPanelVisibilityByThreadKey: {
         "env-1:thread-A": { inlineOpen: false, popoverOpen: false },
+        "env-1:thread-B": { inlineOpen: true, popoverOpen: false },
       },
     });
   });
@@ -713,6 +760,7 @@ describe("rightPanelStore", () => {
       selectThreadPanelVisibility(
         useRightPanelStore.getState().threadPanelVisibilityByThreadKey,
         refA,
+        true,
       ),
     ).toEqual({ inlineOpen: true, popoverOpen: false });
   });
@@ -728,6 +776,7 @@ describe("rightPanelStore", () => {
       selectThreadPanelVisibility(
         useRightPanelStore.getState().threadPanelVisibilityByThreadKey,
         refA,
+        true,
       ),
     ).toEqual({ inlineOpen: true, popoverOpen: true });
   });

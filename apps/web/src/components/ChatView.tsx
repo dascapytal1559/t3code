@@ -156,9 +156,9 @@ import { PopoverCreateHandle } from "./ui/popover";
 import {
   selectActiveRightPanel,
   selectSelectedRightPanelSurface,
-  selectThreadPanelOpen,
   selectThreadRightPanelState,
   useRightPanelStore,
+  useThreadPanelOpen,
 } from "../rightPanelStore";
 import { isPreviewSupportedInRuntime, useThreadPreviewState } from "../previewStateStore";
 import { previewRuntimeTabId } from "../browser/previewRuntimeTabId";
@@ -1957,9 +1957,7 @@ export default function ChatView(props: ChatViewProps) {
       ? activePreviewMiniPlayer
       : null;
   const canvasPreview = useThreadPreviewCanvasSource(activeThreadRef, shownPreviewMiniPlayer);
-  const threadPanelInlineOpen = useRightPanelStore((state) =>
-    selectThreadPanelOpen(state.threadPanelVisibilityByThreadKey, activeThreadRef, "inline"),
-  );
+  const threadPanelInlineOpen = useThreadPanelOpen(activeThreadRef, "inline");
   // Selects only the mode, so canvas resizes rerender the chat view only when the
   // card switches presentation.
   const threadPanelPresentation = useStore(
@@ -1973,13 +1971,7 @@ export default function ChatView(props: ChatViewProps) {
         detailsCardInlineOpen: threadPanelInlineOpen,
       }).detailsCardMode,
   );
-  const threadPanelOpen = useRightPanelStore((state) =>
-    selectThreadPanelOpen(
-      state.threadPanelVisibilityByThreadKey,
-      activeThreadRef,
-      threadPanelPresentation,
-    ),
-  );
+  const threadPanelOpen = useThreadPanelOpen(activeThreadRef, threadPanelPresentation);
   const supportsThreadPullRequests = serverConfig !== null;
   const visiblePullRequests = visibleThreadPullRequests(
     (activeThreadShell ?? activeThread)?.pullRequests ?? [],
