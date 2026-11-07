@@ -297,21 +297,20 @@ thread reads report `coordinator`, and `orchestrator_capabilities` reports
 forking FirstMate cannot make a second coordinator. Code:
 `notifyCrewCoordinators` in `apps/server/src/orchestration-v2/RestartContinuation.ts`.
 
-## A crewmate's composer opens locked
+## A crewmate has no composer
 
 FirstMate steers its workers through its own inbox and a message it sends over
 MCP, so a message typed into a worker by accident cuts across that. A crew
-thread (the sidebar's crew membership, snoozed or settled too) opens with its composer
-locked: no typing, sending or dictation, and a line above it reading
-"FirstMate's worker: messages go through FirstMate". "Type anyway" unlocks it
-until you open another thread; coming back locks it again. Stop still works,
-and so do the worker's approvals and questions, which unlock the box while they
-wait because its feedback and custom answers use it. FirstMate's own thread and
-ordinary threads never lock, and a thread stops locking once it leaves the crew
-(its coordinator or itself archived). The lock is web and desktop only: the
-server takes messages for crew as before, so FirstMate's MCP messages arrive
-unchanged, and mobile has no lock. Code: `crewLocked` in
-`apps/web/src/components/chat/ChatComposer.tsx`.
+thread (the sidebar's crew membership, snoozed or settled too) shows no composer
+at all: no message box, model picker or branch row, and no way to unlock one.
+While the worker runs, a small Stop button takes its place. When the worker asks
+for an approval or asks a question, the full box comes back until it is
+answered, because feedback and custom answers use it. FirstMate's own thread
+and ordinary threads keep their composer, and a thread gets it back once it
+leaves the crew (its coordinator or itself archived). This is web and desktop
+only: the server takes messages for crew as before, so FirstMate's MCP messages
+arrive unchanged, and mobile still shows the composer. Code:
+`crewComposerHidden` in `apps/web/src/components/ChatView.tsx`.
 
 ## Bridge
 
