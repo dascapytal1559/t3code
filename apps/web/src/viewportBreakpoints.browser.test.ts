@@ -11,9 +11,9 @@ function viewportWidthBreakpoints(): Map<number, string> {
     for (const rule of rules) {
       if (rule instanceof CSSMediaRule) {
         for (const [, value, unit] of rule.conditionText.matchAll(
-          /width\s*[<>]=?\s*([\d.]+)(px|rem)/g,
+          /width\s*(?::|[<>]=?)\s*([\d.]+)(px|r?em)/g,
         )) {
-          const px = Number(value) * (unit === "rem" ? 16 : 1);
+          const px = Number(value) * (unit === "px" ? 1 : 16);
           found.set(px, found.get(px) ?? rule.cssText.slice(0, 120));
         }
       }

@@ -317,7 +317,7 @@ arrive unchanged, and mobile still shows the composer. Code:
 ![A chat with the Bridge tab beside it: four objectives on top, then three decisions under Needs you, two under Later with the day each was raised, and one under Scheduled with its return day](media/bridge-list.jpg)
 
 The right panel's "Bridge" tab (once "Needs me") is the captain's overview
-beside any chat: his objectives on top, then what FirstMate needs from him. It
+beside any chat: their objectives on top, then what FirstMate needs from them. It
 opens from the panel's launcher or "+" menu (N), or "Open Bridge" in the
 command palette, which still finds it by "needs me". On phone web it opens as a
 sheet like the other right-panel tabs. Internal names (`needs-me` surface kind,
