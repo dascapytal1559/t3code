@@ -6,10 +6,13 @@ import {
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, Objectives, ScopedThreadRef } from "@t3tools/contracts";
 import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 
+import { RESIZABLE_WIDTH_PROPERTY, useResizableWidth } from "../../hooks/useResizableWidth";
 import { useNowMinute } from "../../hooks/useNowMinute";
+import { observeResize } from "../../lib/observeResize";
 import { cn } from "../../lib/utils";
+import { RightPanelResizeHandle } from "../preview/RightPanelResizeHandle";
 import { useProject, useQuietThreadShells, useServerConfigs } from "../../state/entities";
 import ChatMarkdown from "../ChatMarkdown";
 import { ProjectFavicon, ProjectNameMonogram } from "../ProjectFavicon";
@@ -72,19 +75,87 @@ export function NeedsMePanel(props: { readonly threadRef: ScopedThreadRef }) {
   );
 }
 
+const OBJECTIVES_DEFAULT_WIDTH = 720;
+const OBJECTIVES_MIN_WIDTH = 280;
+const OBJECTIVES_MAX_WIDTH = 1600;
+const OBJECTIVES_KEY_STEP = 16;
+
 /**
- * Read-only: FirstMate sets them over MCP. Each objective is its own card, capped at a readable
- * line length. Collapsed, each is clamped to two lines (on the inner text, so the card's padding is
- * never clipped) and the list to a short height, so Needs you stays in view.
+ * Read-only: FirstMate sets them over MCP. Each objective is its own card, capped at a max width
+ * the user drags from the right edge. Collapsed, each is clamped to two lines (on the inner text, so
+ * the card's padding is never clipped) and the list to a short height, so Needs you stays in view.
  */
 function ObjectivesSection(props: {
   readonly objectives: Objectives;
   readonly environmentId: EnvironmentId;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [maxWidth, setMaxWidth] = useState(OBJECTIVES_MAX_WIDTH);
+  const { width, setWidth, handlers } = useResizableWidth({
+    storageKey: "t3code.bridgeObjectivesWidth",
+    defaultWidth: OBJECTIVES_DEFAULT_WIDTH,
+    minWidth: OBJECTIVES_MIN_WIDTH,
+    maxWidth,
+    edge: "right",
+  });
   const { lastReviewed } = props.objectives;
   return (
-    <section className="mb-4 max-w-[720px]">
+    <section
+      ref={(section) => {
+        const panel = section?.parentElement;
+        if (!panel) return;
+        const measure = () => {
+          const style = getComputedStyle(panel);
+          const available =
+            panel.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+          setMaxWidth(
+            Math.max(OBJECTIVES_MIN_WIDTH, Math.min(OBJECTIVES_MAX_WIDTH, Math.floor(available))),
+          );
+        };
+        measure();
+        return observeResize(panel, measure);
+      }}
+      className="relative mb-4"
+      style={
+        {
+          [RESIZABLE_WIDTH_PROPERTY]: `${width}px`,
+          maxWidth: `var(${RESIZABLE_WIDTH_PROPERTY})`,
+        } as CSSProperties
+      }
+    >
+      <RightPanelResizeHandle
+        handlers={handlers}
+        label="Resize objectives"
+        className="left-auto -right-1"
+        tabIndex={0}
+        aria-valuenow={width}
+        aria-valuemin={OBJECTIVES_MIN_WIDTH}
+        aria-valuemax={maxWidth}
+        onDoubleClick={() => setWidth(OBJECTIVES_DEFAULT_WIDTH)}
+        onKeyDown={(event) => {
+          if (event.altKey || event.ctrlKey || event.metaKey) return;
+          let nextWidth: number;
+          switch (event.key) {
+            case "ArrowLeft":
+              nextWidth = width - OBJECTIVES_KEY_STEP;
+              break;
+            case "ArrowRight":
+              nextWidth = width + OBJECTIVES_KEY_STEP;
+              break;
+            case "Home":
+              nextWidth = OBJECTIVES_MIN_WIDTH;
+              break;
+            case "End":
+              nextWidth = maxWidth;
+              break;
+            default:
+              return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+          setWidth(nextWidth);
+        }}
+      />
       <button
         type="button"
         aria-expanded={expanded}
