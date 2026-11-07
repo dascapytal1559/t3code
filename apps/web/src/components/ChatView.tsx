@@ -155,7 +155,7 @@ import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import { PopoverCreateHandle } from "./ui/popover";
 import {
   selectActiveRightPanel,
-  selectActiveRightPanelSurface,
+  selectSelectedRightPanelSurface,
   selectThreadPanelOpen,
   selectThreadRightPanelState,
   useRightPanelStore,
@@ -357,6 +357,8 @@ import { observeResize } from "~/lib/observeResize";
 import { ThreadVisitWatermark } from "./chat/ThreadVisitWatermark";
 import { ChatTerminalDrawers } from "./chat/ChatTerminalDrawers";
 import { ChatRightPanel } from "./chat/ChatRightPanel";
+import { type PanelChatColumn } from "../hooks/usePreviewPanelInlineSize";
+import { useRightPanelWindow } from "../hooks/useRightPanelWindow";
 import { useDraftEnvironmentRouting } from "./chat/useDraftEnvironmentRouting";
 import { branchMismatchBannerItem } from "./chat/ThreadActivityBanners";
 import { ThreadNow } from "./chat/ThreadNow";
@@ -1046,9 +1048,27 @@ export default function ChatView(props: ChatViewProps) {
     selectThreadRightPanelState(state.byThreadKey, activeThreadRef),
   );
   const shouldUsePlanSidebarSheet = prefersPlanSidebarSheet && rightPanelState.maximized !== true;
-  const activeRightPanelSurface = useRightPanelStore((state) =>
-    selectActiveRightPanelSurface(state.byThreadKey, activeThreadRef),
+  // Fork: on desktop one remembered width, since the window grows by it.
+  const rightPanelWidthStorageKey = isElectron
+    ? "t3code:preview-panel-width"
+    : `t3code:preview-panel-width:${activeThreadKey}`;
+  const rightPanelChatColumnRef = useRef<PanelChatColumn>(null);
+  const rightPanelWindow = useRightPanelWindow({
+    open: rightPanelState.isOpen && activeThreadRef !== null && !embedded,
+    row: workspaceLayoutElement,
+    inline: !shouldUsePlanSidebarSheet && rightPanelState.maximized !== true,
+    scopeKey: activeThreadKey,
+    widthStorageKey: rightPanelWidthStorageKey,
+    chatColumn: rightPanelChatColumnRef,
+  });
+  const rightPanelOpen = rightPanelState.isOpen || rightPanelWindow.holdingClose;
+  // The title bar keeps its closed look until the window has grown for the panel.
+  const titleBarRightPanelOpen = rightPanelOpen && !rightPanelWindow.holdingOpen;
+  const selectedRightPanelSurface = useRightPanelStore((state) =>
+    selectSelectedRightPanelSurface(state.byThreadKey, activeThreadRef),
   );
+  // A close held for the desktop window keeps showing the selected surface.
+  const activeRightPanelSurface = rightPanelOpen ? selectedRightPanelSurface : null;
   const activePreviewState = useThreadPreviewState(activeThreadRef);
   const activePreviewServerEpoch = activePreviewState.serverEpoch;
   const resolvePreviewRuntimeTabId = activeThreadRef
@@ -1064,7 +1084,6 @@ export default function ChatView(props: ChatViewProps) {
   );
   const canReuseTerminal = activeThreadKnownSessionsRaw !== null;
   const previewPanelOpen = activeRightPanelKind === "preview" && browserAvailable;
-  const rightPanelOpen = rightPanelState.isOpen;
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
   const rightPanelPresenceValue = {
@@ -1074,14 +1093,16 @@ export default function ChatView(props: ChatViewProps) {
   const rightPanelPresence = usePanelPresence(
     rightPanelOpen && activeThreadRef !== null,
     rightPanelPresenceValue,
-    panelAnimationsActive,
+    // Fork: the desktop window resizes in one step, so the inline panel does too.
+    panelAnimationsActive && (!isElectron || shouldUsePlanSidebarSheet),
     activeThreadKey,
     panelAnimationDurationMs,
   );
   const rightPanelPresent = rightPanelPresence.present;
   const rightPanelControlsInPanel =
     shouldUsePlanSidebarSheet && rightPanelPresent && rightPanelOpen;
-  const rightPanelControlsAtRoot = rightPanelPresent && !shouldUsePlanSidebarSheet;
+  const rightPanelControlsAtRoot =
+    rightPanelPresent && !shouldUsePlanSidebarSheet && !rightPanelWindow.holdingOpen;
   const renderedRightPanelSurface = rightPanelPresence.value?.activeSurface ?? null;
   const renderedRightPanelSurfaces = rightPanelPresence.value?.surfaces ?? [];
   const previewMiniPlayerVisible = shouldRenderPreviewMiniPlayer(
@@ -1092,7 +1113,7 @@ export default function ChatView(props: ChatViewProps) {
   // An embedded side chat has no panel; a stale maximized flag would hide its own column.
   const rightPanelMaximized =
     !embedded && canMaximizeRightPanel && rightPanelState.maximized === true;
-  const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUsePlanSidebarSheet;
+  const inlineRightPanelOwnsTitleBar = titleBarRightPanelOpen && !shouldUsePlanSidebarSheet;
   const [threadPanelPopoverHandle] = useState(PopoverCreateHandle);
   const [chatCanvasStore] = useState(createChatCanvasStore);
 
@@ -3273,7 +3294,7 @@ export default function ChatView(props: ChatViewProps) {
     threadPanelPopoverHandle,
     threadPanelShortcutLabel: shortcutLabelForCommand(keybindings, "threadPanel.toggle"),
     rightPanelAvailable: activeProject !== null,
-    rightPanelOpen,
+    rightPanelOpen: titleBarRightPanelOpen,
     rightPanelShortcutLabel: shortcutLabelForCommand(keybindings, "rightPanel.toggle"),
     onToggleTerminal: toggleTerminalVisibilityStable,
     onToggleThreadPanel: toggleThreadPanelStable,
@@ -3289,7 +3310,7 @@ export default function ChatView(props: ChatViewProps) {
   const panelLayoutControls = (
     <WorkspaceTitlebarControls
       showMaximizeControl={!shouldUsePlanSidebarSheet}
-      rightPanelOpen={rightPanelOpen}
+      rightPanelOpen={titleBarRightPanelOpen}
       animationsActive={panelAnimationsActive}
       maximized={rightPanelMaximized}
       onToggleMaximized={toggleRightPanelMaximizedStable}
@@ -3973,15 +3994,12 @@ export default function ChatView(props: ChatViewProps) {
         <ChatRightPanel
           sheet={shouldUsePlanSidebarSheet}
           workspaceLayoutElement={workspaceLayoutElement}
-          // Fork: on desktop one remembered width, since the window grows by it.
-          widthStorageKey={
-            isElectron
-              ? "t3code:preview-panel-width"
-              : `t3code:preview-panel-width:${activeThreadKey}`
-          }
+          widthStorageKey={rightPanelWidthStorageKey}
+          chatColumnRef={rightPanelChatColumnRef}
           sheetAnimationDurationMs={panelAnimationsActive ? panelAnimationDurationMs : 0}
           onCloseSheet={closePreviewPanelStable}
           open={rightPanelOpen}
+          animateOpen={!isElectron}
           keybindings={keybindings}
           getShortcutContext={getShortcutContextStable}
           maximized={rightPanelMaximized}

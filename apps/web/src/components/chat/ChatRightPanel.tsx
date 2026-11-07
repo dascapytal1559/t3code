@@ -1,7 +1,7 @@
-import { useEffect } from "react";
+import { type Ref, useImperativeHandle } from "react";
 
 import {
-  readPreviewPanelWidth,
+  type PanelChatColumn,
   usePreviewPanelInlineSize,
 } from "../../hooks/usePreviewPanelInlineSize";
 import { RightPanelSheet } from "../RightPanelSheet";
@@ -14,6 +14,8 @@ type ChatRightPanelProps = Omit<RightPanelTabsProps, "mode" | "inlineSize" | "ma
   readonly widthStorageKey: string;
   readonly sheetAnimationDurationMs: number;
   readonly onCloseSheet: () => void;
+  /** Fork: lets the desktop window keep the chat width as it resizes for the panel. */
+  readonly chatColumnRef?: Ref<PanelChatColumn>;
 };
 
 /**
@@ -30,6 +32,7 @@ export function ChatRightPanel(props: ChatRightPanelProps) {
     onCloseSheet,
     maximized,
     layoutControls,
+    chatColumnRef,
     ...tabs
   } = props;
   const open = tabs.open === true;
@@ -38,25 +41,8 @@ export function ChatRightPanel(props: ChatRightPanelProps) {
     container: workspaceLayoutElement,
     widthStorageKey,
   });
-  const { beginWindowGrowth } = inlineSize;
-  // Fork: the desktop window grows by the panel's width instead of squeezing the chat.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- resizes the native desktop window, outside React
-  useEffect(() => {
-    const bridge = window.desktopBridge;
-    if (!open || bridge === undefined) return;
-    let active = true;
-    const settle = beginWindowGrowth();
-    void bridge
-      .setRightPanelOpen(true, readPreviewPanelWidth(widthStorageKey))
-      .then((added) => {
-        if (active) settle(added);
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-      void bridge.setRightPanelOpen(false, 0).catch(() => {});
-    };
-  }, [open, widthStorageKey, beginWindowGrowth]);
+  const { keepChatColumn } = inlineSize;
+  useImperativeHandle(chatColumnRef, () => ({ keepChatColumn }), [keepChatColumn]);
   if (!sheet) {
     return <RightPanelTabs {...tabs} mode="inline" maximized={maximized} inlineSize={inlineSize} />;
   }

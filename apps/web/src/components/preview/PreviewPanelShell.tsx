@@ -19,6 +19,7 @@ interface PreviewPanelShellProps {
   maximized?: boolean;
   inlineSize?: PreviewPanelInlineSize;
   open?: boolean;
+  animateOpen?: boolean;
   /** Use a distinct key per surface to keep remembered widths independent. */
   widthStorageKey?: string;
   defaultWidth?: number;
@@ -48,6 +49,7 @@ function PreviewPanelShellFrame(
   const panelArea = workspaceAreaProps("panel", 4, props.workspaceLabel ?? "Workspace panel");
   const isInline = props.mode === "inline";
   const collapsible = isInline && props.open !== undefined;
+  const animated = collapsible && props.animateOpen !== false;
   const open = props.open ?? true;
   const maximized = props.maximized ?? false;
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -128,9 +130,9 @@ function PreviewPanelShellFrame(
               "flex-1"
             : "shrink-0 border-l border-border"
           : "w-full",
-        collapsible &&
+        animated &&
           "[[data-panel-animations=true]_&]:transition-[width] [[data-panel-animations=true]_&]:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:ease-out",
-        collapsible && open && "[[data-panel-animations=true]_&]:starting:w-0!",
+        animated && open && "[[data-panel-animations=true]_&]:starting:w-0!",
         collapsible && !open && "pointer-events-none",
       )}
       style={

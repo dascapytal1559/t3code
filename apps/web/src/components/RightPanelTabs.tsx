@@ -111,6 +111,8 @@ export interface RightPanelTabsProps {
   mode: PreviewPanelMode;
   maximized?: boolean;
   open?: boolean;
+  /** False opens and closes the inline panel in one step, without the width animation. */
+  animateOpen?: boolean;
   keybindings: ResolvedKeybindingsConfig;
   getShortcutContext: () => ShortcutMatchContext;
   widthStorageKey?: string;
@@ -1387,6 +1389,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       mode={props.mode}
       {...(props.maximized !== undefined ? { maximized: props.maximized } : {})}
       {...(props.open !== undefined ? { open: props.open } : {})}
+      {...(props.animateOpen !== undefined ? { animateOpen: props.animateOpen } : {})}
       {...(props.widthStorageKey !== undefined ? { widthStorageKey: props.widthStorageKey } : {})}
       {...(props.defaultWidth !== undefined ? { defaultWidth: props.defaultWidth } : {})}
       {...(props.inlineSize ? { inlineSize: props.inlineSize } : {})}

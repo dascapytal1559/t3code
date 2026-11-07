@@ -1049,7 +1049,7 @@ export interface DesktopBridge {
   revealWindow: () => Promise<void>;
   /**
    * Fork: grows the main window by `width` while the right panel is open, so the chat keeps its width.
-   * Opening resolves to the CSS pixels it grew by, or null when the window was already grown.
+   * Resolves to the CSS pixels it grew by (opening) or shrank by (closing); null when nothing changed.
    */
   setRightPanelOpen: (open: boolean, width: number) => Promise<number | null>;
   /**

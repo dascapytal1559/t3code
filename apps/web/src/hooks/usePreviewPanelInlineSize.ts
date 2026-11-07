@@ -13,11 +13,13 @@ export interface PreviewPanelInlineSize {
   /** Ref-callback body for the panel host: measures the row the panel shares. */
   readonly observeRow: (host: HTMLElement) => () => void;
   /**
-   * Fork: call before the desktop window grows for the panel; pass the CSS
-   * pixels it grew by, or null when it was already grown, to keep the chat width.
+   * Fork: re-measures the row and keeps the chat column at what the panel
+   * leaves of it, when the desktop window resizes for the panel.
    */
-  readonly beginWindowGrowth: () => (addedWidth: number | null) => void;
+  readonly keepChatColumn: () => void;
 }
+
+export type PanelChatColumn = Pick<PreviewPanelInlineSize, "keepChatColumn">;
 
 const PREVIEW_PANEL_WIDTH_STORAGE_KEY = "t3code:preview-panel-width";
 const PREVIEW_PANEL_MIN_WIDTH = 360;
@@ -141,12 +143,11 @@ export function usePreviewPanelInlineSize(
     };
   };
 
-  const beginWindowGrowth = useStableCallback(() => {
-    const before = rowRef.current?.clientWidth ?? null;
-    return (addedWidth: number | null) => {
-      if (addedWidth === null || before === null) return;
-      keepChatColumnFor(before + addedWidth);
-    };
+  const keepChatColumn = useStableCallback(() => {
+    const row = rowRef.current?.clientWidth;
+    if (row === undefined) return;
+    setRowWidth(row);
+    keepChatColumnFor(row);
   });
 
   const restoreWidth = useStableCallback((host: HTMLElement | null) => {
@@ -207,7 +208,7 @@ export function usePreviewPanelInlineSize(
       onLostPointerCapture: drag.onLostPointerCapture,
     },
     observeRow,
-    beginWindowGrowth,
+    keepChatColumn,
   };
 }
 

@@ -37,24 +37,16 @@ describe("resolvePreviewPanelWidth", () => {
   });
 });
 
-function Row({
-  rowWidth,
-  enabled = true,
-  onGrowthStart,
-}: {
-  rowWidth: number;
-  enabled?: boolean;
-  onGrowthStart?: (settle: (addedWidth: number | null) => void) => void;
-}) {
+function Row({ rowWidth, enabled = true }: { rowWidth: number; enabled?: boolean }) {
   const [row, setRow] = useState<HTMLDivElement | null>(null);
-  const { width, handlers, observeRow, beginWindowGrowth } = usePreviewPanelInlineSize({
+  const { width, handlers, observeRow, keepChatColumn } = usePreviewPanelInlineSize({
     enabled,
     container: row,
     widthStorageKey: STORAGE_KEY,
   });
   return (
     <div ref={setRow} style={{ display: "flex", width: rowWidth }}>
-      <button style={{ flex: 1 }} onClick={() => onGrowthStart?.(beginWindowGrowth())} />
+      <button style={{ flex: 1 }} onClick={keepChatColumn} />
       <div
         ref={(host) => (host === null ? undefined : observeRow(host))}
         data-testid="panel"
@@ -118,28 +110,16 @@ describe("usePreviewPanelInlineSize", () => {
   });
 
   it.each([
-    { name: "a full grow keeps the chat at its old width", added: 540, chat: "1000", panel: "540" },
-    { name: "a zoomed window squeezes the chat instead", added: 0, chat: "460", panel: "540" },
-    {
-      name: "an already grown window keeps the saved chat width",
-      added: null,
-      chat: "600",
-      panel: "400",
-    },
-  ])("desktop window growth: $name", async ({ added, chat, panel }) => {
+    { name: "a full grow keeps the chat at its old width", added: 540, chat: "1000" },
+    { name: "a zoomed window squeezes the chat instead", added: 0, chat: "460" },
+  ])("desktop window growth: $name", async ({ added, chat }) => {
     await withCleanStorage(async () => {
       localStorage.setItem(CHAT_STORAGE_KEY, "600");
-      let settle: ((addedWidth: number | null) => void) | undefined;
-      const onGrowthStart = (next: typeof settle) => (settle = next);
       // This hook only needs browser storage and React; no navigation is involved.
-      await using screen = await render(<Row rowWidth={1000} onGrowthStart={onGrowthStart} />, {
-        router: false,
-      });
+      await using screen = await render(<Row rowWidth={1000} />, { router: false });
+      await screen.rerender(<Row rowWidth={1000 + added} />);
       await act(() => screen.container.querySelector("button")!.click());
-      const grown = 1000 + (added ?? 0);
-      await screen.rerender(<Row rowWidth={grown} onGrowthStart={onGrowthStart} />);
-      await act(() => settle!(added));
-      await expect.element(screen.getByTestId("panel")).toHaveTextContent(panel);
+      await expect.element(screen.getByTestId("panel")).toHaveTextContent("540");
       expect(localStorage.getItem(CHAT_STORAGE_KEY)).toBe(chat);
     });
   });
