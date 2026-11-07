@@ -1,4 +1,4 @@
-import { type RefObject, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
 import { type PanelChatColumn, readPreviewPanelWidth } from "./usePreviewPanelInlineSize";
@@ -21,8 +21,12 @@ export function useRightPanelWindow(input: {
   /** A change of thread swaps the whole view, so it closes the panel without holding. */
   readonly scopeKey: string | null;
   readonly widthStorageKey: string;
-  readonly chatColumn: RefObject<PanelChatColumn | null>;
-}): { readonly holdingOpen: boolean; readonly holdingClose: boolean } {
+}): {
+  readonly holdingOpen: boolean;
+  readonly holdingClose: boolean;
+  /** Fork: the panel's handle, so the window keeps the chat width as it resizes. */
+  readonly chatColumnRef: (handle: PanelChatColumn | null) => void;
+} {
   const { open, inline, scopeKey } = input;
   const bridge = typeof window === "undefined" ? undefined : window.desktopBridge;
   const [settled, setSettled] = useState({ open, scopeKey });
@@ -33,10 +37,17 @@ export function useRightPanelWindow(input: {
   }
   // What the window was last asked for; null until the first request, which never holds.
   const sentOpen = useRef<boolean | null>(null);
+  const chatColumn = useRef<PanelChatColumn | null>(null);
+  // A panel unmounting in the commit that closes it is gone before the close is sent.
+  const lastChatColumn = useRef<PanelChatColumn | null>(null);
+  const chatColumnRef = useCallback((handle: PanelChatColumn | null) => {
+    chatColumn.current = handle;
+    if (handle !== null) lastChatColumn.current = handle;
+  }, []);
   // Closing takes off the panel's width as it is now, so the chat column keeps its width.
   const closingPanelWidth = useStableCallback(
     () =>
-      input.chatColumn.current?.keepPanelWidth() ?? readPreviewPanelWidth(input.widthStorageKey),
+      lastChatColumn.current?.keepPanelWidth() ?? readPreviewPanelWidth(input.widthStorageKey),
   );
 
   const syncWindow = useStableCallback((open: boolean, held: boolean) => {
@@ -46,7 +57,7 @@ export function useRightPanelWindow(input: {
     const firstRequest = sentOpen.current === null;
     sentOpen.current = open;
     if (!open && firstRequest) return;
-    const { row, chatColumn } = input;
+    const { row } = input;
     const panelWidth = open ? readPreviewPanelWidth(input.widthStorageKey) : closingPanelWidth();
     const release =
       held && row !== null ? holdRowWidth(row, row.clientWidth + (open ? panelWidth : 0)) : noop;
@@ -78,7 +89,7 @@ export function useRightPanelWindow(input: {
     },
     [bridge, closingPanelWidth],
   );
-  return { holdingOpen: holding && open, holdingClose: holding && !open };
+  return { holdingOpen: holding && open, holdingClose: holding && !open, chatColumnRef };
 }
 
 const noop = () => {};

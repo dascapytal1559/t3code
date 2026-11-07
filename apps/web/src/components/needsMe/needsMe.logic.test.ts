@@ -144,6 +144,10 @@ describe("splitObjectives", () => {
       "**Fleet** — keep it small",
       "**Third**",
     ]);
+    expect(splitObjectives("- **Ship** — x\n  - detail\n - **Next**")).toEqual([
+      "**Ship** — x\n  - detail",
+      "**Next**",
+    ]);
     expect(splitObjectives("Focus this week\n- **One**")).toEqual(["Focus this week", "**One**"]);
     expect(splitObjectives("  Just prose.  ")).toEqual(["Just prose."]);
     expect(splitObjectives("")).toEqual([]);

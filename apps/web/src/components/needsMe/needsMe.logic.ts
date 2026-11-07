@@ -121,18 +121,22 @@ export function needsMeRowDetail(
   }
 }
 
-const OBJECTIVE_BULLET = /^\s{0,3}(?:[-*+]|\d+[.)])\s+/;
+const OBJECTIVE_BULLET = /^(\s{0,3})(?:[-*+]|\d+[.)])\s+/;
 
 /**
  * One markdown entry per objective: each top-level bullet with its continuation lines. Markdown
- * with no bullets is a single entry.
+ * with no bullets is a single entry. As in CommonMark, a bullet indented to the current item's
+ * text is nested in it.
  */
 export function splitObjectives(markdown: string): ReadonlyArray<string> {
   const items: string[][] = [];
   const preamble: string[] = [];
+  let contentIndent = 0;
   for (const line of markdown.split("\n")) {
-    if (OBJECTIVE_BULLET.test(line)) {
-      items.push([line.replace(OBJECTIVE_BULLET, "")]);
+    const bullet = OBJECTIVE_BULLET.exec(line);
+    if (bullet !== null && (items.length === 0 || bullet[1]!.length < contentIndent)) {
+      contentIndent = bullet[0].length;
+      items.push([line.slice(contentIndent)]);
     } else {
       (items.at(-1) ?? preamble).push(line);
     }

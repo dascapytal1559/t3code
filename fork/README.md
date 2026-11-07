@@ -324,11 +324,11 @@ sheet like the other right-panel tabs. Internal names (`needs-me` surface kind,
 `components/needsMe/`) keep the old name.
 
 Objectives are a short Markdown list FirstMate pushes (see the records below),
-shown read-only under "Objectives · reviewed <day>". Each objective is clamped
-to two lines and the list to a short height, so Needs you stays in view;
-clicking the heading expands it. With none set the section is hidden. The tab
-shows the objectives of the chat's own environment, else of the first
-connected environment that has some.
+shown read-only in one "High level objectives" plate across the panel: one
+entry per top-level bullet, its bold lead as the name over the rest of it in
+full. Nothing is clamped or folded; resizing the panel sets the measure. With
+none set the plate is hidden. The tab shows the objectives of the chat's own
+environment, else of the first connected environment that has some.
 
 Something FirstMate needs from the captain is a decision. "Needs you" lists open
 decisions, newest update first, each with its project, title and, in gray, the
@@ -500,34 +500,36 @@ before them. Folder multiline rows follow the same rule. Code:
 
 In the desktop app, opening the right panel (a file link, the Files list, any
 surface) widens the window to the right by the panel's width, so the sidebar
-and chat keep the widths you chose. Closing it takes the same width back off.
-Upstream's panel shares the window, so the window never moves or resizes on
-its own. The fork changes that on purpose: the window is kept at a chosen
-width, and opening a document used to squeeze the chat to make room.
+and chat keep the widths you chose. Closing it takes the panel's width as it is
+then back off. Upstream's panel shares the window, so the window never moves or
+resizes on its own. The fork changes that on purpose: the window is kept at a
+chosen width, and opening a document used to squeeze the chat to make room.
 
-- One panel width is remembered on desktop (`t3code:preview-panel-width`)
-  instead of one per thread; the browser keeps upstream's per-thread widths and
-  never resizes anything.
+- The chat column keeps its width and the panel takes the rest of the row, on
+  desktop and in the browser alike, so a window resize or a sidebar toggle
+  while the panel is open lands on the panel. Only the desktop window resizes
+  itself; the browser keeps upstream's per-thread widths, and desktop keeps
+  one (`t3code:preview-panel-width`).
+- While the window grows or shrinks, the row holds its width, so the chat never
+  moves: opening lays the panel out past the window's edge until the window has
+  grown, and closing keeps the panel until it has shrunk.
 - Near the screen's right edge the window moves left only as far as it must
   and moves back on close. A screen too narrow for the full width grows as far
-  as it can and the panel takes the rest, as upstream does. Full screen and
-  maximized windows are left alone.
-- A hand resize while the panel is open is kept: closing takes off only what
-  opening added. The window's saved size leaves the panel's width out, so a
-  restart with the panel open grows once.
+  as it can and the chat gives way for the rest. Full screen and maximized
+  windows are left alone.
+- A hand resize while the panel is open goes to the panel, so closing takes it
+  off with the panel. The window's saved size leaves the panel's width at
+  opening out, so a restart with the panel open grows once.
 - The window follows whether the panel is showing, so switching between a
   thread with the panel open and one without resizes it.
-- The panel opens inside the narrower window and caps itself to it, then
-  returns to its remembered width once the window has grown. Upstream's
-  `useResizableWidth` kept the width capped at mount, which made the window
-  grow by more than the panel took and widened the chat.
 - The growth is converted from CSS pixels to screen points, so it matches the
   panel at any app zoom.
 
 Code: `apps/desktop/src/window/PanelWindowGrowth.ts` (the width arithmetic and
-its tests), the `setRightPanelOpen` bridge method, the effect in
-`apps/web/src/components/chat/ChatRightPanel.tsx`, and the unclamped saved
-width in `apps/web/src/hooks/useResizableWidth.ts` (its browser test).
+its tests), the `setRightPanelOpen` bridge method,
+`apps/web/src/hooks/useRightPanelWindow.ts` (the hold while the window
+resizes), and `apps/web/src/hooks/usePreviewPanelInlineSize.ts` (the kept chat
+width), each with its browser test.
 
 ## A closed Claude session waits for its CLI to exit
 

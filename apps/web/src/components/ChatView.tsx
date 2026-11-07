@@ -358,7 +358,6 @@ import { observeResize } from "~/lib/observeResize";
 import { ThreadVisitWatermark } from "./chat/ThreadVisitWatermark";
 import { ChatTerminalDrawers } from "./chat/ChatTerminalDrawers";
 import { ChatRightPanel } from "./chat/ChatRightPanel";
-import { type PanelChatColumn } from "../hooks/usePreviewPanelInlineSize";
 import { useRightPanelWindow } from "../hooks/useRightPanelWindow";
 import { useDraftEnvironmentRouting } from "./chat/useDraftEnvironmentRouting";
 import { branchMismatchBannerItem } from "./chat/ThreadActivityBanners";
@@ -1053,14 +1052,12 @@ export default function ChatView(props: ChatViewProps) {
   const rightPanelWidthStorageKey = isElectron
     ? "t3code:preview-panel-width"
     : `t3code:preview-panel-width:${activeThreadKey}`;
-  const rightPanelChatColumnRef = useRef<PanelChatColumn>(null);
   const rightPanelWindow = useRightPanelWindow({
     open: rightPanelState.isOpen && activeThreadRef !== null && !embedded,
     row: workspaceLayoutElement,
     inline: !shouldUsePlanSidebarSheet && rightPanelState.maximized !== true,
     scopeKey: activeThreadKey,
     widthStorageKey: rightPanelWidthStorageKey,
-    chatColumn: rightPanelChatColumnRef,
   });
   const rightPanelOpen = rightPanelState.isOpen || rightPanelWindow.holdingClose;
   // The title bar keeps its closed look until the window has grown for the panel.
@@ -4001,7 +3998,7 @@ export default function ChatView(props: ChatViewProps) {
           sheet={shouldUsePlanSidebarSheet}
           workspaceLayoutElement={workspaceLayoutElement}
           widthStorageKey={rightPanelWidthStorageKey}
-          chatColumnRef={rightPanelChatColumnRef}
+          chatColumnRef={rightPanelWindow.chatColumnRef}
           sheetAnimationDurationMs={panelAnimationsActive ? panelAnimationDurationMs : 0}
           onCloseSheet={closePreviewPanelStable}
           open={rightPanelOpen}

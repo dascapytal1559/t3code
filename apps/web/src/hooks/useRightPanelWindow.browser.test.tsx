@@ -1,4 +1,4 @@
-import { type RefObject, useImperativeHandle, useRef, useState } from "react";
+import { type Ref, useImperativeHandle, useState } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { act, render } from "../../test/render";
@@ -8,7 +8,7 @@ import { useRightPanelWindow } from "./useRightPanelWindow";
 const STORAGE_KEY = "test:right-panel-window-width";
 const CHAT_STORAGE_KEY = `${STORAGE_KEY}:chat-column`;
 
-function Panel(props: { row: HTMLElement | null; chatColumn: RefObject<PanelChatColumn | null> }) {
+function Panel(props: { row: HTMLElement | null; chatColumn: Ref<PanelChatColumn> }) {
   const { width, observeRow, keepChatColumn, keepPanelWidth } = usePreviewPanelInlineSize({
     container: props.row,
     widthStorageKey: STORAGE_KEY,
@@ -27,23 +27,29 @@ function Panel(props: { row: HTMLElement | null; chatColumn: RefObject<PanelChat
 }
 
 /** ChatView's shape: a row holding the chat column and the panel, inside the window. */
-function Workspace({ open, windowWidth }: { open: boolean; windowWidth: number }) {
+function Workspace({
+  open,
+  windowWidth,
+  scopeKey = "thread",
+}: {
+  open: boolean;
+  windowWidth: number;
+  scopeKey?: string;
+}) {
   const [row, setRow] = useState<HTMLDivElement | null>(null);
-  const chatColumn = useRef<PanelChatColumn>(null);
-  const { holdingOpen, holdingClose } = useRightPanelWindow({
+  const { holdingOpen, holdingClose, chatColumnRef } = useRightPanelWindow({
     open,
     row,
     inline: true,
-    scopeKey: "thread",
+    scopeKey,
     widthStorageKey: STORAGE_KEY,
-    chatColumn,
   });
   return (
     <div style={{ width: windowWidth, overflow: "clip" }}>
       <div data-testid="titlebar" data-open={(open || holdingClose) && !holdingOpen} />
       <div ref={setRow} data-testid="row" style={{ display: "flex", height: 10 }}>
         <div data-testid="chat" style={{ flex: 1, minWidth: 0 }} />
-        {open || holdingClose ? <Panel row={row} chatColumn={chatColumn} /> : null}
+        {open || holdingClose ? <Panel row={row} chatColumn={chatColumnRef} /> : null}
       </div>
     </div>
   );
@@ -176,6 +182,16 @@ describe("useRightPanelWindow", () => {
       // Opening again grows by the panel's last width.
       await screen.rerender(<Workspace open windowWidth={1000} />);
       expect(desktop.requests[2]).toMatchObject({ open: true, width: 740 });
+      await act(() => desktop.requests[2]!.answer(740));
+      await screen.rerender(<Workspace open windowWidth={1740} />);
+      await act(() => desktop.resize(1740));
+
+      // A thread without the panel unmounts it at once, and the window still sheds its width.
+      await screen.rerender(<Workspace open windowWidth={1940} />);
+      await vi.waitFor(() => expect(widthOf(screen.getByTestId("panel").element())).toBe(940));
+      await screen.rerender(<Workspace open={false} windowWidth={1940} scopeKey="other" />);
+      await expect.element(screen.getByTestId("panel")).not.toBeInTheDocument();
+      expect(desktop.requests[3]).toMatchObject({ open: false, width: 940 });
     });
   });
 

@@ -4,7 +4,7 @@ import { cn } from "~/lib/utils";
 
 interface Props extends Pick<
   ComponentProps<"div">,
-  "tabIndex" | "onKeyDown" | "onDoubleClick" | "aria-valuenow" | "aria-valuemin" | "aria-valuemax"
+  "tabIndex" | "onKeyDown" | "aria-valuenow" | "aria-valuemin" | "aria-valuemax"
 > {
   handlers: ResizableWidthHandlers;
   className?: string;

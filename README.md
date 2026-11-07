@@ -14,7 +14,7 @@ For FirstMate:
 - [Idle agents](fork/README.md#idle-agent-release-is-a-server-setting): idle release is a setting, and agents can be kept for good.
 - [Mark read](fork/README.md#mcp-can-mark-a-thread-read): FirstMate clears a worker's Done card without opening the app.
 - [Long sign-in](fork/README.md#firstmates-sign-in-lasts-10-years): FirstMate's sign-in lasts 10 years instead of 30 days, so it never needs renewing.
-- [Needs me](fork/README.md#needs-me): each call FirstMate needs from you is listed in the right panel's Needs me tab.
+- [Bridge](fork/README.md#bridge): FirstMate's objectives, then each call it needs from you, in the right panel's Bridge tab.
 - [Clean session close](fork/README.md#a-closed-claude-session-waits-for-its-cli-to-exit): a closed Claude session waits for its CLI to exit, so FirstMate's next one keeps its lock.
 
 Also:
