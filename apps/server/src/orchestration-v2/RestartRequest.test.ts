@@ -11,8 +11,11 @@ import {
 } from "@t3tools/contracts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Ref from "effect/Ref";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
@@ -40,6 +43,7 @@ const adapter = {
 /** One server over `layerDatabase`; building it again over the same database is a restart. */
 const layerServer = (
   layerDatabase: Layer.Layer<SqlClient.SqlClient, never> | typeof SqlitePersistence.layerMemory,
+  providerAdapter = adapter,
 ) =>
   ThreadManagementService.layer.pipe(
     Layer.provideMerge(
@@ -50,7 +54,7 @@ const layerServer = (
         EffectOutbox.layer.pipe(Layer.provide(layerDatabase)),
         ProviderReplayHarness.layerWithRegistry(
           { name: "restart-request" },
-          ProviderAdapterRegistry.layerFromAdapters([adapter]),
+          ProviderAdapterRegistry.layerFromAdapters([providerAdapter]),
           { databaseLayer: layerDatabase, runEffectWorker: false },
         ),
       ),
@@ -291,4 +295,39 @@ it.effect("a workspace launch prepares during a pending restart and waits to sta
     yield* orchestrator.cancelRestart;
     assert.deepEqual(yield* runs(threadId), ["starting"]);
   }).pipe(Effect.provide(layerServer(SqlitePersistence.layerMemory))),
+);
+
+it.effect("a send that read the request before a cancel still starts after it", () =>
+  Effect.gen(function* () {
+    const armed = yield* Ref.make(false);
+    const entered = yield* Deferred.make<void>();
+    const proceed = yield* Deferred.make<void>();
+    const pausingAdapter = {
+      ...adapter,
+      getCapabilities: () =>
+        Ref.getAndSet(armed, false).pipe(
+          Effect.flatMap((pause) =>
+            pause
+              ? Deferred.succeed(entered, undefined).pipe(Effect.andThen(Deferred.await(proceed)))
+              : Effect.void,
+          ),
+          Effect.as(CodexProviderCapabilitiesV2),
+        ),
+    } as ProviderAdapter.ProviderAdapterV2["Service"];
+
+    yield* Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const threadId = ThreadId.make("thread:restart-cancel-race");
+      yield* createThread(threadId);
+      yield* requestRestart;
+      yield* Ref.set(armed, true);
+      const send = yield* Effect.forkChild(mcpSend(threadId, "sent during the cancel"));
+      // The send has read the pending request and is still deciding when the cancel runs.
+      yield* Deferred.await(entered);
+      yield* orchestrator.cancelRestart;
+      yield* Deferred.succeed(proceed, undefined);
+      yield* Fiber.join(send);
+      assert.deepEqual(yield* runs(threadId), ["starting"]);
+    }).pipe(Effect.provide(layerServer(SqlitePersistence.layerMemory, pausingAdapter)));
+  }),
 );

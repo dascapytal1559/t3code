@@ -1785,6 +1785,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         payload: withQueueHold(run, "restart"),
       })),
     );
+    yield* releaseStrayRestartHolds(threadId);
   });
 
   const startNextQueuedRun = Effect.fn("Orchestrator.startNextQueuedRun")(
@@ -2656,6 +2657,36 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     );
   });
 
+  const releaseThreadRestartHolds = Effect.fn("Orchestrator.releaseThreadRestartHolds")(function* (
+    threadId: ThreadId,
+  ) {
+    const { runs } = yield* projectionStore.getThreadRecords(threadId, ["runs"]);
+    const held = runs.filter((run) => run.status === "queued" && run.restartHold === true);
+    if (held.length === 0) return 0;
+    const now = yield* DateTime.now;
+    yield* writeSystemEvents(
+      held.map((run) => ({
+        type: "run.updated" as const,
+        threadId,
+        runId: run.id,
+        providerInstanceId: run.providerInstanceId,
+        occurredAt: now,
+        payload: withQueueHold(run, "released"),
+      })),
+    );
+    yield* startNextQueuedRun(threadId);
+    return held.length;
+  });
+
+  const releaseStrayRestartHolds = (threadId: ThreadId): Effect.Effect<void> =>
+    Effect.flatMap(restartPending, (pending) =>
+      pending ? Effect.void : releaseThreadRestartHolds(threadId),
+    ).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Could not release runs a restart held", { threadId, cause }),
+      ),
+    );
+
   const releaseRestartHolds = Effect.gen(function* () {
     const threadIds = yield* projectionStore
       .getRecoveryThreadIds("restart-held-runs")
@@ -2667,27 +2698,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     let released = 0;
     for (const threadId of threadIds) {
       released += yield* threadDispatch
-        .withLock(
-          threadId,
-          Effect.gen(function* () {
-            const { runs } = yield* projectionStore.getThreadRecords(threadId, ["runs"]);
-            const held = runs.filter((run) => run.status === "queued" && run.restartHold === true);
-            if (held.length === 0) return 0;
-            const now = yield* DateTime.now;
-            yield* writeSystemEvents(
-              held.map((run) => ({
-                type: "run.updated" as const,
-                threadId,
-                runId: run.id,
-                providerInstanceId: run.providerInstanceId,
-                occurredAt: now,
-                payload: withQueueHold(run, "released"),
-              })),
-            );
-            yield* startNextQueuedRun(threadId);
-            return held.length;
-          }),
-        )
+        .withLock(threadId, releaseThreadRestartHolds(threadId))
         .pipe(
           Effect.catchCause((cause) =>
             Effect.logWarning("Could not release runs a restart held", { threadId, cause }).pipe(
@@ -14362,6 +14373,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         commandType: command.type,
         detail: committed.receipt.error ?? "Previously rejected.",
       });
+    }
+    if (
+      plan.events.some(
+        (event) =>
+          (event.type === "run.created" || event.type === "run.updated") &&
+          event.threadId === commandThreadId(command) &&
+          event.payload.restartHold === true,
+      )
+    ) {
+      yield* releaseStrayRestartHolds(commandThreadId(command));
     }
     if (
       command.type === "queue.resume" ||
