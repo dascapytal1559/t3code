@@ -14,7 +14,6 @@ import {
   type ThreadDecision,
   type ThreadDecisionEntry,
   type ThreadId,
-  threadDecisionSince,
 } from "@t3tools/contracts";
 import { projectScriptCwd } from "@t3tools/shared/projectScripts";
 import { useNavigate } from "@tanstack/react-router";
@@ -49,8 +48,8 @@ const restoredDrafts = new Map<string, string>();
 const LATER_DRAFT = "Later: ask me again next week.";
 
 /**
- * One FirstMate decision, open in the Needs me tab: the question and options, then FirstMate's
- * messages as sent. Replying sends one message into FirstMate's chat and settles the decision;
+ * One FirstMate decision, open in the Needs me tab: FirstMate's messages as sent, then the reply
+ * box with the options as buttons. Replying sends one message into FirstMate's chat and settles the decision;
  * the decision's own thread has no agent. Being open counts as visiting it.
  */
 export function DecisionDetail(props: {
@@ -93,7 +92,6 @@ export function DecisionDetail(props: {
         </p>
       ) : (
         <>
-          <DecisionQuestion decision={decision} />
           {decision.entries.map((entry, index) => (
             <DecisionEntryView
               // oxlint-disable-next-line react/no-array-index-key -- entries have no id and only ever grow at the end
@@ -117,32 +115,6 @@ export function DecisionDetail(props: {
         </>
       )}
     </div>
-  );
-}
-
-function DecisionQuestion(props: { readonly decision: ThreadDecision }) {
-  const since = threadDecisionSince(props.decision);
-  return (
-    <section className="rounded-xl border border-border bg-card px-3 py-2.5">
-      <p className="text-2xs font-semibold tracking-wide text-warning uppercase">
-        Needs you{since === null ? "" : ` · waiting since ${formatDay(since)}`}
-      </p>
-      <p className="mt-1 text-sm font-medium whitespace-pre-wrap text-foreground">
-        {props.decision.question}
-      </p>
-      {props.decision.options.length === 0 ? null : (
-        <ul className="mt-2 flex list-disc flex-col gap-2 ps-6 text-sm">
-          {props.decision.options.map((option) => (
-            <li key={option.label}>
-              <span className="text-foreground">{option.label}</span>
-              {option.detail === undefined ? null : (
-                <span className="block text-xs text-muted-foreground">{option.detail}</span>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
   );
 }
 

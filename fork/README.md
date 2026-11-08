@@ -347,10 +347,9 @@ project is the one the decision names in `decision.projectName`; without one it
 is the thread's own, which is FirstMate's. Nothing in the sidebar counts or
 lists decisions.
 
-<img src="media/bridge-decision.jpg" width="400" alt="An open decision in the Bridge tab: its question and options, then FirstMate's messages as sent with their file attachments">
+<img src="media/bridge-decision.jpg" width="400" alt="An open decision in the Bridge tab: FirstMate's messages as sent with their file attachments">
 
-Opening a row shows the question and options, then FirstMate's messages as
-sent, each with "In FirstMate's chat", an "Updated" divider with the one-line
+Opening a row shows FirstMate's messages as sent, each with "In FirstMate's chat", an "Updated" divider with the one-line
 what-changed before each update, and attachments (pictures inline, reports and
 links as file chips, paths relative to FirstMate's project). A file chip or
 file link opens the file in a tab of this same panel, as a chat's file links
@@ -383,8 +382,7 @@ The records, for FirstMate's side:
   without it stay valid. `since` is when the call started waiting on the
   captain, an ISO 8601 date-time such as `2026-10-26T06:53:24.000Z` (any
   string `Date.parse` reads is accepted; send the full UTC form); the row's
-  age and the view's "waiting since" count from it, falling back to the raised
-  entry. Send it on every `set_decision`, since a replacement without it falls
+  age counts from it, falling back to the raised entry. Send it on every `set_decision`, since a replacement without it falls
   back too. `revision` is
   optional on input: given, it is stored as is; omitted, the server stores the
   previous one plus one (1 at launch).
