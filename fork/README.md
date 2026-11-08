@@ -303,7 +303,10 @@ FirstMate steers its workers through its own inbox and a message it sends over
 MCP, so a message typed into a worker by accident cuts across that. A crew
 thread (the sidebar's crew membership, snoozed or settled too) shows no composer
 at all: no message box, model picker or branch row, and no way to unlock one.
-While the worker runs, a small Stop button takes its place. When the worker asks
+While the worker runs, a small Stop button takes its place, and a Resume button
+sits beside it (alone once the worker has stopped) whenever the composer's
+Resume would show: an interrupted run to continue, or a queue held by Stop.
+When the worker asks
 for an approval or asks a question, the full box comes back until it is
 answered, because feedback and custom answers use it. FirstMate's own thread
 and ordinary threads keep their composer, and a thread gets it back once it

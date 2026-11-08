@@ -38,7 +38,7 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
 // Desktop-sized, so the sidebar shows beside the chat.
 await page.viewport(1400, 900);
 
-it("a FirstMate worker shows no composer, only Stop while it runs and its approvals", async () => {
+it("a FirstMate worker shows no composer, only Stop and Resume and its approvals", async () => {
   const coordinator = threadWithHistory("crew-coordinator", 1);
   const crew = { ...threadWithHistory("crew-member", 1), crewOf: coordinator.id };
   const plain = threadWithHistory("plain-thread", 1);
@@ -115,6 +115,20 @@ it("a FirstMate worker shows no composer, only Stop while it runs and its approv
   });
   await expect.element(editor).not.toBeInTheDocument();
   await expect.element(stop).not.toBeInTheDocument();
+
+  // After a Stop the server holds the queue; Resume is the way back, and the box stays hidden.
+  const resume = page.getByRole("button", { name: "Resume", exact: true });
+  await expect.element(resume).not.toBeInTheDocument();
+  const held = runningRun(crew.id, "crew-held", 3, "crew-held-user");
+  await act(() =>
+    emitThreadEvent(crew.id, {
+      type: "run.created",
+      payload: { ...held, status: "queued", queueHeld: true, startedAt: null },
+    }),
+  );
+  await expect.element(resume).toBeVisible();
+  await expect.element(stop).not.toBeInTheDocument();
+  await expect.element(editor).not.toBeInTheDocument();
 
   // FirstMate's own thread and an ordinary thread keep their composer.
   for (const other of [coordinator.id, plain.id]) {

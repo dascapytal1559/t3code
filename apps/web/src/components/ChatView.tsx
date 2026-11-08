@@ -1,5 +1,5 @@
 import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
-import { CrewStopControl } from "./chat/CrewStopControl";
+import { CrewRunControls } from "./chat/CrewRunControls";
 import { isCrewOf } from "./sidebar/coordinatorGroup.logic";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
@@ -3585,9 +3585,15 @@ export default function ChatView(props: ChatViewProps) {
                   >
                     <ChildThreadApprovals threadRef={activeThreadRef} />
                     {crewComposerHidden ? (
-                      canInterruptRunningThread ? (
-                        <CrewStopControl onStop={onInterruptStable} />
-                      ) : null
+                      <CrewRunControls
+                        onStop={canInterruptRunningThread ? onInterruptStable : null}
+                        onResume={
+                          canOperateThread && (resumableRunId !== null || hasHeldQueuedRuns)
+                            ? onComposerResumeStable
+                            : null
+                        }
+                        isResuming={isResuming}
+                      />
                     ) : (
                       <ComposerSurface.Shell contextRow={showComposerContextStrip}>
                         <ComposerSurface.Host
