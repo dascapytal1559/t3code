@@ -227,6 +227,15 @@ it.effect("a cancel and the next server start release only the restart's holds",
       yield* composerSend(stoppedWhilePending, "running");
       yield* requestRestart;
       yield* composerSend(restarted, "after the restart");
+      // A held message can still leave the queue, as the web app's Stash does.
+      yield* composerSend(restarted, "stashed instead");
+      const stashed = (yield* orchestrator.getThreadProjection(restarted)).runs[1]!;
+      yield* dispatch({
+        type: "queued-run.cancel",
+        commandId: CommandId.make("cancel-restart-held"),
+        threadId: restarted,
+        runId: stashed.id,
+      });
       // Stop during the wait takes the hold over, so the restart leaves this queue stopped.
       yield* dispatch({
         type: "thread.stop",
@@ -239,7 +248,7 @@ it.effect("a cancel and the next server start release only the restart's holds",
         commandId: CommandId.make("stop-again"),
         threadId: stoppedWhilePending,
       });
-      assert.deepEqual(yield* runs(restarted), ["queued:restart"]);
+      assert.deepEqual(yield* runs(restarted), ["queued:restart", "cancelled:restart"]);
       // A request holds what was already queued, too.
       assert.deepEqual(yield* runs(cancelled), ["starting", "queued:restart"]);
       assert.deepEqual(yield* runs(stoppedWhilePending), ["interrupted", "queued:held"]);
@@ -250,7 +259,7 @@ it.effect("a cancel and the next server start release only the restart's holds",
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       assert.isNull(yield* orchestrator.restartRequest);
       assert.strictEqual(yield* orchestrator.releaseRestartHolds, 2);
-      assert.deepEqual(yield* runs(restarted), ["starting"]);
+      assert.deepEqual(yield* runs(restarted), ["starting", "cancelled:restart"]);
       assert.deepEqual(yield* runs(cancelled), ["starting", "queued"]);
       assert.deepEqual(yield* runs(stopped), ["interrupted", "queued:held"]);
       assert.deepEqual(yield* runs(stoppedWhilePending), ["interrupted", "queued:held"]);

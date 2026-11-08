@@ -1,4 +1,9 @@
-import { ComposerContextRecord, ForwardCompatibleArray } from "@t3tools/contracts";
+import {
+  ComposerContextRecord,
+  ForwardCompatibleArray,
+  PastedTextAttachmentSource,
+  SnapShotSource,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { create } from "zustand";
 
@@ -13,18 +18,40 @@ const LEGACY_PROMPT_STASH_STORAGE_KEY = "t3code:prompt-stash:v1";
 const PROMPT_STASH_STORAGE_VERSION = 2;
 
 export const MAX_STASH_ENTRIES = 20;
-// Share localStorage's ~5MB quota with drafts; record oversized attachments in droppedImageNames.
-export const MAX_STASH_ENTRY_ATTACHMENT_CHARS = 2_700_000;
+
+const StashedImage = Schema.Struct({
+  type: Schema.Literal("image"),
+  id: Schema.String,
+  name: Schema.String,
+  mimeType: Schema.String,
+  sizeBytes: Schema.Number,
+  source: Schema.optional(SnapShotSource),
+});
+
+const StashedFile = Schema.Struct({
+  type: Schema.Literal("file"),
+  id: Schema.String,
+  name: Schema.String,
+  mimeType: Schema.String,
+  sizeBytes: Schema.Number,
+  source: Schema.optional(PastedTextAttachmentSource),
+});
+
+/** Metadata only; the bytes are in IndexedDB (promptStashMedia.ts) under the entry id. */
+export const StashedMedia = Schema.Union([StashedImage, StashedFile]);
+export type StashedMedia = typeof StashedMedia.Type;
 
 const StashEntrySchema = Schema.Struct({
   id: Schema.String,
   createdAt: Schema.String,
   prompt: Schema.String,
-  attachments: Schema.Array(PersistedComposerImageAttachment),
+  media: Schema.optionalKey(Schema.Array(StashedMedia)),
+  /** Composer files stashed as references to their pending server upload. */
   files: Schema.optionalKey(Schema.Array(PersistedComposerFileAttachment)),
-  droppedImageNames: Schema.Array(Schema.String),
+  /** Entries saved before media moved to IndexedDB inline their images and may have dropped some. */
+  attachments: Schema.optionalKey(Schema.Array(PersistedComposerImageAttachment)),
+  droppedImageNames: Schema.optionalKey(Schema.Array(Schema.String)),
   unreadableImageNames: Schema.optionalKey(Schema.Array(Schema.String)),
-  pendingImageCount: Schema.optionalKey(Schema.Number),
   records: Schema.optionalKey(ForwardCompatibleArray(ComposerContextRecord)),
 });
 export type PromptStashEntry = typeof StashEntrySchema.Type;
@@ -32,50 +59,8 @@ export type PromptStashEntry = typeof StashEntrySchema.Type;
 const PersistedPromptStashState = Schema.Struct({
   entries: Schema.Array(StashEntrySchema),
 });
-type PersistedPromptStashState = typeof PersistedPromptStashState.Type;
 
 const decodePersistedPromptStashState = Schema.decodeUnknownSync(PersistedPromptStashState);
-
-// Encoders cannot survive reload; clear orphaned counts so entries remain restorable.
-function clearOrphanedPendingImages(
-  entries: ReadonlyArray<PromptStashEntry>,
-): ReadonlyArray<PromptStashEntry> {
-  return entries.map((entry) => {
-    if (!entry.pendingImageCount) return entry;
-    const lostCount = entry.pendingImageCount;
-    return {
-      ...entry,
-      pendingImageCount: 0,
-      unreadableImageNames: [
-        ...(entry.unreadableImageNames ?? []),
-        ...Array.from(
-          { length: lostCount },
-          (_, index) => `image ${index + 1} (not saved before reload)`,
-        ),
-      ],
-    };
-  });
-}
-
-export function partitionStashAttachments(
-  attachments: ReadonlyArray<PersistedComposerImageAttachment>,
-): {
-  kept: PersistedComposerImageAttachment[];
-  droppedNames: string[];
-} {
-  const kept: PersistedComposerImageAttachment[] = [];
-  const droppedNames: string[] = [];
-  let usedChars = 0;
-  for (const attachment of attachments) {
-    if (usedChars + attachment.dataUrl.length > MAX_STASH_ENTRY_ATTACHMENT_CHARS) {
-      droppedNames.push(attachment.name);
-      continue;
-    }
-    usedChars += attachment.dataUrl.length;
-    kept.push(attachment);
-  }
-  return { kept, droppedNames };
-}
 
 // Accessing localStorage itself can throw SecurityError before get/set.
 function resolveBaseStorage(): { storage: StateStorage; durable: boolean } {
@@ -116,7 +101,7 @@ function readPersistedEntries(): ReadonlyArray<PromptStashEntry> | null {
     const parsed: unknown = JSON.parse(raw);
     const state = (parsed as { state?: unknown } | null)?.state;
     if (!state) return null;
-    return clearOrphanedPendingImages(decodePersistedPromptStashState(state).entries);
+    return decodePersistedPromptStashState(state).entries;
   } catch {
     return null;
   }
@@ -133,19 +118,26 @@ interface PromptStashStoreState {
   };
   /** durable=false means removal was not persisted and reload would restore the entry. */
   takeEntry: (entryId: string) => { entry: PromptStashEntry | null; durable: boolean };
-  /** attached=false means the entry disappeared while encoding, so images could not be saved. */
-  finalizeEntryImages: (
-    entryId: string,
-    images: {
-      attachments: ReadonlyArray<PersistedComposerImageAttachment>;
-      droppedImageNames: ReadonlyArray<string>;
-      unreadableImageNames: ReadonlyArray<string>;
-    },
-  ) => { attached: boolean; durable: boolean };
+  /** Reverses a `stashEntry` whose surrounding step failed, putting back what it evicted. */
+  undoStash: (entryId: string, evicted: PromptStashEntry | null) => { durable: boolean };
+  /** The stash badge replays its one-shot pulse each time this changes. */
+  pulseKey: number;
+  pulse: () => void;
 }
 
 export const usePromptStashStore = create<PromptStashStoreState>()((set, get) => ({
   entries: [],
+  pulseKey: 0,
+  pulse: () => set((state) => ({ pulseKey: state.pulseKey + 1 })),
+  undoStash: (entryId, evicted) => {
+    const nextEntries = [
+      ...get().entries.filter((candidate) => candidate.id !== entryId),
+      ...(evicted ? [evicted] : []),
+    ];
+    const { durable } = persistEntries(nextEntries);
+    set(() => ({ entries: nextEntries }));
+    return { durable };
+  },
   stashEntry: (entry) => {
     const nextEntries = [entry, ...get().entries];
     const evicted = nextEntries.length > MAX_STASH_ENTRIES ? (nextEntries.pop() ?? null) : null;
@@ -165,23 +157,6 @@ export const usePromptStashStore = create<PromptStashStoreState>()((set, get) =>
     const { durable } = persistEntries(nextEntries);
     set(() => ({ entries: nextEntries }));
     return { entry, durable };
-  },
-  finalizeEntryImages: (entryId, images) => {
-    const entries = get().entries;
-    const index = entries.findIndex((candidate) => candidate.id === entryId);
-    const existing = index === -1 ? undefined : entries[index];
-    if (!existing) return { attached: false, durable: true };
-    const nextEntries = [...entries];
-    nextEntries[index] = {
-      ...existing,
-      attachments: images.attachments,
-      droppedImageNames: images.droppedImageNames,
-      unreadableImageNames: images.unreadableImageNames,
-      pendingImageCount: 0,
-    };
-    const { durable } = persistEntries(nextEntries);
-    set(() => ({ entries: nextEntries }));
-    return { attached: true, durable };
   },
 }));
 

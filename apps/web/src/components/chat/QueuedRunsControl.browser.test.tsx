@@ -8,6 +8,12 @@ import { page } from "vite-plus/test/browser";
 const state = vi.hoisted(() => ({
   projection: null as unknown,
   workflow: null as unknown,
+  restartPending: false,
+  commands: [] as unknown[],
+}));
+
+vi.mock(import("../../hooks/useRestartPending"), () => ({
+  useRestartPending: () => state.restartPending,
 }));
 
 vi.mock(import("@t3tools/client-runtime/state/thread-workflows"), async (importOriginal) => ({
@@ -31,7 +37,10 @@ vi.mock(import("../../state/query"), async (importOriginal) => ({
 
 vi.mock(import("../../state/use-atom-command"), async (importOriginal) => ({
   ...(await importOriginal()),
-  useAtomCommand: (() => async () => undefined) as never,
+  useAtomCommand: (() => async (value: unknown) => {
+    state.commands.push(value);
+    return { _tag: "Success" };
+  }) as never,
 }));
 
 vi.mock(import("../../assets/assetUrls"), async (importOriginal) => ({
@@ -42,11 +51,15 @@ vi.mock(import("../../assets/assetUrls"), async (importOriginal) => ({
 
 import "~/index.css";
 import { render as renderUi } from "../../../test/render";
+import { usePromptStashStore } from "../../promptStashStore";
 import { QueuedRunsControl } from "./QueuedRunsControl";
 
 function setup() {
   state.projection = null;
   state.workflow = null;
+  state.restartPending = false;
+  state.commands = [];
+  usePromptStashStore.setState({ entries: [] });
 }
 
 const baseProps = {
@@ -202,4 +215,44 @@ it("stays inside the timeline scroller instead of growing the chat column", asyn
   await expect.element(page.getByText("Later", { exact: true })).toBeInTheDocument();
   const column = screen.getByTestId("column").element();
   expect(column.scrollHeight).toBe(column.clientHeight);
+});
+
+it("stashes a message held for a pending restart, which cannot be sent early", async () => {
+  setup();
+  state.restartPending = true;
+  state.projection = { projection: { messages: [] } };
+  state.workflow = {
+    activeRun: null,
+    canSendNow: true,
+    isHeld: true,
+    queuedRuns: [
+      {
+        run: {
+          id: "run:held",
+          userMessageId: "message:held",
+          queueHeld: true,
+          restartHold: true,
+        },
+        text: "Ship it after the restart",
+        attachments: [],
+      },
+    ],
+  };
+  await using _screen = await renderQueue();
+
+  await expect.element(page.getByText("Ship it after the restart")).toBeVisible();
+  await expect.element(page.getByRole("button", { name: "Send now" })).not.toBeInTheDocument();
+  await page.getByRole("button", { name: "Stash queued message" }).click();
+
+  await vi.waitFor(() =>
+    expect(usePromptStashStore.getState().entries.map((entry) => entry.prompt)).toEqual([
+      "Ship it after the restart",
+    ]),
+  );
+  expect(state.commands).toEqual([
+    {
+      environmentId: "environment:test",
+      input: { threadId: "thread:test", runId: "run:held" },
+    },
+  ]);
 });

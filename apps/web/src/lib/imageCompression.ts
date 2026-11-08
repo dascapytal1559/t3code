@@ -9,7 +9,6 @@ import {
 } from "@t3tools/shared/imageDimensions";
 
 const MAX_DIMENSION = IMAGE_ATTACHMENT_MAX_EDGE;
-export const MAX_STASH_IMAGE_DATA_URL_CHARS = 1_300_000;
 /** Bound source decoding: enormous ImageBitmaps can OOM the tab before resizing. */
 export const MAX_COMPRESSIBLE_SOURCE_BYTES = 50 * 1024 * 1024;
 const MAX_HEIC_DECODE_PIXELS = 64_000_000;
@@ -21,19 +20,7 @@ const HEIC_IMAGE_EXTENSION = /\.(?:heic|heif)$/i;
 
 type ImageSize = { width: number; height: number };
 
-export interface CompressedStashImage {
-  imageSize?: ImageSize;
-  dataUrl: string;
-  mimeType: string;
-  sizeBytes: number;
-  recompressed: boolean;
-}
-
 export type ImageCompressionFailureReason = "too-large" | "unreadable";
-
-export type CompressStashImageResult =
-  | { ok: true; image: CompressedStashImage }
-  | { ok: false; reason: ImageCompressionFailureReason };
 
 export type CompressImageFileResult =
   | { ok: true; file: File; recompressed: boolean; imageSize?: ImageSize }
@@ -351,41 +338,6 @@ async function reencodeWithinBudget(
     return { ok: false, reason: encodeFailed ? "unreadable" : "too-large" };
   } finally {
     bitmap.close();
-  }
-}
-
-export async function compressImageForStash(
-  file: File,
-  budgetChars: number = MAX_STASH_IMAGE_DATA_URL_CHARS,
-): Promise<CompressStashImageResult> {
-  try {
-    if (dataUrlLength(file) <= budgetChars) {
-      return {
-        ok: true,
-        image: {
-          dataUrl: await readFileAsDataUrl(file),
-          mimeType: file.type,
-          sizeBytes: file.size,
-          recompressed: false,
-        },
-      };
-    }
-    const reencoded = await reencodeWithinBudget(file, budgetChars);
-    if (!reencoded.ok) {
-      return reencoded;
-    }
-    return {
-      ok: true,
-      image: {
-        dataUrl: await readFileAsDataUrl(reencoded.blob),
-        mimeType: reencoded.mimeType,
-        sizeBytes: reencoded.blob.size,
-        recompressed: true,
-        imageSize: reencoded.imageSize,
-      },
-    };
-  } catch {
-    return { ok: false, reason: "unreadable" };
   }
 }
 

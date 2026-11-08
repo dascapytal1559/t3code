@@ -10,35 +10,16 @@ import { removeLocalStorageItem } from "./hooks/useLocalStorage";
 import {
   MAX_STASH_ENTRIES,
   PROMPT_STASH_STORAGE_KEY,
-  MAX_STASH_ENTRY_ATTACHMENT_CHARS,
-  partitionStashAttachments,
   usePromptStashStore,
   writePromptStashStorageForTest,
   type PromptStashEntry,
 } from "./promptStashStore";
 
-function makeEntry(input: {
-  id: string;
-  prompt?: string;
-  attachmentChars?: number;
-}): PromptStashEntry {
+function makeEntry(input: { id: string; prompt?: string }): PromptStashEntry {
   return {
     id: input.id,
     createdAt: "2026-07-24T12:00:00.000Z",
     prompt: input.prompt ?? `prompt ${input.id}`,
-    attachments:
-      input.attachmentChars !== undefined
-        ? [
-            {
-              id: `${input.id}-img`,
-              name: "shot.png",
-              mimeType: "image/png",
-              sizeBytes: input.attachmentChars,
-              dataUrl: "x".repeat(input.attachmentChars),
-            },
-          ]
-        : [],
-    droppedImageNames: [],
   };
 }
 
@@ -47,35 +28,6 @@ function resetPromptStashStore() {
   writePromptStashStorageForTest("");
   removeLocalStorageItem(PROMPT_STASH_STORAGE_KEY);
 }
-
-describe("partitionStashAttachments", () => {
-  it("keeps attachments within the budget and reports dropped names in order", () => {
-    const small = {
-      id: "a",
-      name: "small.png",
-      mimeType: "image/png",
-      sizeBytes: 10,
-      dataUrl: "x".repeat(10),
-    };
-    const huge = {
-      id: "b",
-      name: "huge.png",
-      mimeType: "image/png",
-      sizeBytes: MAX_STASH_ENTRY_ATTACHMENT_CHARS,
-      dataUrl: "x".repeat(MAX_STASH_ENTRY_ATTACHMENT_CHARS),
-    };
-    const alsoSmall = {
-      id: "c",
-      name: "also-small.png",
-      mimeType: "image/png",
-      sizeBytes: 10,
-      dataUrl: "x".repeat(10),
-    };
-    const { kept, droppedNames } = partitionStashAttachments([small, huge, alsoSmall]);
-    expect(kept.map((attachment) => attachment.id)).toEqual(["a", "c"]);
-    expect(droppedNames).toEqual(["huge.png"]);
-  });
-});
 
 describe("promptStashStore", () => {
   beforeEach(() => {
@@ -124,6 +76,13 @@ describe("promptStashStore", () => {
     const entries = usePromptStashStore.getState().entries;
     expect(entries).toHaveLength(MAX_STASH_ENTRIES);
     expect(entries[0]?.id).toBe("overflow");
+
+    // A stash whose surrounding step fails is undone, and the oldest entry comes back.
+    store.undoStash("overflow", evicted);
+    const undone = usePromptStashStore.getState().entries;
+    expect(undone).toHaveLength(MAX_STASH_ENTRIES);
+    expect(undone[0]?.id).toBe(`entry-${MAX_STASH_ENTRIES - 1}`);
+    expect(undone.at(-1)?.id).toBe("entry-0");
   });
 
   // regression: #4787 stashed prompts were lost when switching providers
@@ -137,17 +96,13 @@ describe("promptStashStore", () => {
     ]);
   });
 
-  it("takeEntry returns images and drop metadata finalized after a menu snapshot", () => {
-    const store = usePromptStashStore.getState();
-    store.stashEntry({ ...makeEntry({ id: "pending-restore" }), pendingImageCount: 1 });
-    const menuSnapshot = usePromptStashStore.getState().entries[0];
-    expect(menuSnapshot?.attachments).toEqual([]);
-
-    store.finalizeEntryImages("pending-restore", {
+  it("still reads entries saved with inline images and dropped-image names", () => {
+    const legacy = {
+      ...makeEntry({ id: "legacy" }),
       attachments: [
         {
-          id: "img-finalized",
-          name: "finalized.webp",
+          id: "img-inline",
+          name: "inline.webp",
           mimeType: "image/webp",
           sizeBytes: 12,
           dataUrl: "data:image/webp;base64,BBBB",
@@ -155,25 +110,34 @@ describe("promptStashStore", () => {
       ],
       droppedImageNames: ["too-large.png"],
       unreadableImageNames: ["unreadable.png"],
-    });
+      pendingImageCount: 0,
+    };
+    writePromptStashStorageForTest(JSON.stringify({ version: 2, state: { entries: [legacy] } }));
 
-    const { entry: taken } = store.takeEntry("pending-restore");
-    expect(taken).not.toBe(menuSnapshot);
-    expect(taken).toMatchObject({
-      attachments: [
-        {
-          id: "img-finalized",
-          name: "finalized.webp",
-        },
-      ],
+    expect(usePromptStashStore.getState().takeEntry("legacy").entry).toMatchObject({
+      attachments: [{ id: "img-inline", name: "inline.webp" }],
       droppedImageNames: ["too-large.png"],
       unreadableImageNames: ["unreadable.png"],
-      pendingImageCount: 0,
     });
   });
 
-  it("preserves uploaded file references without storing file contents", () => {
-    const store = usePromptStashStore.getState();
+  it("keeps file references and media metadata without storing their contents", () => {
+    const media = [
+      {
+        type: "image" as const,
+        id: "img-1",
+        name: "shot.png",
+        mimeType: "image/png",
+        sizeBytes: 9,
+      },
+      {
+        type: "file" as const,
+        id: "doc-1",
+        name: "notes.md",
+        mimeType: "text/markdown",
+        sizeBytes: 4,
+      },
+    ];
     const file = {
       id: "file-1",
       name: "report.pdf",
@@ -186,45 +150,11 @@ describe("promptStashStore", () => {
     writePromptStashStorageForTest(
       JSON.stringify({
         version: 2,
-        state: { entries: [{ ...makeEntry({ id: "with-file" }), files: [file] }] },
-      }),
-    );
-    store.finalizeEntryImages("with-file", {
-      attachments: [],
-      droppedImageNames: [],
-      unreadableImageNames: [],
-    });
-
-    expect(usePromptStashStore.getState().entries[0]?.files).toEqual([file]);
-  });
-
-  it("finalizeEntryImages reports false when the entry was already taken", () => {
-    const store = usePromptStashStore.getState();
-    store.stashEntry({ ...makeEntry({ id: "racing" }), pendingImageCount: 1 });
-    store.takeEntry("racing");
-
-    const { attached } = store.finalizeEntryImages("racing", {
-      attachments: [],
-      droppedImageNames: [],
-      unreadableImageNames: [],
-    });
-
-    expect(attached).toBe(false);
-  });
-
-  it("settles a pending count left behind by a crashed or closed session", () => {
-    writePromptStashStorageForTest(
-      JSON.stringify({
-        version: 2,
-        state: {
-          entries: [{ ...makeEntry({ id: "orphan" }), pendingImageCount: 2 }],
-        },
+        state: { entries: [{ ...makeEntry({ id: "with-file" }), files: [file], media }] },
       }),
     );
 
-    const entry = usePromptStashStore.getState().entries[0];
-    expect(entry?.pendingImageCount).toBe(0);
-    expect(entry?.unreadableImageNames).toHaveLength(2);
+    expect(usePromptStashStore.getState().entries[0]).toMatchObject({ files: [file], media });
   });
 
   it("ignores an unreadable v1 payload seeded under the current key", () => {

@@ -12,7 +12,7 @@ function Composer({ dialog = false }: { dialog?: boolean }) {
     ["first", "second"].map((id) => ({
       id,
       createdAt: "2026-10-01T00:00:00.000Z",
-      prompt: `${id} prompt`,
+      prompt: `[notes.md](t3-context://v1/file/file_${id}) ${id} prompt`,
       attachments: [],
       droppedImageNames: [],
     })),
@@ -88,7 +88,9 @@ it("leaves dialog, unrelated input and question button shortcuts alone while the
 
   await press("{Escape}");
   await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
-  expect(stash().element().textContent).toContain("first prompt");
+  // Rows read a context chip by its label, not its link markup.
+  expect(stash().element().textContent).toContain("notes.md first prompt");
+  expect(stash().element().textContent).not.toContain("t3-context://");
   expect(stash().element().textContent).toContain("second prompt");
   await expect.element(editor()).toHaveValue("Unsent draft");
 

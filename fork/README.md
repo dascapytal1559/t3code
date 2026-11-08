@@ -733,6 +733,32 @@ none, which means unknown; nothing is backfilled. A run's sender is its
 `apps/server/src/orchestration-v2/ThreadManagementService.ts`, `messageOrigin`
 in `Orchestrator.ts`, `clientOrigin` in `apps/server/src/ws.ts`.
 
+## Queued messages can be stashed
+
+![A held queued message with three images and a file; the bookmark beside Send now and the pencil reads "Move to the stash, with its attachments"](media/queued-stash.png)
+
+A bookmark button on each queued message, held by Stop or a pending restart or not
+held at all, moves it into the prompt
+stash with all its images and files and cancels its run. The client downloads
+each attachment from the server, stores the bytes, writes the stash entry, then
+cancels; a failed download or write leaves the message queued, and a refused
+cancel undoes the entry (and any eviction it caused). Guest messages have no
+stash, like they have no edit. Web and desktop only: mobile has no prompt stash.
+
+Upstream keeps stashed images as data URLs inside the localStorage entry, shrunk
+to fit a per-entry budget, and drops any that still do not fit, keeping only the
+name. Here every stash entry keeps image bytes (and a queued message's file
+bytes) in IndexedDB, keyed by entry id, with no budget or recompression; the
+entry holds only `media` metadata. Composer files are still stashed as pending
+upload references. The entry is written only after its bytes are, so a refused
+write stashes nothing; the async "saving N images" step and
+`finalizeEntryImages` are gone. Entries saved the old way still restore. Stash
+menu rows read context chips by their label rather than their link markup. Code:
+`apps/web/src/promptStashMedia.ts`, `stashQueuedMessage` in
+`apps/web/src/components/chat/promptStashActions.ts`, and the Stash button in
+`QueuedRunsControl.tsx`. On syncs, upstream changes to `compressImageForStash`
+or the stash entry schema need merging onto this model.
+
 ## Telemetry off by default
 
 The fork sends no product analytics and no T3 Connect relay traces unless you

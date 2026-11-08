@@ -38,6 +38,7 @@ import {
 } from "~/lib/composerContextRecords";
 import { assetEnvironment } from "~/state/assets";
 import { copiedComposerAttachmentFile } from "~/lib/copiedComposerAttachments";
+import { downloadAttachmentBlob } from "~/lib/attachmentDownload";
 import { countQuestionAttachments, questionAttachmentDraftId } from "../../questionAttachments";
 import { collectInlineContextIds } from "../../lib/composerContextReferences";
 import { elementContextToPreviewAnnotation } from "../../lib/elementContext";
@@ -60,15 +61,6 @@ import { countPreparingComposerImages } from "./preparingComposerImages";
 const isUnreachable = Schema.is(
   Schema.Union([ConnectionTransientError, ConnectionBlockedError, EnvironmentRpcUnavailableError]),
 );
-
-async function downloadAttachmentBlob(url: string): Promise<Blob | null> {
-  try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(60_000) });
-    return response.ok ? await response.blob() : null;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Imports copied composer context (terminal output, review comments, annotations, threads,

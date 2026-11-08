@@ -1,12 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
-  compressImageForStash,
   compressImageToByteLimit,
   createComposerImageThumbnail,
   inheritComposerImageThumbnail,
   MAX_COMPRESSIBLE_SOURCE_BYTES,
-  MAX_STASH_IMAGE_DATA_URL_CHARS,
   prepareImageForAttachment,
   readComposerImageThumbnail,
 } from "./imageCompression";
@@ -141,42 +139,18 @@ afterEach(() => {
   globalThis.OffscreenCanvas = originalOffscreenCanvas;
 });
 
-describe("compressImageForStash", () => {
-  it("keeps the exact data URL budget boundary and original bytes", async () => {
-    const original = makeFile(3);
-    const dataUrl = "data:image/png;base64,BwcH";
+describe("compressImageToByteLimit", () => {
+  const LIMIT_BYTES = 975_000;
 
-    const result = await compressImageForStash(original, dataUrl.length);
-
-    expect(result.ok && result.image.dataUrl).toBe(dataUrl);
-    expect(result.ok && result.image.recompressed).toBe(false);
-    expect(await compressImageForStash(original, dataUrl.length - 1)).toEqual({
-      ok: false,
-      reason: "too-large",
-    });
-  });
-
-  it("compresses an oversized source before reading it as a data URL", async () => {
-    stubCanvasPipeline(() => 120_000);
-    const original = makeFile(4_000_000);
-    const read = vi.spyOn(original, "arrayBuffer").mockRejectedValue(new Error("unneeded read"));
-
-    const result = await compressImageForStash(original);
-
-    expect(result.ok && result.image.recompressed).toBe(true);
-    expect(read).not.toHaveBeenCalled();
-  });
-
-  it("re-encodes an oversized image to WebP within the budget", async () => {
+  it("re-encodes an oversized image to WebP within the limit", async () => {
     const { close, fillRect } = stubCanvasPipeline(() => 120_000);
 
-    const result = await compressImageForStash(makeFile(4_000_000));
+    const result = await compressImageToByteLimit(makeFile(4_000_000), LIMIT_BYTES);
 
     expect(result.ok).toBe(true);
-    expect(result.ok && result.image.recompressed).toBe(true);
-    expect(result.ok && result.image.mimeType).toBe("image/webp");
-    expect(result.ok && result.image.dataUrl.length <= MAX_STASH_IMAGE_DATA_URL_CHARS).toBe(true);
-    expect(result.ok && result.image.sizeBytes).toBeLessThan(4_000_000);
+    expect(result.ok && result.recompressed).toBe(true);
+    expect(result.ok && result.file.type).toBe("image/webp");
+    expect(result.ok && result.file.size).toBeLessThanOrEqual(LIMIT_BYTES);
     expect(fillRect).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalled();
   });
@@ -184,27 +158,27 @@ describe("compressImageForStash", () => {
   it("falls back to JPEG with a white matte when WebP encoding is unavailable", async () => {
     const { fillRect } = stubCanvasPipeline(() => 120_000, { supportsWebp: false });
 
-    const result = await compressImageForStash(makeFile(4_000_000));
+    const result = await compressImageToByteLimit(makeFile(4_000_000), LIMIT_BYTES);
 
-    expect(result.ok && result.image.recompressed).toBe(true);
-    expect(result.ok && result.image.mimeType).toBe("image/jpeg");
+    expect(result.ok && result.recompressed).toBe(true);
+    expect(result.ok && result.file.type).toBe("image/jpeg");
     expect(fillRect).toHaveBeenCalled();
   });
 
   it("steps quality down until the encoded image fits", async () => {
     const { close } = stubCanvasPipeline((quality) => (quality <= 0.68 ? 400_000 : 3_000_000));
 
-    const result = await compressImageForStash(makeFile(9_000_000));
+    const result = await compressImageToByteLimit(makeFile(9_000_000), LIMIT_BYTES);
 
-    expect(result.ok && result.image.recompressed).toBe(true);
-    expect(result.ok && result.image.dataUrl.length <= MAX_STASH_IMAGE_DATA_URL_CHARS).toBe(true);
+    expect(result.ok && result.recompressed).toBe(true);
+    expect(result.ok && result.file.size).toBeLessThanOrEqual(LIMIT_BYTES);
     expect(close).toHaveBeenCalled();
   });
 
-  it("reports too-large when even the smallest encoding overflows the budget", async () => {
+  it("reports too-large when even the smallest encoding overflows the limit", async () => {
     const { close } = stubCanvasPipeline(() => 8_000_000);
 
-    const result = await compressImageForStash(makeFile(9_000_000));
+    const result = await compressImageToByteLimit(makeFile(9_000_000), LIMIT_BYTES);
 
     expect(result).toEqual({ ok: false, reason: "too-large" });
     expect(close).toHaveBeenCalled();
@@ -226,13 +200,13 @@ describe("compressImageForStash", () => {
       },
     );
 
-    expect(await compressImageForStash(makeFile(4_000_000))).toEqual({
+    expect(await compressImageToByteLimit(makeFile(4_000_000), LIMIT_BYTES)).toEqual({
       ok: false,
       reason: "unreadable",
     });
   });
 
-  it("compressImageToByteLimit refuses sources above the decode-safety ceiling", async () => {
+  it("refuses sources above the decode-safety ceiling", async () => {
     const bitmapSpy = vi.fn();
     vi.stubGlobal("createImageBitmap", bitmapSpy);
 
@@ -465,50 +439,40 @@ describe("snapshot coordinates after compression", () => {
     },
   };
 
-  it.each(["stash", "delivery"])(
-    "rescales the source and restores it with the compressed %s image",
-    async (path) => {
-      stubCanvasPipeline(() => 100);
-      vi.stubGlobal(
-        "createImageBitmap",
-        vi.fn(async () => ({ width: 2560, height: 1600, close: vi.fn() })),
-      );
-      const original = makeFile(2000);
-      const compressed =
-        path === "stash"
-          ? await compressImageForStash(original, 1000)
-          : await compressImageToByteLimit(original, 1000);
-      expect(compressed.ok).toBe(true);
-      if (!compressed.ok) throw new Error("Compression failed");
-      const image =
-        "image" in compressed
-          ? compressed.image
-          : {
-              ...compressed,
-              mimeType: compressed.file.type,
-              sizeBytes: compressed.file.size,
-              dataUrl: `data:${compressed.file.type};base64,${Buffer.from(await compressed.file.arrayBuffer()).toString("base64")}`,
-            };
-      expect(image.imageSize).toEqual({ width: 2000, height: 1250 });
-      const resized = resizeSnapShotSource(source, image.imageSize);
-      const [restored] = hydrateImagesFromPersisted([
-        {
-          id: "capture",
-          name: "window.webp",
-          mimeType: image.mimeType,
-          sizeBytes: image.sizeBytes,
-          dataUrl: image.dataUrl,
-          source: resized,
-        },
-      ]);
-      expect(restored?.source?.accessibility).toMatchObject({
-        imageSize: { width: 2000, height: 1250 },
-        root: {
-          bounds: { x: 0, y: 0, width: 2000, height: 1250 },
-          children: [{ bounds: { x: 1875, y: 1094, width: 78, height: 78 } }, { bounds: null }],
-        },
-      });
-      expect(source.accessibility).toMatchObject({ imageSize: { width: 2560, height: 1600 } });
-    },
-  );
+  it("rescales the source and restores it with the compressed image", async () => {
+    stubCanvasPipeline(() => 100);
+    vi.stubGlobal(
+      "createImageBitmap",
+      vi.fn(async () => ({ width: 2560, height: 1600, close: vi.fn() })),
+    );
+    const compressed = await compressImageToByteLimit(makeFile(2000), 1000);
+    expect(compressed.ok).toBe(true);
+    if (!compressed.ok) throw new Error("Compression failed");
+    const image = {
+      ...compressed,
+      mimeType: compressed.file.type,
+      sizeBytes: compressed.file.size,
+      dataUrl: `data:${compressed.file.type};base64,${Buffer.from(await compressed.file.arrayBuffer()).toString("base64")}`,
+    };
+    expect(image.imageSize).toEqual({ width: 2000, height: 1250 });
+    const resized = resizeSnapShotSource(source, image.imageSize);
+    const [restored] = hydrateImagesFromPersisted([
+      {
+        id: "capture",
+        name: "window.webp",
+        mimeType: image.mimeType,
+        sizeBytes: image.sizeBytes,
+        dataUrl: image.dataUrl,
+        source: resized,
+      },
+    ]);
+    expect(restored?.source?.accessibility).toMatchObject({
+      imageSize: { width: 2000, height: 1250 },
+      root: {
+        bounds: { x: 0, y: 0, width: 2000, height: 1250 },
+        children: [{ bounds: { x: 1875, y: 1094, width: 78, height: 78 } }, { bounds: null }],
+      },
+    });
+    expect(source.accessibility).toMatchObject({ imageSize: { width: 2560, height: 1600 } });
+  });
 });

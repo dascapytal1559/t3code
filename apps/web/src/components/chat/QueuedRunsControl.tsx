@@ -16,6 +16,7 @@ import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-mes
 import { Link } from "@tanstack/react-router";
 import {
   ArrowUpIcon,
+  BookmarkIcon,
   CalendarClockIcon,
   ChevronDownIcon,
   Clock3Icon,
@@ -26,8 +27,14 @@ import {
 import * as DateTime from "effect/DateTime";
 import { useId, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from "react";
 
-import { useAssetUrls } from "../../assets/assetUrls";
+import { resolveAssetUrl, useAssetUrls } from "../../assets/assetUrls";
+import { downloadAttachmentBlob } from "../../lib/attachmentDownload";
+import { assetEnvironment } from "../../state/assets";
+import { readPreparedConnection } from "../../state/session";
 import { threadEnvironment } from "../../state/threads";
+import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
+import { toastManager } from "../ui/toast";
+import { stashQueuedMessage } from "./promptStashActions";
 import { useQuietThreadShell, useThreadProjection } from "../../state/entities";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { isImageAttachment, type ChatMessage } from "../../types";
@@ -100,6 +107,10 @@ export function QueuedRunsControl({
   const promote = useAtomCommand(threadEnvironment.promoteQueuedRun);
   const resume = useAtomCommand(threadEnvironment.resumeThreadQueue);
   const cancel = useAtomCommand(threadEnvironment.cancelQueuedRun);
+  const cancelForStash = useAtomCommand(threadEnvironment.cancelQueuedRun, {
+    reportFailure: false,
+  });
+  const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, { reportFailure: false });
   const [showAll, setShowAll] = useState(false);
   const queueListId = useId();
   const [busyRunId, setBusyRunId] = useState<RunId | null>(null);
@@ -238,6 +249,57 @@ export function QueuedRunsControl({
     setBusyRunId(null);
   };
 
+  const downloadAttachment = async (attachment: ContractChatAttachment) => {
+    const connection = readPreparedConnection(props.environmentId);
+    if (!connection) return null;
+    const result = await createAssetUrl({
+      environmentId: props.environmentId,
+      input: { resource: { _tag: "attachment", attachmentId: attachment.id } },
+    });
+    const url =
+      result._tag === "Success"
+        ? resolveAssetUrl(connection.httpBaseUrl, result.value.relativeUrl)
+        : null;
+    return url ? downloadAttachmentBlob(url) : null;
+  };
+
+  const stash = async (
+    runId: RunId,
+    item: Pick<(typeof items)[number], "text" | "attachments" | "message">,
+  ) => {
+    setBusyRunId(runId);
+    const outcome = await stashQueuedMessage({
+      text: item.text,
+      attachments: item.attachments,
+      context: item.message?.context,
+      download: downloadAttachment,
+      removeFromQueue: async () =>
+        (
+          await cancelForStash({
+            environmentId: props.environmentId,
+            input: { threadId: props.threadId, runId },
+          })
+        )._tag === "Success",
+    });
+    setBusyRunId(null);
+    if (!outcome.ok) {
+      toastManager.add({
+        type: "error",
+        title: "Could not stash this queued message",
+        description: outcome.reason,
+        data: { hideCopyButton: true },
+      });
+    } else if (!outcome.durable) {
+      toastManager.add({
+        type: "warning",
+        title: "Stashed message will not survive a reload",
+        description:
+          "Browser storage is unavailable, so this stash is kept in memory only for this session.",
+        data: { hideCopyButton: true },
+      });
+    }
+  };
+
   const collapsible = items.length > QUEUE_VISIBLE_ROWS;
   const visibleItems = collapsible && !showAll ? items.slice(0, QUEUE_VISIBLE_ROWS - 1) : items;
 
@@ -353,6 +415,26 @@ export function QueuedRunsControl({
                       <TooltipPopup>
                         {props.editBlockedReason ??
                           `Edit in the composer${item.serverIndex === queued.length - 1 && props.editShortcutLabel ? ` (${props.editShortcutLabel})` : ""}`}
+                      </TooltipPopup>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger render={<span className="flex shrink-0" />}>
+                        <Button
+                          size="icon-xs"
+                          variant="ghost-muted"
+                          aria-label="Stash queued message"
+                          disabled={item.runId === null || !item.editable || busyRunId !== null}
+                          onClick={() => {
+                            if (item.runId !== null) void stash(item.runId, item);
+                          }}
+                        >
+                          <BookmarkIcon />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipPopup>
+                        {item.editable
+                          ? "Move to the stash, with its attachments"
+                          : "A guest's message cannot be stashed"}
                       </TooltipPopup>
                     </Tooltip>
                     <Tooltip>

@@ -1,25 +1,46 @@
 import { BookmarkIcon, FileIcon, FileTextIcon } from "lucide-react";
 import { memo, useEffect, useEffectEvent, useRef, useState, type RefObject } from "react";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
+import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 
 import { RelativeTime } from "../RelativeTime";
 import { cn } from "~/lib/utils";
 import { type PromptStashEntry } from "../../promptStashStore";
+import { readStashMedia } from "../../promptStashMedia";
 import { ComposerBanner } from "./ComposerBanner";
 
 const SNIPPET_MAX_CHARS = 90;
 
+const THUMBNAIL_COUNT = 3;
+
 function missingImageCount(entry: PromptStashEntry): number {
-  return entry.droppedImageNames.length + (entry.unreadableImageNames?.length ?? 0);
+  return (entry.droppedImageNames?.length ?? 0) + (entry.unreadableImageNames?.length ?? 0);
+}
+
+function stashedImageIds(entry: PromptStashEntry): string[] {
+  return (entry.media ?? []).flatMap((item) => (item.type === "image" ? [item.id] : []));
+}
+
+function stashedFileCount(entry: PromptStashEntry): number {
+  return (
+    (entry.files?.length ?? 0) + (entry.media ?? []).filter((item) => item.type === "file").length
+  );
 }
 
 function stashEntrySnippet(entry: PromptStashEntry): string {
-  const trimmed = assistantCitationsToPlainText(entry.prompt).trim().replace(/\s+/g, " ");
+  const trimmed = assistantCitationsToPlainText(
+    replaceComposerContextReferences(entry.prompt, (reference) => reference.label),
+  )
+    .trim()
+    .replace(/\s+/g, " ");
   if (trimmed.length > 0) {
     return trimmed.length > SNIPPET_MAX_CHARS ? `${trimmed.slice(0, SNIPPET_MAX_CHARS)}…` : trimmed;
   }
-  const imageCount = entry.attachments.length + entry.droppedImageNames.length;
-  const fileCount = entry.files?.length ?? 0;
+  const imageCount =
+    (entry.attachments?.length ?? 0) +
+    (entry.droppedImageNames?.length ?? 0) +
+    stashedImageIds(entry).length;
+  const fileCount = stashedFileCount(entry);
   const attachmentCount = imageCount + fileCount;
   if (attachmentCount === 0) {
     return "(empty)";
@@ -185,34 +206,28 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
                   </button>
                 </ComposerBanner.Content>
                 <ComposerBanner.Actions>
-                  {entry.pendingImageCount ? (
-                    <span className="shrink-0 text-muted-foreground">
-                      saving {entry.pendingImageCount} image
-                      {entry.pendingImageCount === 1 ? "" : "s"}…
-                    </span>
-                  ) : missingImageCount(entry) > 0 ? (
+                  {missingImageCount(entry) > 0 ? (
                     <span className="shrink-0 text-warning-foreground">
                       {missingImageCount(entry)} image
                       {missingImageCount(entry) === 1 ? "" : "s"} dropped
                     </span>
                   ) : null}
-                  {entry.attachments.length > 0 ? (
+                  {(entry.attachments?.length ?? 0) > 0 ? (
                     <span className="flex shrink-0 items-center -space-x-1.5">
-                      {entry.attachments.slice(0, 3).map((attachment) => (
-                        <img
-                          key={attachment.id}
-                          src={attachment.dataUrl}
-                          alt=""
-                          aria-hidden="true"
-                          className="size-4 rounded border border-border/70 object-cover"
-                        />
+                      {entry.attachments!.slice(0, THUMBNAIL_COUNT).map((attachment) => (
+                        <StashThumbnail key={attachment.id} src={attachment.dataUrl} />
                       ))}
                     </span>
+                  ) : stashedImageIds(entry).length > 0 ? (
+                    <StashedMediaThumbnails
+                      entryId={entry.id}
+                      imageIds={stashedImageIds(entry).slice(0, THUMBNAIL_COUNT)}
+                    />
                   ) : null}
-                  {(entry.files?.length ?? 0) > 0 ? (
+                  {stashedFileCount(entry) > 0 ? (
                     <span className="flex shrink-0 items-center gap-1 text-muted-foreground">
                       <FileIcon className="size-3" aria-hidden />
-                      {entry.files!.length}
+                      {stashedFileCount(entry)}
                     </span>
                   ) : null}
                   <time
@@ -236,3 +251,52 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
     </ComposerBanner.Root>
   );
 });
+
+function StashThumbnail(props: { src: string | null }) {
+  return props.src ? (
+    <img
+      src={props.src}
+      alt=""
+      aria-hidden="true"
+      className="size-4 rounded border border-border/70 object-cover"
+    />
+  ) : (
+    <span aria-hidden="true" className="size-4 rounded border border-border/70 bg-muted" />
+  );
+}
+
+function StashedMediaThumbnails(props: { entryId: string; imageIds: ReadonlyArray<string> }) {
+  const { entryId } = props;
+  const imageKey = props.imageIds.join(",");
+  const [urls, setUrls] = useState<ReadonlyMap<string, string>>(new Map());
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reads the entry's bytes from IndexedDB and owns the object URLs made from them
+  useEffect(() => {
+    let cancelled = false;
+    const created: string[] = [];
+    void readStashMedia(entryId)
+      .then((blobs) => {
+        if (cancelled) return;
+        const next = new Map<string, string>();
+        for (const id of imageKey.split(",")) {
+          const blob = blobs.get(id);
+          if (!blob) continue;
+          const url = URL.createObjectURL(blob);
+          created.push(url);
+          next.set(id, url);
+        }
+        setUrls(next);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      for (const url of created) URL.revokeObjectURL(url);
+    };
+  }, [entryId, imageKey]);
+  return (
+    <span className="flex shrink-0 items-center -space-x-1.5">
+      {props.imageIds.map((id) => (
+        <StashThumbnail key={id} src={urls.get(id) ?? null} />
+      ))}
+    </span>
+  );
+}

@@ -178,11 +178,17 @@ memory. The action is available only when the provider supports rewind.
 On web and desktop, press `Cmd+S` on macOS or `Ctrl+S` on Windows and Linux to save
 the current prompt and its attachments for later. Wait for uploads to finish first.
 With an empty composer, the same shortcut restores a single stash or opens the
-stash menu when there are several.
+stash menu when there are several. A [queued message](#queued-messages) can be
+stashed too.
 
-Stashes containing uploaded files must be restored in their original environment.
-Those files are retained for 24 hours. After an upload expires, restore the prompt
-and use **Attach again** or remove the missing file before sending.
+Images are kept at full size in this browser's storage, so a stash belongs to the
+browser or desktop app that made it. If the browser refuses to store them, nothing
+is stashed and the prompt stays where it was.
+
+Files you attached in the composer stay uploaded to the environment instead: those
+stashes must be restored in their original environment, and the files are retained
+for 24 hours. After an upload expires, restore the prompt and use **Attach again**
+or remove the missing file before sending.
 
 ## Voice input on web and desktop
 
@@ -238,12 +244,17 @@ shortcut described above.
 On web and desktop, queued messages appear at the end of the thread as dashed messages that have
 not been sent yet. On mobile they appear above the composer. Each shows its text and any attached
 images. **Send now** sends a message right away, into the running turn if there is one. You can
-also edit or remove it.
+also edit, stash, or remove it.
+
+On web and desktop, the bookmark on a queued message moves it into the [prompt stash](#prompt-stash) with all its
+images and files, downloaded into this browser's storage, and takes it out of the queue. If
+anything cannot be kept, it stays queued and a message says why. A guest's message cannot be
+stashed.
 
 If you stop the agent or the server restarts, queued messages keep their order and are held.
 Press **Resume** in an empty composer to continue. **Resume** also continues a stopped
 run or one that hit a usage limit, even with nothing queued. Sending a new message also resumes the queue, unless it steers a turn that is already
-running. You can edit or remove held messages without starting them.
+running. You can edit, stash, or remove held messages without starting them.
 
 The pencil on a queued message opens it in the composer for editing. The original message
 stays in the queue until you save, and it is highlighted while you edit. The message's
