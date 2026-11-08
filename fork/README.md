@@ -459,6 +459,71 @@ launcher and "+" menu entries and tab title and icon in `RightPanelTabs.tsx`,
 `mcp/toolkits/environment/`, its row in `t3McpToolPresentation.ts` and the
 larger `agentContextBudget.json`.
 
+## Restart registry
+
+Whoever restarts T3 (FirstMate installing a build) first registers the restart,
+so no new turn starts and nobody's message is cut off. While it is pending:
+
+- No turn starts on any thread. A send from the composer, `t3_thread_send` or
+  any other path queues on its thread, held, even on an idle thread; a steer
+  queues instead of joining the running turn, and a queue resumed by hand is
+  held again. Messages already queued are held too. Nothing is dropped. A
+  workspace launch still prepares its worktree and is held when it would start.
+  The one refusal is a fork's first message, which needs the immediate start
+  path; promoting a queued message to a steer is refused too.
+- Turns already running finish normally.
+- The web app shows a notice naming the reason, with Cancel restart, and the
+  composer's send button reads as Queue.
+
+The restart's holds are kept apart from Stop's and failures': a run held for
+the restart has `queueHeld: true` and `restartHold: true`. Only the restart
+releases those, and a Stop during the wait takes the hold over, so that queue
+stays stopped afterwards. After the restart, server start releases every
+restart hold and each thread's queue runs in order with nobody acting; a cancel
+releases them the same way.
+
+MCP tools, on the environment toolkit. Request and cancel need a full-access
+client or live full-access caller thread, and refuse a linked environment's
+caller, like `t3_objectives_set`; status needs only orchestration access.
+
+- `t3_restart_request` `{ reason }` sets the request (`reason`: trimmed, 1 to
+  500 characters, such as `install build 0.1.8`), or replaces only its reason
+  when one is pending. `requestedBy` is the caller thread's title or the MCP
+  client's label. Returns the status below.
+- `t3_restart_status` `{}` returns `{ pending, reason, requestedAt,
+  activeTurns, drained }`. `activeTurns` counts threads with a turn in flight
+  (preparing, starting, running or waiting on a person), in any project,
+  including the caller's own; `drained` is `pending` and `activeTurns === 0`.
+  `reason` and `requestedAt` (ISO 8601) are null when nothing is pending.
+- `t3_restart_cancel` `{}` clears the request and releases its holds. Returns
+  the status.
+
+T3 never restarts itself: the requester polls `t3_restart_status` from outside
+any turn until `drained`, then quits and relaunches T3. The request lives only
+in the server's memory, so a server start clears it, and the held runs persist
+in the projection until that start releases them.
+
+Clients read it on the `subscribeRestartRequest` stream (`{ request: {
+reason, requestedBy, requestedAt } | null }`) and cancel with
+`server.cancelRestartRequest`. The web app follows only its primary
+environment. Mobile gets the server-side queueing but shows no notice yet.
+
+Code: `packages/contracts/src/restartRequest.ts`, the `restartHold` run field
+in `orchestrationV2.ts`, the two RPCs in `rpc.ts` (with their scopes in
+`clientRpcPermissions.ts`, `RpcAuthorization.ts` and `RpcInstrumentation.ts`)
+and `ws.ts`. In `Orchestrator.ts`: the request state and `requestRestart`,
+`cancelRestart`, `restartStatus` and `releaseRestartHolds`; the gate in
+`startNextQueuedRun`, `dispatchMessage` (idle threads queue, steers and `/goal`
+stops queue) and `prepared-run.release`; the steer-promotion refusal;
+`withQueueHold` at the release sites (unattended release, user send,
+preparation retry, Stop, queue resume). The recovery kinds in
+`ProjectionStore.ts`, the hold strip in `ProviderRuntimeRecoveryService.ts`,
+the startup release in `serverRuntimeStartup.ts`, the tools in
+`mcp/toolkits/environment/` with rows in `t3McpToolPresentation.ts` and the
+larger `agentContextBudget.json`; on the web, `RestartPendingNotice.tsx`
+(mounted in `__root.tsx`), `useRestartPending.ts` and the `restartPending` prop
+of `ComposerPrimaryActions.tsx`.
+
 ## Snooze with no date
 
 A thread can be snoozed with no wake time: it sits on the Snoozed shelf until

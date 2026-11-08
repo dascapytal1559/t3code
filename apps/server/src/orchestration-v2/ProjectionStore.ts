@@ -173,6 +173,9 @@ export type ProjectionStoreV2Error = typeof ProjectionStoreV2Error.Type;
 
 export type ProjectionRecoveryKind =
   | "queued-runs"
+  | "active-runs"
+  | "unheld-queued-runs"
+  | "restart-held-runs"
   | "runtime"
   | "subagent-results"
   | "delegated-completions";
@@ -4189,6 +4192,21 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                     WHERE active.thread_id = orchestration_v2_projection_runs.thread_id
                       AND active.status IN ('preparing', 'starting', 'running', 'waiting')
                   )
+              `;
+            case "active-runs":
+              return sql`
+                SELECT thread_id FROM orchestration_v2_projection_runs
+                WHERE status IN ('preparing', 'starting', 'running', 'waiting')
+              `;
+            case "unheld-queued-runs":
+              return sql`
+                SELECT thread_id FROM orchestration_v2_projection_runs
+                WHERE status = 'queued' AND json_extract(payload_json, '$.queueHeld') IS NOT 1
+              `;
+            case "restart-held-runs":
+              return sql`
+                SELECT thread_id FROM orchestration_v2_projection_runs
+                WHERE status = 'queued' AND json_extract(payload_json, '$.restartHold') IS 1
               `;
             case "delegated-completions":
               return sql`

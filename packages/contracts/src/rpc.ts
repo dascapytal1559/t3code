@@ -347,6 +347,7 @@ import {
   ResourceTelemetryRetryResult,
   ResourceTelemetrySnapshot,
 } from "./resourceTelemetry.ts";
+import { RestartRequestState } from "./restartRequest.ts";
 import {
   UsageLimitSourceError,
   ProviderConsumeResetCreditInput,
@@ -532,6 +533,7 @@ export const WS_METHODS = {
   serverGetProcessResourceHistory: "server.getProcessResourceHistory",
   serverGetResourceTelemetryHistory: "server.getResourceTelemetryHistory",
   serverRetryResourceTelemetry: "server.retryResourceTelemetry",
+  serverCancelRestartRequest: "server.cancelRestartRequest",
   serverCheckOtlpEndpoint: "server.checkOtlpEndpoint",
   serverPrepareTriage: "server.prepareTriage",
   serverSignalProcess: "server.signalProcess",
@@ -613,6 +615,7 @@ export const WS_METHODS = {
   subscribeServerLifecycle: "subscribeServerLifecycle",
   subscribeAuthAccess: "subscribeAuthAccess",
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
+  subscribeRestartRequest: "subscribeRestartRequest",
 } as const;
 
 const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
@@ -2009,6 +2012,19 @@ const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeResourceTel
   stream: true,
 });
 
+const WsSubscribeRestartRequestRpc = Rpc.make(WS_METHODS.subscribeRestartRequest, {
+  payload: Schema.Struct({}),
+  success: RestartRequestState,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
+const WsServerCancelRestartRequestRpc = Rpc.make(WS_METHODS.serverCancelRestartRequest, {
+  payload: Schema.Struct({}),
+  success: RestartRequestState,
+  error: EnvironmentAuthorizationError,
+});
+
 export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthorization>()(
   "t3/contracts/RpcScopeAuthorization",
   { error: EnvironmentAuthorizationError },
@@ -2205,6 +2221,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeServerLifecycleRpc,
   WsSubscribeAuthAccessRpc,
   WsSubscribeResourceTelemetryRpc,
+  WsSubscribeRestartRequestRpc,
+  WsServerCancelRestartRequestRpc,
   WsOrchestrationV2DispatchCommandRpc,
   WsOrchestrationV2GetWorkflowScriptRpc,
   WsOrchestrationV2GetNativeChildWorkRpc,

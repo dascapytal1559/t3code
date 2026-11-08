@@ -1388,6 +1388,15 @@ export function createServerEnvironmentAtoms<R, E>(
           ),
         ),
     }),
+    // Fork-only: an older or upstream server fails this subscription, which reads as no restart.
+    restartRequest: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:server:restart-request",
+      tag: WS_METHODS.subscribeRestartRequest,
+    }),
+    cancelRestartRequest: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:cancel-restart-request",
+      tag: WS_METHODS.serverCancelRestartRequest,
+    }),
     consumeResetCredit: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:consume-reset-credit",
       tag: WS_METHODS.providerConsumeResetCredit,

@@ -21,6 +21,7 @@ import * as ServerConfig from "../../../config.ts";
 import * as Environment from "../../../environment/ServerEnvironment.ts";
 import * as SqlitePersistence from "../../../persistence/Sqlite.ts";
 import * as ManagedPolicy from "../../../policy/ManagedPolicy.ts";
+import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as Settings from "../../../serverSettings.ts";
@@ -58,6 +59,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("t3_objectives_se
       Layer.mergeAll(
         ThreadCommandExecutor.layer,
         layerServerEnvironment,
+        Layer.mock(Orchestrator.OrchestratorV2)({}),
         Layer.mock(ThreadManagement.ThreadManagementService)({}),
         Layer.succeed(McpInvocationContext.McpInvocationContext, {
           environmentId,
@@ -116,6 +118,7 @@ it.effect("refuses a preferences update when the caller's turn ends while it wai
     const checked = yield* Deferred.make<void>();
     const layerDependencies = Layer.mergeAll(
       ThreadCommandExecutor.layer,
+      Layer.mock(Orchestrator.OrchestratorV2)({}),
       Layer.succeed(McpInvocationContext.McpInvocationContext, {
         environmentId,
         requestNamespace: "provider:preferences",

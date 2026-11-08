@@ -358,6 +358,15 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     ["Update", "Updating", "Updated", "Bridge objectives"],
     "environment-update",
   ),
+  t3_restart_request: tool(
+    ["Request", "Requesting", "Requested", "a T3 restart"],
+    "environment-update",
+  ),
+  t3_restart_status: tool(["Check", "Checking", "Checked", "the T3 restart"], "environment-read"),
+  t3_restart_cancel: tool(
+    ["Cancel", "Cancelling", "Cancelled", "the T3 restart"],
+    "environment-update",
+  ),
   t3_thread_launch: tool(["Launch", "Launching", "Launched", "a project thread"], "thread-create"),
   t3_project_list: tool(["List", "Listing", "Listed", "projects"], "project-list"),
   t3_project_read: tool(["Read", "Reading", "Read", "a project"], "project-read"),

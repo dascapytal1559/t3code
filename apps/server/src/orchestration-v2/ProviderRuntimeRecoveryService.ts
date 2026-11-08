@@ -425,6 +425,8 @@ export const make = Effect.gen(function* () {
           continue;
         }
         if (run.queueHeld === true && retryableRuns.length === 0) continue;
+        // Recovery holds the queue behind the retry now, which a restart's release must not lift.
+        const { restartHold: _restartHold, ...unownedRun } = run;
         events.push({
           id: yield* allocateEventId(),
           type: "run.updated",
@@ -433,7 +435,7 @@ export const make = Effect.gen(function* () {
           providerInstanceId: run.providerInstanceId,
           occurredAt: now,
           payload: {
-            ...run,
+            ...unownedRun,
             status: "queued",
             queueHeld: true,
             ...(retryableRuns.length === 0 ? {} : { queuePosition: index + 1 }),

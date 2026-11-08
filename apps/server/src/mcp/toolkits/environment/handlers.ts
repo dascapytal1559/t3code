@@ -5,6 +5,7 @@ import {
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Environment from "../../../environment/ServerEnvironment.ts";
+import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
 import * as Settings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -44,6 +45,10 @@ const access = Effect.gen(function* () {
     });
   return { ...context, descriptor, settings: yield* Settings.ServerSettingsService };
 });
+const restartStatus = Effect.gen(function* () {
+  const orchestrator = yield* Orchestrator.OrchestratorV2;
+  return yield* orchestrator.restartStatus.pipe(Effect.mapError(unavailable));
+});
 const updateSettings = Effect.fn("EnvironmentMcp.updateSettings")(function* <E, R>(
   patch: ServerSettingsPatch,
   check: Effect.Effect<unknown, E, R>,
@@ -81,5 +86,25 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
     updateSettings({ objectives: markdown === null ? null : { markdown } }, check).pipe(
       Effect.map(({ objectives }) => ({ objectives })),
     ),
+  ),
+  // These take no thread lock: holding queues locks every thread, the caller's among them.
+  t3_restart_request: McpToolAccess.writesEnvironment(({ reason }) =>
+    Effect.gen(function* () {
+      const { scope, caller } = yield* access;
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      yield* orchestrator.requestRestart({
+        reason,
+        requestedBy: caller?.title ?? scope.client?.label ?? "MCP",
+      });
+      return yield* restartStatus;
+    }),
+  ),
+  t3_restart_status: McpToolAccess.reads(() => access.pipe(Effect.andThen(restartStatus))),
+  t3_restart_cancel: McpToolAccess.writesEnvironment(() =>
+    Effect.gen(function* () {
+      yield* access;
+      yield* (yield* Orchestrator.OrchestratorV2).cancelRestart;
+      return yield* restartStatus;
+    }),
   ),
 });

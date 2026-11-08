@@ -38,6 +38,7 @@ import type { TimestampFormat } from "@t3tools/contracts/settings";
 import { GuestMessageName } from "./guestMessageStyle";
 import { TimelineRowTimestamp } from "./TimelineRowParts";
 import { FoldedMessageHeader, useScheduledTaskTitle } from "./TimelineUserMessageRow";
+import { useRestartPending } from "../../hooks/useRestartPending";
 
 export interface EditQueuedRunRequest {
   readonly runId: RunId;
@@ -113,11 +114,14 @@ export function QueuedRunsControl({
   const workflow = projection ? deriveThreadQueueWorkflowState(projection) : null;
   const queued = workflow?.queuedRuns ?? [];
   const activeRun = workflow?.activeRun ?? null;
+  const restartPending = useRestartPending(props.environmentId);
   // A fresh message starts its own turn: it may skip compaction, but not steer into a turn.
+  // A pending restart starts nothing, so nothing here can be sent early.
   const canSendRun = (freshContext: boolean) =>
-    workflow?.canSendNow === true ||
-    (workflow?.canPromoteToSteer === true &&
-      (!freshContext || workflow.promoteSkipsCompaction === true));
+    !restartPending &&
+    (workflow?.canSendNow === true ||
+      (workflow?.canPromoteToSteer === true &&
+        (!freshContext || workflow.promoteSkipsCompaction === true)));
   const queuedImageUrlById = new Map(
     queuedImageAttachmentUrls.flatMap((url, index) => {
       const resource = queuedImageAttachmentResources[index];

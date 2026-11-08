@@ -5,12 +5,15 @@ import {
   Objectives,
   OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpFailure,
+  RestartRequest,
+  RestartRequestStatus,
   ServerSettings,
   ServerSettingsPatch,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 import * as ServerEnvironment from "../../../environment/ServerEnvironment.ts";
+import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as Settings from "../../../serverSettings.ts";
@@ -37,6 +40,7 @@ const shared = {
     ServerEnvironment.ServerEnvironment,
     Settings.ServerSettingsService,
     ThreadCommandExecutor.ThreadCommandExecutor,
+    Orchestrator.OrchestratorV2,
   ],
 };
 const EnvironmentReadTool = Tool.make("t3_environment_read", {
@@ -77,8 +81,30 @@ const ObjectivesSetTool = Tool.make("t3_objectives_set", {
   }),
   success: Schema.Struct({ objectives: Schema.NullOr(Objectives) }),
 }).annotate(Tool.Destructive, true);
+const RestartRequestTool = Tool.make("t3_restart_request", {
+  ...shared,
+  description:
+    "Ask T3 to wait for a restart (e.g. installing a build). Running turns finish; new messages queue held and send after it. T3 never restarts itself: restart it once `t3_restart_status` reports `drained`.",
+  parameters: Schema.Struct({ reason: RestartRequest.fields.reason }),
+  success: RestartRequestStatus,
+}).annotate(Tool.Destructive, true);
+const RestartStatusTool = Tool.make("t3_restart_status", {
+  ...shared,
+  description: "Read the pending restart. `activeTurns` counts every running turn, yours too.",
+  success: RestartRequestStatus,
+})
+  .annotate(Tool.Readonly, true)
+  .annotate(Tool.Destructive, false);
+const RestartCancelTool = Tool.make("t3_restart_cancel", {
+  ...shared,
+  description: "Cancel the pending restart; held messages send now.",
+  success: RestartRequestStatus,
+}).annotate(Tool.Destructive, false);
 export const EnvironmentToolkit = Toolkit.make(
   EnvironmentReadTool,
   EnvironmentPreferencesTool,
   ObjectivesSetTool,
+  RestartRequestTool,
+  RestartStatusTool,
+  RestartCancelTool,
 );

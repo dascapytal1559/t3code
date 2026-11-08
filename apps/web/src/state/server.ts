@@ -3,6 +3,7 @@ import {
   type EditorId,
   type EnvironmentId,
   type EnvironmentTheme,
+  type RestartRequest,
   type ServerConfig,
   type ServerConfigStreamEvent,
   type ServerLifecycleLegacyThreadMigrationPayload,
@@ -105,6 +106,18 @@ export const primaryServerLegacyThreadMigrationAtom = Atom.make(
     );
   },
 ).pipe(Atom.withLabel("web-primary-server-legacy-thread-migration"));
+
+/** The restart the primary server waits for; the server holds every new turn until it happens. */
+export const primaryRestartRequestAtom = Atom.make((get): RestartRequest | null => {
+  const environmentId = get(primaryEnvironmentIdAtom);
+  if (environmentId === null) return null;
+  return (
+    AsyncResult.getOrElse(
+      get(serverEnvironment.restartRequest({ environmentId, input: {} })),
+      () => null,
+    )?.request ?? null
+  );
+}).pipe(Atom.withLabel("web-primary-restart-request"));
 
 export const primaryServerSettingsAtom = Atom.make(
   (get): ServerSettings => get(primaryServerConfigAtom)?.settings ?? DEFAULT_SERVER_SETTINGS,

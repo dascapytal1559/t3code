@@ -30,6 +30,8 @@ interface ComposerPrimaryActionsProps {
   canOperateThread: boolean;
   pendingAction: PendingActionState | null;
   isRunning: boolean;
+  /** The server waits to restart: every send queues until it does. */
+  restartPending?: boolean;
   canInterrupt: boolean;
   followUpBehavior?: "queue" | "steer";
   canSteer?: boolean;
@@ -86,6 +88,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   canOperateThread,
   pendingAction,
   isRunning,
+  restartPending = false,
   canInterrupt,
   followUpBehavior = "steer",
   canSteer = true,
@@ -117,12 +120,13 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
   const shortcutModifiers = useShortcutModifierState();
   const isQueuing =
     !isEditingQueuedMessage &&
-    resolveComposerDispatchMode({
-      running: isRunning,
-      activeTurnDefault: followUpBehavior,
-      canSteer,
-      alternateModifier: shortcutModifiers.metaKey || shortcutModifiers.ctrlKey,
-    }) === "queue";
+    (restartPending ||
+      resolveComposerDispatchMode({
+        running: isRunning,
+        activeTurnDefault: followUpBehavior,
+        canSteer,
+        alternateModifier: shortcutModifiers.metaKey || shortcutModifiers.ctrlKey,
+      }) === "queue");
   const alternateAction = alternateComposerDispatchAction(followUpBehavior);
   const isSendDisabled = !canOperateThread || sendDisabledReason !== null;
   const stageBackdropVariant = useSidebarStageBackdropVariant(environmentIdentificationMode);
@@ -270,7 +274,8 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     return renderStopGenerationButton(false);
   }
 
-  const showResume = canResume && !hasSendableContent && !isEditingQueuedMessage;
+  // A pending restart holds the queue until it happens, so Resume would do nothing.
+  const showResume = canResume && !restartPending && !hasSendableContent && !isEditingQueuedMessage;
 
   const compactTokens =
     compactBeforeSendTokens !== null && !showResume && !isEditingQueuedMessage
@@ -303,9 +308,11 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     submitStatus ??
     (compactsBeforeSend
       ? `Summarize ${compactTokens} tokens of history, then send`
-      : isRunning && !isEditingQueuedMessage && canSteer
-        ? `Click to ${followUpBehavior}, ${isMacPlatform(navigator.platform) ? "⌘" : "Ctrl"}-click${alternateShortcutLabel ? ` or ${alternateShortcutLabel}` : ""} to ${alternateAction}`
-        : submitLabel);
+      : restartPending && isQueuing
+        ? "Queue message: it sends after T3 restarts"
+        : isRunning && !isEditingQueuedMessage && canSteer
+          ? `Click to ${followUpBehavior}, ${isMacPlatform(navigator.platform) ? "⌘" : "Ctrl"}-click${alternateShortcutLabel ? ` or ${alternateShortcutLabel}` : ""} to ${alternateAction}`
+          : submitLabel);
 
   const sendButton = (
     <button
@@ -337,7 +344,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
         <PlayIcon className="size-4 fill-current" aria-hidden="true" />
       ) : isEditingQueuedMessage ? (
         <CheckIcon className="size-4" aria-hidden="true" />
-      ) : isRunning ? (
+      ) : isRunning || isQueuing ? (
         <MorphIcon className="size-4" icon={isQueuing ? ListPlus : CornerUpRight} />
       ) : (
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
