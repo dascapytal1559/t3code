@@ -480,7 +480,10 @@ the restart has `queueHeld: true` and `restartHold: true`. Only the restart
 releases those, and a Stop during the wait takes the hold over, so that queue
 stays stopped afterwards. After the restart, server start releases every
 restart hold and each thread's queue runs in order with nobody acting; a cancel
-releases them the same way.
+releases them the same way. A send that races a cancel can still commit a
+restart hold after the release sweep, so whatever writes one (a command's
+commit or the queued-run start's own hold) re-checks afterwards and releases
+the thread's restart holds when no restart is pending (`releaseStrayRestartHolds`).
 
 MCP tools, on the environment toolkit. Request and cancel need a full-access
 client or live full-access caller thread, and refuse a linked environment's
