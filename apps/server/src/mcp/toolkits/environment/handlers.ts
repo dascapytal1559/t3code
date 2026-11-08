@@ -77,15 +77,9 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
   t3_environment_preferences_update: McpToolAccess.writesEnvironment((patch, check) =>
     updateSettings(patch, check).pipe(Effect.map(preferences)),
   ),
-  t3_objectives_set: McpToolAccess.writesEnvironment(({ markdown, lastReviewed }, check) =>
-    updateSettings(
-      {
-        objectives:
-          markdown === null
-            ? null
-            : { markdown, ...(lastReviewed === undefined ? {} : { lastReviewed }) },
-      },
-      check,
-    ).pipe(Effect.map(({ objectives }) => ({ objectives }))),
+  t3_objectives_set: McpToolAccess.writesEnvironment(({ markdown }, check) =>
+    updateSettings({ objectives: markdown === null ? null : { markdown } }, check).pipe(
+      Effect.map(({ objectives }) => ({ objectives })),
+    ),
   ),
 });

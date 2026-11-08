@@ -3,7 +3,6 @@ import {
   BackgroundActivityProfileSelection,
   ExecutionEnvironmentDescriptor,
   Objectives,
-  ObjectivesDay,
   OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpFailure,
   ServerSettings,
@@ -75,9 +74,6 @@ const ObjectivesSetTool = Tool.make("t3_objectives_set", {
     "Replace the user's high level objectives, shown atop T3's Bridge tab. `markdown`: the whole list, one bullet each (**Name** then a sentence or two); null clears them.",
   parameters: Schema.Struct({
     markdown: Schema.NullOr(Objectives.fields.markdown),
-    lastReviewed: Schema.optionalKey(
-      ObjectivesDay.annotate({ description: "Day last reviewed, YYYY-MM-DD." }),
-    ),
   }),
   success: Schema.Struct({ objectives: Schema.NullOr(Objectives) }),
 }).annotate(Tool.Destructive, true);

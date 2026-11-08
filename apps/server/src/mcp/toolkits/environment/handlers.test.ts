@@ -70,7 +70,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("t3_objectives_se
       ),
     ),
   );
-  const setObjectives = (params: { markdown: string | null; lastReviewed?: string }) =>
+  const setObjectives = (params: { markdown: string | null }) =>
     Effect.gen(function* () {
       const toolkit = yield* EnvironmentToolkit;
       const results = yield* toolkit
@@ -86,15 +86,16 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("t3_objectives_se
 
   it.effect("sets, replaces and clears them, saved across a restart and sent to clients", () =>
     Effect.gen(function* () {
-      const first = { markdown: "- **Ship** the Bridge.", lastReviewed: "2026-11-05" };
+      const first = { markdown: "- **Ship** the Bridge." };
       const second = { markdown: "- **Rest** on Sundays." };
+      // Older FirstMate builds still send the retired `lastReviewed`; the call must not fail.
+      const staleCall = { ...first, lastReviewed: "2026-11-05" };
       yield* Effect.gen(function* () {
         const settings = yield* Settings.ServerSettingsService;
         const changes = yield* settings.subscribeChanges;
-        expect(yield* setObjectives(first)).toEqual({ objectives: first });
+        expect(yield* setObjectives(staleCall)).toEqual({ objectives: first });
         // The settings stream is what every connected client's Bridge listens to.
         expect(Option.getOrThrow(yield* Stream.runHead(changes)).objectives).toEqual(first);
-        // A replacement without `lastReviewed` drops the old one.
         expect(yield* setObjectives(second)).toEqual({ objectives: second });
       }).pipe(Effect.provide(layerTools.pipe(Layer.provideMerge(Layer.fresh(layerSettings)))));
       expect(yield* savedObjectives).toEqual(second);

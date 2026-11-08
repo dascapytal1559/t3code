@@ -396,14 +396,13 @@ The records, for FirstMate's side:
 - `t3_objectives_set` replaces the objectives, which T3 keeps in this
   environment's server settings (`objectives` in `settings.json`), so they
   survive a restart and reach every connected client on the settings stream.
-  Input: `{ markdown: string | null, lastReviewed?: "YYYY-MM-DD" }`.
+  Input: `{ markdown: string | null }`.
   `markdown` is the whole list, at most 8,192 characters, trimmed and not
   empty, normally one bullet per objective: `- **Name** — a sentence or two`;
-  send the list only, with no heading or "Last reviewed" line. `lastReviewed`
-  is the calendar day they were last reviewed; leaving it out stores none.
-  `markdown: null` clears them and ignores `lastReviewed`. Each call replaces
-  the whole value. The result is `{ objectives: { markdown, lastReviewed? } |
-  null }`, the stored value. Like `t3_environment_preferences_update` it needs
+  send the list only, with no heading or "Last reviewed" line. `null` clears
+  them. Each call replaces the whole value; a `lastReviewed` key from an older
+  caller is ignored. The result is `{ objectives: { markdown } | null }`, the
+  stored value. Like `t3_environment_preferences_update` it needs
   a full-access client or a live full-access caller thread, and refuses a
   linked environment's caller. The captain cannot edit them in T3.
 - The reply message reads `**Decision · <title>**`, then the line

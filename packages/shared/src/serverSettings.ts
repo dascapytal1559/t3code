@@ -411,7 +411,7 @@ export function applyServerSettingsPatch(
     projectAgentBrowserAccessOverrides: _legacyBrowserAccess,
     projectAutoPullOverrides: _legacyAutoPull,
     projectScriptOverrides: _legacyScripts,
-    // Replaced whole: deepMerge would keep a `lastReviewed` the new objectives left out.
+    // Replaced whole, so `null` clears them.
     objectives,
     ...patchForMerge
   } = patch;
