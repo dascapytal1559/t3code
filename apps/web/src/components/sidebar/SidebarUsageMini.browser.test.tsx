@@ -112,7 +112,7 @@ describe("SidebarUsageMini", () => {
       .toBeVisible();
   });
 
-  it("draws a pooled provider as one combined weekly bar and skips session and model rows", async () => {
+  it("draws each account of a provider as its own weekly bar and skips session and model rows", async () => {
     using _now = vi.spyOn(Date, "now").mockReturnValue(now);
     setup([
       provider("Claude", "claudeAgent", "one@example.com", [
@@ -129,19 +129,21 @@ describe("SidebarUsageMini", () => {
     await using screen = await render(ui());
     await expect
       .element(
-        screen.getByRole("button", { name: "Usage: Claude 53% left, 43% of the window left" }),
+        screen.getByRole("button", {
+          name: "Usage: Claude 9% left, 43% of the window left, Claude2 97% left, 43% of the window left",
+        }),
       )
       .toBeVisible();
-    expect(screen.container.querySelectorAll("[data-usage-segment]")).toHaveLength(1);
+    expect(screen.container.querySelectorAll("[data-usage-segment]")).toHaveLength(2);
   });
 
-  it("marks where even spending would be, from the pooled accounts' mean elapsed time", async () => {
+  it("marks where even spending would be on each account's own clock", async () => {
     using _now = vi.spyOn(Date, "now").mockReturnValue(now);
     // The test page has no stylesheet, so the bar has no width and the pace mark would be hidden.
     using _bar = vi
       .spyOn(HTMLElement.prototype, "getBoundingClientRect")
       .mockReturnValue(new DOMRect(0, 0, 100, 6));
-    // The second account's window started a day later, so the pool is 3.5 of 7 days in: 50% left.
+    // The second account's window started a day later, so it is 3 of 7 days in: 57% left.
     const later: ServerProviderUsageWindow = {
       ...window("seven_day", "Weekly", 3),
       resetsAt: "2026-11-11T00:00:00.000Z",
@@ -153,11 +155,16 @@ describe("SidebarUsageMini", () => {
     await using screen = await render(ui());
     await expect
       .element(
-        screen.getByRole("button", { name: "Usage: Claude 53% left, 50% of the window left" }),
+        screen.getByRole("button", {
+          name: "Usage: Claude 9% left, 43% of the window left, Claude2 97% left, 57% of the window left",
+        }),
       )
       .toBeVisible();
-    const mark = screen.container.querySelector<HTMLElement>("[data-usage-pace]");
-    expect(mark?.style.left).toContain("50%");
+    const marks = [...screen.container.querySelectorAll<HTMLElement>("[data-usage-pace]")];
+    expect(marks.map((mark) => mark.style.left)).toEqual([
+      expect.stringContaining("43%"),
+      expect.stringContaining("57%"),
+    ]);
   });
 
   it("draws no mark for a window without a reset clock", async () => {

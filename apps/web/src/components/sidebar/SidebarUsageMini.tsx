@@ -1,13 +1,13 @@
 import { normalizeProviderAccentColor } from "@t3tools/client-runtime/state/provider-instance-display";
+import type { ServerProviderUsageWindow } from "@t3tools/contracts";
 import {
   collectLimitAccounts,
   collectLimitPools,
   displayLimitWindows,
-  elapsedShare,
   formatResetsIn,
-  type LimitPool,
-  type LimitPoolWindow,
+  type LimitAccount,
   type LimitPresentations,
+  paceRemainingPercent,
   remainingPercent,
 } from "@t3tools/shared/usageLimits";
 import { useNavigate } from "@tanstack/react-router";
@@ -21,43 +21,50 @@ import { barColor, useLimitPresentations, usePaceMark } from "../usage/UsageLimi
 import { useUsageHiddenProviders } from "../usage/usagePagePreferences";
 
 interface UsageRow {
-  readonly pool: LimitPool;
-  readonly label: string;
-  readonly window: LimitPoolWindow;
-  /** Share of the window still to run, from the mean elapsed share of the accounts with a clock. */
+  readonly account: LimitAccount;
+  readonly providerLabel: string;
+  readonly name: string;
+  readonly window: ServerProviderUsageWindow;
+  readonly remaining: number;
   readonly timeLeft: number | null;
 }
 
-function windowTimeLeft(window: LimitPoolWindow, now: number): number | null {
-  const shares = window.members.flatMap((member) => elapsedShare(member.window, now) ?? []);
-  if (shares.length === 0) return null;
-  const mean = shares.reduce((sum, share) => sum + share, 0) / shares.length;
-  return Math.round((1 - mean) * 100);
-}
-
-/** One row per provider the Limits view shows: its weekly window, or its first one without a weekly. */
+/**
+ * One row per account the Limits view shows, in its provider and account order: the account's
+ * own weekly window, or its first one without a weekly. Accounts reset on their own clocks.
+ */
 function usageRows(presentations: LimitPresentations, now: number): readonly UsageRow[] {
   return collectLimitPools(collectLimitAccounts(presentations), now).flatMap((pool) => {
-    const windows = displayLimitWindows(pool);
-    const window = windows.find((entry) => entry.kind === "weekly") ?? windows[0];
-    if (!window) return [];
-    const label = providerClients.get(pool.driver)?.label ?? String(pool.driver);
-    return [{ pool, label, window, timeLeft: windowTimeLeft(window, now) }];
+    const providerLabel = providerClients.get(pool.driver)?.label ?? String(pool.driver);
+    return pool.accounts.flatMap((account) => {
+      // A pool of one applies the page's per-driver window filtering and ordering to this account.
+      const own = collectLimitPools([account], now)[0];
+      const windows = own ? displayLimitWindows(own) : [];
+      const window = (windows.find((entry) => entry.kind === "weekly") ?? windows[0])?.members[0]
+        ?.window;
+      if (!window) return [];
+      return [
+        {
+          account,
+          providerLabel,
+          name: account.displayName ?? providerLabel,
+          window,
+          remaining: remainingPercent(window),
+          timeLeft: paceRemainingPercent(window, now),
+        },
+      ];
+    });
   });
 }
 
 function rowSummary(row: UsageRow): string {
-  return `${row.label} ${row.window.remainingPercent}% left${
+  return `${row.name} ${row.remaining}% left${
     row.timeLeft === null ? "" : `, ${row.timeLeft}% of the window left`
   }`;
 }
 
-/** The first account's accent, so a single-account row keeps its colour; pooled accounts share it. */
 function rowColor(row: UsageRow): string {
-  const account = row.window.columns[0]?.account;
-  return (
-    (account && normalizeProviderAccentColor(account.accentColor)) ?? barColor(row.pool.driver)
-  );
+  return normalizeProviderAccentColor(row.account.accentColor) ?? barColor(row.account.driver);
 }
 
 export function SidebarUsageMini() {
@@ -86,17 +93,17 @@ export function SidebarUsageMini() {
         }
       >
         {rows.map((row) => (
-          <span key={row.pool.driver} className="flex items-center gap-2">
+          <span key={row.account.key} className="flex items-center gap-2">
             <ProviderInstanceIcon
-              driverKind={row.pool.driver}
-              displayName={row.label}
+              driverKind={row.account.driver}
+              displayName={row.providerLabel}
               indicatorBackground="var(--sidebar)"
               className="size-3.5"
               iconClassName="size-3.5 text-sidebar-muted-foreground"
             />
             <UsageBar row={row} />
             <span className="w-8 shrink-0 text-right text-2xs text-sidebar-muted-foreground tabular-nums">
-              {row.window.remainingPercent}%
+              {row.remaining}%
             </span>
           </span>
         ))}
@@ -117,10 +124,10 @@ function UsageBar({ row }: { readonly row: UsageRow }) {
         className="absolute inset-0 overflow-hidden rounded-full bg-foreground/8"
         style={paceMark?.gap}
       >
-        {row.window.remainingPercent > 0 ? (
+        {row.remaining > 0 ? (
           <span
             className="absolute inset-y-0 left-0 rounded-full opacity-60"
-            style={{ width: `${row.window.remainingPercent}%`, backgroundColor: rowColor(row) }}
+            style={{ width: `${row.remaining}%`, backgroundColor: rowColor(row) }}
           />
         ) : null}
       </span>
@@ -141,29 +148,20 @@ function UsageTooltip({ rows }: { readonly rows: readonly UsageRow[] }) {
   const [now] = useState(Date.now);
   return (
     <div className="flex flex-col gap-2 text-xs">
-      {rows.map((row) => (
-        <div key={row.pool.driver} className="flex flex-col gap-0.5">
-          <span className="text-foreground">
-            {row.label} · {row.window.label} · {row.window.remainingPercent}% left
-            {row.timeLeft === null ? "" : ` · ${row.timeLeft}% of the window left`}
-          </span>
-          {row.window.columns.map((column, index) => {
-            const resetsIn = column.window ? formatResetsIn(column.window, now) : null;
-            const name =
-              row.window.columns.length > 1
-                ? `${column.account.displayName ?? `Account ${index + 1}`}: ${
-                    column.window ? `${remainingPercent(column.window)}% left` : "no data"
-                  }`
-                : null;
-            if (!name && !resetsIn) return null;
-            return (
-              <span key={column.account.key} className="text-muted-foreground tabular-nums">
-                {[name, resetsIn].filter(Boolean).join(" · ")}
-              </span>
-            );
-          })}
-        </div>
-      ))}
+      {rows.map((row) => {
+        const resetsIn = formatResetsIn(row.window, now);
+        return (
+          <div key={row.account.key} className="flex flex-col gap-0.5">
+            <span className="text-foreground">
+              {row.name} · {row.window.label} · {row.remaining}% left
+              {row.timeLeft === null ? "" : ` · ${row.timeLeft}% of the window left`}
+            </span>
+            {resetsIn ? (
+              <span className="text-muted-foreground tabular-nums">{resetsIn}</span>
+            ) : null}
+          </div>
+        );
+      })}
       {rows.some((row) => row.timeLeft !== null) ? (
         <span className="text-muted-foreground">The line is where even spending would be.</span>
       ) : null}

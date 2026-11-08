@@ -77,15 +77,16 @@ has no row toggles.
 
 The captain wants usage visible without opening the Usage page, so the web and
 desktop sidebar shows a small readout between the Settled row and the bottom
-icons: one line per provider the Limits view shows, with its icon, one thin
-bar and the percent left in its weekly window, or its first window when it has
-no weekly one. A provider with several accounts (Claude and Claude2) gets one
-combined bar, not one per account. Model windows such as Weekly · Fable stay
-on the page. Each bar carries the Usage page's pace mark: a small line, in a
-gap cut from the bar, where the bar would end if usage kept pace with the time
-elapsed in the window (for Claude, the mean of its accounts' elapsed time). The
-tooltip adds how much of the window is left and what the line means, plus each
-account's figure and reset time; a click opens the Usage page. It reads the same provider
+icons: one line per account the Limits view shows, with its provider's icon, a
+thin bar in the account's accent colour and the percent left in that account's
+own weekly window, or its first window when it has no weekly one. A provider
+with several accounts (Claude and Claude2) gets one line each, because each
+account resets on its own clock. Model windows such as Weekly · Fable stay on
+the page. Each bar carries the Usage page's pace mark: a small line, in a gap
+cut from the bar, where the bar would end if usage kept pace with the time
+elapsed in that account's window. The tooltip names each account (its display
+name, else the provider) with its figure, how much of the window is left and
+its reset time, and says what the line means; a click opens the Usage page. It reads the same provider
 statuses as the Limits view and fetches nothing, shows nothing until limits
 arrive, and leaves out providers muted on the page. The phone web sidebar shows
 it too; the mobile app does not.
