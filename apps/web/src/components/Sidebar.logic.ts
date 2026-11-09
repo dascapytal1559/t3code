@@ -33,6 +33,7 @@ import {
 import {
   getThreadSortTimestamp,
   planPinnedReorder,
+  resolveThreadActivityTimestamp,
   sortThreads,
   toSortableTimestamp,
   type ThreadSortInput,
@@ -1015,24 +1016,20 @@ function firstValidTimestampMs(...candidates: ReadonlyArray<string | null | unde
   return 0;
 }
 
-type ThreadAgeFields = Pick<SidebarThreadSummary, "latestUserMessageAt" | "updatedAt">;
-
-/** The time a row's age counts from. */
-export function threadAgeTimestamp(thread: ThreadAgeFields): string {
-  return thread.latestUserMessageAt ?? thread.updatedAt;
-}
-
 /** Dated snoozes by wake time, then undated ones newest first by the age their rows show. */
 export function sortSnoozedThreads<
-  T extends ThreadAgeFields & Pick<SidebarThreadSummary, "snoozedUntil">,
+  T extends Pick<
+    SidebarThreadSummary,
+    "latestUserMessageAt" | "latestRun" | "updatedAt" | "snoozedUntil"
+  >,
 >(threads: readonly T[]): T[] {
   return threads.toSorted((left, right) => {
     if (left.snoozedUntil == null || right.snoozedUntil == null) {
       if (left.snoozedUntil != null) return -1;
       if (right.snoozedUntil != null) return 1;
       return (
-        firstValidTimestampMs(threadAgeTimestamp(right)) -
-        firstValidTimestampMs(threadAgeTimestamp(left))
+        firstValidTimestampMs(resolveThreadActivityTimestamp(right)) -
+        firstValidTimestampMs(resolveThreadActivityTimestamp(left))
       );
     }
     return firstValidTimestampMs(left.snoozedUntil) - firstValidTimestampMs(right.snoozedUntil);
@@ -1244,7 +1241,10 @@ export function resolveThreadStatusPill(input: {
 }
 
 export function getFallbackThreadIdAfterDelete<
-  T extends Pick<Thread, "id" | "projectId" | "createdAt" | "updatedAt" | "settledOverride"> &
+  T extends Pick<
+    Thread,
+    "id" | "projectId" | "createdAt" | "updatedAt" | "settledOverride" | "lineage"
+  > &
     ThreadSortInput &
     ThreadSnoozeShell,
 >(input: {
@@ -1268,7 +1268,8 @@ export function getFallbackThreadIdAfterDelete<
           thread.id !== deletedThreadId &&
           !deletedThreadIds?.has(thread.id) &&
           thread.settledOverride !== "settled" &&
-          !effectiveSnoozed(thread, { now }),
+          !effectiveSnoozed(thread, { now }) &&
+          !isSidebarHiddenThread(thread),
       ),
       sortOrder,
     )[0]?.id ?? null

@@ -54,7 +54,6 @@ const environment = {
   canReadDiagnostics: true,
   isConnected: true,
   error: null,
-  needsCursorKeychainAccess: false,
   summary: {
     contractVersion: USAGE_CONTRACT_VERSION,
     readAt: "2026-11-01T12:00:00.000Z",
