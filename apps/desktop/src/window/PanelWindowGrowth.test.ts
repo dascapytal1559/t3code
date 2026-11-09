@@ -60,6 +60,7 @@ describe("setWindowPanelOpen", () => {
       requestId: 1,
       status: "resized",
       contentWidth: 1340,
+      previousContentWidth: 800,
     });
     expect(desktop.bounds).toEqual(window(100, 1675));
     expect(setWindowPanelOpen(desktop.window, { requestId: 2, open: true, width: 540 })).toEqual({
@@ -70,6 +71,7 @@ describe("setWindowPanelOpen", () => {
       requestId: 3,
       status: "resized",
       contentWidth: 800,
+      previousContentWidth: 1340,
     });
     expect(setWindowPanelOpen(desktop.window, { requestId: 4, open: false, width: 540 })).toEqual({
       requestId: 4,

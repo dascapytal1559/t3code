@@ -100,9 +100,15 @@ function resizeTo(window: Electron.BrowserWindow, requestId: number, bounds: Rec
   watchForOtherResizes(window);
   // macOS reports this resize synchronously; it is ours, so nothing is watched yet.
   requestedByWindow.delete(window);
+  const previousContentWidth = contentWidthOf(window);
   window.setBounds(bounds);
   requestedByWindow.set(window, { requestId, width: window.getBounds().width });
-  return { requestId, status: "resized" as const, contentWidth: contentWidthOf(window) };
+  return {
+    requestId,
+    status: "resized" as const,
+    contentWidth: contentWidthOf(window),
+    previousContentWidth,
+  };
 }
 
 /** `request.width` is the width to grow by (opening) or the panel's width now (closing). */

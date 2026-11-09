@@ -69,11 +69,15 @@ function Workspace({
 
 type Answer = number | Exclude<RightPanelWindowResult["status"], "resized">;
 
-/** A desktop window whose resizes the test answers and applies by hand. */
-function fakeDesktopWindow(initialWidth: number) {
+/**
+ * A desktop window whose resizes the test answers and applies by hand. `inset` is how much
+ * narrower the viewport is than the window's content, as with DevTools docked beside it.
+ */
+function fakeDesktopWindow(initialWidth: number, { inset = 0 } = {}) {
   const requests: Array<RightPanelWindowRequest & { answer: (answer: Answer) => void }> = [];
   const interruptListeners = new Set<(interruption: RightPanelWindowInterruption) => void>();
   let width = initialWidth;
+  let contentWidth = initialWidth + inset;
   const previousBridge = window.desktopBridge;
   window.desktopBridge = {
     setRightPanelOpen: (request: RightPanelWindowRequest) =>
@@ -81,12 +85,20 @@ function fakeDesktopWindow(initialWidth: number) {
         requests.push({
           ...request,
           // A number is the viewport width the window resized to.
-          answer: (answer) =>
-            resolve(
-              typeof answer === "number"
-                ? { requestId: request.requestId, status: "resized", contentWidth: answer }
-                : { requestId: request.requestId, status: answer },
-            ),
+          answer: (answer) => {
+            if (typeof answer !== "number") {
+              resolve({ requestId: request.requestId, status: answer });
+              return;
+            }
+            const previousContentWidth = contentWidth;
+            contentWidth = answer + inset;
+            resolve({
+              requestId: request.requestId,
+              status: "resized",
+              contentWidth,
+              previousContentWidth,
+            });
+          },
         });
       }),
     onRightPanelWindowInterrupted: (
@@ -104,8 +116,9 @@ function fakeDesktopWindow(initialWidth: number) {
       width = next;
       window.dispatchEvent(new Event("resize"));
     },
-    /** Something other than the request resized the native window to `contentWidth`. */
-    interrupt(requestId: number, contentWidth: number) {
+    /** Something other than the request resized the native window, for a viewport of `viewport`. */
+    interrupt(requestId: number, viewport: number) {
+      contentWidth = viewport + inset;
       for (const listener of interruptListeners) listener({ requestId, contentWidth });
     },
     [Symbol.dispose]() {
@@ -402,6 +415,39 @@ describe("useRightPanelWindow", () => {
       await act(() => desktop.requests[0]!.answer("unchanged"));
       expect(widthOf(screen.getByTestId("chat").element())).toBe(600);
       expect(localStorage.getItem(CHAT_STORAGE_KEY)).toBe("600");
+    });
+  });
+
+  it("ends the hold with a viewport narrower than the window's content", async () => {
+    await withCleanStorage(async () => {
+      using desktop = fakeDesktopWindow(1000, { inset: 300 });
+      // The hook only needs React and the desktop bridge; no navigation is involved.
+      await using screen = await render(<Workspace open={false} windowWidth={1000} />, {
+        router: false,
+      });
+      const chat = screen.getByTestId("chat").element();
+      const row = screen.getByTestId("row").element() as HTMLElement;
+      const titlebar = screen.getByTestId("titlebar").element();
+
+      await screen.rerender(<Workspace open windowWidth={1000} />);
+      await act(() => desktop.requests[0]!.answer(1540));
+      await screen.rerender(<Workspace open windowWidth={1200} />);
+      await act(() => desktop.resize(1200));
+      expect(row.style.width).toBe("1540px");
+      await screen.rerender(<Workspace open windowWidth={1540} />);
+      await act(() => desktop.resize(1540));
+      expect(row.style.width).toBe("");
+      expect(titlebar.getAttribute("data-open")).toBe("true");
+      expect(widthOf(chat)).toBe(1000);
+
+      await screen.rerender(<Workspace open={false} windowWidth={1540} />);
+      await act(() => desktop.requests[1]!.answer(1000));
+      await screen.rerender(<Workspace open={false} windowWidth={1000} />);
+      await act(() => desktop.resize(1000));
+      await expect.element(screen.getByTestId("panel")).not.toBeInTheDocument();
+      expect(titlebar.getAttribute("data-open")).toBe("false");
+      expect(row.style.width).toBe("");
+      expect(widthOf(chat)).toBe(1000);
     });
   });
 });

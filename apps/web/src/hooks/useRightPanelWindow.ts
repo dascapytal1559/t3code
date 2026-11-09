@@ -69,6 +69,7 @@ export function useRightPanelWindow(input: {
     if (!held) letGoOfRow();
     if (sentOpen.current === open) return;
     const firstRequest = sentOpen.current === null;
+    const fromRest = cancelRequest.current === null;
     sentOpen.current = open;
     if (!open && firstRequest) return;
     cancelRequest.current?.();
@@ -95,7 +96,7 @@ export function useRightPanelWindow(input: {
           );
         }
       });
-    cancelRequest.current = requestWindow(bridge, open, panelWidth, settle);
+    cancelRequest.current = requestWindow(bridge, open, panelWidth, fromRest, settle);
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- resizes the native window, holding the row's width before paint until it has changed
   useLayoutEffect(() => syncWindow(open, holding), [open, holding, syncWindow]);
@@ -118,6 +119,12 @@ export function useRightPanelWindow(input: {
 const noop = () => {};
 
 let lastRequestId = 0;
+
+/**
+ * The viewport can be narrower than the window's content, as with DevTools docked beside
+ * it. Learned from a request sent while no other was resizing the window.
+ */
+let contentInset = 0;
 
 /**
  * A view unmounting with the panel open gives the growth back a microtask later, so a
@@ -156,17 +163,19 @@ function holdRowWidth(row: HTMLElement, width: number): () => void {
 }
 
 /**
- * Asks the window to resize and settles once the viewport is at the width it reported,
- * at once when it reports no change, or as the viewport follows a resize from elsewhere.
- * Widths on the way there keep waiting. Returns a cancel function.
+ * Asks the window to resize and settles once the viewport has followed the content width
+ * it reported, at once when it reports no change, or as the viewport follows a resize from
+ * elsewhere. Widths on the way there keep waiting. Returns a cancel function.
  */
 function requestWindow(
   bridge: DesktopBridge,
   open: boolean,
   width: number,
+  fromRest: boolean,
   settle: (outcome: WindowOutcome) => void,
 ): () => void {
   const requestId = ++lastRequestId;
+  const viewportAtRequest = window.innerWidth;
   let result: RightPanelWindowResult | null = null;
   let interruption: { readonly contentWidth: number; readonly viewport: number } | null = null;
   let done = false;
@@ -176,7 +185,8 @@ function requestWindow(
     settle(outcome);
   };
   // Fractional zoom can leave a target between two whole CSS pixels.
-  const reached = (contentWidth: number) => Math.abs(window.innerWidth - contentWidth) < 1;
+  const reached = (contentWidth: number) =>
+    Math.abs(window.innerWidth - (contentWidth - contentInset)) < 1;
   const check = () => {
     if (interruption !== null) {
       // The window is elsewhere now; the hold ends as the viewport follows it.
@@ -205,6 +215,9 @@ function requestWindow(
   bridge.setRightPanelOpen({ requestId, open, width }).then(
     (answer) => {
       if (done || answer.requestId !== requestId) return;
+      if (fromRest && answer.status === "resized") {
+        contentInset = answer.previousContentWidth - viewportAtRequest;
+      }
       result = answer;
       check();
     },
