@@ -27,5 +27,7 @@ export const RestartRequestStatus = Schema.Struct({
   activeTurns: NonNegativeInt,
   /** Pending, and no turn in flight: safe to restart now. */
   drained: Schema.Boolean,
+  /** When this server process started; it changes on every restart, and restart notes quote it. */
+  serverStartedAt: IsoDateTime,
 });
 export type RestartRequestStatus = typeof RestartRequestStatus.Type;

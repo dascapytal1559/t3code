@@ -298,20 +298,43 @@ launched without a parent stay out of the group, and mobile does not group
 crew. Code: `apps/web/src/components/sidebar/coordinatorGroup.logic.ts`.
 
 A server restart ends the coordinator's session, and nothing inside it can wake
-it again. So on each start T3 sends every idle coordinator with unarchived crew
-one note, attributed to T3 Code: when the server restarted, which crew had a run
-cut, and to run `bin/fm-session-start.sh`. Once a project has a pinned
-coordinator, an unpinned one gets the note only if the restart cut one of its
-crew's runs. Archived, settled or snoozed coordinators get
-none, and neither does one whose own run the restart cut (its restart
-continuation wakes it). The project's continue-after-update setting
-(`continueThreadsAfterServerUpdate`) switches it off. A thread pinned with
+it again. So after each start T3 sends a coordinator one note, attributed to
+T3 Code. Its first line is `The T3 server restarted at <serverStartedAt>.`, then
+come the crew that had a run cut (or "None of your crew threads had a run
+interrupted."), and then that its session ended with whatever lived only in it,
+such as background commands, waits and monitors, and to run its session-start
+steps again, check what is still running, and report. A thread pinned with
 `t3_thread_configure` `coordinator: true` (one per project; pinning moves it,
-`false` unpins) gets the note after every start even with no crew or while busy,
-thread reads report `coordinator`, and `orchestrator_capabilities` reports
-`coordinatorRestartNote`. Forks and side chats drop the pin and the crew link, so
-forking FirstMate cannot make a second coordinator. Code:
-`notifyCrewCoordinators` in `apps/server/src/orchestration-v2/RestartContinuation.ts`.
+`false` unpins) gets the note after every start, even with no crew or while
+busy, in which case it queues behind the running turn. An unpinned coordinator
+gets it only while idle with unarchived crew, and once its project has a pinned
+coordinator, only when the restart cut one of its crew's runs. Archived,
+settled or snoozed coordinators get none, and the project's continue-after-update
+setting (`continueThreadsAfterServerUpdate`) turns notes off together with
+restart continuation.
+
+A coordinator whose own turn the restart cut is the exception. When T3 is about
+to resume that turn, a separate note would start first and make T3 drop the
+resume, so the pinned coordinator's resume message opens with the note instead,
+followed by upstream's "Continue where you left off". If T3 declines that
+resume when it comes to send it (a Stop the user asked for, a cut `/compact`,
+the guard against a turn that keeps crashing the server, newer work on the
+thread), the note goes out on its own. When T3 is not resuming the cut turn,
+for example a run that was only waiting on background work nobody marked, the
+note goes out on its own as usual. So a pinned coordinator gets exactly one
+message per start that opens with the restart line, whether it was mid-turn or
+idle; an unpinned one T3 resumes gets upstream's resume message alone.
+
+`t3_restart_status`, and the restart request and cancel tools that return the
+same status, report `serverStartedAt`: the ISO time the note quotes, set once
+per server process. A coordinator compares it with the last one it handled to
+tell a restart apart without reading process ids, which also works when it was
+told nothing, such as with the setting off. Thread reads report `coordinator`,
+and `orchestrator_capabilities` reports `coordinatorRestartNote`. Forks and
+side chats drop the pin and the crew link, so forking FirstMate cannot make a
+second coordinator. Code: `apps/server/src/orchestration-v2/CoordinatorRestartNote.ts`
+and its two calls in `continueRestartedRun`
+(`apps/server/src/orchestration-v2/RestartContinuation.ts`).
 
 ## A crewmate has no composer
 
@@ -526,10 +549,13 @@ caller, like `t3_objectives_set`; status needs only orchestration access.
   when one is pending. `requestedBy` is the caller thread's title or the MCP
   client's label. Returns the status below.
 - `t3_restart_status` `{}` returns `{ pending, reason, requestedAt,
-  activeTurns, drained }`. `activeTurns` counts threads with a turn in flight
-  (preparing, starting, running or waiting on a person), in any project,
-  including the caller's own; `drained` is `pending` and `activeTurns === 0`.
-  `reason` and `requestedAt` (ISO 8601) are null when nothing is pending.
+  activeTurns, drained, serverStartedAt }`. `activeTurns` counts threads with a
+  turn in flight (preparing, starting, running or waiting on a person), in any
+  project, including the caller's own; `drained` is `pending` and
+  `activeTurns === 0`. `reason` and `requestedAt` (ISO 8601) are null when
+  nothing is pending. `serverStartedAt` (ISO 8601) is when this server process
+  started, so it changes across the restart the request waited for (see the
+  restart note under [FirstMate crew in the sidebar](#firstmate-crew-in-the-sidebar)).
 - `t3_restart_cancel` `{}` clears the request and releases its holds. Returns
   the status.
 

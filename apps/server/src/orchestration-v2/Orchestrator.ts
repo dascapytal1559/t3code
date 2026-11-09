@@ -385,6 +385,8 @@ export interface OrchestratorV2Shape {
   /** Clears the pending restart and starts what it held. */
   readonly cancelRestart: Effect.Effect<void>;
   readonly restartStatus: Effect.Effect<RestartRequestStatus, OrchestratorV2Error>;
+  /** When this server process started, which identifies the restart it came from. */
+  readonly serverStartedAt: Effect.Effect<DateTime.Utc>;
   /** Starts runs a restart held; startup calls it, since the restart they waited for happened. */
   readonly releaseRestartHolds: Effect.Effect<number>;
   readonly recoverDelegatedTasks: Effect.Effect<void>;
@@ -1190,6 +1192,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   const threadDispatch = yield* ThreadCommandExecutor.ThreadCommandExecutor;
   // In memory on purpose: a server start ends the restart it waited for.
   const restartRequestRef = yield* SubscriptionRef.make<RestartRequest | null>(null);
+  const serverStartedAt = yield* DateTime.now;
   const restartPending = Effect.map(SubscriptionRef.get(restartRequestRef), (r) => r !== null);
   // Read once: the policy is fixed for the server's life, and dispatch takes it as an input.
   const { managedPolicy } = serverSettings;
@@ -2766,6 +2769,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       requestedAt: request?.requestedAt ?? null,
       activeTurns,
       drained: request !== null && activeTurns === 0,
+      serverStartedAt: DateTime.formatIso(serverStartedAt),
     } satisfies RestartRequestStatus;
   }).pipe(
     Effect.mapError(
@@ -14744,6 +14748,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     requestRestart,
     cancelRestart,
     restartStatus,
+    serverStartedAt: Effect.succeed(serverStartedAt),
     releaseRestartHolds,
     recoverDelegatedTasks,
     recoverDelegatedTask,

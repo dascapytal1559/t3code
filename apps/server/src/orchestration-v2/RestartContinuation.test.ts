@@ -19,11 +19,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ServerSettings from "../serverSettings.ts";
-import {
-  restartContinuationRun,
-  continueRestartedRun,
-  notifyCrewCoordinators,
-} from "./RestartContinuation.ts";
+import { restartContinuationRun, continueRestartedRun } from "./RestartContinuation.ts";
 import { continuationStartRetryDelayMs } from "./RestartBackgroundNote.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ProviderRuntimeRecovery from "./ProviderRuntimeRecoveryService.ts";
@@ -1267,199 +1263,69 @@ it.effect.each(["completed", "failed", "interrupted"] as const)(
     }),
 );
 
-const coordinatorId = ThreadId.make("thread:coordinator");
 const serverStartedAt = DateTime.makeUnsafe("2026-10-03T12:30:00.000Z");
+const restartLine = `The T3 server restarted at ${DateTime.formatIso(serverStartedAt)}.\n`;
 
-function shellThread(id: string, overrides: Record<string, unknown> = {}) {
-  return {
-    id: ThreadId.make(id),
-    projectId: ProjectId.make("restart-project"),
-    title: id,
-    lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: ThreadId.make(id) },
-    status: "completed",
-    activeRunId: null,
-    latestRunStartedAt: now,
-    latestRunStopRequested: false,
-    archivedAt: null,
-    deletedAt: null,
-    snoozedUntil: null,
-    settledOverride: null,
-    ...overrides,
-  };
-}
-
-function crewThread(id: string, overrides: Record<string, unknown> = {}) {
-  return shellThread(id, { crewOf: coordinatorId, ...overrides });
-}
-
-const restartNotes = Effect.fn(function* (
-  shells: ReadonlyArray<ReturnType<typeof shellThread>>,
-  { passes = 1, enabled = true }: { readonly passes?: number; readonly enabled?: boolean } = {},
-) {
-  const commands: Parameters<
-    ThreadManagementService.ThreadManagementService["Service"]["dispatch"]
-  >[0][] = [];
-  const layer = Layer.merge(
-    Layer.mock(ThreadManagementService.ThreadManagementService)({
-      getShellSnapshot: () => Effect.succeed({ threads: shells } as never),
-      getThreadRecords: () =>
-        Effect.succeed({
-          messages: commands.flatMap((command) =>
-            command.type === "message.dispatch" ? [{ id: command.messageId }] : [],
-          ),
-        } as never),
-      dispatch: (command) => {
-        commands.push(command);
-        return Effect.succeed({} as never);
-      },
-    }),
-    ServerSettings.layerTest({ continueThreadsAfterServerUpdate: enabled }),
-  );
-  for (let pass = 0; pass < passes; pass += 1)
-    yield* notifyCrewCoordinators(serverStartedAt).pipe(Effect.provide(layer));
-  return commands;
-});
-
-it.effect.each([false, true])(
-  "tells an idle coordinator (pinned: %s) once per server start which crew the restart cut",
-  (coordinator) =>
-    Effect.gen(function* () {
-      const commands = yield* restartNotes(
-        [
-          shellThread("thread:coordinator", { coordinator }),
-          crewThread("thread:crew-cut", { status: "cancelled" }),
-          crewThread("thread:crew-done"),
-          crewThread("thread:crew-stopped", { status: "cancelled", latestRunStopRequested: true }),
-        ],
-        { passes: 2 },
-      );
-      assert.lengthOf(commands, 1);
-      const command = commands[0]!;
-      assert.equal(command.type, "message.dispatch");
-      if (command.type !== "message.dispatch") return;
-      assert.equal(command.threadId, coordinatorId);
-      assert.equal(
-        command.commandId,
-        `command:restart-note:${coordinatorId}:${DateTime.formatIso(serverStartedAt)}`,
-      );
-      assert.include(command.text, "- thread:crew-cut (thread:crew-cut)");
-      assert.notInclude(command.text, "thread:crew-done");
-      assert.notInclude(command.text, "thread:crew-stopped");
-      assert.include(command.text, "bin/fm-session-start.sh");
-    }),
-);
-
-it.effect.each([
-  ["has no crew", [shellThread("thread:coordinator", { coordinator: true })]],
-  [
-    "is busy and its crew ran clean",
-    [
-      shellThread("thread:coordinator", {
-        coordinator: true,
-        status: "running",
-        activeRunId: runId,
-      }),
-      crewThread("thread:crew"),
-    ],
-  ],
-] as const)("tells a pinned coordinator that %s about the restart once", ([, shells]) =>
+/** Runs the continuation for a thread pinned as its project's coordinator. */
+const pinnedContinuationDispatches = (projection: OrchestrationV2ThreadProjection) =>
   Effect.gen(function* () {
-    const commands = yield* restartNotes(shells, { passes: 2 });
-    assert.lengthOf(commands, 1);
-    const command = commands[0]!;
-    if (command.type !== "message.dispatch") return assert.fail(command.type);
-    assert.equal(command.threadId, coordinatorId);
-    assert.deepEqual(command.dispatchMode, { type: "queue_after_active" });
-    assert.include(command.text, "None of your crew threads had a run interrupted.");
+    const dispatches: Array<Extract<OrchestrationV2Command, { type: "message.dispatch" }>> = [];
+    const thread = { ...projection.thread, coordinator: true };
+    yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(
+      Effect.provide(
+        Layer.merge(
+          Layer.mock(ThreadManagementService.ThreadManagementService)({
+            serverStartedAt: Effect.succeed(serverStartedAt),
+            getShellSnapshot: () =>
+              Effect.succeed({
+                threads: [{ ...thread, status: "cancelled", activeRunId: null }],
+              } as never),
+            getThreadRecords: () =>
+              Effect.succeed({
+                ...projection,
+                thread,
+                messages: [
+                  ...projection.messages,
+                  ...dispatches.map((command) => ({ id: command.messageId })),
+                ],
+              } as never),
+            recoverDelegatedTask: () => Effect.void,
+            dispatch: (command) => {
+              if (command.type === "message.dispatch") dispatches.push(command);
+              return Effect.succeed({} as never);
+            },
+          }),
+          ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
+        ),
+      ),
+    );
+    return dispatches;
+  });
+
+it.effect("opens a pinned coordinator's resumed turn with its restart note", () =>
+  Effect.gen(function* () {
+    const dispatches = yield* pinnedContinuationDispatches(cutMidTurn());
+    assert.lengthOf(dispatches, 1);
+    const [command] = dispatches;
+    assert.equal(command!.messageId, `message:restart-continuation:${runId}`);
+    assert.isTrue(command!.text.startsWith(restartLine));
+    assert.include(command!.text, "Continue where you left off.");
   }),
 );
 
-it.effect.each([
-  ["idle", "completed", [coordinatorId]],
-  ["cut", "cancelled", [ThreadId.make("thread:old"), coordinatorId]],
-] as const)(
-  "beside a pinned coordinator, wakes an older parent whose crew is %s only when the restart cut it",
-  ([, crewStatus, expected]) =>
-    Effect.gen(function* () {
-      const commands = yield* restartNotes([
-        shellThread("thread:old"),
-        shellThread("thread:coordinator", { coordinator: true }),
-        shellThread("thread:old-crew", {
-          crewOf: ThreadId.make("thread:old"),
-          status: crewStatus,
-        }),
-      ]);
-      assert.deepEqual(
-        commands.flatMap((command) =>
-          command.type === "message.dispatch" ? [command.threadId] : [],
-        ),
-        [...expected],
-      );
-    }),
-);
-
-it.effect.each([
-  ["it has no crew", [shellThread("thread:coordinator")], {}],
-  [
-    "it is archived",
-    [shellThread("thread:coordinator", { archivedAt: now }), crewThread("thread:crew")],
-    {},
-  ],
-  [
-    "its only crew is archived",
-    [shellThread("thread:coordinator"), crewThread("thread:crew", { archivedAt: now })],
-    {},
-  ],
-  [
-    "it is snoozed",
-    [
-      shellThread("thread:coordinator", {
-        snoozedUntil: DateTime.makeUnsafe("2999-01-01T00:00:00.000Z"),
-      }),
-      crewThread("thread:crew"),
-    ],
-    {},
-  ],
-  [
-    "it is settled, even with a cut crew run",
-    [
-      shellThread("thread:coordinator", { settledOverride: "settled" }),
-      crewThread("thread:crew", { status: "cancelled" }),
-    ],
-    {},
-  ],
-  [
-    "it is pinned but settled",
-    [shellThread("thread:coordinator", { coordinator: true, settledOverride: "settled" })],
-    {},
-  ],
-  [
-    "its own run was cut and continues on its own",
-    [shellThread("thread:coordinator", { status: "cancelled" }), crewThread("thread:crew")],
-    {},
-  ],
-  [
-    "it is pinned but its own run was cut and continues on its own",
-    [shellThread("thread:coordinator", { coordinator: true, status: "cancelled" })],
-    {},
-  ],
-  [
-    "it is pinned but the project opted out",
-    [shellThread("thread:coordinator", { coordinator: true })],
-    { enabled: false },
-  ],
-  [
-    "it has a run waiting to start",
-    [shellThread("thread:coordinator", { status: "queued" }), crewThread("thread:crew")],
-    {},
-  ],
-  [
-    "the project opted out",
-    [shellThread("thread:coordinator"), crewThread("thread:crew")],
-    { enabled: false },
-  ],
-] as const)("sends no restart note when %s", ([, shells, options]) =>
+it.effect("tells a pinned coordinator about the restart when its continuation declines", () =>
   Effect.gen(function* () {
-    assert.lengthOf(yield* restartNotes(shells, options), 0);
+    const dispatches = yield* pinnedContinuationDispatches({
+      ...cutMidTurn(),
+      turnItems: [{ id: "turn-item:interrupt", runId, type: "run_interrupt_request" }],
+    } as unknown as OrchestrationV2ThreadProjection);
+    assert.lengthOf(dispatches, 1);
+    const [command] = dispatches;
+    assert.equal(
+      command!.messageId,
+      `message:restart-note:${threadId}:${DateTime.formatIso(serverStartedAt)}`,
+    );
+    assert.isTrue(command!.text.startsWith(restartLine));
+    assert.notInclude(command!.text, "Continue where you left off.");
   }),
 );

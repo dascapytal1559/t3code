@@ -6,17 +6,19 @@ import {
   latestProviderTurnForAttempt,
   MessageId,
   type OrchestrationV2Run,
-  type OrchestrationV2ThreadShell,
   type RunId,
   type ThreadId,
 } from "@t3tools/contracts";
-import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import type { ProjectionRuntimeRecoveryState } from "./ProjectionStore.ts";
 
 import * as ServerSettings from "../serverSettings.ts";
 import { isNativeMaintenanceCommand } from "./CommandPolicy.ts";
+import {
+  notifyCoordinatorUnlessResumed,
+  resumedCoordinatorNote,
+} from "./CoordinatorRestartNote.ts";
 import { snoozeHolds } from "./ThreadSnooze.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import {
@@ -35,6 +37,9 @@ import {
 
 const CONTINUE_PROMPT =
   "Continue where you left off. Your last turn was cut short, so a command or other action it started may have finished or may still be running. Before you repeat one that changes state, confirm it did not take effect and is not still running; if you cannot tell, say so instead of repeating it.";
+
+const continuationMessageId = (sourceRunId: RunId) =>
+  MessageId.make(`message:restart-continuation:${sourceRunId}`);
 
 const MAX_CONTINUATION_CHAIN = 3;
 const CONTINUATION_LOOP_WINDOW_MS = 5 * 60 * 1_000;
@@ -191,7 +196,7 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
     const enabled = yield* settings.getSettings.pipe(Effect.orElseSucceed(() => null));
     if (!enabled) return;
     const threads = yield* ThreadManagementService.ThreadManagementService;
-    const messageId = MessageId.make(`message:restart-continuation:${input.sourceRunId}`);
+    const messageId = continuationMessageId(input.sourceRunId);
     const projection = yield* threads.getThreadRecords(
       input.threadId,
       ["messages", "runs", "providerTurns", "attempts", "runtimeRequests", "turnItems"],
@@ -302,12 +307,14 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
     );
     const noteText =
       note.work.length === 0 ? undefined : restartCancelledBackgroundWorkNote(note.work);
-    const text =
+    const resumeText =
       noteText === undefined
         ? CONTINUE_PROMPT
         : note.settled
           ? noteText
           : `${noteText}\n\n${CONTINUE_PROMPT}`;
+    const restartNote = yield* resumedCoordinatorNote(projection.thread);
+    const text = restartNote === undefined ? resumeText : `${restartNote}\n\n${resumeText}`;
     yield* threads
       .dispatch({
         type: "message.dispatch",
@@ -358,121 +365,8 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
           yield* threads.recoverDelegatedTask(input.threadId, input.sourceRunId);
         }),
       ),
+      Effect.andThen(
+        notifyCoordinatorUnlessResumed(input.threadId, continuationMessageId(input.sourceRunId)),
+      ),
     ),
-);
-
-const MAX_NOTE_CREW = 10;
-
-/** Started and ended cancelled without a Stop: the restart cut it, as continueRestartedRun assumes. */
-function cutByRestart(thread: OrchestrationV2ThreadShell): boolean {
-  return (
-    thread.status === "cancelled" &&
-    thread.latestRunStartedAt != null &&
-    thread.latestRunStopRequested !== true
-  );
-}
-
-function restartCoordinatorNote(
-  startedAt: string,
-  cutCrew: ReadonlyArray<OrchestrationV2ThreadShell>,
-): string {
-  const omitted = cutCrew.length - MAX_NOTE_CREW;
-  return [
-    `The T3 server restarted at ${startedAt}.`,
-    ...(cutCrew.length === 0
-      ? ["None of your crew threads had a run interrupted."]
-      : [
-          "These crew threads had runs interrupted:",
-          ...cutCrew
-            .slice(0, MAX_NOTE_CREW)
-            .map((thread) => `- ${thread.title.replaceAll(/\s+/g, " ").trim()} (${thread.id})`),
-          ...(omitted > 0 ? [`- and ${omitted} more`] : []),
-        ]),
-    "Run `bin/fm-session-start.sh`, check what is still running, and report.",
-  ].join("\n");
-}
-
-/**
- * A restart ends a coordinator's session and nothing inside it can wake it, so idle coordinators
- * with live crew get one note per start; a pinned one even when busy or crewless. Beside a pin,
- * an unpinned one needs a cut crew run, so stale sessions stay asleep. A coordinator whose own
- * run was cut is left to its restart continuation.
- */
-export const notifyCrewCoordinators = Effect.fn("RestartContinuation.notifyCrewCoordinators")(
-  function* (serverStartedAt: DateTime.Utc) {
-    const settings = yield* (yield* ServerSettings.ServerSettingsService).getSettings.pipe(
-      Effect.orElseSucceed(() => null),
-    );
-    if (!settings) return;
-    const threads = yield* ThreadManagementService.ThreadManagementService;
-    const live = (yield* threads.getShellSnapshot()).threads.filter(
-      (thread) => thread.archivedAt === null && thread.deletedAt === null,
-    );
-    const crewByCoordinator = Map.groupBy(
-      live.filter((thread) => thread.crewOf !== undefined),
-      (thread) => thread.crewOf,
-    );
-    const pinnedProjects = new Set(
-      live.filter((thread) => thread.coordinator === true).map((thread) => thread.projectId),
-    );
-    const now = yield* DateTime.now;
-    const startedAt = DateTime.formatIso(serverStartedAt);
-    for (const coordinator of live) {
-      const crew = crewByCoordinator.get(coordinator.id) ?? [];
-      const cutCrew = crew.filter(cutByRestart);
-      const pinned = coordinator.coordinator === true;
-      if (
-        (!pinned &&
-          ((pinnedProjects.has(coordinator.projectId) ? cutCrew : crew).length === 0 ||
-            coordinator.activeRunId !== null ||
-            coordinator.status === "queued")) ||
-        coordinator.settledOverride === "settled" ||
-        // A note that starts first would make the orchestrator drop the cut run's continuation.
-        cutByRestart(coordinator) ||
-        snoozeHolds(coordinator, DateTime.toEpochMillis(now)) ||
-        !resolveProjectSettings(settings, coordinator.projectId).settings
-          .continueThreadsAfterServerUpdate
-      )
-        continue;
-      yield* Effect.gen(function* () {
-        const messageId = MessageId.make(`message:restart-note:${coordinator.id}:${startedAt}`);
-        const { messages } = yield* threads.getThreadRecords(coordinator.id, ["messages"], {
-          messageIds: [messageId],
-        });
-        if (messages.some((message) => message.id === messageId)) return;
-        const text = restartCoordinatorNote(startedAt, cutCrew);
-        yield* threads.dispatch({
-          type: "message.dispatch",
-          commandId: CommandId.make(`command:restart-note:${coordinator.id}:${startedAt}`),
-          threadId: coordinator.id,
-          messageId,
-          text,
-          notification: {
-            source: { kind: "system" },
-            outcome: "updated",
-            summary: "T3 Code restarted and told this thread about its crew",
-            detail: text,
-          },
-          attachments: [],
-          dispatchMode: { type: "queue_after_active" },
-          createdBy: "agent",
-          creationSource: "server",
-        });
-      }).pipe(
-        Effect.catchCauseIf(
-          (cause) => !Cause.hasInterruptsOnly(cause),
-          (cause) =>
-            Effect.logWarning("Failed to tell a coordinator the server restarted", {
-              threadId: coordinator.id,
-              cause,
-            }),
-        ),
-      );
-    }
-  },
-  // A missed note must not hold up startup.
-  Effect.catchCauseIf(
-    (cause) => !Cause.hasInterruptsOnly(cause),
-    (cause) => Effect.logWarning("Failed to tell coordinators the server restarted", { cause }),
-  ),
 );
