@@ -73,6 +73,20 @@ adds: `excludedProviders` in `apps/web/src/state/usage.ts` and the rows in
 provider's Limits cards, so a row muted here hides them too. The mobile app
 has no row toggles.
 
+## Usage accounts follow the providers tab
+
+Wherever usage lists a provider's accounts (the Usage page's Limits columns,
+the sidebar readout, the composer's `/usage-limits` panel, and the mobile app's
+Limits view and widget), they go in the order Settings › Providers lists the
+provider instances: the default instance first, then the others as saved.
+Accounts no listed instance reports, such as hub-only accounts, go after, by
+name. Upstream's `collectLimitPools` (#10690) orders accounts by the soonest
+reset of their first window kind, so the account with a live five-hour session
+jumps to the left; the fork keeps accounts where the providers tab puts them.
+Both keep one order for every window row, so columns stay aligned. The rule is
+`sortByProvidersTab` and `LimitAccount.providerOrder` in
+`packages/shared/src/usageLimits.ts`; syncs must carry it.
+
 ## Usage limits in the sidebar
 
 The captain wants usage visible without opening the Usage page, so the web and
@@ -81,9 +95,8 @@ icons: one line per account the Limits view shows, with its provider's icon, a
 thin bar in the account's accent colour and the percent left in that account's
 own weekly window, or its first window when it has no weekly one. A provider
 with several accounts (Claude and Claude2) gets one line each, because each
-account resets on its own clock. A provider's lines go by account name in
-natural order (Claude, Claude2, Claude10), not by soonest reset as on the Usage
-page, so a line keeps its place as resets move. Model windows such as Weekly · Fable stay on
+account resets on its own clock. A provider's lines follow the providers tab
+(see [Usage accounts follow the providers tab](#usage-accounts-follow-the-providers-tab)). Model windows such as Weekly · Fable stay on
 the page. Each bar carries the Usage page's pace mark: a small line, in a gap
 cut from the bar, where the bar would end if usage kept pace with the time
 elapsed in that account's window. The tooltip names each account (its display

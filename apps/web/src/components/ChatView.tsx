@@ -1428,6 +1428,7 @@ export default function ChatView(props: ChatViewProps) {
     providerDriver: activeProviderStatus?.driver ?? null,
     providers: providerStatuses,
     sources: serverConfig?.usageLimitSources ?? EMPTY_USAGE_LIMIT_SOURCES,
+    providerInstances: serverConfig?.settings.providerInstances,
   });
   const {
     beginLocalDispatch,

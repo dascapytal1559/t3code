@@ -4,6 +4,7 @@ import {
   ProviderInstanceId,
   type ServerProvider,
   type ServerProviderUsageWindow,
+  type ServerSettings,
 } from "@t3tools/contracts";
 import type { LimitPresentations } from "@t3tools/shared/usageLimits";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -60,14 +61,17 @@ function provider(
 
 const codex = provider("Codex", "codex", "a@example.com", [window("weekly", "Weekly", 8)]);
 
-function setup(providers: ServerProvider[] | null) {
+function setup(providers: ServerProvider[] | null, savedInstanceIds: readonly string[] = []) {
   saveUsagePagePreferences({ metric: "limits", windowDays: 30, hiddenProviders: [] });
+  const providerInstances = Object.fromEntries(
+    savedInstanceIds.map((id) => [id, { driver: ProviderDriverKind.make("claudeAgent") }]),
+  ) as ServerSettings["providerInstances"];
   state.presentations = new Map([
     [
       EnvironmentId.make("local"),
       {
         entry: { target: { label: "Local" } },
-        serverConfig: providers === null ? null : { providers },
+        serverConfig: providers === null ? null : { providers, settings: { providerInstances } },
       },
     ],
   ]);
@@ -137,38 +141,41 @@ describe("SidebarUsageMini", () => {
     expect(screen.container.querySelectorAll("[data-usage-segment]")).toHaveLength(2);
   });
 
-  it("lists a provider's accounts by name, whatever order they reset in", async () => {
-    using _now = vi.spyOn(Date, "now").mockReturnValue(now);
-    const resetting = (usedPercent: number, resetsAt: string): ServerProviderUsageWindow => ({
-      ...window("seven_day", "Weekly", usedPercent),
-      resetsAt,
-    });
-    // Claude3 resets first and Claude last, the order the Limits view would use.
-    setup([
-      provider("Claude", "claudeAgent", "one@example.com", [
-        resetting(0, "2026-11-12T00:00:00.000Z"),
-      ]),
-      provider("Claude10", "claudeAgent", "ten@example.com", [
-        resetting(30, "2026-11-10T12:00:00.000Z"),
-      ]),
-      provider("Claude3", "claudeAgent", "three@example.com", [
-        resetting(79, "2026-11-10T00:00:00.000Z"),
-      ]),
-      provider("Claude2", "claudeAgent", "two@example.com", [
-        resetting(95, "2026-11-11T00:00:00.000Z"),
-      ]),
-    ]);
-    await using screen = await render(ui());
-    const summary = screen.getByRole("button", { name: /^Usage: / });
-    await expect.element(summary).toBeVisible();
-    const label = (await summary.element()).getAttribute("aria-label") ?? "";
-    expect([...label.matchAll(/(Claude\d*) \d+% left/g)].map((match) => match[1])).toEqual([
-      "Claude",
-      "Claude2",
-      "Claude3",
-      "Claude10",
-    ]);
-  });
+  it.each([
+    [["Claude", "Claude2", "Claude3"], "Claude, Claude2, Claude3"],
+    [["Claude2", "Claude", "Claude3"], "Claude2, Claude, Claude3"],
+  ])(
+    "lists a provider's accounts as the providers tab saves them (%j), whatever order they reset in",
+    async (saved, expected) => {
+      using _now = vi.spyOn(Date, "now").mockReturnValue(now);
+      const resetting = (usedPercent: number, resetsAt: string): ServerProviderUsageWindow => ({
+        ...window("seven_day", "Weekly", usedPercent),
+        resetsAt,
+      });
+      // Claude3 resets first and Claude last, so a soonest-reset order would reverse them.
+      setup(
+        [
+          provider("Claude3", "claudeAgent", "three@example.com", [
+            resetting(79, "2026-11-10T00:00:00.000Z"),
+          ]),
+          provider("Claude", "claudeAgent", "one@example.com", [
+            resetting(0, "2026-11-12T00:00:00.000Z"),
+          ]),
+          provider("Claude2", "claudeAgent", "two@example.com", [
+            resetting(95, "2026-11-11T00:00:00.000Z"),
+          ]),
+        ],
+        saved,
+      );
+      await using screen = await render(ui());
+      const summary = screen.getByRole("button", { name: /^Usage: / });
+      await expect.element(summary).toBeVisible();
+      const label = (await summary.element()).getAttribute("aria-label") ?? "";
+      expect([...label.matchAll(/(Claude\d*) \d+% left/g)].map((match) => match[1])).toEqual(
+        expected.split(", "),
+      );
+    },
+  );
 
   it("marks where even spending would be on each account's own clock", async () => {
     using _now = vi.spyOn(Date, "now").mockReturnValue(now);

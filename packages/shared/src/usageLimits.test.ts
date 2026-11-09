@@ -4,6 +4,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
+  type ServerSettings,
   UsageLimitSourceId,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
@@ -234,6 +235,65 @@ describe("pools", () => {
       ],
     });
     expect(accounts[0]?.limits.windows[0]?.usedPercent).toBe(55);
+  });
+
+  it("orders a provider's accounts as the providers tab lists them, in every row", () => {
+    const instance = (id: string, displayName: string, sessionReset: string) =>
+      provider({
+        driver: claude,
+        instanceId: ProviderInstanceId.make(id),
+        displayName,
+        auth: { status: "authenticated", email: `${id}@example.com` },
+        usageLimits: {
+          checkedAt,
+          windows: [
+            { ...window, resetsAt: sessionReset },
+            { ...weekly, usedPercent: 20 },
+          ],
+        },
+      });
+    // Claude3 resets soonest, so a soonest-reset order would put it first.
+    const providers = [
+      instance("claude_3", "Claude3", "2026-09-03T13:00:00.000Z"),
+      instance("claudeAgent", "Claude", "2026-09-03T16:00:00.000Z"),
+      instance("claude_2", "Claude2", "2026-09-03T15:00:00.000Z"),
+    ];
+    const saved = (...ids: string[]) =>
+      Object.fromEntries(
+        ids.map((id) => [id, { driver: claude }]),
+      ) as ServerSettings["providerInstances"];
+    const rows = (providerInstances: ServerSettings["providerInstances"]) => {
+      const input = new Map([
+        [
+          EnvironmentId.make("env-a"),
+          { ...laptop, serverConfig: { providers, settings: { providerInstances } } },
+        ],
+      ]);
+      return collectLimitPools(collectLimitAccounts(input), now)[0]!.windows.map((row) =>
+        row.columns.map((column) => column.account.displayName),
+      );
+    };
+    const composer = (providerInstances: ServerSettings["providerInstances"]) =>
+      collectProviderUsageLimits(
+        ProviderInstanceId.make("claudeAgent"),
+        providers,
+        [],
+        now,
+        providerInstances,
+      )?.accounts.map((account) => account.displayName);
+
+    const listed = saved("claude_2", "claude_3");
+    expect(rows(listed)).toEqual([
+      ["Claude", "Claude2", "Claude3"],
+      ["Claude", "Claude2", "Claude3"],
+    ]);
+    expect(composer(listed)).toEqual(["Claude", "Claude2", "Claude3"]);
+    const reordered = saved("claude_3", "claude_2");
+    expect(rows(reordered)).toEqual([
+      ["Claude", "Claude3", "Claude2"],
+      ["Claude", "Claude3", "Claude2"],
+    ]);
+    expect(composer(reordered)).toEqual(["Claude", "Claude3", "Claude2"]);
   });
 
   it("uses the freshest reported plan even when the newest quota has no plan", () => {
@@ -859,6 +919,7 @@ describe("pools", () => {
           email: undefined,
           plan: undefined,
           accentColor: undefined,
+          providerOrder: null,
           environments: [],
           sourceLabel: null,
           redeem: null,
@@ -904,6 +965,7 @@ describe("pooled account columns", () => {
     email: undefined,
     plan: undefined,
     accentColor: undefined,
+    providerOrder: null,
     environments: [],
     sourceLabel: "Hub",
     redeem: null,
@@ -974,14 +1036,20 @@ describe("pooled account columns", () => {
 
   it("keeps session columns across rows with opposite reset and usage orders", () => {
     const accounts = [
-      account("a", [
-        { ...weekly, usedPercent: 80, resetsAt: "2026-09-05T12:00:00.000Z" },
-        { ...window, usedPercent: 10, resetsAt: "2026-09-03T15:00:00.000Z" },
-      ]),
-      account("b", [
-        { ...weekly, usedPercent: 20, resetsAt: "2026-09-06T12:00:00.000Z" },
-        { ...window, usedPercent: 90, resetsAt: "2026-09-03T13:00:00.000Z" },
-      ]),
+      {
+        ...account("a", [
+          { ...weekly, usedPercent: 80, resetsAt: "2026-09-05T12:00:00.000Z" },
+          { ...window, usedPercent: 10, resetsAt: "2026-09-03T15:00:00.000Z" },
+        ]),
+        providerOrder: 1,
+      },
+      {
+        ...account("b", [
+          { ...weekly, usedPercent: 20, resetsAt: "2026-09-06T12:00:00.000Z" },
+          { ...window, usedPercent: 90, resetsAt: "2026-09-03T13:00:00.000Z" },
+        ]),
+        providerOrder: 0,
+      },
     ];
     const [pool] = collectLimitPools(accounts, now);
     expect(pool!.accounts.map((account) => account.key)).toEqual(["b", "a"]);
@@ -1015,7 +1083,7 @@ describe("pooled account columns", () => {
     },
   );
 
-  it("orders by usable session refill and clears suppression after a fresh weekly reading", () => {
+  it("pools usable session refill and clears suppression after a fresh weekly reading", () => {
     const blocked = account("blocked", [
       { ...window, resetsAt: "2026-09-03T13:00:00.000Z" },
       { ...weekly, usedPercent: 100, resetsAt: "2026-09-03T15:00:00.000Z" },
@@ -1032,7 +1100,7 @@ describe("pooled account columns", () => {
       },
     };
     const [after] = collectLimitPools([refreshed, available], now);
-    expect(after!.accounts.map((account) => account.key)).toEqual(["blocked", "available"]);
+    expect(after!.accounts.map((account) => account.key)).toEqual(["available", "blocked"]);
     expect(after!.windows[0]!.remainingPercent).toBe(60);
     expect(after!.windows[0]!.resets[0]).toMatchObject({
       at: Date.parse("2026-09-03T13:00:00.000Z"),
@@ -1061,15 +1129,20 @@ describe("pooled account columns", () => {
     expect(pool!.windows[1]!.resets.map((reset) => reset.restoresPercent)).toEqual([40, 20]);
   });
 
-  it("falls back to weekly resets when no account reports a session", () => {
+  it("puts providers-tab accounts first and hub-only accounts after by name, whatever their resets", () => {
     const [pool] = collectLimitPools(
       [
-        account("a", [{ ...weekly, resetsAt: "2026-09-06T12:00:00.000Z" }]),
-        account("b", [{ ...weekly, resetsAt: "2026-09-05T12:00:00.000Z" }]),
+        account("hub10", [{ ...window, resetsAt: "2026-09-03T12:30:00.000Z" }]),
+        account("hub2", [window]),
+        { ...account("second", [window]), providerOrder: 1 },
+        {
+          ...account("first", [{ ...window, resetsAt: "2026-09-03T16:00:00.000Z" }]),
+          providerOrder: 0,
+        },
       ],
       now,
     );
-    expect(keys(pool!)).toEqual([["b", "a"]]);
+    expect(keys(pool!)).toEqual([["first", "second", "hub2", "hub10"]]);
   });
 });
 
@@ -1328,7 +1401,7 @@ describe("/usage-limits", () => {
         [],
         now,
       )?.accounts.map((account) => account.id),
-    ).toEqual(["workspace-a-fresh", "codex"]);
+    ).toEqual(["codex", "workspace-a-fresh"]);
     expect(
       collectProviderUsageLimits(
         selected.instanceId,
@@ -1336,7 +1409,7 @@ describe("/usage-limits", () => {
         [],
         now,
       )?.accounts.map((account) => account.id),
-    ).toEqual(["workspace-a-fresh", "codex", "workspace-b"]);
+    ).toEqual(["codex", "workspace-a-fresh", "workspace-b"]);
   });
 
   it("supports a source-only provider and keeps duplicates when the native probe failed", () => {

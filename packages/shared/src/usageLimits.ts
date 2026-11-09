@@ -8,6 +8,7 @@ import {
   type ProviderInstanceId,
   type ProviderConsumeResetCreditInput,
   type ServerProviderSlashCommand,
+  defaultInstanceIdForDriver,
   isProviderAvailable,
   PROVIDER_DISPLAY_NAMES,
   type ServerProvider,
@@ -158,9 +159,41 @@ export type LimitPresentations = ReadonlyMap<
     readonly serverConfig: {
       readonly providers: readonly ServerProvider[];
       readonly usageLimitSources?: UsageLimitSourceSnapshots | undefined;
+      readonly settings?: Pick<ServerSettings, "providerInstances"> | undefined;
     } | null;
   }
 >;
+
+/**
+ * Settings › Providers order, which every usage surface follows: drivers keep their given order,
+ * each driver's default instance comes first, then its other instances as saved. Instances the tab
+ * does not list follow their driver's listed ones, by name.
+ */
+function sortByProvidersTab<
+  T extends Pick<ServerProvider, "driver" | "instanceId" | "displayName">,
+>(
+  providers: readonly T[],
+  providerInstances: ServerSettings["providerInstances"] | undefined,
+): readonly T[] {
+  const driverOrder = new Map<string, number>();
+  for (const provider of providers) {
+    if (!driverOrder.has(provider.driver)) driverOrder.set(provider.driver, driverOrder.size);
+  }
+  const saved = Object.keys(providerInstances ?? {});
+  const tabRank = (provider: T) => {
+    if (provider.instanceId === defaultInstanceIdForDriver(provider.driver)) return -1;
+    const index = saved.indexOf(provider.instanceId);
+    return index === -1 ? saved.length : index;
+  };
+  const name = (provider: T) => provider.displayName?.trim() || provider.instanceId;
+  return [...providers].sort(
+    (left, right) =>
+      driverOrder.get(left.driver)! - driverOrder.get(right.driver)! ||
+      tabRank(left) - tabRank(right) ||
+      name(left).localeCompare(name(right), undefined, { numeric: true }) ||
+      left.instanceId.localeCompare(right.instanceId),
+  );
+}
 
 export function collectExternalUsageLinks(presentations: LimitPresentations) {
   const links = new Map<
@@ -242,6 +275,8 @@ export interface LimitAccount {
   readonly email: string | undefined;
   readonly plan: string | undefined;
   readonly accentColor: string | undefined;
+  /** Position in the providers tabs, environment by environment; null for hub-only accounts. */
+  readonly providerOrder: number | null;
   readonly environments: ReadonlyArray<{
     readonly environmentId: EnvironmentId;
     readonly label: string;
@@ -314,6 +349,7 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
           : displayName,
       plan: planSources.get(key)?.plan ?? previous.plan ?? next.plan,
       accentColor: previous.accentColor ?? next.accentColor,
+      providerOrder: previous.providerOrder ?? next.providerOrder,
       environments,
       sourceLabel: environments.length > 0 ? null : (previous.sourceLabel ?? next.sourceLabel),
       redeem:
@@ -335,9 +371,14 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
       ...(presentation.serverConfig?.usageLimitSources ?? []).flatMap((source) => source.accounts),
     ]),
   );
+  let providerOrder = 0;
   for (const [environmentId, presentation] of presentations) {
     const label = presentation.entry.target.label;
-    for (const provider of providersWithLimits(presentation.serverConfig?.providers ?? [])) {
+    const providers = sortByProvidersTab(
+      providersWithLimits(presentation.serverConfig?.providers ?? []),
+      presentation.serverConfig?.settings?.providerInstances,
+    );
+    for (const provider of providers) {
       if (!provider.usageLimits || limitsNotice(provider.usageLimits) !== null) continue;
       merge(resolveKey(nativeReport(provider)) ?? `${environmentId}:${provider.instanceId}`, {
         key: `${environmentId}:${provider.instanceId}`,
@@ -346,6 +387,7 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
         email: provider.auth.email,
         plan: provider.auth.label,
         accentColor: provider.accentColor,
+        providerOrder: providerOrder++,
         environments: [{ environmentId, label }],
         sourceLabel: null,
         redeem: { environmentId, input: { instanceId: provider.instanceId } },
@@ -369,6 +411,7 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
           email: account.email,
           plan: account.plan,
           accentColor: undefined,
+          providerOrder: null,
           environments: [],
           sourceLabel,
           redeem: account.usageLimits.resetCredits?.nextCreditId
@@ -479,23 +522,13 @@ export function collectLimitPools(
     if (list) list.push(account);
     else byDriver.set(account.driver, [account]);
   }
+  // One account order for every window row keeps columns aligned.
+  const order = (account: LimitAccount) => account.providerOrder ?? Number.MAX_SAFE_INTEGER;
   return [...byDriver].map(([driver, members]) => {
-    const orderWindow = members
-      .flatMap((account) => account.limits.windows)
-      .sort((left, right) => WINDOW_KIND_ORDER[left.kind] - WINDOW_KIND_ORDER[right.kind])[0];
-    const orderReset = (account: LimitAccount) => {
-      const window = account.limits.windows.find(
-        (window) => orderWindow && poolKey(driver, window) === poolKey(driver, orderWindow),
-      );
-      return (
-        (window ? resetMillis(poolMember(account, window, now).window) : null) ??
-        Number.POSITIVE_INFINITY
-      );
-    };
     const sorted = [...members].sort(
       (left, right) =>
-        orderReset(left) - orderReset(right) ||
-        accountSortName(left).localeCompare(accountSortName(right)) ||
+        order(left) - order(right) ||
+        accountSortName(left).localeCompare(accountSortName(right), undefined, { numeric: true }) ||
         left.key.localeCompare(right.key),
     );
     return { driver, accounts: sorted, windows: poolWindows(sorted, now) };
@@ -755,6 +788,7 @@ export function collectProviderUsageLimits(
   providers: readonly ServerProvider[],
   sources: UsageLimitSourceSnapshots,
   now: number,
+  providerInstances?: ServerSettings["providerInstances"],
 ): UsageLimitsReport | null {
   const selected = providers.find((provider) => provider.instanceId === instanceId);
   if (!selected || !hasProviderUsageLimits(selected.driver, providers, sources)) return null;
@@ -767,7 +801,7 @@ export function collectProviderUsageLimits(
     string,
     { usage: NativeSnapshot; credits: NativeSnapshot | null }
   >();
-  for (const provider of providersWithLimits(providers)) {
+  for (const provider of sortByProvidersTab(providersWithLimits(providers), providerInstances)) {
     if (provider.driver !== selected.driver || !provider.usageLimits) continue;
     const snapshot = { provider, limits: provider.usageLimits };
     const key = resolveKey(nativeReport(provider)) ?? `instance:${provider.instanceId}`;

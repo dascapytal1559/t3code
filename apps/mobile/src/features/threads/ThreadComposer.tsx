@@ -531,6 +531,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       props.serverConfig?.providers ?? [],
       props.serverConfig?.usageLimitSources ?? [],
       Date.now(),
+      props.serverConfig?.settings.providerInstances,
     );
     onShowUsageLimits(report);
     if (!report) {

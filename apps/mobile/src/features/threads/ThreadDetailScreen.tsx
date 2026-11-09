@@ -950,6 +950,7 @@ function ThreadDetailBody(
           props.serverConfig?.providers ?? [],
           props.serverConfig?.usageLimitSources ?? [],
           usageLimitsPanel.now,
+          props.serverConfig?.settings.providerInstances,
         )
       : null;
   const showUsageLimits = (report: UsageLimitsReport | null) =>
