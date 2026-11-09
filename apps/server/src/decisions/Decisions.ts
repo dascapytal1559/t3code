@@ -262,6 +262,10 @@ const make = Effect.gen(function* () {
       return { withdrawn: false };
     }
     if (run.status === "queued") {
+      const listed = (yield* SubscriptionRef.get(state)).decisions.some(
+        (decision) => decision.id === decisionId,
+      );
+      if (!listed) return { withdrawn: false };
       const cancelled = yield* threads
         .dispatch({
           type: "queued-run.cancel",

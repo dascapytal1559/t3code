@@ -160,7 +160,7 @@ it.layer(NodeServices.layer)("Decisions", (it) => {
   );
 
   it.effect(
-    "a reply queues behind FirstMate's turn and takes the decision off the list; undo brings it back",
+    "a reply queues behind FirstMate's turn and takes the decision off the list; undo brings it back until FirstMate retires it",
     () =>
       Effect.gen(function* () {
         yield* setup({ coordinatorBusy: true });
@@ -219,6 +219,24 @@ it.layer(NodeServices.layer)("Decisions", (it) => {
               "cancelled",
             );
             assert.equal(yield* answered(decisions, camera.id), undefined);
+
+            // Once FirstMate retires the answered decision, undo keeps the reply queued for it.
+            const again = yield* decisions.reply({
+              decisionId: camera.id,
+              commandId: CommandId.make("reply:camera-again"),
+              text: "Buy it after all.",
+            });
+            assert.equal(again.queued, true);
+            yield* decisions.set({ replyTo: coordinator, decisions: [] });
+            const kept = yield* decisions.undoReply({
+              decisionId: camera.id,
+              commandId: CommandId.make("reply:camera-again"),
+            });
+            assert.equal(kept.withdrawn, false);
+            assert.equal(
+              (yield* firstmateChat).runs.find((candidate) => candidate.id === again.runId)?.status,
+              "queued",
+            );
           }),
         );
       }).pipe(Effect.provide(layerHome)),
