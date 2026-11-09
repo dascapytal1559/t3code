@@ -38,7 +38,9 @@ vi.mock(import("../../state/entities"), () => ({
   useHiddenThreadKeys: (() => new Set()) as never,
   useAnyEnvironmentHiding: (() => false) as never,
 }));
-vi.mock(import("../../state/environments"), () => ({
+// Spread the original: the fork's rightPanelStore pulls in useSettings, which reads other hooks here.
+vi.mock(import("../../state/environments"), async (original) => ({
+  ...(await original()),
   useEnvironment: (() => null) as never,
   useEnvironmentProviders: (() => new Map()) as never,
 }));

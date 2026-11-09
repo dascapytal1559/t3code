@@ -188,6 +188,7 @@ vi.mock("./useSettings", () => ({
       confirmThreadDelete: true,
       confirmThreadUnpin: true,
     }),
+  getClientSettings: () => ({ threadDetailsDefaultOpen: false }),
 }));
 
 import { useThreadActions } from "./useThreadActions";
