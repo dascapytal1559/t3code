@@ -187,7 +187,7 @@ function DecisionReplyBox(props: {
       toastManager.add({
         type: "info",
         title: "FirstMate already has it",
-        description: "It started on your reply, so it stays sent.",
+        description: "FirstMate has it now, so it stays sent.",
       });
       return;
     }
