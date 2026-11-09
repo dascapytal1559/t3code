@@ -73,47 +73,39 @@ export function NeedsMePanel(props: { readonly threadRef: ScopedThreadRef }) {
 }
 
 /**
- * Read-only: FirstMate sets them over MCP. One plate across the panel with each objective's name
- * over its whole description; the user sets the measure by resizing the panel itself.
+ * Read-only: FirstMate sets them over MCP, each a name over a summary of about two lines. One card
+ * per objective in a wrapping grid, shown in full; cards in a row share its height.
  */
 function ObjectivesSection(props: {
   readonly objectives: Objectives;
   readonly environmentId: EnvironmentId;
 }) {
   return (
-    <section className="mb-5 rounded-xl border border-border bg-muted/60 px-5 pt-3.5 pb-1">
-      <h3 className="pb-2 text-xs font-medium text-muted-foreground">High level objectives</h3>
-      <ul className="flex flex-col">
-        {splitObjectives(props.objectives.markdown).map((entry) => {
-          const objective = parseObjective(entry);
-          return (
-            <li
-              key={entry}
-              className="grid grid-cols-[14px_minmax(0,1fr)] gap-x-2 border-t border-border/70 py-3.5 first:border-t-0 first:pt-2.5"
-            >
-              <span aria-hidden className="text-sm leading-5 text-muted-foreground">
-                •
-              </span>
-              <div className="min-w-0">
-                {objective.name === undefined ? null : (
-                  <h4 className="mb-1 text-sm leading-5 font-semibold text-foreground">
-                    {objective.name}
-                  </h4>
-                )}
-                {objective.text === "" ? null : (
-                  <ChatMarkdown
-                    text={objective.text}
-                    cwd={undefined}
-                    environmentId={props.environmentId}
-                    className="text-sm leading-relaxed text-foreground/80 [&_p]:my-0"
-                  />
-                )}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
+    <ul
+      aria-label="Objectives"
+      className="mb-5 grid grid-cols-[repeat(auto-fill,minmax(min(280px,100%),1fr))] gap-2"
+    >
+      {splitObjectives(props.objectives.markdown).map((entry) => {
+        const objective = parseObjective(entry);
+        return (
+          <li key={entry} className="min-w-0 rounded-xl border border-border bg-muted/60 px-4 py-3">
+            {objective.name === undefined ? null : (
+              <h3 className="mb-1 text-sm leading-5 font-semibold text-foreground">
+                {objective.name}
+              </h3>
+            )}
+            {objective.text === "" ? null : (
+              <ChatMarkdown
+                text={objective.text}
+                cwd={undefined}
+                environmentId={props.environmentId}
+                className="text-sm leading-relaxed text-foreground/80 [&_p]:my-0"
+              />
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

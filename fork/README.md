@@ -330,10 +330,11 @@ sheet like the other right-panel tabs. Internal names (`needs-me` surface kind,
 `components/needsMe/`) keep the old name.
 
 Objectives are a short Markdown list FirstMate pushes (see the records below),
-shown read-only in one "High level objectives" plate across the panel: one
-entry per top-level bullet, its bold lead as the name over the rest of it in
-full. Nothing is clamped or folded; resizing the panel sets the measure. With
-none set the plate is hidden. The tab shows the objectives of the chat's own
+shown read-only as one card per top-level bullet, with no heading: its bold
+lead as the card's name over the rest of it, a summary of about two lines, in
+full. The cards wrap in a grid, one column in a narrow panel and side by side
+as it widens, cards in a row sharing a height. With none set there are no
+cards. The tab shows the objectives of the chat's own
 environment, else of the first connected environment that has some.
 
 Something FirstMate needs from the captain is a decision. "Needs you" lists open
