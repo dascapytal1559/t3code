@@ -10,7 +10,9 @@ import {
   type Decision,
 } from "@t3tools/contracts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
@@ -58,6 +60,33 @@ const layerHome = Layer.mergeAll(
 const started = <A, E, R>(
   use: (decisions: Decisions.Decisions["Service"]) => Effect.Effect<A, E, R>,
 ) => Decisions.Decisions.pipe(Effect.flatMap(use), Effect.provide(Layer.fresh(Decisions.layer)));
+
+// `onCancel` runs as Undo starts cancelling the queued reply, before the cancel lands.
+const startedPausingCancel = <A, E, R>(
+  onCancel: Effect.Effect<void>,
+  use: (decisions: Decisions.Decisions["Service"]) => Effect.Effect<A, E, R>,
+) =>
+  Decisions.Decisions.pipe(
+    Effect.flatMap(use),
+    Effect.provide(
+      Layer.fresh(
+        Decisions.layer.pipe(
+          Layer.provide(
+            Layer.effect(
+              ThreadManagement.ThreadManagementService,
+              Effect.map(ThreadManagement.ThreadManagementService, (threads) => ({
+                ...threads,
+                dispatch: (command: Parameters<typeof threads.dispatch>[0]) =>
+                  command.type === "queued-run.cancel"
+                    ? Effect.andThen(onCancel, threads.dispatch(command))
+                    : threads.dispatch(command),
+              })),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 
 const coordinator = ThreadId.make("thread:firstmate");
 const question = "Give the word to buy the first window-view camera?";
@@ -238,6 +267,49 @@ it.layer(NodeServices.layer)("Decisions", (it) => {
               "queued",
             );
           }),
+        );
+      }).pipe(Effect.provide(layerHome)),
+  );
+
+  it.effect(
+    "a list FirstMate sends while Undo is cancelling lands after the decision reopens",
+    () =>
+      Effect.gen(function* () {
+        yield* setup({ coordinatorBusy: true });
+        const cancelling = yield* Deferred.make<void>();
+        yield* startedPausingCancel(
+          Deferred.succeed(cancelling, undefined).pipe(Effect.asVoid),
+          (decisions) =>
+            Effect.gen(function* () {
+              yield* decisions.set({ replyTo: coordinator, decisions: [camera] });
+              yield* decisions.reply({
+                decisionId: camera.id,
+                commandId: replyId,
+                text: "Buy it.",
+              });
+              const history = yield* decisions.changes.pipe(
+                Stream.takeUntil((state) => state.decisions.length === 0),
+                Stream.runCollect,
+                Effect.forkChild,
+              );
+              const retired = yield* Deferred.await(cancelling).pipe(
+                Effect.andThen(decisions.set({ replyTo: coordinator, decisions: [] })),
+                Effect.forkChild,
+              );
+              const undone = yield* decisions.undoReply({
+                decisionId: camera.id,
+                commandId: replyId,
+              });
+              yield* Fiber.join(retired);
+              assert.equal(undone.withdrawn, true);
+              // FirstMate's list never applies over a reply that is half withdrawn.
+              assert.deepEqual(
+                Array.from(yield* Fiber.join(history), (state) =>
+                  state.decisions.map((decision) => decision.answered === undefined),
+                ),
+                [[false], [true], []],
+              );
+            }),
         );
       }).pipe(Effect.provide(layerHome)),
   );

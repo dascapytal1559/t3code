@@ -100,6 +100,17 @@ const failed = (decisionId: string) => (cause: unknown) => {
   });
 };
 
+const withDecision = (
+  current: DecisionsState,
+  decisionId: string,
+  change: (decision: StoredDecision) => StoredDecision,
+): DecisionsState => ({
+  ...current,
+  decisions: current.decisions.map((decision) =>
+    decision.id === decisionId ? change(decision) : decision,
+  ),
+});
+
 const make = Effect.gen(function* () {
   const threads = yield* ThreadManagement.ThreadManagementService;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -124,38 +135,34 @@ const make = Effect.gen(function* () {
   const state = yield* SubscriptionRef.make(stored);
   const writeLock = yield* Semaphore.make(1);
 
+  // Callers hold `writeLock`.
+  const save = Effect.fnUntraced(function* (current: DecisionsState, next: DecisionsState) {
+    if (Equal.equals(current, next)) return current;
+    yield* encodeFile(next).pipe(
+      Effect.flatMap((json) =>
+        writeFileStringAtomically({ filePath, contents: `${json}\n` }).pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, path),
+        ),
+      ),
+      Effect.mapError((cause) => new DecisionsStoreError({ path: filePath, cause })),
+    );
+    yield* SubscriptionRef.set(state, next);
+    return next;
+  });
+
   const mutate = <E>(change: (current: DecisionsState) => Effect.Effect<DecisionsState, E>) =>
     writeLock.withPermits(1)(
       Effect.gen(function* () {
         const current = yield* SubscriptionRef.get(state);
-        const next = yield* change(current);
-        if (Equal.equals(current, next)) return current;
-        yield* encodeFile(next).pipe(
-          Effect.flatMap((json) =>
-            writeFileStringAtomically({ filePath, contents: `${json}\n` }).pipe(
-              Effect.provideService(FileSystem.FileSystem, fileSystem),
-              Effect.provideService(Path.Path, path),
-            ),
-          ),
-          Effect.mapError((cause) => new DecisionsStoreError({ path: filePath, cause })),
-        );
-        yield* SubscriptionRef.set(state, next);
-        return next;
+        return yield* save(current, yield* change(current));
       }),
     );
 
   const changeDecision = (
     decisionId: string,
     change: (decision: StoredDecision) => StoredDecision,
-  ) =>
-    mutate((current) =>
-      Effect.succeed({
-        ...current,
-        decisions: current.decisions.map((decision) =>
-          decision.id === decisionId ? change(decision) : decision,
-        ),
-      }),
-    );
+  ) => mutate((current) => Effect.succeed(withDecision(current, decisionId, change)));
 
   const readThread = (threadId: ThreadId) =>
     threads.getThreadRecords(threadId, []).pipe(
@@ -250,43 +257,48 @@ const make = Effect.gen(function* () {
   const undoReply = Effect.fn("Decisions.undoReply")(function* (input: DecisionUndoReplyInput) {
     const { decisionId } = input;
     yield* Effect.annotateCurrentSpan({ "decision.id": decisionId });
-    const coordinatorId = (yield* SubscriptionRef.get(state)).replyTo;
-    if (coordinatorId === null) {
-      return yield* new DecisionReplyError({ decisionId, reason: "no-coordinator" });
-    }
-    const readRun = findReplyRun(coordinatorId, replyMessageId(input.commandId)).pipe(
-      Effect.mapError(failed(decisionId)),
+    return yield* writeLock.withPermits(1)(
+      Effect.gen(function* () {
+        const current = yield* SubscriptionRef.get(state);
+        const coordinatorId = current.replyTo;
+        if (coordinatorId === null) {
+          return yield* new DecisionReplyError({ decisionId, reason: "no-coordinator" });
+        }
+        const readRun = findReplyRun(coordinatorId, replyMessageId(input.commandId)).pipe(
+          Effect.mapError(failed(decisionId)),
+        );
+        const run = yield* readRun;
+        if (run === null || (run.status !== "queued" && run.status !== "cancelled")) {
+          return { withdrawn: false };
+        }
+        if (run.status === "queued") {
+          if (!current.decisions.some((decision) => decision.id === decisionId)) {
+            return { withdrawn: false };
+          }
+          const cancelled = yield* threads
+            .dispatch({
+              type: "queued-run.cancel",
+              commandId: stepCommandId(input.commandId, "undo-cancel"),
+              threadId: coordinatorId,
+              runId: run.id,
+            })
+            .pipe(Effect.result);
+          // The queue may have started it in the meantime; then it is FirstMate's now.
+          if (Result.isFailure(cancelled)) {
+            const latest = yield* readRun;
+            if (latest?.status === "queued") return yield* failed(decisionId)(cancelled.failure);
+            if (latest?.status !== "cancelled") return { withdrawn: false };
+          }
+        }
+        const reopened = withDecision(current, decisionId, (latest) => {
+          if (latest.answered?.commandId !== input.commandId) return latest;
+          const { answered: _answered, ...open } = latest;
+          return open;
+        });
+        yield* save(current, reopened).pipe(Effect.mapError(failed(decisionId)));
+        return { withdrawn: true };
+      }),
     );
-    const run = yield* readRun;
-    if (run === null || (run.status !== "queued" && run.status !== "cancelled")) {
-      return { withdrawn: false };
-    }
-    if (run.status === "queued") {
-      const listed = (yield* SubscriptionRef.get(state)).decisions.some(
-        (decision) => decision.id === decisionId,
-      );
-      if (!listed) return { withdrawn: false };
-      const cancelled = yield* threads
-        .dispatch({
-          type: "queued-run.cancel",
-          commandId: stepCommandId(input.commandId, "undo-cancel"),
-          threadId: coordinatorId,
-          runId: run.id,
-        })
-        .pipe(Effect.result);
-      // The queue may have started it in the meantime; then it is FirstMate's now.
-      if (Result.isFailure(cancelled)) {
-        const latest = yield* readRun;
-        if (latest?.status === "queued") return yield* failed(decisionId)(cancelled.failure);
-        if (latest?.status !== "cancelled") return { withdrawn: false };
-      }
-    }
-    yield* changeDecision(decisionId, (latest) => {
-      if (latest.answered?.commandId !== input.commandId) return latest;
-      const { answered: _answered, ...open } = latest;
-      return open;
-    }).pipe(Effect.mapError(failed(decisionId)));
-    return { withdrawn: true };
   });
 
   return Decisions.of({ changes: SubscriptionRef.changes(state), set, reply, undoReply });
