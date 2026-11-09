@@ -3,7 +3,10 @@ import { expect, it, vi } from "vite-plus/test";
 import { render } from "../../test/render";
 import { useDictationShortcut } from "./useDictationShortcut";
 
-vi.mock("../hooks/useSettings", () => ({ useClientSettings: () => "hold" }));
+vi.mock("../hooks/useSettings", () => ({
+  useClientSettings: () => "hold",
+  getClientSettings: () => ({ threadDetailsDefaultOpen: false }),
+}));
 
 function Probe({ speech }: { speech: Parameters<typeof useDictationShortcut>[0]["speech"] }) {
   useDictationShortcut({
