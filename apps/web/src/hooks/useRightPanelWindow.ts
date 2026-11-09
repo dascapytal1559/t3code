@@ -214,10 +214,11 @@ function requestWindow(
   };
   bridge.setRightPanelOpen({ requestId, open, width }).then(
     (answer) => {
-      if (done || answer.requestId !== requestId) return;
+      if (answer.requestId !== requestId) return;
       if (fromRest && answer.status === "resized") {
         contentInset = answer.previousContentWidth - viewportAtRequest;
       }
+      if (done) return;
       result = answer;
       check();
     },

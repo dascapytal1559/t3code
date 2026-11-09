@@ -295,6 +295,52 @@ describe("useRightPanelWindow", () => {
     });
   });
 
+  it("ends the hold with a viewport narrower than the window's content", async () => {
+    await withCleanStorage(async () => {
+      using desktop = fakeDesktopWindow(1000, { inset: 300 });
+      // The hook only needs React and the desktop bridge; no navigation is involved.
+      await using screen = await render(<Workspace open={false} windowWidth={1000} />, {
+        router: false,
+      });
+      const chat = screen.getByTestId("chat").element();
+      const row = screen.getByTestId("row").element() as HTMLElement;
+      const titlebar = screen.getByTestId("titlebar").element();
+
+      // A toggle back before the first answer still learns the inset from it.
+      await screen.rerender(<Workspace open windowWidth={1000} />);
+      await screen.rerender(<Workspace open={false} windowWidth={1000} />);
+      await act(() => desktop.requests[0]!.answer(1540));
+      await screen.rerender(<Workspace open={false} windowWidth={1540} />);
+      await act(() => desktop.resize(1540));
+      expect(row.style.width).toBe("1540px");
+      await act(() => desktop.requests[1]!.answer(1000));
+      await screen.rerender(<Workspace open={false} windowWidth={1000} />);
+      await act(() => desktop.resize(1000));
+      await expect.element(screen.getByTestId("panel")).not.toBeInTheDocument();
+      expect(row.style.width).toBe("");
+
+      await screen.rerender(<Workspace open windowWidth={1000} />);
+      await act(() => desktop.requests[2]!.answer(1540));
+      await screen.rerender(<Workspace open windowWidth={1200} />);
+      await act(() => desktop.resize(1200));
+      expect(row.style.width).toBe("1540px");
+      await screen.rerender(<Workspace open windowWidth={1540} />);
+      await act(() => desktop.resize(1540));
+      expect(row.style.width).toBe("");
+      expect(titlebar.getAttribute("data-open")).toBe("true");
+      expect(widthOf(chat)).toBe(1000);
+
+      await screen.rerender(<Workspace open={false} windowWidth={1540} />);
+      await act(() => desktop.requests[3]!.answer(1000));
+      await screen.rerender(<Workspace open={false} windowWidth={1000} />);
+      await act(() => desktop.resize(1000));
+      await expect.element(screen.getByTestId("panel")).not.toBeInTheDocument();
+      expect(titlebar.getAttribute("data-open")).toBe("false");
+      expect(row.style.width).toBe("");
+      expect(widthOf(chat)).toBe(1000);
+    });
+  });
+
   it("lets go of the row when something else resizes the window or the thread changes", async () => {
     await withCleanStorage(async () => {
       using desktop = fakeDesktopWindow(1000);
@@ -415,39 +461,6 @@ describe("useRightPanelWindow", () => {
       await act(() => desktop.requests[0]!.answer("unchanged"));
       expect(widthOf(screen.getByTestId("chat").element())).toBe(600);
       expect(localStorage.getItem(CHAT_STORAGE_KEY)).toBe("600");
-    });
-  });
-
-  it("ends the hold with a viewport narrower than the window's content", async () => {
-    await withCleanStorage(async () => {
-      using desktop = fakeDesktopWindow(1000, { inset: 300 });
-      // The hook only needs React and the desktop bridge; no navigation is involved.
-      await using screen = await render(<Workspace open={false} windowWidth={1000} />, {
-        router: false,
-      });
-      const chat = screen.getByTestId("chat").element();
-      const row = screen.getByTestId("row").element() as HTMLElement;
-      const titlebar = screen.getByTestId("titlebar").element();
-
-      await screen.rerender(<Workspace open windowWidth={1000} />);
-      await act(() => desktop.requests[0]!.answer(1540));
-      await screen.rerender(<Workspace open windowWidth={1200} />);
-      await act(() => desktop.resize(1200));
-      expect(row.style.width).toBe("1540px");
-      await screen.rerender(<Workspace open windowWidth={1540} />);
-      await act(() => desktop.resize(1540));
-      expect(row.style.width).toBe("");
-      expect(titlebar.getAttribute("data-open")).toBe("true");
-      expect(widthOf(chat)).toBe(1000);
-
-      await screen.rerender(<Workspace open={false} windowWidth={1540} />);
-      await act(() => desktop.requests[1]!.answer(1000));
-      await screen.rerender(<Workspace open={false} windowWidth={1000} />);
-      await act(() => desktop.resize(1000));
-      await expect.element(screen.getByTestId("panel")).not.toBeInTheDocument();
-      expect(titlebar.getAttribute("data-open")).toBe("false");
-      expect(row.style.width).toBe("");
-      expect(widthOf(chat)).toBe(1000);
     });
   });
 });
