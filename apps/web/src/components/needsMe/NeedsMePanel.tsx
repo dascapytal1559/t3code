@@ -1,20 +1,18 @@
-import {
-  scopeProjectRef,
-  scopeThreadRef,
-  scopedThreadKey,
-} from "@t3tools/client-runtime/environment";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import { useAtomValue } from "@effect/atom-react";
+import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, Objectives, ScopedThreadRef } from "@t3tools/contracts";
 import { ChevronRightIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { cn } from "../../lib/utils";
-import { useProject, useQuietThreadShells, useServerConfigs } from "../../state/entities";
+import { bridgeDecisionsAtom, type BridgeDecision } from "../../state/decisions";
+import { useProject, useQuietThreadShell, useServerConfigs } from "../../state/entities";
 import ChatMarkdown from "../ChatMarkdown";
 import { ProjectFavicon, ProjectNameMonogram } from "../ProjectFavicon";
 import { DecisionDetail } from "./DecisionDetail";
 import {
+  bridgeDecisionKey,
   bridgeObjectives,
   groupNeedsMeDecisions,
   needsMeRowDetail,
@@ -27,19 +25,19 @@ import { useNeedsMeOpenRow } from "./needsMeReveal";
 type RowGroup = keyof NeedsMeGroups<unknown>;
 
 /**
- * The Bridge tab: the user's objectives, then FirstMate's open decisions beside any chat, then
- * undated snoozes under Later and dated ones under Scheduled.
+ * The Bridge tab: the user's objectives, then the decisions FirstMate needs now beside any chat,
+ * then those with a return date under Scheduled.
  */
 export function NeedsMePanel(props: { readonly threadRef: ScopedThreadRef }) {
-  const shells = useQuietThreadShells();
+  const decisions = useAtomValue(bridgeDecisionsAtom);
   const objectives = bridgeObjectives(useServerConfigs(), props.threadRef.environmentId);
   const nowMinute = useNowMinute();
   const nowMs = Date.parse(`${nowMinute}:00.000Z`);
-  const groups = groupNeedsMeDecisions(shells, new Date(nowMs));
-  const row = (group: RowGroup) => (thread: EnvironmentThreadShell) => (
+  const groups = groupNeedsMeDecisions(decisions, new Date(nowMs));
+  const row = (group: RowGroup) => (item: BridgeDecision) => (
     <NeedsMeRow
-      key={scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))}
-      thread={thread}
+      key={bridgeDecisionKey(item)}
+      item={item}
       group={group}
       hostRef={props.threadRef}
       nowMs={nowMs}
@@ -58,11 +56,6 @@ export function NeedsMePanel(props: { readonly threadRef: ScopedThreadRef }) {
           groups.open.map(row("open"))
         )}
       </NeedsMeSection>
-      {groups.later.length === 0 ? null : (
-        <NeedsMeSection title="Later" count={groups.later.length}>
-          {groups.later.map(row("later"))}
-        </NeedsMeSection>
-      )}
       {groups.scheduled.length === 0 ? null : (
         <NeedsMeSection title="Scheduled" count={groups.scheduled.length}>
           {groups.scheduled.map(row("scheduled"))}
@@ -125,23 +118,26 @@ function NeedsMeSection(props: {
 }
 
 function NeedsMeRow(props: {
-  readonly thread: EnvironmentThreadShell;
+  readonly item: BridgeDecision;
   readonly group: RowGroup;
   readonly hostRef: ScopedThreadRef;
   readonly nowMs: number;
 }) {
-  const { thread } = props;
-  const decisionRef = scopeThreadRef(thread.environmentId, thread.id);
-  const key = scopedThreadKey(decisionRef);
+  const { environmentId, replyTo, decision } = props.item;
+  const key = bridgeDecisionKey(props.item);
   const open = useNeedsMeOpenRow((state) => state.openKey === key);
   const setOpenKey = useNeedsMeOpenRow((state) => state.setOpenKey);
-  const project = useProject(
-    thread.decisionProjectName === undefined
-      ? scopeProjectRef(thread.environmentId, thread.projectId)
+  // A decision that names no project is about FirstMate's own.
+  const coordinator = useQuietThreadShell(
+    decision.projectName === undefined && replyTo !== null
+      ? scopeThreadRef(environmentId, replyTo)
       : null,
   );
-  const projectName = thread.decisionProjectName ?? project?.title ?? null;
-  const detail = needsMeRowDetail(thread, props.group, props.nowMs);
+  const project = useProject(
+    coordinator === null ? null : scopeProjectRef(environmentId, coordinator.projectId),
+  );
+  const projectName = decision.projectName ?? project?.title ?? null;
+  const detail = needsMeRowDetail(decision, props.group, props.nowMs);
 
   return (
     <div className={cn("rounded-lg", open && "bg-accent/40")}>
@@ -158,12 +154,12 @@ function NeedsMeRow(props: {
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="flex min-w-0 items-center gap-2">
             <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-              {thread.title}
+              {decision.title}
             </span>
           </span>
           <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-            {thread.decisionProjectName !== undefined ? (
-              <ProjectNameMonogram name={thread.decisionProjectName} className="size-3.5" />
+            {decision.projectName !== undefined ? (
+              <ProjectNameMonogram name={decision.projectName} className="size-3.5" />
             ) : project ? (
               <ProjectFavicon project={project} className="size-3.5" />
             ) : null}
@@ -175,7 +171,7 @@ function NeedsMeRow(props: {
       </button>
       {open ? (
         <div className="ps-8 pe-2">
-          <DecisionDetail decisionRef={decisionRef} hostRef={props.hostRef} />
+          <DecisionDetail item={props.item} hostRef={props.hostRef} />
         </div>
       ) : null}
     </div>

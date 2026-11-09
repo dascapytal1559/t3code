@@ -1,6 +1,8 @@
 import {
   BackgroundActivityProfile,
   BackgroundActivityProfileSelection,
+  DecisionsSetInput,
+  DecisionsSetResult,
   ExecutionEnvironmentDescriptor,
   Objectives,
   OrchestratorMcpEnvironmentTarget,
@@ -12,6 +14,7 @@ import {
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
+import * as Decisions from "../../../decisions/Decisions.ts";
 import * as ServerEnvironment from "../../../environment/ServerEnvironment.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
@@ -41,6 +44,7 @@ const shared = {
     Settings.ServerSettingsService,
     ThreadCommandExecutor.ThreadCommandExecutor,
     Orchestrator.OrchestratorV2,
+    Decisions.Decisions,
   ],
 };
 const EnvironmentReadTool = Tool.make("t3_environment_read", {
@@ -81,6 +85,13 @@ const ObjectivesSetTool = Tool.make("t3_objectives_set", {
   }),
   success: Schema.Struct({ objectives: Schema.NullOr(Objectives) }),
 }).annotate(Tool.Destructive, true);
+const DecisionsSetTool = Tool.make("t3_decisions_set", {
+  ...shared,
+  description:
+    "Replace the decisions the user owes, listed in T3's Bridge tab. `decisions`: the whole list; one left out is gone, an identical list changes nothing. Replies go to thread `replyTo`.",
+  parameters: DecisionsSetInput,
+  success: DecisionsSetResult,
+}).annotate(Tool.Destructive, true);
 const RestartRequestTool = Tool.make("t3_restart_request", {
   ...shared,
   description:
@@ -104,6 +115,7 @@ export const EnvironmentToolkit = Toolkit.make(
   EnvironmentReadTool,
   EnvironmentPreferencesTool,
   ObjectivesSetTool,
+  DecisionsSetTool,
   RestartRequestTool,
   RestartStatusTool,
   RestartCancelTool,

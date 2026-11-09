@@ -1,13 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as Schema from "effect/Schema";
 
-import {
-  ThreadDecision,
-  ThreadDecisionInput,
-  threadDecisionChangedAt,
-  threadDecisionSince,
-  threadDecisionUpdatedAt,
-} from "./threadDecision.ts";
+import { ThreadDecision, ThreadDecisionInput } from "./threadDecision.ts";
 
 const decodeInput = Schema.decodeUnknownSync(ThreadDecisionInput);
 const decodeStored = Schema.decodeUnknownSync(ThreadDecision);
@@ -41,28 +35,5 @@ describe("ThreadDecision", () => {
     );
     expect(decodeStored({ ...decision, revision: 1 }).since).toBeUndefined();
     expect(() => decodeInput({ ...decision, since: "last week" })).toThrow();
-  });
-
-  it("counts the wait from `since`, else from the earliest entry", () => {
-    const entries = [
-      { at: "2026-11-05T09:00:00.000Z", kind: "update", text: "More context." },
-      { at: "2026-11-05T05:11:27.000Z", kind: "raised", text: "Ready to buy." },
-    ] as const;
-    expect(threadDecisionSince({ entries })).toBe("2026-11-05T05:11:27.000Z");
-    expect(threadDecisionSince({ entries, since: "2026-09-22T00:00:00.000Z" })).toBe(
-      "2026-09-22T00:00:00.000Z",
-    );
-    expect(threadDecisionSince({ entries: [] })).toBeNull();
-  });
-
-  it("dates the latest change from `update` entries only, not a reworded raise", () => {
-    const entries = [
-      { at: "2026-11-07T09:00:00.000Z", kind: "raised", text: "Reworded." },
-      { at: "2026-11-05T09:00:00.000Z", kind: "update", text: "More context." },
-      { at: "2026-11-03T09:00:00.000Z", kind: "update", text: "Earlier." },
-    ] as const;
-    expect(threadDecisionUpdatedAt({ entries })).toBe("2026-11-07T09:00:00.000Z");
-    expect(threadDecisionChangedAt({ entries })).toBe("2026-11-05T09:00:00.000Z");
-    expect(threadDecisionChangedAt({ entries: [entries[0]] })).toBeNull();
   });
 });

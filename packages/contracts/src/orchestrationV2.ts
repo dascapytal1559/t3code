@@ -46,13 +46,12 @@ import { OrchestrationClientOrigin } from "./applicationEvent.ts";
 import { ChatAttachment } from "./chatAttachment.ts";
 import { ThreadGuestShare } from "./guestShare.ts";
 import {
-  ThreadDecision,
-  ThreadDecisionInput,
-  ThreadDecisionReplyInput,
-  ThreadDecisionReplyResult,
-  ThreadDecisionUndoReplyInput,
-  ThreadDecisionUndoReplyResult,
-} from "./threadDecision.ts";
+  DecisionReplyInput,
+  DecisionReplyResult,
+  DecisionUndoReplyInput,
+  DecisionUndoReplyResult,
+} from "./decisions.ts";
+import { ThreadDecision, ThreadDecisionInput } from "./threadDecision.ts";
 import { StoredThreadTags, ThreadTag } from "./threadTags.ts";
 import {
   OrchestrationSearchThreadsInput,
@@ -4439,12 +4438,12 @@ export const OrchestrationV2RpcSchemas = {
     output: OrchestrationV2ForceStopThreadResult,
   },
   replyToDecision: {
-    input: ThreadDecisionReplyInput,
-    output: ThreadDecisionReplyResult,
+    input: DecisionReplyInput,
+    output: DecisionReplyResult,
   },
   undoDecisionReply: {
-    input: ThreadDecisionUndoReplyInput,
-    output: ThreadDecisionUndoReplyResult,
+    input: DecisionUndoReplyInput,
+    output: DecisionUndoReplyResult,
   },
   getWorkflowScript: {
     input: OrchestrationV2GetWorkflowScriptInput,

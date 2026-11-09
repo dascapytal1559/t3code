@@ -7,7 +7,6 @@ import { Navigate, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import ChatView from "./ChatView";
-import { isNeedsMeListed } from "./needsMe/needsMe.logic";
 import { DecisionRedirect } from "./needsMe/needsMeReveal";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
 import { SidebarInset } from "./ui/sidebar";
@@ -195,12 +194,11 @@ export function ThreadRouteView({
     // Before the shell bootstraps, a listed visible thread can still look off-shell.
     if (bootstrapComplete && unlistedThread !== null) redirect = <Navigate to="/" replace />;
   } else if (serverThreadShell?.decisionOf !== undefined) {
-    // A decision thread has no agent; it opens in the Needs me tab beside FirstMate's chat.
+    // A decision thread has no agent or chat of its own, so its address shows FirstMate's.
     redirect = (
       <DecisionRedirect
         decisionRef={target.threadRef}
         coordinatorId={serverThreadShell.decisionOf}
-        listed={isNeedsMeListed(serverThreadShell)}
       />
     );
   } else if (renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)) {

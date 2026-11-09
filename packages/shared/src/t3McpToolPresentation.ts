@@ -358,6 +358,10 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     ["Update", "Updating", "Updated", "Bridge objectives"],
     "environment-update",
   ),
+  t3_decisions_set: tool(
+    ["Update", "Updating", "Updated", "Bridge decisions"],
+    "environment-update",
+  ),
   t3_restart_request: tool(
     ["Request", "Requesting", "Requested", "a T3 restart"],
     "environment-update",

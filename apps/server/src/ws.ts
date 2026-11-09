@@ -63,7 +63,7 @@ import {
   OrchestrationV2GetShellSnapshotError,
   OrchestrationV2GetThreadProjectionError,
   OrchestrationV2ThreadLaunchError,
-  ThreadDecisionReplyError,
+  DecisionReplyError,
   type OrchestrationProjectShell,
   type OrchestrationV2ShellSnapshot,
   type OrchestrationV2ThreadStreamItem,
@@ -129,7 +129,7 @@ import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
 import * as GuestShareService from "./guest/GuestShareService.ts";
-import * as DecisionReplyService from "./orchestration-v2/DecisionReplyService.ts";
+import * as Decisions from "./decisions/Decisions.ts";
 import {
   bufferShellLiveStream,
   coalesceShellApplicationEvents,
@@ -282,11 +282,9 @@ import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import { requestUrl } from "./requestUrl.ts";
 
 const decisionReplyStartupError =
-  (input: { readonly threadId: ThreadId }) =>
+  (input: { readonly decisionId: string }) =>
   (cause: ServerRuntimeStartup.ServerRuntimeStartupError) =>
-    Effect.fail(
-      new ThreadDecisionReplyError({ threadId: input.threadId, reason: "failed", cause }),
-    );
+    Effect.fail(new DecisionReplyError({ decisionId: input.decisionId, reason: "failed", cause }));
 
 const CONFIG_DISCOVERY_TIMEOUT = Duration.seconds(5);
 const isProviderUploadFeedbackError = Schema.is(ProviderUploadFeedbackError);
@@ -1464,7 +1462,7 @@ export const layerWsRpc = (
       const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
       const secretRequests = yield* SecretRequests.SecretRequests;
       const guestShares = yield* GuestShareService.GuestShareService;
-      const decisionReplies = yield* DecisionReplyService.DecisionReplyService;
+      const decisions = yield* Decisions.Decisions;
       const pullRequests = yield* PullRequestService.PullRequestService;
       const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
@@ -2129,13 +2127,13 @@ export const layerWsRpc = (
           threadManagement.forceStopThread(input),
         [ORCHESTRATION_V2_WS_METHODS.replyToDecision]: (input) =>
           startup
-            .enqueueCommand(decisionReplies.reply(input, clientOrigin))
+            .enqueueCommand(decisions.reply(input, clientOrigin))
             .pipe(
               Effect.catchTags({ ServerRuntimeStartupError: decisionReplyStartupError(input) }),
             ),
         [ORCHESTRATION_V2_WS_METHODS.undoDecisionReply]: (input) =>
           startup
-            .enqueueCommand(decisionReplies.undoReply(input))
+            .enqueueCommand(decisions.undoReply(input))
             .pipe(
               Effect.catchTags({ ServerRuntimeStartupError: decisionReplyStartupError(input) }),
             ),
@@ -3531,6 +3529,7 @@ export const layerWsRpc = (
           ),
         [WS_METHODS.subscribeRestartRequest]: (_input) =>
           orchestrationEngine.restartRequestChanges.pipe(Stream.map((request) => ({ request }))),
+        [WS_METHODS.subscribeDecisions]: (_input) => decisions.changes,
       });
       const splitHandlers: Pick<typeof handlers, SplitWsRpc["_tag"]> = handlers;
       const otherHandlers: Pick<typeof handlers, Exclude<ServerWsRpc, SplitWsRpc>["_tag"]> =

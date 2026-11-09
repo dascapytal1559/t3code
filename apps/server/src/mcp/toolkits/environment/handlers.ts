@@ -4,6 +4,7 @@ import {
   type ServerSettingsPatch,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Decisions from "../../../decisions/Decisions.ts";
 import * as Environment from "../../../environment/ServerEnvironment.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
@@ -86,6 +87,29 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
     updateSettings({ objectives: markdown === null ? null : { markdown } }, check).pipe(
       Effect.map(({ objectives }) => ({ objectives })),
     ),
+  ),
+  t3_decisions_set: McpToolAccess.writesEnvironment((input) =>
+    Effect.gen(function* () {
+      yield* access;
+      const decisions = yield* Decisions.Decisions;
+      const stored = yield* decisions.set(input).pipe(
+        Effect.catchTags({
+          DecisionsReplyThreadError: (error) =>
+            Effect.fail(
+              new OrchestratorMcpFailure({ code: "invalid_request", message: error.message }),
+            ),
+          DecisionsStoreError: () => Effect.fail(unavailable()),
+        }),
+      );
+      return {
+        replyTo: stored.replyTo,
+        decisions: stored.decisions.map(({ id, revision, answered }) => ({
+          id,
+          revision,
+          answered: answered !== undefined,
+        })),
+      };
+    }),
   ),
   // These take no thread lock: holding queues locks every thread, the caller's among them.
   t3_restart_request: McpToolAccess.writesEnvironment(({ reason }) =>

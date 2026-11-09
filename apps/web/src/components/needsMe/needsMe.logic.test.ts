@@ -1,4 +1,4 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { CommandId, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -7,7 +7,6 @@ import {
   decisionMarkdownScope,
   formatDay,
   groupNeedsMeDecisions,
-  isNeedsMeListed,
   needsMeRowDetail,
   parseObjective,
   splitObjectives,
@@ -16,91 +15,77 @@ import {
 const at = (day: number, hour: number) => new Date(2026, 10, day, hour).toISOString();
 const now = new Date(2026, 10, 7, 12);
 
-const decision = (
+const raised = (iso: string) => ({ at: iso, kind: "raised" as const, text: "Raised." });
+const update = (iso: string) => ({ at: iso, kind: "update" as const, text: "Updated." });
+
+const listed = (
   id: string,
   overrides: {
-    decisionOf?: string | null;
-    decisionUpdatedAt?: string;
-    archivedAt?: string;
-    settled?: boolean;
-    snoozedUntil?: string;
-    snoozedAt?: string;
+    updatedAt?: string;
+    wakeAt?: string;
+    answered?: boolean;
+    since?: string;
+    noEntries?: boolean;
   } = {},
 ) => ({
   id,
-  ...(overrides.decisionOf === null
-    ? {}
-    : { decisionOf: ThreadId.make(overrides.decisionOf ?? "firstmate") }),
-  ...(overrides.decisionUpdatedAt === undefined
-    ? {}
-    : { decisionUpdatedAt: overrides.decisionUpdatedAt }),
-  createdAt: at(1, 9),
-  archivedAt: overrides.archivedAt ?? null,
-  settledOverride: overrides.settled === true ? ("settled" as const) : null,
-  snoozedUntil: overrides.snoozedUntil ?? null,
-  snoozedAt: overrides.snoozedAt ?? (overrides.snoozedUntil === undefined ? null : at(6, 9)),
-  hasPendingApprovals: false,
-  hasPendingUserInput: false,
+  decision: {
+    entries:
+      overrides.noEntries === true
+        ? []
+        : [
+            raised(at(1, 9)),
+            ...(overrides.updatedAt === undefined ? [] : [update(overrides.updatedAt)]),
+          ],
+    ...(overrides.since === undefined ? {} : { since: overrides.since }),
+    ...(overrides.wakeAt === undefined ? {} : { wakeAt: overrides.wakeAt }),
+    ...(overrides.answered === true
+      ? { answered: { commandId: CommandId.make("reply"), at: at(6, 9) } }
+      : {}),
+  },
 });
 
 describe("groupNeedsMeDecisions", () => {
-  it("lists open decisions newest update first, undated snoozes under Later, dated ones under Scheduled soonest first, and drops settled ones", () => {
+  it("lists waiting decisions newest update first, those with a return date ahead under Scheduled soonest first, and drops answered ones", () => {
     const groups = groupNeedsMeDecisions(
       [
-        decision("ordinary-thread", { decisionOf: null }),
-        decision("archived", { archivedAt: at(6, 9) }),
-        // With no entries, a decision ranks by when it was made.
-        decision("no-entries"),
-        decision("updated-before", { decisionUpdatedAt: at(4, 9) }),
-        decision("updated-last", { decisionUpdatedAt: at(5, 9) }),
-        decision("undated-snooze", { snoozedAt: at(6, 10) }),
-        decision("undated-snooze-earlier", { snoozedAt: at(5, 10) }),
-        decision("back-later", { snoozedUntil: at(20, 9) }),
-        decision("back-soon", { snoozedUntil: at(19, 9) }),
-        // A snooze whose wake time passed is open again.
-        decision("woke", { snoozedUntil: at(7, 8), decisionUpdatedAt: at(3, 9) }),
-        decision("answered", { settled: true }),
-        decision("answered-then-snoozed", { settled: true, snoozedUntil: at(21, 9) }),
+        listed("raised-only"),
+        // With no entries, a decision ranks by when it began waiting.
+        listed("no-entries", { noEntries: true, since: at(2, 9) }),
+        listed("updated-before", { updatedAt: at(4, 9) }),
+        listed("updated-last", { updatedAt: at(5, 9) }),
+        listed("back-later", { wakeAt: at(20, 9) }),
+        listed("back-soon", { wakeAt: at(19, 9) }),
+        // A return date that has passed waits on the user again.
+        listed("returned", { wakeAt: at(7, 8), updatedAt: at(3, 9) }),
+        listed("answered", { answered: true }),
+        listed("answered-then-scheduled", { answered: true, wakeAt: at(21, 9) }),
       ],
       now,
     );
-    const ids = (list: ReadonlyArray<{ id: string }>) => list.map((thread) => thread.id);
-    expect(ids(groups.open)).toEqual(["updated-last", "updated-before", "woke", "no-entries"]);
-    expect(ids(groups.later)).toEqual(["undated-snooze", "undated-snooze-earlier"]);
+    const ids = (list: ReadonlyArray<{ id: string }>) => list.map((item) => item.id);
+    expect(ids(groups.open)).toEqual([
+      "updated-last",
+      "updated-before",
+      "returned",
+      "no-entries",
+      "raised-only",
+    ]);
     expect(ids(groups.scheduled)).toEqual(["back-soon", "back-later"]);
   });
 });
 
-describe("isNeedsMeListed", () => {
-  it("is false for a decision the tab has no row for, so its address does not open the tab", () => {
-    expect(isNeedsMeListed(decision("open"))).toBe(true);
-    expect(isNeedsMeListed(decision("snoozed", { snoozedUntil: at(20, 9) }))).toBe(true);
-    expect(isNeedsMeListed(decision("answered", { settled: true }))).toBe(false);
-    expect(
-      isNeedsMeListed(
-        decision("answered-then-snoozed", { settled: true, snoozedUntil: at(20, 9) }),
-      ),
-    ).toBe(false);
-    expect(isNeedsMeListed(decision("archived", { archivedAt: at(6, 9) }))).toBe(false);
-    expect(isNeedsMeListed(decision("ordinary-thread", { decisionOf: null }))).toBe(false);
-  });
-});
-
 describe("needsMeRowDetail", () => {
-  it("shows Needs you rows their age, Later rows the day they were raised, Scheduled rows their wake day", () => {
-    const row = {
-      createdAt: at(1, 9),
-      decisionSince: at(3, 9),
-      decisionChangedAt: at(7, 10),
-      snoozedUntil: at(20, 9),
+  it("shows Needs you rows their age and Scheduled rows their return day", () => {
+    const decision = {
+      entries: [raised(at(1, 9)), update(at(7, 10))],
+      since: at(3, 9),
+      wakeAt: at(20, 9),
     };
     const nowMs = now.getTime();
-    expect(needsMeRowDetail(row, "open", nowMs)).toBe("2h ago");
-    // Inception, not the last update and not a snooze date.
-    expect(needsMeRowDetail(row, "later", nowMs)).toBe(`raised ${formatDay(at(3, 9))}`);
-    const { decisionSince: _since, ...withoutSince } = row;
-    expect(needsMeRowDetail(withoutSince, "later", nowMs)).toBe(`raised ${formatDay(at(1, 9))}`);
-    expect(needsMeRowDetail(row, "scheduled", nowMs)).toBe(`back ${formatDay(at(20, 9))}`);
+    expect(needsMeRowDetail(decision, "open", nowMs)).toBe("2h ago");
+    expect(needsMeRowDetail(decision, "scheduled", nowMs)).toBe(`back ${formatDay(at(20, 9))}`);
+    expect(needsMeRowDetail({ entries: [] }, "open", nowMs)).toBe("");
   });
 });
 
@@ -179,13 +164,13 @@ describe("parseObjective", () => {
 
 describe("decisionMarkdownScope", () => {
   const environment = EnvironmentId.make("local");
-  const decisionRef = { environmentId: environment, threadId: ThreadId.make("decision") };
+  const coordinatorRef = { environmentId: environment, threadId: ThreadId.make("firstmate") };
   const hostRef = { environmentId: environment, threadId: ThreadId.make("host-chat") };
 
   it("opens a decision's files in the host chat's panel, relative to that chat's workspace", () => {
     expect(
       decisionMarkdownScope({
-        decisionRef,
+        coordinatorRef,
         hostRef,
         decisionRoot: "/home/user/firstmate",
         hostRoot: "/home/user/acme/app",
@@ -198,17 +183,17 @@ describe("decisionMarkdownScope", () => {
     });
   });
 
-  it("keeps the decision's own scope when the host chat is on another environment", () => {
+  it("keeps FirstMate's own scope when the host chat is on another environment", () => {
     const remoteHost = { environmentId: EnvironmentId.make("remote"), threadId: hostRef.threadId };
     expect(
       decisionMarkdownScope({
-        decisionRef,
+        coordinatorRef,
         hostRef: remoteHost,
         decisionRoot: "/home/user/firstmate",
         hostRoot: "/srv/app",
       }),
     ).toEqual({
-      threadRef: decisionRef,
+      threadRef: coordinatorRef,
       cwd: "/home/user/firstmate",
       imageBaseDir: "/home/user/firstmate",
     });
@@ -216,22 +201,19 @@ describe("decisionMarkdownScope", () => {
 });
 
 describe("decisionAgeTimestamp", () => {
-  it("counts from the latest real change, else from when the call began waiting, else creation", () => {
-    const createdAt = at(1, 9);
+  it("counts from the latest real change, else from when the decision began waiting, else its raised entry", () => {
+    const entries = [raised(at(1, 9))];
     expect(
-      decisionAgeTimestamp({ decisionChangedAt: at(7, 11), decisionSince: at(2, 9), createdAt }),
+      decisionAgeTimestamp({ entries: [...entries, update(at(7, 11))], since: at(2, 9) }),
     ).toBe(at(7, 11));
-    expect(decisionAgeTimestamp({ decisionSince: at(2, 9), createdAt })).toBe(at(2, 9));
-    expect(decisionAgeTimestamp({ createdAt })).toBe(createdAt);
+    expect(decisionAgeTimestamp({ entries, since: at(2, 9) })).toBe(at(2, 9));
+    expect(decisionAgeTimestamp({ entries })).toBe(at(1, 9));
+    expect(decisionAgeTimestamp({ entries: [] })).toBeNull();
   });
 
-  it("does not let a change from before the call began waiting reset the age", () => {
+  it("does not let a change from before the decision began waiting reset the age", () => {
     expect(
-      decisionAgeTimestamp({
-        decisionChangedAt: at(2, 9),
-        decisionSince: at(3, 9),
-        createdAt: at(1, 9),
-      }),
+      decisionAgeTimestamp({ entries: [raised(at(1, 9)), update(at(2, 9))], since: at(3, 9) }),
     ).toBe(at(3, 9));
   });
 });

@@ -231,7 +231,7 @@ import {
   OrchestrationV2RpcSchemas,
   OrchestrationV2ThreadLaunchError,
 } from "./orchestrationV2.ts";
-import { ThreadDecisionReplyError } from "./threadDecision.ts";
+import { DecisionReplyError, DecisionsState } from "./decisions.ts";
 import {
   ProjectCreateNewInput,
   ProjectCreateNewResult,
@@ -616,6 +616,7 @@ export const WS_METHODS = {
   subscribeAuthAccess: "subscribeAuthAccess",
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
   subscribeRestartRequest: "subscribeRestartRequest",
+  subscribeDecisions: "subscribeDecisions",
 } as const;
 
 const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
@@ -1832,7 +1833,7 @@ const WsOrchestrationV2ForceStopThreadRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS
 const WsOrchestrationV2ReplyToDecisionRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.replyToDecision, {
   payload: OrchestrationV2RpcSchemas.replyToDecision.input,
   success: OrchestrationV2RpcSchemas.replyToDecision.output,
-  error: Schema.Union([ThreadDecisionReplyError, EnvironmentAuthorizationError]),
+  error: Schema.Union([DecisionReplyError, EnvironmentAuthorizationError]),
 });
 
 const WsOrchestrationV2UndoDecisionReplyRpc = Rpc.make(
@@ -1840,7 +1841,7 @@ const WsOrchestrationV2UndoDecisionReplyRpc = Rpc.make(
   {
     payload: OrchestrationV2RpcSchemas.undoDecisionReply.input,
     success: OrchestrationV2RpcSchemas.undoDecisionReply.output,
-    error: Schema.Union([ThreadDecisionReplyError, EnvironmentAuthorizationError]),
+    error: Schema.Union([DecisionReplyError, EnvironmentAuthorizationError]),
   },
 );
 
@@ -2023,6 +2024,13 @@ const WsServerCancelRestartRequestRpc = Rpc.make(WS_METHODS.serverCancelRestartR
   payload: Schema.Struct({}),
   success: RestartRequestState,
   error: EnvironmentAuthorizationError,
+});
+
+const WsSubscribeDecisionsRpc = Rpc.make(WS_METHODS.subscribeDecisions, {
+  payload: Schema.Struct({}),
+  success: DecisionsState,
+  error: EnvironmentAuthorizationError,
+  stream: true,
 });
 
 export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthorization>()(
@@ -2223,6 +2231,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeResourceTelemetryRpc,
   WsSubscribeRestartRequestRpc,
   WsServerCancelRestartRequestRpc,
+  WsSubscribeDecisionsRpc,
   WsOrchestrationV2DispatchCommandRpc,
   WsOrchestrationV2GetWorkflowScriptRpc,
   WsOrchestrationV2GetNativeChildWorkRpc,

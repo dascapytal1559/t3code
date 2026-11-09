@@ -8,33 +8,26 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import {
-  CommandId,
-  type ScopedThreadRef,
-  type ThreadDecision,
-  type ThreadDecisionEntry,
-  type ThreadId,
-} from "@t3tools/contracts";
+import type { CommandId, DecisionEntry, ScopedThreadRef } from "@t3tools/contracts";
 import { projectScriptCwd } from "@t3tools/shared/projectScripts";
 import { useNavigate } from "@tanstack/react-router";
-import * as Option from "effect/Option";
-import { ArrowUpIcon, ClockIcon, CornerDownLeftIcon } from "lucide-react";
+import { ArrowUpIcon, ClockIcon } from "lucide-react";
 import { useState, type KeyboardEvent } from "react";
 
 import { useClientSettings } from "../../hooks/useSettings";
 import { useRightPanelStore } from "../../rightPanelStore";
+import type { BridgeDecision } from "../../state/decisions";
 import { useProject, useQuietThreadShell } from "../../state/entities";
 import { orchestrationEnvironment } from "../../state/orchestration";
-import { useEnvironmentThread } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { formatDayAwareTimestamp } from "../../timestampFormat";
 import ChatMarkdown from "../ChatMarkdown";
-import { ThreadVisitWatermark } from "../chat/ThreadVisitWatermark";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
 import {
+  bridgeDecisionKey,
   decisionAttachmentsMarkdown,
   decisionMarkdownScope,
   decisionReplyCommandId,
@@ -48,28 +41,27 @@ const restoredDrafts = new Map<string, string>();
 const LATER_DRAFT = "Later: ask me again next week.";
 
 /**
- * One FirstMate decision, open in the Needs me tab: FirstMate's messages as sent, then the reply
- * box with the options as buttons. Replying sends one message into FirstMate's chat and settles the decision;
- * the decision's own thread has no agent. Being open counts as visiting it.
+ * One FirstMate decision, open in the Bridge tab: FirstMate's messages as sent, then the reply
+ * box with the options as buttons. Replying sends one message into FirstMate's chat and takes the
+ * decision off the list.
  */
 export function DecisionDetail(props: {
-  readonly decisionRef: ScopedThreadRef;
+  readonly item: BridgeDecision;
   /** The thread whose chat the panel sits beside. */
   readonly hostRef: ScopedThreadRef;
 }) {
-  const { decisionRef } = props;
-  const shell = useQuietThreadShell(decisionRef);
-  const detail = useEnvironmentThread(decisionRef.environmentId, decisionRef.threadId);
-  const thread = Option.getOrNull(Option.map(detail.data, (projection) => projection.thread));
+  const { environmentId, replyTo, decision } = props.item;
+  const coordinatorRef = replyTo === null ? null : scopeThreadRef(environmentId, replyTo);
+  const coordinator = useQuietThreadShell(coordinatorRef);
   const project = useProject(
-    shell === null ? null : scopeProjectRef(decisionRef.environmentId, shell.projectId),
+    coordinator === null ? null : scopeProjectRef(environmentId, coordinator.projectId),
   );
   const hostShell = useQuietThreadShell(props.hostRef);
   const hostProject = useProject(
     hostShell === null ? null : scopeProjectRef(props.hostRef.environmentId, hostShell.projectId),
   );
   const markdownScope = decisionMarkdownScope({
-    decisionRef,
+    coordinatorRef: coordinatorRef ?? props.hostRef,
     hostRef: props.hostRef,
     decisionRoot: project?.workspaceRoot,
     hostRoot:
@@ -80,55 +72,38 @@ export function DecisionDetail(props: {
             worktreePath: hostShell?.worktreePath ?? null,
           }),
   });
-  const decision = thread?.decision ?? null;
-  const coordinatorId = thread?.decisionOf ?? shell?.decisionOf ?? null;
 
   return (
     <div className="flex flex-col gap-4 pt-2 pb-3">
-      <ThreadVisitWatermark threadRef={decisionRef} />
-      {thread === null ? null : decision === null ? (
-        <p className="py-4 text-center text-sm text-muted-foreground">
-          FirstMate cleared this decision. Nothing is waiting on you here.
-        </p>
-      ) : (
-        <>
-          {decision.entries.map((entry, index) => (
-            <DecisionEntryView
-              // oxlint-disable-next-line react/no-array-index-key -- entries have no id and only ever grow at the end
-              key={`${index}:${entry.at}`}
-              entry={entry}
-              decisionRef={decisionRef}
-              markdownScope={markdownScope}
-              project={project}
-            />
-          ))}
-          {coordinatorId === null ? null : (
-            <DecisionReplyBox
-              // A new decision starts with its own empty box.
-              key={scopedThreadKey(decisionRef)}
-              decisionRef={decisionRef}
-              hostRef={props.hostRef}
-              coordinatorId={coordinatorId}
-              decision={decision}
-            />
-          )}
-        </>
+      {decision.entries.map((entry, index) => (
+        <DecisionEntryView
+          // oxlint-disable-next-line react/no-array-index-key -- entries have no id and only ever grow at the end
+          key={`${index}:${entry.at}`}
+          entry={entry}
+          environmentId={environmentId}
+          markdownScope={markdownScope}
+          project={project}
+        />
+      ))}
+      {coordinatorRef === null ? null : (
+        <DecisionReplyBox
+          item={props.item}
+          hostRef={props.hostRef}
+          coordinatorRef={coordinatorRef}
+        />
       )}
     </div>
   );
 }
 
 function DecisionEntryView(props: {
-  readonly entry: ThreadDecisionEntry;
-  readonly decisionRef: ScopedThreadRef;
+  readonly entry: DecisionEntry;
+  readonly environmentId: BridgeDecision["environmentId"];
   readonly markdownScope: ReturnType<typeof decisionMarkdownScope>;
   readonly project: Parameters<typeof ProjectFavicon>[0]["project"] | null;
 }) {
-  const navigate = useNavigate();
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
-  const { entry, decisionRef } = props;
-  const { environmentId } = decisionRef;
-  const source = entry.message?.thread;
+  const { entry, environmentId } = props;
   const attachments = decisionAttachmentsMarkdown(entry.attachments ?? []);
   return (
     <article className="flex min-w-0 flex-col gap-2">
@@ -152,23 +127,6 @@ function DecisionEntryView(props: {
       <header className="flex items-center gap-1.5 text-xs text-muted-foreground">
         {props.project ? <ProjectFavicon project={props.project} className="size-4" /> : null}
         <span>FirstMate · {formatDayAwareTimestamp(entry.at, timestampFormat)}</span>
-        {source === undefined ? null : (
-          <button
-            type="button"
-            className="ms-auto inline-flex cursor-pointer items-center gap-1 rounded-sm text-primary hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset focus-visible:outline-none"
-            onClick={() => {
-              const sourceRef = scopeThreadRef(environmentId, source);
-              revealDecision(decisionRef, sourceRef);
-              void navigate({
-                to: "/$environmentId/$threadId",
-                params: buildThreadRouteParams(sourceRef),
-              });
-            }}
-          >
-            <CornerDownLeftIcon aria-hidden className="size-3.5" />
-            In FirstMate's chat
-          </button>
-        )}
       </header>
       <ChatMarkdown text={entry.text} {...props.markdownScope} environmentId={environmentId} />
       {attachments === null ? null : (
@@ -179,14 +137,15 @@ function DecisionEntryView(props: {
 }
 
 function DecisionReplyBox(props: {
-  readonly decisionRef: ScopedThreadRef;
+  readonly item: BridgeDecision;
   readonly hostRef: ScopedThreadRef;
-  readonly coordinatorId: ThreadId;
-  readonly decision: ThreadDecision;
+  /** FirstMate's chat. */
+  readonly coordinatorRef: ScopedThreadRef;
 }) {
-  const { environmentId } = props.decisionRef;
+  const { environmentId, decision } = props.item;
+  const { coordinatorRef } = props;
   const navigate = useNavigate();
-  const draftKey = scopedThreadKey(props.decisionRef);
+  const draftKey = bridgeDecisionKey(props.item);
   const [text, setText] = useState(() => restoredDrafts.get(draftKey) ?? "");
   // Once the words change, an earlier Undo's copy is stale.
   const updateText = (next: string) => {
@@ -199,8 +158,7 @@ function DecisionReplyBox(props: {
   const permitted = useAtomValue(
     orchestrationEnvironment.replyToDecision.permissionAtom(environmentId),
   );
-  const coordinatorRef = scopeThreadRef(environmentId, props.coordinatorId);
-  // The Needs me tab comes along, so the list stays beside FirstMate's chat.
+  // The Bridge tab comes along, so the list stays beside FirstMate's chat.
   const showCoordinator = () => {
     if (scopedThreadKey(props.hostRef) === scopedThreadKey(coordinatorRef)) return;
     useRightPanelStore.getState().open(coordinatorRef, "needs-me");
@@ -213,7 +171,7 @@ function DecisionReplyBox(props: {
   const takeBack = async (commandId: CommandId, sentText: string) => {
     const result = await undo({
       environmentId,
-      input: { threadId: props.decisionRef.threadId, commandId },
+      input: { decisionId: decision.id, commandId },
     });
     if (result._tag === "Failure") {
       if (isAtomCommandInterrupted(result)) return;
@@ -236,7 +194,7 @@ function DecisionReplyBox(props: {
     // Shown at once when this box is still open, or when the row opens next.
     restoredDrafts.set(draftKey, sentText);
     setText(sentText);
-    revealDecision(props.decisionRef, coordinatorRef);
+    revealDecision(draftKey, coordinatorRef);
     void navigate({
       to: "/$environmentId/$threadId",
       params: buildThreadRouteParams(coordinatorRef),
@@ -251,10 +209,10 @@ function DecisionReplyBox(props: {
     const result = await reply({
       environmentId,
       input: {
-        threadId: props.decisionRef.threadId,
+        decisionId: decision.id,
         commandId,
         text: trimmed,
-        revision: props.decision.revision,
+        revision: decision.revision,
       },
     });
     setSending(false);
@@ -271,7 +229,7 @@ function DecisionReplyBox(props: {
     updateText("");
     const toastId = toastManager.add({
       type: "success",
-      title: `Sent to FirstMate · ${props.decision.title} settled`,
+      title: `Sent to FirstMate · ${decision.title}`,
       description: result.value.queued
         ? "It waits until FirstMate's current turn ends."
         : "FirstMate has started on it.",
@@ -301,9 +259,9 @@ function DecisionReplyBox(props: {
   return (
     <div>
       <div className="rounded-2xl border border-border bg-card shadow-xs/5 focus-within:border-ring">
-        {props.decision.options.length === 0 ? null : (
+        {decision.options.length === 0 ? null : (
           <div className="flex flex-wrap gap-1.5 px-3 pt-3">
-            {props.decision.options.map((option) => (
+            {decision.options.map((option) => (
               <Button
                 key={option.label}
                 variant="outline"
@@ -348,7 +306,7 @@ function DecisionReplyBox(props: {
         </div>
       </div>
       <p className="mt-1.5 text-center text-xs text-muted-foreground">
-        Sends to FirstMate's chat with this decision quoted, then it settles.
+        Sends to FirstMate's chat with this decision quoted, then it leaves this list.
       </p>
     </div>
   );

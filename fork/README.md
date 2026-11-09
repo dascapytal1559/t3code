@@ -333,7 +333,7 @@ arrive unchanged, and mobile still shows the composer. Code:
 
 ## Bridge
 
-![A chat with the Bridge tab beside it: four objectives on top, then three decisions under Needs you, two under Later with the day each was raised, and one under Scheduled with its return day](media/bridge-list.jpg)
+![A chat with the Bridge tab beside it: four objectives on top, then three decisions under Needs you and two under Scheduled with their return days](media/bridge-list.jpg)
 
 The right panel's "Bridge" tab (once "Needs me") is the captain's overview
 beside any chat: their objectives on top, then what FirstMate needs from them. It
@@ -350,67 +350,72 @@ as it widens, cards in a row sharing a height. With none set there are no
 cards. The tab shows the objectives of the chat's own
 environment, else of the first connected environment that has some.
 
-Something FirstMate needs from the captain is a decision. "Needs you" lists open
-decisions, newest update first, each with its project, title and, in gray, the
-time since FirstMate's latest change (an `update` entry), else since the call
-started waiting (`decision.since`, else its raised entry, else when it was
-made), so an update an hour ago reads "1h ago" while rewording the raised
-context does not reset the age. Rows carry no New or Updated mark. Undated
-snoozes wait under "Later", most recently snoozed first, each with the day the
-call was raised ("raised 2 Nov", from the same `since`, raised entry or
-creation); dated ones wait under "Scheduled", soonest first, with their wake day
-("back 12 Nov"). A settled decision is not listed, even while snoozed. The
-project is the one the decision names in `decision.projectName`; without one it
-is the thread's own, which is FirstMate's. Nothing in the sidebar counts or
-lists decisions.
+Something FirstMate needs from the captain is a decision. FirstMate sends T3
+the whole list of them (see the records below), and T3 keeps it apart from
+threads: a decision has no thread, agent or model. "Needs you" lists the
+decisions waiting now, newest update first, each with its project, title and,
+in gray, the time since FirstMate's latest change (an `update` entry), else
+since the decision started waiting (`since`, else its raised entry), so an
+update an hour ago reads "1h ago" while rewording the raised context does not
+reset the age. Rows carry no New or Updated mark. A decision with a return date
+still ahead (`wakeAt`) waits under "Scheduled", soonest first, with that day
+("back 12 Nov"), and moves up to Needs you by itself when the day comes. A
+decision the captain has answered is not listed until FirstMate changes it. The
+project is the one the decision names in `projectName`; without one it is the
+project of FirstMate's chat. Nothing in the sidebar counts or lists decisions.
+The tab lists the decisions of every connected environment, and asks for them
+only while it is open.
 
-<img src="media/bridge-decision.jpg" width="400" alt="An open decision in the Bridge tab: FirstMate's messages as sent with their file attachments">
+<img src="media/bridge-decision.jpg" width="400" alt="An open decision in the Bridge tab: FirstMate's messages as sent with their file attachments, an update with its what-changed line, option chips and the reply box">
 
-Opening a row shows FirstMate's messages as sent, each with "In FirstMate's chat", an "Updated" divider with the one-line
-what-changed before each update, and attachments (pictures inline, reports and
-links as file chips, paths relative to FirstMate's project). A file chip or
-file link opens the file in a tab of this same panel, as a chat's file links
-do: paths are taken relative to the chat beside it, while relative links still
-resolve against FirstMate's project (`decisionMarkdownScope`). A host chat on
-another environment cannot read FirstMate's files, so there a click does
-nothing visible. Option chips and "Later" fill the reply box. "Send to
+Opening a row shows FirstMate's messages as sent, an "Updated" divider with the
+one-line what-changed before each update, and attachments (pictures inline,
+reports and links as file chips, paths relative to FirstMate's project). A file
+chip or file link opens the file in a tab of this same panel, as a chat's file
+links do: paths are taken relative to the chat beside it, while relative links
+still resolve against FirstMate's project (`decisionMarkdownScope`). A host
+chat on another environment cannot read FirstMate's files, so there a click
+does nothing visible. Option chips and "Later" fill the reply box. "Send to
 FirstMate" puts one ordinary user message into FirstMate's chat, queued behind
 a running turn as the composer's Queue does or starting a turn when FirstMate
-is idle, and settles the decision. If the chat beside the panel is not
-FirstMate's, sending switches to it and opens the Bridge beside it. The toast's Undo takes the message back while it is still
-queued, unsettles the decision and reopens its row with your words restored;
-once FirstMate has started on it, it stays sent. A decision thread's own
-address opens FirstMate's chat with that decision open in the tab; an answered
-one opens FirstMate's chat alone.
+is idle, and takes the decision off the list. If the chat beside the panel is
+not FirstMate's, sending switches to it and opens the Bridge beside it. The
+toast's Undo takes the message back while it is still queued and reopens the
+decision's row with your words restored; once FirstMate has started on it, it
+stays sent.
 
 The records, for FirstMate's side:
 
-- `t3_thread_launch` with `decisionOf` (FirstMate's thread id) and `decision`
-  creates the thread with no turn. It refuses `message`, attachments, `scratch`,
-  `parentThreadId` and a workspace strategy other than root. `projectId` and
-  the model default to the coordinator's. The thread's title follows
-  `decision.title`.
-- `decision` is `{ taskId, title, projectName?, since?, question, options[{label,
+- `t3_decisions_set` replaces the whole list. Input: `{ replyTo, decisions[] }`.
+  `replyTo` is the id of FirstMate's chat thread, where replies are sent; it
+  must be a thread on this server. A decision left out is gone, which is how
+  FirstMate retires an answered one or parks a blocked one. One that differs in
+  any field from the stored one replaces it and shows again, even if the
+  captain had answered it; an unchanged one keeps its answer. An identical list
+  changes nothing: no file is written and nothing is sent to any client, so
+  FirstMate can send the list every time it changes its own records (a call
+  takes a few milliseconds). The result is `{ replyTo, decisions[{ id,
+  revision, answered }] }`, what T3 stored, where `answered` says the captain
+  has replied to that version. Like `t3_objectives_set` it needs a full-access
+  client or a live full-access caller thread, and refuses a linked
+  environment's caller.
+- A decision is `{ id, title, projectName?, since?, question, options[{label,
   detail?}], entries[{at, kind: raised|update, changed?, text,
-  message?{thread, id?}, attachments?[{kind, path, label?}]}], revision }`:
-  entry text at most 8,192 characters, 24 entries, 12 options, 12 attachments
-  per entry. `projectName` (at most 200 characters) is the project the decision
-  is about, such as the backlog task's repo, which its row shows; decisions
-  without it stay valid. `since` is when the call started waiting on the
-  captain, an ISO 8601 date-time such as `2026-10-26T06:53:24.000Z` (any
-  string `Date.parse` reads is accepted; send the full UTC form); the row's
-  age counts from it, falling back to the raised entry. Send it on every `set_decision`, since a replacement without it falls
-  back too. `revision` is
-  optional on input: given, it is stored as is; omitted, the server stores the
-  previous one plus one (1 at launch).
-- `t3_thread_update` `set_decision` with `decision` replaces it (and the
-  title) and counts as activity; `clear_decision` sets it to null and the view
-  says nothing is waiting. Both work only on a thread launched with
-  `decisionOf`; the result reports `decisionRevision`. Thread reads report
-  `decisionOf` and `decision`; thread lists report `decisionOf` only.
-- Snooze, settle and archive are the thread's own: a snoozed decision moves to
-  Later (no wake time) or Scheduled (with one), and a settled or archived one
-  leaves the tab, snoozed or not.
+  attachments?[{kind, path, label?}]}], revision, wakeAt? }`: at most 200
+  decisions, each `id` once; entry text at most 8,192 characters, 24 entries,
+  12 options, 12 attachments per entry. `id` is FirstMate's own id for the
+  decision, its task id. `projectName` (at most 200 characters) is the project
+  the decision is about, such as the backlog task's repo, which its row shows.
+  `since` is when the decision started waiting on the captain, an ISO 8601
+  date-time such as `2026-10-26T06:53:24.000Z` (any string `Date.parse` reads
+  is accepted; send the full UTC form); the row's age counts from it, falling
+  back to the raised entry. `revision` is FirstMate's own, a positive integer
+  that grows when the captain should read the decision again. `wakeAt`, in the
+  same date form, is the return date of a deferred decision; leave it out of
+  one that waits now.
+- T3 keeps the list in `decisions.json` in its data folder, beside
+  `settings.json`, so it survives a restart. A file it cannot read starts as an
+  empty list, which FirstMate's next call fills.
 - `t3_objectives_set` replaces the objectives, which T3 keeps in this
   environment's server settings (`objectives` in `settings.json`), so they
   survive a restart and reach every connected client on the settings stream.
@@ -424,51 +429,62 @@ The records, for FirstMate's side:
   a full-access client or a live full-access caller thread, and refuses a
   linked environment's caller. The captain cannot edit them in T3.
 - The reply message reads `**Decision · <title>**`, then the line
-  `needs-me-task: <taskId>`, a blank line, the question quoted with `> `, a
+  `needs-me-task: <id>`, a blank line, the question quoted with `> `, a
   blank line, then the captain's words. Upstream renders user messages without
   raw HTML, so the header is plain Markdown, not a `<details>` fold.
 - A reply carries the revision the captain read; if FirstMate updated the
   decision meanwhile, nothing is sent and the captain is told to read the
   update.
 
-Each decision is still a thread with no agent whose reply goes to another
-thread, which upstream has no notion of, so the server sends decision threads
-only to clients that declare the `decisionThreads` capability on their socket
-(`clientCapabilities`): the web app, also inside desktop. Every other client,
-such as the App Store mobile app or app.t3.codes, gets none in its thread list,
-older-settled pages and counts, archive, search or thread families, and a
-change to one reaches it as a removal, which clears any it cached. The HTTP
-shell snapshot repeats the socket's capabilities so the two agree. MCP is
-unaffected, so FirstMate still reads and writes them. Decision threads never
-run, so they raise no notifications. The fork also refuses any agent turn on a
-decision thread server-side (`message.dispatch` in `Orchestrator.ts`), for a
-client that reaches one by id. The fields stay out of `lineage` for the same
-reason as `crewOf`, and forks drop them. The shell carries only `decisionOf`,
-`decisionUpdatedAt`, `decisionChangedAt`, `decisionSince` and
-`decisionProjectName`; the payload rides on the thread read of the open row, so
-the thread list stays small. The command palette's thread search still finds
-decision threads, and picking one opens it in the tab, or FirstMate's chat
-alone for an answered one. The mobile app has no Bridge screen yet.
+Clients read the list on the `subscribeDecisions` stream, as `{ replyTo,
+decisions[] }` where an answered decision carries `answered { commandId, at }`,
+and reply with `orchestration.replyToDecision` and
+`orchestration.undoDecisionReply`, which name the decision by `decisionId`. A
+client with no Bridge never subscribes, so it is sent nothing: there is nothing
+to hide from the App Store mobile app or app.t3.codes. Decisions raise no
+notifications. The mobile app has no Bridge screen yet.
 
-Code: `packages/contracts/src/threadDecision.ts`,
-`apps/server/src/orchestration-v2/DecisionReplyService.ts` (the
-`orchestration.replyToDecision` and `orchestration.undoDecisionReply` RPCs) and
+Before the list, FirstMate kept each decision as a thread with no agent
+(`t3_thread_launch` with `decisionOf` and `decision`, `t3_thread_update`
+`set_decision` and `clear_decision`). The Bridge no longer lists those threads.
+The tools still work and the threads stay hidden exactly as before, until
+FirstMate has moved to `t3_decisions_set` and archived them; then this code
+goes. While it stays: the server sends decision threads only to clients that
+declare the `decisionThreads` capability on their socket (`clientCapabilities`),
+so other clients get none in their thread list, older-settled pages and counts,
+archive, search or thread families; it refuses any agent turn on one
+(`message.dispatch` in `Orchestrator.ts`); the fields stay out of `lineage` and
+forks drop them; the sidebar leaves them out; and a decision thread's own
+address opens FirstMate's chat.
+
+Code: `packages/contracts/src/decisions.ts`,
+`apps/server/src/decisions/Decisions.ts`, `apps/web/src/state/decisions.ts` and
 `apps/web/src/components/needsMe/`. Shared files it touches, for syncs: the
-optional fields in `orchestrationV2.ts`, `orchestratorMcp.ts` and
-`threadMetadataMcp.ts`; create, update and the turn refusal in `Orchestrator.ts`;
-`ProjectionStore.ts` shells, shell index and older-settled listing; the
-capability filter in `ShellStream.ts`, `ws.ts` and `orchestration-v2/http.ts`,
+`subscribeDecisions` stream in `rpc.ts` and `ws.ts`, with its scope in
+`RpcAuthorization.ts` and `RpcInstrumentation.ts`; the two reply RPCs in
+`orchestrationV2.ts`, `rpc.ts` and `ws.ts`, with their scopes in
+`clientRpcPermissions.ts`, `RpcAuthorization.ts` and `RpcInstrumentation.ts`;
+the layer in `orchestration-v2/runtimeLayer.ts`; in `packages/client-runtime`,
+`rpc/client.ts`, `state/server.ts` and `state/orchestration.ts`; the tool in
+`mcp/toolkits/environment/`, its row in `t3McpToolPresentation.ts` and the
+larger `agentContextBudget.json`; on the web, the `needs-me` surface kind in
+`rightPanelStore.ts` (and `closedViewStore.ts`), the launcher and "+" menu
+entries and tab title and icon in `RightPanelTabs.tsx`,
+`RightPanelSurfaceContent.tsx`, `useRightPanelActions.ts`, the prop in
+`ChatView.tsx` and a command palette item. Decision threads, until they are
+removed: `packages/contracts/src/threadDecision.ts`; the optional fields in
+`orchestrationV2.ts`, `orchestratorMcp.ts` and `threadMetadataMcp.ts`; create,
+update and the turn refusal in `Orchestrator.ts`; `ProjectionStore.ts` shells,
+shell index and older-settled listing; the capability filter in
+`ShellStream.ts`, `ws.ts` and `orchestration-v2/http.ts`,
 `DECISION_THREADS_CAPABILITY` in `environment.ts`, its query field in
 `environmentHttp.ts`, and on clients `appendOrchestrationProtocol` in
 `connection/compatibility.ts` (with its caller in `resolver.ts`) and
-`shellSnapshotHttp.ts`; the launch handler and tool in
-`mcp/toolkits/project/`; `ThreadMetadataMcpService.ts`; on the web, the
-`needs-me` surface kind in `rightPanelStore.ts` (and `closedViewStore.ts`), the
-launcher and "+" menu entries and tab title and icon in `RightPanelTabs.tsx`,
-`RightPanelSurfaceContent.tsx`, `useRightPanelActions.ts`, the prop in
-`ChatView.tsx`, a command palette item, the sidebar's visibility filter
-(`filterSidebarV2VisibleThreads` in `Sidebar.logic.ts`) and the redirect in
-`ThreadRouteView.tsx`. Objectives: `packages/contracts/src/objectives.ts`, the
+`shellSnapshotHttp.ts`; the launch handler and tool in `mcp/toolkits/project/`;
+`ThreadMetadataMcpService.ts`; the drop in `ThreadForkService.ts`; the
+sidebar's visibility filter (`filterSidebarV2VisibleThreads` in
+`Sidebar.logic.ts`) and the redirect in `ThreadRouteView.tsx`.
+Objectives: `packages/contracts/src/objectives.ts`, the
 `objectives` field in `ServerSettings` and `ServerSettingsPatch`
 (`settings.ts`), its whole-value replace in `applyServerSettingsPatch`
 (`packages/shared/src/serverSettings.ts`), the tool in
@@ -546,8 +562,9 @@ of `ComposerPrimaryActions.tsx`.
 ## Snooze with no date
 
 A thread can be snoozed with no wake time: it sits on the Snoozed shelf until
-someone wakes it, and no timer brings it back. FirstMate parks decisions older
-than a day this way, so they wait under the Bridge's Later.
+someone wakes it, and no timer brings it back. It was added for FirstMate's
+decision threads, which no longer use it; nothing in T3 or FirstMate sets one
+now, so it stays only for MCP callers.
 On the shelf, dated snoozes come first, soonest wake first, then undated ones,
 newest first, each showing its usual age ("3d") where a dated row shows the
 alarm and time left ("in 13d"). A question, approval or
