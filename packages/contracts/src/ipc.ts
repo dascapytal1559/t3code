@@ -551,10 +551,10 @@ export const RightPanelWindowRequestSchema = Schema.Struct({
 export type RightPanelWindowRequest = typeof RightPanelWindowRequestSchema.Type;
 
 /**
- * `resized`: the window took new bounds; `contentWidth` is the content width it ends at
- * and `previousContentWidth` the one it started from, in CSS pixels. `noRoom`: opening could not grow (maximized, full screen, or the work
- * area's edge), so the chat gives way. `unchanged`: nothing to do (opening found the
- * window already grown; closing found no growth to give back).
+ * `resized`: the window took new bounds, from `previousContentWidth` to `contentWidth`
+ * (content widths, CSS pixels). `noRoom`: opening could not grow (maximized, full screen,
+ * or the work area's edge), so the chat gives way. `unchanged`: nothing to do (opening
+ * found the window already grown; closing found no growth to give back).
  */
 export const RightPanelWindowResultSchema = Schema.Union([
   Schema.Struct({

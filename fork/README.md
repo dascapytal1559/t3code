@@ -404,8 +404,8 @@ a running turn as the composer's Queue does or starting a turn when FirstMate
 is idle, and takes the decision off the list. If the chat beside the panel is
 not FirstMate's, sending switches to it and opens the Bridge beside it. The
 toast's Undo takes the message back while it is still queued and reopens the
-decision's row with your words restored; once FirstMate has started on it, it
-stays sent.
+decision's row with your words restored; once FirstMate has started on it, or
+has already left the decision out of its list, it stays sent.
 
 The records, for FirstMate's side:
 
@@ -654,8 +654,10 @@ chosen width, and opening a document used to squeeze the chat to make room.
   enough for the sheet layout opens the same way, so the sheet never covers
   the chat inside the old window; it shows only when the window cannot grow.
 - The hold ends on events, not timers: the window answers each request with the
-  viewport width it resized to (or that it could not, or had nothing to do), and
-  the hold ends in the resize that reaches that width. A toggle back mid-resize
+  content width it resized from and to (or that it could not, or had nothing to
+  do), and the hold ends in the resize that brings the viewport to that width,
+  less the gap the viewport keeps from the content (DevTools docked beside it),
+  learned from a request made at rest. A toggle back mid-resize
   keeps holding toward the new state. A resize the window did not ask for (a
   hand resize, maximize, a display change) lets go as the viewport follows it,
   and a thread change lets go at once. Nothing animates or fades.
