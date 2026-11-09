@@ -13,6 +13,7 @@ export const PASTE_AS_TEXT_CHANNEL = "desktop:paste-as-text";
 export const REVEAL_WINDOW_CHANNEL = "desktop:reveal-window";
 // Fork: the window grows for the right panel.
 export const SET_RIGHT_PANEL_OPEN_CHANNEL = "desktop:set-right-panel-open";
+export const RIGHT_PANEL_WINDOW_INTERRUPTED_CHANNEL = "desktop:right-panel-window-interrupted";
 export const SNAP_SHOT_EVENT_CHANNEL = "desktop:snap-shot-event";
 export const WEB_LINK_OPEN_CHANNEL = "desktop:web-link-open";
 export const WEB_LINK_READY_CHANNEL = "desktop:web-link-ready";

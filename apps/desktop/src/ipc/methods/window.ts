@@ -10,6 +10,8 @@ import {
   PickFolderOptionsSchema,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
   REMOTE_CAPABLE_EDITOR_IDS,
+  RightPanelWindowRequestSchema,
+  RightPanelWindowResultSchema,
   SystemSettingsPaneSchema,
   type DesktopEnvironmentBootstrap,
   type PickedThemeFile,
@@ -446,8 +448,8 @@ export const revealWindow = DesktopIpc.makeIpcMethod({
 // Fork: the window grows for the right panel.
 export const setRightPanelOpen = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.SET_RIGHT_PANEL_OPEN_CHANNEL,
-  payload: Schema.Struct({ open: Schema.Boolean, width: Schema.Finite }),
-  result: Schema.NullOr(Schema.Finite),
+  payload: RightPanelWindowRequestSchema,
+  result: RightPanelWindowResultSchema,
   handler: Effect.fn("desktop.ipc.window.setRightPanelOpen")(function* (input, event) {
     const electronWindow = yield* ElectronWindow.ElectronWindow;
     const window = yield* electronWindow.main;
@@ -456,9 +458,9 @@ export const setRightPanelOpen = DesktopIpc.makeIpcMethod({
       Option.isNone(window) ||
       window.value.webContents.id !== event.sender.id
     ) {
-      return null;
+      return { requestId: input.requestId, status: "unchanged" as const };
     }
-    return setWindowPanelOpen(window.value, input.open, input.width);
+    return setWindowPanelOpen(window.value, input);
   }),
 });
 

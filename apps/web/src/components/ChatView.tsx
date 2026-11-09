@@ -1057,10 +1057,14 @@ export default function ChatView(props: ChatViewProps) {
   const rightPanelWindow = useRightPanelWindow({
     open: rightPanelState.isOpen && activeThreadRef !== null && !embedded,
     row: workspaceLayoutElement,
-    inline: !shouldUsePlanSidebarSheet && rightPanelState.maximized !== true,
+    maximized: rightPanelState.maximized === true,
+    sheet: shouldUsePlanSidebarSheet,
     scopeKey: activeThreadKey,
     widthStorageKey: rightPanelWidthStorageKey,
   });
+  // While the window resizes the panel is inline past its edge, never a sheet inside it.
+  const rightPanelSheet =
+    shouldUsePlanSidebarSheet && !rightPanelWindow.holdingOpen && !rightPanelWindow.holdingClose;
   const rightPanelOpen = rightPanelState.isOpen || rightPanelWindow.holdingClose;
   // The title bar keeps its closed look until the window has grown for the panel.
   const titleBarRightPanelOpen = rightPanelOpen && !rightPanelWindow.holdingOpen;
@@ -1094,15 +1098,14 @@ export default function ChatView(props: ChatViewProps) {
     rightPanelOpen && activeThreadRef !== null,
     rightPanelPresenceValue,
     // Fork: the desktop window resizes in one step, so the inline panel does too.
-    panelAnimationsActive && (!isElectron || shouldUsePlanSidebarSheet),
+    panelAnimationsActive && (!isElectron || rightPanelSheet),
     activeThreadKey,
     panelAnimationDurationMs,
   );
   const rightPanelPresent = rightPanelPresence.present;
-  const rightPanelControlsInPanel =
-    shouldUsePlanSidebarSheet && rightPanelPresent && rightPanelOpen;
+  const rightPanelControlsInPanel = rightPanelSheet && rightPanelPresent && rightPanelOpen;
   const rightPanelControlsAtRoot =
-    rightPanelPresent && !shouldUsePlanSidebarSheet && !rightPanelWindow.holdingOpen;
+    rightPanelPresent && !rightPanelSheet && !rightPanelWindow.holdingOpen;
   const renderedRightPanelSurface = rightPanelPresence.value?.activeSurface ?? null;
   const renderedRightPanelSurfaces = rightPanelPresence.value?.surfaces ?? [];
   const previewMiniPlayerVisible = shouldRenderPreviewMiniPlayer(
@@ -1113,7 +1116,7 @@ export default function ChatView(props: ChatViewProps) {
   // An embedded side chat has no panel; a stale maximized flag would hide its own column.
   const rightPanelMaximized =
     !embedded && canMaximizeRightPanel && rightPanelState.maximized === true;
-  const inlineRightPanelOwnsTitleBar = titleBarRightPanelOpen && !shouldUsePlanSidebarSheet;
+  const inlineRightPanelOwnsTitleBar = titleBarRightPanelOpen && !rightPanelSheet;
   const [threadPanelPopoverHandle] = useState(PopoverCreateHandle);
   const [chatCanvasStore] = useState(createChatCanvasStore);
 
@@ -4005,7 +4008,7 @@ export default function ChatView(props: ChatViewProps) {
 
       {rightPanelPresent && activeThreadRef && !embedded ? (
         <ChatRightPanel
-          sheet={shouldUsePlanSidebarSheet}
+          sheet={rightPanelSheet}
           workspaceLayoutElement={workspaceLayoutElement}
           widthStorageKey={rightPanelWidthStorageKey}
           chatColumnRef={rightPanelWindow.chatColumnRef}
@@ -4013,7 +4016,6 @@ export default function ChatView(props: ChatViewProps) {
           onCloseSheet={closePreviewPanelStable}
           open={rightPanelOpen}
           animateOpen={!isElectron}
-          {...(isElectron ? { waitingForWindow: rightPanelWindow.holdingOpen } : {})}
           keybindings={keybindings}
           getShortcutContext={getShortcutContextStable}
           maximized={rightPanelMaximized}

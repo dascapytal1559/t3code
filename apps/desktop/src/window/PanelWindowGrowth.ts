@@ -1,6 +1,9 @@
 // Fork: the main window grows to the right when the right panel opens, so the
 // sidebar and chat keep their widths. Upstream lets the panel share the window.
+import type { RightPanelWindowRequest, RightPanelWindowResult } from "@t3tools/contracts";
 import * as Electron from "electron";
+
+import { RIGHT_PANEL_WINDOW_INTERRUPTED_CHANNEL } from "../ipc/channels.ts";
 
 interface Rect {
   readonly x: number;
@@ -60,49 +63,82 @@ export function shrinkAfterPanel(
 
 const growthByWindow = new WeakMap<Electron.BrowserWindow, PanelGrowth>();
 
+/** The width the last request left the window at, until anything else resizes it. */
+const requestedByWindow = new WeakMap<
+  Electron.BrowserWindow,
+  { readonly requestId: number; readonly width: number }
+>();
+const watchedWindows = new WeakSet<Electron.BrowserWindow>();
+
 const isZoomed = (window: Electron.BrowserWindow) => window.isFullScreen() || window.isMaximized();
 
 /**
- * `panelWidth` is the width to grow by (opening) or the panel's width now (closing).
- * Returns the CSS pixels the window grew by (opening) or shrank by (closing).
- * Null means nothing changed: opening found it already grown, or closing found nothing to undo.
+ * The renderer holds its layout until its viewport reaches the requested width, so any
+ * other resize first (a hand resize, maximize, a display change) has to release it.
  */
+function watchForOtherResizes(window: Electron.BrowserWindow) {
+  if (watchedWindows.has(window)) return;
+  watchedWindows.add(window);
+  window.on("resize", () => {
+    const requested = requestedByWindow.get(window);
+    if (requested === undefined || window.isDestroyed()) return;
+    if (window.getBounds().width === requested.width) return;
+    requestedByWindow.delete(window);
+    window.webContents.send(
+      RIGHT_PANEL_WINDOW_INTERRUPTED_CHANNEL,
+      requested.requestId,
+      contentWidthOf(window),
+    );
+  });
+}
+
+// The renderer measures in CSS pixels; window bounds are in screen points.
+const contentWidthOf = (window: Electron.BrowserWindow) =>
+  window.getContentBounds().width / window.webContents.getZoomFactor();
+
+function resizeTo(window: Electron.BrowserWindow, requestId: number, bounds: Rect) {
+  watchForOtherResizes(window);
+  // macOS reports this resize synchronously; it is ours, so nothing is watched yet.
+  requestedByWindow.delete(window);
+  window.setBounds(bounds);
+  requestedByWindow.set(window, { requestId, width: window.getBounds().width });
+  return { requestId, status: "resized" as const, contentWidth: contentWidthOf(window) };
+}
+
+/** `request.width` is the width to grow by (opening) or the panel's width now (closing). */
 export function setWindowPanelOpen(
   window: Electron.BrowserWindow,
-  open: boolean,
-  panelWidth: number,
-): number | null {
-  if (window.isDestroyed()) return null;
+  request: RightPanelWindowRequest,
+): RightPanelWindowResult {
+  const { requestId } = request;
+  if (window.isDestroyed()) return { requestId, status: "unchanged" };
   const growth = growthByWindow.get(window);
-  if (open) {
-    if (growth !== undefined) return null;
-    if (isZoomed(window)) return 0;
+  const zoomFactor = window.webContents.getZoomFactor();
+  if (request.open) {
+    if (growth !== undefined) return { requestId, status: "unchanged" };
+    if (isZoomed(window)) return { requestId, status: "noRoom" };
     const bounds = window.getBounds();
-    // The renderer measures in CSS pixels; window bounds are in screen points.
-    const zoomFactor = window.webContents.getZoomFactor();
     const next = growForPanel(
       bounds,
       Electron.screen.getDisplayMatching(bounds).workArea,
-      panelWidth * zoomFactor,
+      request.width * zoomFactor,
     );
-    if (next === null) return 0;
+    if (next === null) return { requestId, status: "noRoom" };
     growthByWindow.set(window, next.growth);
-    window.setBounds(next.bounds);
-    return next.growth.added / zoomFactor;
+    return resizeTo(window, requestId, next.bounds);
   }
   // A zoomed window keeps its growth, so its normal bounds still account for it.
-  if (growth === undefined || isZoomed(window)) return null;
+  if (growth === undefined || isZoomed(window)) return { requestId, status: "unchanged" };
   growthByWindow.delete(window);
   const bounds = window.getBounds();
-  const zoomFactor = window.webContents.getZoomFactor();
   const next = shrinkAfterPanel(
     bounds,
     growth,
-    panelWidth * zoomFactor,
+    request.width * zoomFactor,
     window.getMinimumSize()[0] ?? 0,
   );
-  window.setBounds(next);
-  return (bounds.width - next.width) / zoomFactor;
+  if (next.width === bounds.width && next.x === bounds.x) return { requestId, status: "unchanged" };
+  return resizeTo(window, requestId, next);
 }
 
 /**

@@ -1,9 +1,111 @@
-import { describe, expect, it } from "vite-plus/test";
+import type * as Electron from "electron";
+import { describe, expect, it, vi } from "vite-plus/test";
 
-import { growForPanel, shrinkAfterPanel } from "./PanelWindowGrowth.ts";
+vi.mock("electron", () => ({
+  screen: { getDisplayMatching: () => ({ workArea: { x: 0, y: 25, width: 1800, height: 1100 } }) },
+}));
+import { RIGHT_PANEL_WINDOW_INTERRUPTED_CHANNEL } from "../ipc/channels.ts";
+import { growForPanel, setWindowPanelOpen, shrinkAfterPanel } from "./PanelWindowGrowth.ts";
 
 const workArea = { x: 0, y: 25, width: 1800, height: 1100 };
 const window = (x: number, width: number) => ({ x, y: 100, width, height: 900 });
+
+type Bounds = ReturnType<typeof window>;
+
+/** A frameless window: its content fills its bounds, and resize fires inside setBounds, as on macOS. */
+function fakeBrowserWindow(initial: Bounds, options: { zoomFactor?: number } = {}) {
+  let bounds = initial;
+  let maximized = false;
+  const resizeListeners: Array<() => void> = [];
+  const sent: unknown[][] = [];
+  const emitResize = () => resizeListeners.forEach((listener) => listener());
+  const fake = {
+    isDestroyed: () => false,
+    isFullScreen: () => false,
+    isMaximized: () => maximized,
+    getBounds: () => bounds,
+    getContentBounds: () => bounds,
+    getMinimumSize: () => [840, 620],
+    setBounds: (next: Bounds) => {
+      bounds = next;
+      emitResize();
+    },
+    on: (event: string, listener: () => void) => {
+      if (event === "resize") resizeListeners.push(listener);
+    },
+    webContents: {
+      getZoomFactor: () => options.zoomFactor ?? 1,
+      send: (...message: unknown[]) => sent.push(message),
+    },
+  };
+  return {
+    window: fake as unknown as Electron.BrowserWindow,
+    sent,
+    get bounds() {
+      return bounds;
+    },
+    /** Something other than a panel request resizes the window. */
+    resizeElsewhere(width: number, options: { maximize?: boolean } = {}) {
+      maximized = options.maximize ?? maximized;
+      bounds = { ...bounds, width };
+      emitResize();
+    },
+  };
+}
+
+describe("setWindowPanelOpen", () => {
+  it("answers with the viewport width it resized to, in CSS pixels", () => {
+    const desktop = fakeBrowserWindow(window(100, 1000), { zoomFactor: 1.25 });
+    expect(setWindowPanelOpen(desktop.window, { requestId: 1, open: true, width: 540 })).toEqual({
+      requestId: 1,
+      status: "resized",
+      contentWidth: 1340,
+    });
+    expect(desktop.bounds).toEqual(window(100, 1675));
+    expect(setWindowPanelOpen(desktop.window, { requestId: 2, open: true, width: 540 })).toEqual({
+      requestId: 2,
+      status: "unchanged",
+    });
+    expect(setWindowPanelOpen(desktop.window, { requestId: 3, open: false, width: 540 })).toEqual({
+      requestId: 3,
+      status: "resized",
+      contentWidth: 800,
+    });
+    expect(setWindowPanelOpen(desktop.window, { requestId: 4, open: false, width: 540 })).toEqual({
+      requestId: 4,
+      status: "unchanged",
+    });
+  });
+
+  it("says when there is no room to grow, so the renderer stops waiting", () => {
+    const full = fakeBrowserWindow(window(0, 1800));
+    expect(setWindowPanelOpen(full.window, { requestId: 1, open: true, width: 540 })).toEqual({
+      requestId: 1,
+      status: "noRoom",
+    });
+    const maximized = fakeBrowserWindow(window(100, 1000));
+    maximized.resizeElsewhere(1800, { maximize: true });
+    expect(setWindowPanelOpen(maximized.window, { requestId: 2, open: true, width: 540 })).toEqual({
+      requestId: 2,
+      status: "noRoom",
+    });
+  });
+
+  it("reports a resize it did not make, once, for the request it overtook", () => {
+    const desktop = fakeBrowserWindow(window(100, 1000));
+    setWindowPanelOpen(desktop.window, { requestId: 7, open: true, width: 540 });
+    // Its own resize, and a move that keeps the width, are not interruptions.
+    desktop.resizeElsewhere(1540);
+    expect(desktop.sent).toEqual([]);
+
+    desktop.resizeElsewhere(1600);
+    desktop.resizeElsewhere(1650);
+    expect(desktop.sent).toEqual([[RIGHT_PANEL_WINDOW_INTERRUPTED_CHANNEL, 7, 1600]]);
+
+    setWindowPanelOpen(desktop.window, { requestId: 8, open: false, width: 650 });
+    expect(desktop.sent).toHaveLength(1);
+  });
+});
 
 describe("growForPanel", () => {
   it.each([

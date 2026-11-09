@@ -624,7 +624,15 @@ chosen width, and opening a document used to squeeze the chat to make room.
   one (`t3code:preview-panel-width`).
 - While the window grows or shrinks, the row holds its width, so the chat never
   moves: opening lays the panel out past the window's edge until the window has
-  grown, and closing keeps the panel until it has shrunk.
+  grown, and closing keeps the panel until it has shrunk. A window narrow
+  enough for the sheet layout opens the same way, so the sheet never covers
+  the chat inside the old window; it shows only when the window cannot grow.
+- The hold ends on events, not timers: the window answers each request with the
+  viewport width it resized to (or that it could not, or had nothing to do), and
+  the hold ends in the resize that reaches that width. A toggle back mid-resize
+  keeps holding toward the new state. A resize the window did not ask for (a
+  hand resize, maximize, a display change) lets go as the viewport follows it,
+  and a thread change lets go at once. Nothing animates or fades.
 - Near the screen's right edge the window moves left only as far as it must
   and moves back on close. A screen too narrow for the full width grows as far
   as it can and the chat gives way for the rest. Full screen and maximized

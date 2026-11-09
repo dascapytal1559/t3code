@@ -1,23 +1,27 @@
+import type { RightPanelWindowResult } from "@t3tools/contracts";
 import { useLayoutEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
 import { type PanelChatColumn, readPreviewPanelWidth } from "./usePreviewPanelInlineSize";
 import { useStableCallback } from "./useStableCallback";
+import { observeResize } from "../lib/observeResize";
 
-/** A resize that never arrives must not leave the row held at a stale width. */
-const WINDOW_RESIZE_TIMEOUT_MS = 500;
+type DesktopBridge = NonNullable<Window["desktopBridge"]>;
+type WindowOutcome = RightPanelWindowResult["status"] | "interrupted";
 
 /**
- * Fork: the window grows for the right panel and shrinks after it, a frame or more after
- * the layout changes. Meanwhile the row holds its width, so the chat column never moves:
- * opening lays the panel out past the window's edge, and closing keeps it until the
- * window has shrunk. The hold ends inside the resize event, so it lands in that frame.
+ * Fork: the window resizes for the right panel a frame or more after the layout changes.
+ * Meanwhile the row holds its width, so the chat never moves: the panel sits inline past
+ * the window's edge (never a sheet inside it) until the resize that reaches the width
+ * the window reported, which ends the hold in that frame. There is no timeout.
  */
 export function useRightPanelWindow(input: {
   readonly open: boolean;
   readonly row: HTMLElement | null;
-  /** The panel sits beside the chat column, so holding the row keeps the chat still. */
-  readonly inline: boolean;
+  /** The panel fills the chat area, so there is no chat column to hold. */
+  readonly maximized: boolean;
+  /** The layout shows the panel as a sheet, which closes as a sheet without holding. */
+  readonly sheet: boolean;
   /** A change of thread swaps the whole view, so it closes the panel without holding. */
   readonly scopeKey: string | null;
   readonly widthStorageKey: string;
@@ -27,16 +31,22 @@ export function useRightPanelWindow(input: {
   /** Fork: the panel's handle, so the window keeps the chat width as it resizes. */
   readonly chatColumnRef: (handle: PanelChatColumn | null) => void;
 } {
-  const { open, inline, scopeKey } = input;
+  const { open, scopeKey } = input;
   const bridge = typeof window === "undefined" ? undefined : window.desktopBridge;
-  const [settled, setSettled] = useState({ open, scopeKey });
-  const holding =
-    bridge !== undefined && inline && settled.open !== open && settled.scopeKey === scopeKey;
-  if (!holding && (settled.open !== open || settled.scopeKey !== scopeKey)) {
-    setSettled({ open, scopeKey });
+  const holdable = bridge !== undefined && !input.maximized;
+  const [layout, setLayout] = useState({ open, scopeKey, holding: false });
+  let holding = layout.holding && holdable;
+  if (layout.open !== open || layout.scopeKey !== scopeKey) {
+    // Reversing a held change keeps holding: the window is still on its way.
+    holding = holdable && layout.scopeKey === scopeKey && (open || !input.sheet || layout.holding);
+    setLayout({ open, scopeKey, holding });
+  } else if (layout.holding && !holding) {
+    setLayout({ open, scopeKey, holding });
   }
   // What the window was last asked for; null until the first request, which never holds.
   const sentOpen = useRef<boolean | null>(null);
+  const cancelRequest = useRef<(() => void) | null>(null);
+  const releaseRow = useRef<(() => void) | null>(null);
   const chatColumn = useRef<PanelChatColumn | null>(null);
   // A panel unmounting in the commit that closes it is gone before the close is sent.
   const lastChatColumn = useRef<PanelChatColumn | null>(null);
@@ -48,40 +58,54 @@ export function useRightPanelWindow(input: {
   const closingPanelWidth = useStableCallback(
     () => lastChatColumn.current?.keepPanelWidth() ?? readPreviewPanelWidth(input.widthStorageKey),
   );
+  const letGoOfRow = () => {
+    releaseRow.current?.();
+    releaseRow.current = null;
+  };
 
   const syncWindow = useStableCallback((open: boolean, held: boolean) => {
     if (bridge === undefined) return;
     if (sentOpen.current === null && takeOverGrowth()) sentOpen.current = true;
+    if (!held) letGoOfRow();
     if (sentOpen.current === open) return;
     const firstRequest = sentOpen.current === null;
     sentOpen.current = open;
     if (!open && firstRequest) return;
+    cancelRequest.current?.();
     const { row } = input;
     const panelWidth = open ? readPreviewPanelWidth(input.widthStorageKey) : closingPanelWidth();
-    const release =
-      held && row !== null ? holdRowWidth(row, row.clientWidth + (open ? panelWidth : 0)) : noop;
+    // A reversal keeps the row it held: the chat column and the panel, either way.
+    if (held && releaseRow.current === null && row !== null) {
+      releaseRow.current = holdRowWidth(row, row.clientWidth + (open ? panelWidth : 0));
+    }
     if (held && open) chatColumn.current?.keepChatColumn();
-    const settle = (changed: number | null) =>
+    const settle = (outcome: WindowOutcome) =>
       flushSync(() => {
-        release();
-        if (open && (held || changed !== null)) chatColumn.current?.keepChatColumn();
-        if (held) setSettled({ open, scopeKey });
+        cancelRequest.current = null;
+        letGoOfRow();
+        // Whatever else resized the window gave or took the panel's width, like a hand resize.
+        if (open && outcome !== "interrupted" && (held || outcome !== "unchanged")) {
+          chatColumn.current?.keepChatColumn();
+        }
+        if (held) {
+          setLayout((current) =>
+            current.open === open && current.scopeKey === scopeKey
+              ? { ...current, holding: false }
+              : current,
+          );
+        }
       });
-    // A held change settles on the first resize; a first open also needs the growth it got.
-    const stopWaiting = whenWindowResized(bridge.setRightPanelOpen(open, panelWidth), {
-      needsAnswer: !held,
-      settle,
-    });
-    return () => {
-      stopWaiting();
-      release();
-    };
+    cancelRequest.current = requestWindow(bridge, open, panelWidth, settle);
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- resizes the native window, holding the row's width before paint until it has changed
   useLayoutEffect(() => syncWindow(open, holding), [open, holding, syncWindow]);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- gives back the window's growth when the view goes away with the panel open
   useLayoutEffect(
     () => () => {
+      cancelRequest.current?.();
+      cancelRequest.current = null;
+      releaseRow.current?.();
+      releaseRow.current = null;
       if (sentOpen.current !== true || bridge === undefined) return;
       sentOpen.current = null;
       releaseGrowthSoon(bridge, closingPanelWidth());
@@ -93,6 +117,8 @@ export function useRightPanelWindow(input: {
 
 const noop = () => {};
 
+let lastRequestId = 0;
+
 /**
  * A view unmounting with the panel open gives the growth back a microtask later, so a
  * view mounting in the same commit (a remount, or StrictMode's replay) takes it over
@@ -100,13 +126,15 @@ const noop = () => {};
  */
 let pendingRelease: { cancelled: boolean } | null = null;
 
-function releaseGrowthSoon(bridge: NonNullable<Window["desktopBridge"]>, panelWidth: number) {
+function releaseGrowthSoon(bridge: DesktopBridge, panelWidth: number) {
   const release = { cancelled: false };
   pendingRelease = release;
   queueMicrotask(() => {
     if (release.cancelled) return;
     pendingRelease = null;
-    void bridge.setRightPanelOpen(false, panelWidth).catch(noop);
+    void bridge
+      .setRightPanelOpen({ requestId: ++lastRequestId, open: false, width: panelWidth })
+      .catch(noop);
   });
 }
 
@@ -122,53 +150,65 @@ function holdRowWidth(row: HTMLElement, width: number): () => void {
   const properties = ["width", "min-width", "max-width"] as const;
   const previous = properties.map((property) => row.style.getPropertyValue(property));
   for (const property of properties) row.style.setProperty(property, `${width}px`);
-  let held = true;
   return () => {
-    if (!held) return;
-    held = false;
     properties.forEach((property, index) => row.style.setProperty(property, previous[index]!));
   };
 }
 
 /**
- * Settles once the viewport has changed width, or at once when the window answers that
- * nothing changed. Returns a cancel function.
+ * Asks the window to resize and settles once the viewport is at the width it reported,
+ * at once when it reports no change, or as the viewport follows a resize from elsewhere.
+ * Widths on the way there keep waiting. Returns a cancel function.
  */
-function whenWindowResized(
-  answer: Promise<number | null>,
-  options: { readonly needsAnswer: boolean; readonly settle: (changed: number | null) => void },
+function requestWindow(
+  bridge: DesktopBridge,
+  open: boolean,
+  width: number,
+  settle: (outcome: WindowOutcome) => void,
 ): () => void {
-  const viewportWidth = window.innerWidth;
-  let answered = false;
-  let changed: number | null = null;
-  let timeout = 0;
+  const requestId = ++lastRequestId;
+  let result: RightPanelWindowResult | null = null;
+  let interruption: { readonly contentWidth: number; readonly viewport: number } | null = null;
   let done = false;
-  const finish = () => {
+  const finish = (outcome: WindowOutcome) => {
     if (done) return;
     stop();
-    options.settle(changed);
+    settle(outcome);
   };
-  const onResize = () => {
-    if (window.innerWidth !== viewportWidth && (answered || !options.needsAnswer)) finish();
+  // Fractional zoom can leave a target between two whole CSS pixels.
+  const reached = (contentWidth: number) => Math.abs(window.innerWidth - contentWidth) < 1;
+  const check = () => {
+    if (interruption !== null) {
+      // The window is elsewhere now; the hold ends as the viewport follows it.
+      if (reached(interruption.contentWidth) || window.innerWidth !== interruption.viewport) {
+        finish("interrupted");
+      }
+    } else if (result !== null) {
+      if (result.status !== "resized") finish(result.status);
+      else if (reached(result.contentWidth)) finish("resized");
+    }
   };
+  // Listening starts before the request, so geometry that beats the answer is not missed.
+  window.addEventListener("resize", check);
+  const stopObserving = observeResize(document.documentElement, check);
+  const stopInterrupted = bridge.onRightPanelWindowInterrupted((event) => {
+    if (done || event.requestId !== requestId) return;
+    interruption = { contentWidth: event.contentWidth, viewport: window.innerWidth };
+    check();
+  });
   const stop = () => {
     done = true;
-    window.removeEventListener("resize", onResize);
-    window.clearTimeout(timeout);
+    window.removeEventListener("resize", check);
+    stopObserving();
+    stopInterrupted();
   };
-  window.addEventListener("resize", onResize);
-  void answer.then(
-    (value) => {
-      if (done) return;
-      answered = true;
-      changed = value;
-      if (value === null || value < 1 || window.innerWidth !== viewportWidth) finish();
-      else timeout = window.setTimeout(finish, WINDOW_RESIZE_TIMEOUT_MS);
+  bridge.setRightPanelOpen({ requestId, open, width }).then(
+    (answer) => {
+      if (done || answer.requestId !== requestId) return;
+      result = answer;
+      check();
     },
-    () => {
-      if (done) return;
-      finish();
-    },
+    () => finish("unchanged"),
   );
   return stop;
 }
