@@ -30,13 +30,20 @@ interface UsageRow {
 }
 
 /**
- * One row per account the Limits view shows, in its provider and account order: the account's
- * own weekly window, or its first one without a weekly. Accounts reset on their own clocks.
+ * One row per account the Limits view shows, in its provider order, with a provider's accounts by
+ * name (Claude, Claude2, Claude10) so a row stays put as resets move: the account's own weekly
+ * window, or its first one without a weekly. Accounts reset on their own clocks.
  */
 function usageRows(presentations: LimitPresentations, now: number): readonly UsageRow[] {
   return collectLimitPools(collectLimitAccounts(presentations), now).flatMap((pool) => {
     const providerLabel = providerClients.get(pool.driver)?.label ?? String(pool.driver);
-    return pool.accounts.flatMap((account) => {
+    const nameOf = (account: LimitAccount) => account.displayName ?? providerLabel;
+    const byName = [...pool.accounts].sort(
+      (left, right) =>
+        nameOf(left).localeCompare(nameOf(right), undefined, { numeric: true }) ||
+        left.key.localeCompare(right.key),
+    );
+    return byName.flatMap((account) => {
       // A pool of one applies the page's per-driver window filtering and ordering to this account.
       const own = collectLimitPools([account], now)[0];
       const windows = own ? displayLimitWindows(own) : [];
@@ -47,7 +54,7 @@ function usageRows(presentations: LimitPresentations, now: number): readonly Usa
         {
           account,
           providerLabel,
-          name: account.displayName ?? providerLabel,
+          name: nameOf(account),
           window,
           remaining: remainingPercent(window),
           timeLeft: paceRemainingPercent(window, now),

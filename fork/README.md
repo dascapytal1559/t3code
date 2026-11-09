@@ -81,7 +81,9 @@ icons: one line per account the Limits view shows, with its provider's icon, a
 thin bar in the account's accent colour and the percent left in that account's
 own weekly window, or its first window when it has no weekly one. A provider
 with several accounts (Claude and Claude2) gets one line each, because each
-account resets on its own clock. Model windows such as Weekly · Fable stay on
+account resets on its own clock. A provider's lines go by account name in
+natural order (Claude, Claude2, Claude10), not by soonest reset as on the Usage
+page, so a line keeps its place as resets move. Model windows such as Weekly · Fable stay on
 the page. Each bar carries the Usage page's pace mark: a small line, in a gap
 cut from the bar, where the bar would end if usage kept pace with the time
 elapsed in that account's window. The tooltip names each account (its display
