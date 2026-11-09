@@ -24,10 +24,14 @@ The values are in `apps/desktop/src/forkIdentity.ts`. The app name is
 `productName` in `apps/desktop/package.json`. `T3CODE_HOME` still overrides the
 data folder.
 
-Three things are still shared with the official app:
+Four things are still shared with the official app:
 
 - The `t3code://` link scheme. Both apps register it, so macOS picks which app
   opens sign-in and prompt links.
+- The `t3` command. A fresh install of either app links `~/.local/bin/t3` to
+  its own launcher (the fork's is `~/.t3-fork/bin/t3`) unless a link is
+  already there, and Install or Remove in either app's Settings takes over or
+  deletes the other app's link.
 - The default Tailscale Serve port, 443. Do not turn on Tailscale Serve in both
   apps at the same port.
 - The managed policy (`/Library/Application Support/T3Code/policy.json` or the
@@ -63,7 +67,9 @@ On the Usage page, click a provider's dot, icon or name to mute it; click again
 to bring it back. The row looks like plain text until you hover it. Muting grays
 the row and leaves it in the list, showing what that provider would have added.
 Everything else drops it: the headline, the other rows' shares, the chart, the
-totals, the by-type bars and the breakdown.
+totals, the by-type bars and the breakdown. Rows follow upstream's order by the
+selected metric (cost or tokens); a muted row ranks by what it would have added,
+so muting it does not move it.
 
 This is a second control on upstream's own filter, the provider menu in the
 Usage header, and they share one saved setting. Keep that setting
@@ -592,8 +598,9 @@ someone wakes it, and no timer brings it back. It was added for FirstMate's
 decision threads, which no longer use it; nothing in T3 or FirstMate sets one
 now, so it stays only for MCP callers.
 On the shelf, dated snoozes come first, soonest wake first, then undated ones,
-newest first, each showing its usual age ("3d") where a dated row shows the
-alarm and time left ("in 13d"). A question, approval or
+newest first by upstream's row age (`resolveThreadActivityTimestamp`), each
+showing that age ("3d") where a dated row shows the alarm and time left
+("in 13d"). A question, approval or
 failure still wakes it early, as with a dated snooze. Waking, pinning, settling
 or sending a message ends it.
 
