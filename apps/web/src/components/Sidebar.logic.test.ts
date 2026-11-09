@@ -55,6 +55,7 @@ import {
   type Thread,
 } from "../types";
 import { makeThreadFixture, type ThreadFixtureOverrides } from "../test-fixtures";
+import { resolveCrewStatusLabel } from "./sidebar/coordinatorGroup.logic";
 import {
   completeSidebarRouteReveal,
   pendingSidebarRouteReveal,
@@ -985,12 +986,29 @@ describe("unseen completion with background work", () => {
       pill: "Waiting",
     },
     {
-      roster: "crew pipeline command",
+      roster: "crew worker's incidental monitor",
+      task: { kind: "monitor" },
+      crew: {},
+      status: "ready",
+      receded: false,
+      pill: "Completed",
+    },
+    {
+      roster: "crew worker's unlabelled command",
       task: { kind: "command" },
-      crewOf: ThreadId.make("coordinator"),
-      status: "waiting",
-      receded: true,
-      pill: "Waiting",
+      crew: {},
+      status: "ready",
+      receded: false,
+      pill: "Completed",
+    },
+    {
+      roster: "crew worker's command while FirstMate reads Testing",
+      task: { kind: "command" },
+      crew: { statusLabel: "Testing" },
+      status: "ready",
+      receded: false,
+      pill: "Completed",
+      card: "Testing",
     },
   ] as const)("presents a completed thread with a $roster roster", (expected) => {
     const thread = presentThreadShell(localEnvironmentId, {
@@ -1000,10 +1018,18 @@ describe("unseen completion with background work", () => {
       latestRunCompletedAt: DateTime.makeUnsafe("2026-06-20T01:00:00.000Z"),
       lastVisitedAt: DateTime.makeUnsafe("2026-06-20T00:59:00.000Z"),
       pendingBackgroundTasks: [{ taskId: "background-work", ...expected.task }],
-      ...("crewOf" in expected ? { crewOf: expected.crewOf } : {}),
+      ...("crew" in expected ? { crewOf: ThreadId.make("coordinator"), ...expected.crew } : {}),
     });
     const status = resolveSidebarThreadStatus(thread);
     const isUnread = hasUnseenCompletion(thread);
+    expect(
+      resolveCrewStatusLabel({
+        crew: thread.crewOf !== undefined,
+        statusLabel: thread.statusLabel,
+        status,
+        isWoke: false,
+      }),
+    ).toBe("card" in expected ? expected.card : null);
 
     expect(isUnread).toBe(true);
     expect(status).toBe(expected.status);

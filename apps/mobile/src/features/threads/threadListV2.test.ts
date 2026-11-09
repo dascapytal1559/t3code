@@ -192,10 +192,17 @@ describe("resolveThreadListV2Status", () => {
     { roster: "dev server watchdog", task: { kind: "monitor" }, status: "ready" },
     { roster: "awaited command", task: { kind: "command", awaited: true }, status: "waiting" },
     {
-      roster: "crew pipeline command",
+      roster: "crew worker's incidental monitor",
+      task: { kind: "monitor" },
+      crewOf: ThreadId.make("coordinator"),
+      status: "ready",
+    },
+    {
+      roster: "crew worker's command while FirstMate reads Testing",
       task: { kind: "command" },
       crewOf: ThreadId.make("coordinator"),
-      status: "waiting",
+      statusLabel: "Testing",
+      status: "ready",
     },
   ] as const)(
     "presents an unseen completion with a $roster roster as $status",

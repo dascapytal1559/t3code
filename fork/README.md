@@ -261,13 +261,6 @@ fresh page load on the home route opens a coordinator whatever its run status,
 the most recently updated if there are several, because a restart ends every
 run. A thread's Lineage panel lists its Crew or Coordinator.
 
-Upstream counts a background command as work only when the agent marks it with
-`t3_background_wait`, so an unmarked one leaves a thread reading Done. A
-crewmate's card reads Waiting while any background task runs, marked or not,
-because crew usually end their turn to wait on a pipeline run. Other threads
-and auto-settle keep upstream's rule. Code: `threadWaitsOnBackgroundWork` in
-`packages/client-runtime/src/state/models.ts`.
-
 A coordinator can put a short status on a crewmate's card, such as "Waiting for
 captain" or "Testing": `t3_thread_update` with `action:'set_status_label'` and
 `statusLabel` (32 characters at most), and `action:'clear_status_label'` to take
@@ -279,13 +272,21 @@ does not count as activity. Upstream decoders ignore the field; web and desktop
 show it, and mobile has no crew cards. Code: `resolveCrewStatusLabel` in
 `apps/web/src/components/sidebar/coordinatorGroup.logic.ts`.
 
+The label, not background work, says whether a crewmate is finished. Crew
+threads keep upstream's background rule everywhere: only a task the agent waits
+on with `t3_background_wait` holds a thread at Waiting, so a dev server or
+monitor a worker left running does not. A worker that ends its turn to wait on
+a validation run carries FirstMate's "Testing", and every other wait FirstMate
+knows of has its own label, so an unlabelled worker between turns reads as
+finished. Mobile shows crew threads with upstream's status and no label.
+
 A crew card reading "Testing" also shows how long it has read that, with the
 same running timer Working uses. Upstream only times a thread's own run, so a
 card has no clock for anything else; a FirstMate worker in a validation run is
 usually idle while it waits, so without one the card cannot say how long the
 run has taken. The thread stores when its label was first set
-(`statusLabelSince`). FirstMate re-sends the label about once a minute, so the
-same label keeps its time, and only a new label or clearing it resets it.
+(`statusLabelSince`). Setting the same label again keeps its time, and only a
+new label or clearing it resets it.
 Other labels, including "Waiting for captain", show no timer. Code: the crew
 label slot in `apps/web/src/components/sidebar/SidebarThreadRow.tsx`.
 
