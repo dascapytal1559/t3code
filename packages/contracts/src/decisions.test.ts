@@ -26,6 +26,10 @@ describe("decisions", () => {
     const other = { ...decision, id: "garden-shed-paint", wakeAt: "2026-11-12T00:00:00Z" };
     expect(decodeSet({ replyTo, decisions: [decision, other] }).decisions).toHaveLength(2);
     expect(() => decodeSet({ replyTo, decisions: [decision, decision] })).toThrow();
+    const withDetail = { ...decision, options: [{ label: "Buy it", detail: "It costs 200." }] };
+    expect(decodeSet({ replyTo, decisions: [withDetail] }).decisions[0]?.options).toEqual([
+      { label: "Buy it" },
+    ]);
     expect(() =>
       decodeSet({ replyTo, decisions: [{ ...decision, wakeAt: "next week" }] }),
     ).toThrow();

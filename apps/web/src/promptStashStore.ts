@@ -12,12 +12,16 @@ import {
   PersistedComposerImageAttachment,
 } from "./composerDraftStore";
 import { createMemoryStorage, type StateStorage } from "./lib/storage";
+import { deleteOrphanStashMedia } from "./promptStashMedia";
 
 export const PROMPT_STASH_STORAGE_KEY = "t3code:prompt-stash:v2";
 const LEGACY_PROMPT_STASH_STORAGE_KEY = "t3code:prompt-stash:v1";
 const PROMPT_STASH_STORAGE_VERSION = 2;
 
 export const MAX_STASH_ENTRIES = 20;
+
+// Another tab writes an entry's bytes before the entry itself; this comfortably outlasts that gap.
+const STASH_MEDIA_ORPHAN_GRACE_MS = 10 * 60_000;
 
 const StashedImage = Schema.Struct({
   type: Schema.Literal("image"),
@@ -164,9 +168,19 @@ export const usePromptStashStore = create<PromptStashStoreState>()((set, get) =>
   try {
     baseStashStorage.removeItem(LEGACY_PROMPT_STASH_STORAGE_KEY);
   } catch {}
+  const listReadAt = Date.now();
   const persisted = readPersistedEntries();
   if (persisted) {
     usePromptStashStore.setState({ entries: persisted });
+  }
+  // An unreadable list is not an empty one, so only a list that decoded clears unused bytes.
+  if (persisted && storageIsDurable && typeof indexedDB !== "undefined") {
+    void deleteOrphanStashMedia(
+      new Set(persisted.map((entry) => entry.id)),
+      listReadAt - STASH_MEDIA_ORPHAN_GRACE_MS,
+    ).catch((error: unknown) => {
+      console.error("[PROMPT-STASH] Could not clear unused stashed media.", error);
+    });
   }
 }
 

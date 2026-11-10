@@ -8,6 +8,14 @@ const DATABASE_VERSION = 1;
 const STORE_NAME = "media";
 
 type StoredMedia = Readonly<Record<string, Blob>>;
+/** Records written before `writtenAt` existed are the blob map itself. */
+type StoredRecord = { readonly writtenAt: number; readonly blobs: StoredMedia } | StoredMedia;
+
+function isStampedRecord(
+  record: StoredRecord,
+): record is { readonly writtenAt: number; readonly blobs: StoredMedia } {
+  return typeof record.writtenAt === "number" && !(record.blobs instanceof Blob);
+}
 
 let database: Promise<IDBDatabase> | undefined;
 
@@ -47,7 +55,7 @@ export async function writeStashMedia(
   blobs: ReadonlyMap<string, Blob>,
 ): Promise<void> {
   if (blobs.size === 0) return;
-  const value: StoredMedia = Object.fromEntries(blobs);
+  const value: StoredRecord = { writtenAt: Date.now(), blobs: Object.fromEntries(blobs) };
   await withStore("readwrite", (store) => store.put(value, entryId));
 }
 
@@ -59,10 +67,12 @@ export async function readStashMedia(
   entryId: string,
   options?: { readonly inMemory?: boolean },
 ): Promise<ReadonlyMap<string, Blob>> {
-  const stored = await withStore<StoredMedia | undefined>("readonly", (store) =>
+  const stored = await withStore<StoredRecord | undefined>("readonly", (store) =>
     store.get(entryId),
   );
-  const entries = Object.entries(stored ?? {});
+  const entries = Object.entries(
+    stored === undefined ? {} : isStampedRecord(stored) ? stored.blobs : stored,
+  );
   if (!options?.inMemory) return new Map(entries);
   return new Map(
     await Promise.all(
@@ -77,6 +87,28 @@ export async function readStashMedia(
 export function deleteStashMedia(entryId: string): void {
   void withStore("readwrite", (store) => store.delete(entryId)).catch((error: unknown) => {
     console.error("[PROMPT-STASH] Could not delete stashed media.", error);
+  });
+}
+
+/**
+ * Deletes the bytes of entries not in `liveEntryIds` that were written before `writtenBefore`.
+ * Bytes are written before their entry, so a recent record may belong to another tab's stash
+ * still in flight; the caller's cutoff must leave room for that.
+ */
+export async function deleteOrphanStashMedia(
+  liveEntryIds: ReadonlySet<string>,
+  writtenBefore: number,
+): Promise<void> {
+  await withStore("readwrite", (store) => {
+    const request = store.openCursor();
+    request.addEventListener("success", () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      const record = cursor.value as StoredRecord;
+      const writtenAt = isStampedRecord(record) ? record.writtenAt : 0;
+      if (!liveEntryIds.has(String(cursor.key)) && writtenAt < writtenBefore) cursor.delete();
+      cursor.continue();
+    });
   });
 }
 

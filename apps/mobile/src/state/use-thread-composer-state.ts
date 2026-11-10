@@ -363,6 +363,7 @@ export function useThreadComposerState(input: {
   // A stop or a restart holds the queue, completion wakes included, until it
   // is resumed; the queue sheet lists only the user's own messages.
   const queueHeld = queueWorkflow?.isHeld === true;
+  const queueRestartHeld = queueWorkflow?.isRestartHeld === true;
   const resumableRunId = selectedThreadProjection
     ? deriveResumableRunId(selectedThreadProjection.projection, selectedThreadRuntime)
     : null;
@@ -855,6 +856,7 @@ export function useThreadComposerState(input: {
     followUpBehavior,
     canSteerActiveTurn,
     queueHeld,
+    queueRestartHeld,
     resumableRunId,
     queuedRunEdit,
     isSavingQueuedEdit,

@@ -35,6 +35,8 @@ export interface ThreadQueueWorkflowState {
   readonly activeRun: Run | null;
   readonly queuedRuns: ReadonlyArray<QueuedThreadRun>;
   readonly isHeld: boolean;
+  /** A pending T3 restart holds the queue; only the restart releases it, so Resume does nothing. */
+  readonly isRestartHeld: boolean;
   readonly canPromoteToSteer: boolean;
   /** The active run is a compaction, so promoting a queued message stops it instead of steering. */
   readonly promoteSkipsCompaction: boolean;
@@ -165,6 +167,9 @@ export function deriveThreadQueueWorkflowState(projection: Projection): ThreadQu
     activeRun,
     queuedRuns,
     isHeld: projection.runs.some((run) => run.status === "queued" && run.queueHeld === true),
+    isRestartHeld: projection.runs.some(
+      (run) => run.status === "queued" && run.restartHold === true,
+    ),
     canSendNow:
       activeRun === null &&
       projection.thread.archivedAt == null &&

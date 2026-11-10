@@ -448,8 +448,8 @@ The records, for FirstMate's side:
   has replied to that version. Like `t3_objectives_set` it needs a full-access
   client or a live full-access caller thread, and refuses a linked
   environment's caller.
-- A decision is `{ id, title, projectName?, since?, question, options[{label,
-  detail?}], entries[{at, kind: raised|update, changed?, text,
+- A decision is `{ id, title, projectName?, since?, question, options[{label}],
+  entries[{at, kind: raised|update, changed?, text,
   attachments?[{kind, path, label?}]}], revision, wakeAt? }`: at most 200
   decisions, each `id` once; entry text at most 8,192 characters, 24 entries,
   12 options, 12 attachments per entry. `id` is FirstMate's own id for the
@@ -461,7 +461,8 @@ The records, for FirstMate's side:
   back to the raised entry. `revision` is FirstMate's own, a positive integer
   that grows when the captain should read the decision again. `wakeAt`, in the
   same date form, is the return date of a deferred decision; leave it out of
-  one that waits now.
+  one that waits now. An option is its button label only; FirstMate's messages
+  explain the options, and an option `detail` from an older sender is ignored.
 - T3 keeps the list in `decisions.json` in its data folder, beside
   `settings.json`, so it survives a restart. A file it cannot read starts as an
   empty list, which FirstMate's next call fills.
@@ -647,7 +648,10 @@ in the projection until that start releases them.
 Clients read it on the `subscribeRestartRequest` stream (`{ request: {
 reason, requestedBy, requestedAt } | null }`) and cancel with
 `server.cancelRestartRequest`. The web app follows only its primary
-environment. Mobile gets the server-side queueing but shows no notice yet.
+environment. Mobile gets the server-side queueing but shows no notice yet; it
+hides Resume on a thread whose queue holds a restart-held run, and its queue
+sheet says the queue waits for the restart (`isRestartHeld` in
+`packages/client-runtime/src/state/threadWorkflows.ts`).
 
 Code: `packages/contracts/src/restartRequest.ts`, the `restartHold` run field
 in `orchestrationV2.ts`, the two RPCs in `rpc.ts` (with their scopes in

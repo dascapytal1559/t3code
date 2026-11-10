@@ -21,9 +21,9 @@ const DecisionTime = Schema.String.check(
   Schema.makeFilter((value) => Number.isFinite(Date.parse(value)) || "Expected an ISO date-time."),
 );
 
+/** FirstMate's messages explain the options; an older sender's `detail` is dropped on decode. */
 const DecisionOption = Schema.Struct({
   label: DecisionText(200),
-  detail: Schema.optional(DecisionText(2_000)),
 });
 
 export const DecisionAttachment = Schema.Struct({

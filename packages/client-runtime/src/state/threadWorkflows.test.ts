@@ -205,10 +205,24 @@ describe("thread workflows", () => {
         providerSessions: [],
       } as never);
       expect(state.isHeld).toBe(status === "queued");
+      expect(state.isRestartHeld).toBe(false);
       expect(state.queuedRuns.map(({ text }) => text)).toEqual(
         status === "queued" ? ["Saved message"] : [],
       );
     }
+    const restartHeld = deriveThreadQueueWorkflowState({
+      thread: { id: "thread", activeProviderThreadId: null },
+      runs: [
+        { id: "stopped", status: "queued", ordinal: 1, queueHeld: true },
+        { id: "restart", status: "queued", ordinal: 2, queueHeld: true, restartHold: true },
+      ],
+      messages: [],
+      providerThreads: [],
+      providerTurns: [],
+      providerSessions: [],
+    } as never);
+    expect(restartHeld.isHeld).toBe(true);
+    expect(restartHeld.isRestartHeld).toBe(true);
   });
 
   it("hides automatic completion delivery from the visible queue", () => {

@@ -1047,7 +1047,9 @@ function ThreadRouteContent(
           serverConfig={serverConfig}
           onStopThread={awaitingBootstrapTurn ? handleCancelWorktreeSetup : handleStopThread}
           onResumeQueue={
-            composer.queueHeld || composer.resumableRunId !== null ? handleResumeQueue : null
+            !composer.queueRestartHeld && (composer.queueHeld || composer.resumableRunId !== null)
+              ? handleResumeQueue
+              : null
           }
           onSendMessage={composer.onSendMessage}
           offersSideChat={composer.sideChatUnavailableReason === null}
