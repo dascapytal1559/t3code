@@ -965,23 +965,22 @@ it.layer(
     }),
   );
 
-  const codexUpdate = {
-    provider: driver("codex"),
-    npmPackageName: "@openai/codex",
-    nativeUpdate: {
-      args: ["update"],
-      isCommandPath: isNativeTestCommandPath("/packages/standalone/"),
-    },
+  // Like Pi: the native updater has no command-path check of its own, so only the
+  // app-bundle guard stops it from running against an app-owned executable.
+  const ungatedNativeUpdate = {
+    provider: driver("pi"),
+    npmPackageName: "@example/pi",
+    nativeUpdate: { args: ["update", "--self"] },
   };
-  const chatGptCodex = "/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex";
+  const appOwnedTool = "/Applications/Example.app/Contents/Resources/bin/pi";
 
   it.effect.each([
-    { name: "the app's own path", resolved: chatGptCodex, real: chatGptCodex },
-    { name: "a link to it", resolved: "/Users/me/.local/bin/codex", real: chatGptCodex },
-  ] as const)("leaves a Codex bundled in a macOS app to that app through $name", (fixture) =>
+    { name: "the app's own path", resolved: appOwnedTool, real: appOwnedTool },
+    { name: "a link to it", resolved: "/Users/me/.local/bin/pi", real: appOwnedTool },
+  ] as const)("leaves an executable inside a macOS app to that app through $name", (fixture) =>
     Effect.gen(function* () {
       const capabilities = yield* resolveInstall({
-        definition: codexUpdate,
+        definition: ungatedNativeUpdate,
         platform: "darwin",
         ...fixture,
       });
@@ -989,26 +988,28 @@ it.layer(
       expect(capabilities.update).toBeNull();
       expect(
         createProviderVersionAdvisory({
-          driver: driver("codex"),
-          currentVersion: "0.163.0-alpha.10.2",
-          latestVersion: "0.164.0",
+          driver: driver("pi"),
+          currentVersion: "1.0.0",
+          latestVersion: "1.1.0",
           maintenanceCapabilities: capabilities,
         }),
       ).toMatchObject({ canUpdate: false, updateCommand: null });
     }),
   );
 
-  it.effect("keeps the native updater for a standalone Codex on macOS", () =>
+  it.effect("keeps the native updater for an executable outside an app on macOS", () =>
     Effect.gen(function* () {
-      const standalone = "/Users/me/.codex/packages/standalone/current/bin/codex";
       const capabilities = yield* resolveInstall({
-        definition: codexUpdate,
+        definition: ungatedNativeUpdate,
         platform: "darwin",
-        resolved: "/Users/me/.local/bin/codex",
-        real: standalone,
+        resolved: "/Users/me/.local/bin/pi",
+        real: "/Users/me/.pi/bin/pi",
       });
 
-      expect(capabilities.update).toMatchObject({ args: ["update"], lockKey: "codex-native" });
+      expect(capabilities.update).toMatchObject({
+        args: ["update", "--self"],
+        lockKey: "pi-native",
+      });
     }),
   );
 

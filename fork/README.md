@@ -151,12 +151,13 @@ defaults to `["~/.t3-usage-archive"]` and can be changed in
 ## App-bundled CLIs are updated by their app
 
 On macOS, a provider CLI whose real path is inside an app bundle
-(`*.app/Contents/...`) is left to that app. An example is ChatGPT.app's Codex,
-which `~/.local/bin/codex` links to. T3 shows no Update button for it and never
-runs its updater. Without this, Codex offers an update that fails, because
-`codex update` cannot update ChatGPT's copy and exits 1. This works like
-upstream's handling of WinGet's Claude, in
-`packages/provider-core/src/server/maintenanceResolver.ts`.
+(`*.app/Contents/...`) is left to that app. T3 shows no Update button for it and
+never runs its updater. Upstream already does this for the usual app-bundled
+Codex, through the standalone check on `CodexDriver`. The fork guard covers the
+rest: providers whose native updater has no such check (Pi's `update --self`,
+Claude) and package-manager layouts inside an app. Without it they offer an
+update that fails or changes the wrong copy. This works like upstream's handling
+of WinGet's Claude, in `packages/provider-core/src/server/maintenanceResolver.ts`.
 
 ## `~` in a provider's executable path
 
