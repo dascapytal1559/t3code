@@ -191,7 +191,6 @@ export type ProjectionLimitRecoveryCandidate = Pick<
   | "updatedAt"
   | "limitRecovery"
   | "snoozedUntil"
-  | "snoozedAt"
 >;
 
 export type ProjectionThreadPullRequests = Pick<
@@ -429,14 +428,7 @@ export interface ShellSnapshotOptions {
 /** What a shell subscriber's trims read from an active thread, without building its shell. */
 export interface ActiveShellIndexEntry extends Pick<
   OrchestrationV2ThreadShell,
-  | "id"
-  | "projectId"
-  | "lineage"
-  | "settledOverride"
-  | "settledAt"
-  | "pinnedAt"
-  | "snoozedUntil"
-  | "snoozedAt"
+  "id" | "projectId" | "lineage" | "settledOverride" | "settledAt" | "pinnedAt" | "snoozedUntil"
 > {
   /** False only when no run, request, work item, or watch can make the shell live. */
   readonly mayBeLive: boolean;
@@ -4078,10 +4070,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                 AND json_extract(t.payload_json, '$.limitRecovery.autoResume') = 1
                 AND julianday(json_extract(item.payload_json, '$.failure.resetAt')) <= julianday(${DateTime.formatIso(options.now)})
                 AND (
-                  (
-                    json_extract(t.payload_json, '$.snoozedUntil') IS NULL
-                    AND json_extract(t.payload_json, '$.snoozedAt') IS NULL
-                  )
+                  json_extract(t.payload_json, '$.snoozedUntil') IS NULL
                   OR julianday(json_extract(t.payload_json, '$.snoozedUntil')) <= julianday(${DateTime.formatIso(options.now)})
                 )
               )
@@ -4136,7 +4125,6 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             pendingRuntimeRequest: null,
             limitRecovery: thread.limitRecovery ?? null,
             snoozedUntil: thread.snoozedUntil ?? null,
-            snoozedAt: thread.snoozedAt ?? null,
           });
         }
         return candidates;
@@ -7288,7 +7276,6 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         readonly settled_at: string | null;
         readonly pinned_at: string | null;
         readonly snoozed_until: string | null;
-        readonly snoozed_at: string | null;
         readonly may_be_live: number;
       }>`
         SELECT
@@ -7302,7 +7289,6 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           json_extract(t.payload_json, '$.settledAt') AS settled_at,
           json_extract(t.payload_json, '$.pinnedAt') AS pinned_at,
           json_extract(t.payload_json, '$.snoozedUntil') AS snoozed_until,
-          json_extract(t.payload_json, '$.snoozedAt') AS snoozed_at,
           -- A superset of isLiveSubagentShell: the sources of its run status, pending request,
           -- and pending background work.
           (
@@ -7362,7 +7348,6 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         settledAt: row.settled_at === null ? null : DateTime.makeUnsafe(row.settled_at),
         pinnedAt: row.pinned_at === null ? null : DateTime.makeUnsafe(row.pinned_at),
         snoozedUntil: row.snoozed_until === null ? null : DateTime.makeUnsafe(row.snoozed_until),
-        snoozedAt: row.snoozed_at === null ? null : DateTime.makeUnsafe(row.snoozed_at),
         mayBeLive: row.may_be_live === 1,
       }));
     }, Effect.mapError(shellSnapshotReadError));

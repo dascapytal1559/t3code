@@ -28,7 +28,6 @@ import { restrictToFirstScrollableAncestor, restrictToVerticalAxis } from "@dnd-
 import {
   canSnooze,
   effectiveSnoozed,
-  hasSnoozeRecord,
   threadWokeAt,
 } from "@t3tools/client-runtime/state/thread-settled";
 import {
@@ -190,7 +189,7 @@ import {
   buildBulkUnpinContextMenuItem,
   deleteSelectedThreadEntries,
   filterSidebarProjectScopeItems,
-  sortSnoozedThreads,
+  firstValidTimestampMs,
   isSidebarNestedLinkClick,
   isTrailingDoubleClick,
   orderItemsByPreferredIds,
@@ -754,7 +753,11 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
             getId: (thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
           }),
     workingThreads: sortWorkingThreadsBySend(working),
-    snoozedThreads: sortSnoozedThreads(snoozed),
+    snoozedThreads: snoozed.toSorted(
+      (left, right) =>
+        firstValidTimestampMs(left.snoozedUntil ?? null) -
+        firstValidTimestampMs(right.snoozedUntil ?? null),
+    ),
     settledThreads: sortSettledThreads(settled),
     visibleThreads: visible,
     snoozeNow: preciseNow,
@@ -814,14 +817,14 @@ function isOptimisticDropReleased(input: {
     if (
       canonicalSection === optimisticDrop.section &&
       thread.pinnedAt == null &&
-      (!optimisticDrop.clearsSnooze || !hasSnoozeRecord(thread))
+      (!optimisticDrop.clearsSnooze || thread.snoozedUntil == null)
     ) {
       return true;
     }
     return false;
   }
   if (canonicalSection !== optimisticDrop.section) return false;
-  if (optimisticDrop.clearsSnooze && hasSnoozeRecord(thread)) return false;
+  if (optimisticDrop.clearsSnooze && thread.snoozedUntil != null) return false;
   const destinationKeys = optimisticDrop.section === "pinned" ? pinnedKeys : activeKeys;
   const canonicalDestination = destinationKeys.flatMap((key) => {
     const canonical = canonicalByKey.get(key);

@@ -19,7 +19,6 @@ import {
   notifyCoordinatorUnlessResumed,
   resumedCoordinatorNote,
 } from "./CoordinatorRestartNote.ts";
-import { snoozeHolds } from "./ThreadSnooze.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import {
   awaitingProviderThreadId,
@@ -58,7 +57,7 @@ function restartContinuationBlocked(
     thread.archivedAt !== null ||
     thread.deletedAt !== null ||
     thread.settledOverride === "settled" ||
-    snoozeHolds(thread, DateTime.toEpochMillis(now))
+    (thread.snoozedUntil != null && DateTime.isGreaterThan(thread.snoozedUntil, now))
   )
     return true;
   const turn = latestProviderTurnForAttempt(projection.providerTurns, source.activeAttemptId);

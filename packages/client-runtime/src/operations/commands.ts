@@ -110,8 +110,7 @@ export interface ReorderActiveThreadInput extends ThreadCommandInput {
 }
 
 export interface SnoozeThreadInput extends ThreadCommandInput {
-  /** Null snoozes with no wake time. */
-  readonly snoozedUntil: string | null;
+  readonly snoozedUntil: string;
 }
 
 export interface UnsnoozeThreadInput extends ThreadCommandInput {

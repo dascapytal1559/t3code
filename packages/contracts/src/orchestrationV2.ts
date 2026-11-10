@@ -3157,8 +3157,7 @@ export const OrchestrationV2Command = Schema.Union([
     type: Schema.Literal("thread.snooze"),
     commandId: CommandId,
     threadId: ThreadId,
-    /** Absent or null snoozes with no wake time, until the user unsnoozes. */
-    snoozedUntil: Schema.optional(Schema.NullOr(IsoDateTime)),
+    snoozedUntil: IsoDateTime,
   }),
   Schema.Struct({
     type: Schema.Literal("thread.unsnooze"),

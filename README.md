@@ -30,7 +30,6 @@ Also:
 - [App-bundled CLIs](fork/README.md#app-bundled-clis-are-updated-by-their-app): a CLI inside a macOS app is left for that app to update.
 - [`~` in provider paths](fork/README.md#-in-a-providers-executable-path): works for every provider.
 - [Stopped turns](fork/README.md#stopped-turns-close-their-approvals): their approvals close instead of staying pending.
-- [Snooze with no date](fork/README.md#snooze-with-no-date): a thread waits on the Snoozed shelf until you wake it.
 - [Two-line cards](fork/README.md#sidebar-cards-stay-two-lines): a lone PR badge no longer adds a third line.
 - [Thread details hidden](fork/README.md#thread-details-open-hidden): new threads open without the details card; a setting shows it.
 - [Window grows for the panel](fork/README.md#the-window-grows-for-the-right-panel): opening the right panel widens the desktop window, so the chat keeps its width.

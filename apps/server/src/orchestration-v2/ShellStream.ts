@@ -33,7 +33,6 @@ import * as Stream from "effect/Stream";
 
 import { bufferLatestLiveStream } from "./LiveStreamBudget.ts";
 import type { ActiveShellIndexEntry } from "./ProjectionStore.ts";
-import { hasSnoozeRecord, snoozeHolds } from "./ThreadSnooze.ts";
 
 type ShellDelta = Extract<OrchestrationV2ShellStreamItem, { readonly sequence: number }>;
 
@@ -169,7 +168,7 @@ function omitOlderSettledShellsWith(
     (thread) =>
       !isOlderSettledThreadShell(thread, beforeMs) ||
       thread.pinnedAt != null ||
-      snoozeHolds(thread, nowMs) ||
+      (thread.snoozedUntil != null && DateTime.toEpochMillis(thread.snoozedUntil) > nowMs) ||
       isLiveSubagentShell(thread) ||
       ancestorIds.has(thread.id),
   );
@@ -279,7 +278,7 @@ function shellSubscriberThreadIds(
           beforeMs === undefined ||
           !isOlderSettledThreadShell(entry, beforeMs) ||
           entry.pinnedAt != null ||
-          hasSnoozeRecord(entry) ||
+          entry.snoozedUntil != null ||
           entry.mayBeLive ||
           ancestorIds.has(entry.id)
         ? [entry.id]

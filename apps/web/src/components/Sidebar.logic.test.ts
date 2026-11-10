@@ -27,7 +27,6 @@ import {
   resolveSidebarReorderableThreadKeys,
   sortPinnedThreadsForSidebar,
   sortScopedProjectsForSidebar,
-  sortSnoozedThreads,
   sortSidebarV2ProjectGroups,
   shouldNavigateAfterThreadPark,
   type SidebarListItem,
@@ -875,38 +874,6 @@ describe("sortPinnedThreadsForSidebar", () => {
     ]);
 
     expect(sorted.map((thread) => thread.id)).toEqual(["a", "b"]);
-  });
-});
-
-describe("sortSnoozedThreads", () => {
-  it("lists dated snoozes by wake time, then undated ones newest first by the age their rows show", () => {
-    const snoozed = (input: {
-      id: string;
-      snoozedUntil?: string;
-      latestUserMessageAt?: string;
-    }) => ({
-      id: input.id,
-      snoozedUntil: input.snoozedUntil ?? null,
-      latestUserMessageAt: input.latestUserMessageAt ?? null,
-      latestRun: null,
-      updatedAt: "2026-03-05T00:00:00.000Z",
-    });
-    const sorted = sortSnoozedThreads([
-      snoozed({ id: "old-thread", latestUserMessageAt: "2026-03-01T00:00:00.000Z" }),
-      snoozed({ id: "wakes-later", snoozedUntil: "2026-03-12T09:00:00.000Z" }),
-      // With no message, its age runs from its last update.
-      snoozed({ id: "no-messages" }),
-      snoozed({ id: "wakes-first", snoozedUntil: "2026-03-10T09:00:00.000Z" }),
-      snoozed({ id: "new-thread", latestUserMessageAt: "2026-03-09T00:00:00.000Z" }),
-    ]);
-
-    expect(sorted.map((thread) => thread.id)).toEqual([
-      "wakes-first",
-      "wakes-later",
-      "new-thread",
-      "no-messages",
-      "old-thread",
-    ]);
   });
 });
 

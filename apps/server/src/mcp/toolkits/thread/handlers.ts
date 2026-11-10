@@ -419,7 +419,13 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
       let command: OrchestrationV2Command;
       switch (input.action) {
         case "snooze":
-          command = { ...common, type: "thread.snooze", snoozedUntil: input.snoozedUntil ?? null };
+          if (input.snoozedUntil === undefined) {
+            return yield* new OrchestratorMcpFailure({
+              code: "invalid_request",
+              message: "snooze requires snoozedUntil.",
+            });
+          }
+          command = { ...common, type: "thread.snooze", snoozedUntil: input.snoozedUntil };
           break;
         case "unsnooze":
         case "unsettle":

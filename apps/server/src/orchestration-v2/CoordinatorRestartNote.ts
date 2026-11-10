@@ -15,7 +15,6 @@ import * as Effect from "effect/Effect";
 
 import * as ServerSettingsService from "../serverSettings.ts";
 import { neverStarted } from "./RestartBackgroundNote.ts";
-import { snoozeHolds } from "./ThreadSnooze.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 
 const MAX_NOTE_CREW = 10;
@@ -76,7 +75,8 @@ function owedNote(roster: Roster, coordinator: OrchestrationV2ThreadShell): stri
         coordinator.activeRunId !== null ||
         coordinator.status === "queued")) ||
     coordinator.settledOverride === "settled" ||
-    snoozeHolds(coordinator, roster.nowMs) ||
+    (coordinator.snoozedUntil != null &&
+      DateTime.toEpochMillis(coordinator.snoozedUntil) > roster.nowMs) ||
     !resolveProjectSettings(roster.settings, coordinator.projectId).settings
       .continueThreadsAfterServerUpdate
   )

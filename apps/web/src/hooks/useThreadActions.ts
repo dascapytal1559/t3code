@@ -896,7 +896,7 @@ export function useThreadActions() {
     });
   };
 
-  const snoozeThread = async (target: ScopedThreadRef, snoozedUntil: string | null) => {
+  const snoozeThread = async (target: ScopedThreadRef, snoozedUntil: string) => {
     if (!readEnvironmentServerConfigLoaded(target.environmentId)) {
       return AsyncResult.failure(
         Cause.fail(

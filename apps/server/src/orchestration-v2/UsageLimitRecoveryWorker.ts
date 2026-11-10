@@ -11,7 +11,6 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
-import { snoozeHolds } from "./ThreadSnooze.ts";
 
 const MAX_OVERDUE_ARM_MS = 24 * 60 * 60 * 1000;
 
@@ -55,7 +54,12 @@ export function limitRecoveryCommand(
       },
     };
   }
-  if (!recovery.autoResume || resetMs > nowMs || snoozeHolds(thread, nowMs)) return null;
+  if (
+    !recovery.autoResume ||
+    resetMs > nowMs ||
+    (thread.snoozedUntil != null && DateTime.toEpochMillis(thread.snoozedUntil) > nowMs)
+  )
+    return null;
   const deliveryIdentity = `${identity}:${recovery.requestId ?? "legacy"}`;
   return {
     type: "message.dispatch",

@@ -31,7 +31,6 @@ import {
 import {
   getThreadSortTimestamp,
   planPinnedReorder,
-  resolveThreadActivityTimestamp,
   sortThreads,
   toSortableTimestamp,
   type ThreadSortInput,
@@ -999,33 +998,15 @@ export type SidebarV2TopStatusKind =
   | "woke"
   | "working";
 
-function firstValidTimestampMs(...candidates: ReadonlyArray<string | null | undefined>): number {
+export function firstValidTimestampMs(
+  ...candidates: ReadonlyArray<string | null | undefined>
+): number {
   for (const candidate of candidates) {
     if (candidate == null) continue;
     const parsed = Date.parse(candidate);
     if (!Number.isNaN(parsed)) return parsed;
   }
   return 0;
-}
-
-/** Dated snoozes by wake time, then undated ones newest first by the age their rows show. */
-export function sortSnoozedThreads<
-  T extends Pick<
-    SidebarThreadSummary,
-    "latestUserMessageAt" | "latestRun" | "updatedAt" | "snoozedUntil"
-  >,
->(threads: readonly T[]): T[] {
-  return threads.toSorted((left, right) => {
-    if (left.snoozedUntil == null || right.snoozedUntil == null) {
-      if (left.snoozedUntil != null) return -1;
-      if (right.snoozedUntil != null) return 1;
-      return (
-        firstValidTimestampMs(resolveThreadActivityTimestamp(right)) -
-        firstValidTimestampMs(resolveThreadActivityTimestamp(left))
-      );
-    }
-    return firstValidTimestampMs(left.snoozedUntil) - firstValidTimestampMs(right.snoozedUntil);
-  });
 }
 
 export { sortActiveThreadsByOrderKey as sortThreadsForSidebar } from "@t3tools/client-runtime/state/thread-sort";
