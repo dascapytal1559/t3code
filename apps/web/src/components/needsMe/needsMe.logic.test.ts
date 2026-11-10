@@ -8,6 +8,7 @@ import {
   formatDay,
   groupNeedsMeDecisions,
   needsMeRowDetail,
+  objectiveRow,
   parseObjective,
   splitObjectives,
 } from "./needsMe.logic";
@@ -165,6 +166,18 @@ describe("parseObjective", () => {
     expect(parseObjective("**Third**")).toEqual({ name: "Third", text: "" });
     expect(parseObjective("Just prose.")).toEqual({ text: "Just prose." });
     expect(parseObjective("** ** nothing")).toEqual({ text: "** ** nothing" });
+  });
+});
+
+describe("objectiveRow", () => {
+  it("titles an unnamed objective by its first line and drops a body that only repeats it", () => {
+    expect(objectiveRow("**Ship** — the Bridge")).toEqual({ title: "Ship", body: "the Bridge" });
+    expect(objectiveRow("**Third**")).toEqual({ title: "Third", body: "" });
+    expect(objectiveRow("Focus this week\nmore detail")).toEqual({
+      title: "Focus this week",
+      body: "Focus this week\nmore detail",
+    });
+    expect(objectiveRow("Just prose.")).toEqual({ title: "Just prose.", body: "" });
   });
 });
 

@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ModelRouting, Objectives, ScopedThreadRef } from "@t3tools/contracts";
+import type { EnvironmentId, ModelRouting, ScopedThreadRef } from "@t3tools/contracts";
 import { ChevronRightIcon } from "lucide-react";
 
 import { useNowMinute } from "../../hooks/useNowMinute";
@@ -10,18 +10,17 @@ import { bridgeRulesAtom } from "../../state/rules";
 import { useProject, useQuietThreadShell, useServerConfigs } from "../../state/entities";
 import ChatMarkdown from "../ChatMarkdown";
 import { ProjectFavicon, ProjectNameMonogram } from "../ProjectFavicon";
-import { BridgeSection, useObjectivesPinned } from "./BridgeSection";
+import { BridgeSection } from "./BridgeSection";
 import { DecisionDetail } from "./DecisionDetail";
 import {
   bridgeDecisionKey,
   bridgeSetting,
   groupNeedsMeDecisions,
   needsMeRowDetail,
-  parseObjective,
-  splitObjectives,
   type NeedsMeGroups,
 } from "./needsMe.logic";
 import { useNeedsMeOpenRow } from "./needsMeReveal";
+import { ObjectivesSection } from "./ObjectivesSection";
 import { pickBridgeRules } from "./rules.logic";
 import { RulesSection } from "./RulesSection";
 
@@ -78,52 +77,6 @@ export function NeedsMePanel(props: { readonly threadRef: ScopedThreadRef }) {
         <RulesSection environmentId={rules.environmentId} state={rules.state} />
       )}
     </div>
-  );
-}
-
-/**
- * Read-only: FirstMate sets them over MCP, each a name over a summary of about two lines. One card
- * per objective in a wrapping grid, shown in full; cards in a row share its height.
- */
-function ObjectivesSection(props: {
-  readonly objectives: Objectives;
-  readonly environmentId: EnvironmentId;
-}) {
-  const [pinned, setPinned] = useObjectivesPinned();
-  const entries = splitObjectives(props.objectives.markdown);
-  return (
-    <BridgeSection
-      id="objectives"
-      title="Objectives"
-      count={entries.length}
-      pin={{ pinned, onToggle: () => setPinned(!pinned) }}
-    >
-      <ul className="mb-1 grid grid-cols-[repeat(auto-fill,minmax(min(280px,100%),1fr))] gap-2">
-        {entries.map((entry) => {
-          const objective = parseObjective(entry);
-          return (
-            <li
-              key={entry}
-              className="min-w-0 rounded-xl border border-border bg-muted/60 px-4 py-3"
-            >
-              {objective.name === undefined ? null : (
-                <h3 className="mb-1 text-sm leading-5 font-semibold text-foreground">
-                  {objective.name}
-                </h3>
-              )}
-              {objective.text === "" ? null : (
-                <ChatMarkdown
-                  text={objective.text}
-                  cwd={undefined}
-                  environmentId={props.environmentId}
-                  className="text-sm leading-relaxed text-foreground/80 [&_p]:my-0"
-                />
-              )}
-            </li>
-          );
-        })}
-      </ul>
-    </BridgeSection>
   );
 }
 

@@ -127,6 +127,17 @@ export function parseObjective(entry: string): { readonly name?: string; readonl
 }
 
 /**
+ * An objective's one-line title and the body it expands to. Without a name, the first line is the
+ * title and the whole entry the body; a body that adds nothing to the title is empty.
+ */
+export function objectiveRow(entry: string): { readonly title: string; readonly body: string } {
+  const { name, text } = parseObjective(entry);
+  if (name !== undefined) return { title: name, body: text };
+  const title = text.split("\n", 1)[0]!.trim();
+  return { title, body: text === title ? "" : text };
+}
+
+/**
  * The objectives or routing table the Bridge shows: the host chat's environment's, else the first
  * connected environment that has one. FirstMate normally sets them on one environment only.
  */
