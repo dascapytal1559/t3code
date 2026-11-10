@@ -554,6 +554,8 @@ export class EnvironmentAuth extends Context.Service<
       readonly label: string;
       readonly access: AuthMcpClientAccess;
       readonly peerLink: boolean;
+      /** The sign-in redirected to this machine; the ten-year `firstmate` pass requires it. */
+      readonly loopbackRedirect?: boolean;
       readonly client: AuthClientMetadata;
     }) => Effect.Effect<
       {
@@ -1351,7 +1353,10 @@ export const make = Effect.gen(function* () {
         subject: MCP_CLIENT_SUBJECT,
         method: "bearer-access-token",
         scopes: mcpClientScopes(input.access),
-        ttl: input.label === "firstmate" ? FIRSTMATE_SESSION_TTL : MCP_CLIENT_SESSION_TTL,
+        ttl:
+          input.label === "firstmate" && input.loopbackRedirect === true
+            ? FIRSTMATE_SESSION_TTL
+            : MCP_CLIENT_SESSION_TTL,
         ...(input.access === "read-only" ? {} : { runtimeModeCeiling: input.access }),
         peerLink: input.peerLink,
         client: { ...input.client, label: input.label, deviceType: "bot" },

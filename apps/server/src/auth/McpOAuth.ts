@@ -115,6 +115,19 @@ const parseRedirect = (value: string): URL | undefined => {
   }
 };
 
+/** True only when the URI parses as http(s) with a host that is exactly a loopback name. */
+export const isLoopbackRedirect = (value: string): boolean => {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      LOOPBACK_HOSTNAMES.has(url.hostname)
+    );
+  } catch {
+    return false;
+  }
+};
+
 /** Loopback redirects ignore port (RFC 8252 §7.3); HTTPS redirects match exactly. */
 export const redirectMatches = (registered: string, presented: string): boolean => {
   const left = parseRedirect(registered);
@@ -545,6 +558,7 @@ const make = Effect.gen(function* () {
           label: pending.clientName,
           access: pending.access,
           peerLink: pending.peerLink,
+          loopbackRedirect: isLoopbackRedirect(pending.redirectUri),
           client: deriveAuthClientMetadata({ request }),
         })
         .pipe(

@@ -383,6 +383,74 @@ it.live("signs in a hosted agent with an https callback that asked for a client 
   ),
 );
 
+it.live("gives a firstmate sign-in ten years only when it redirects to loopback", () =>
+  withRoutes((handler, auth) =>
+    Effect.gen(function* () {
+      const lifeInDays = (clientName: string, redirect: string) =>
+        Effect.gen(function* () {
+          const client = yield* handler(
+            at("/oauth/mcp/register", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: encodeJson({ client_name: clientName, redirect_uris: [redirect] }),
+            }),
+          ).pipe(Effect.flatMap(json<{ client_id: string }>));
+          const params = authorizeParams(client.client_id, redirect);
+          const pairing = yield* auth.issuePairingCredential();
+          const approved = yield* decide(handler, params, {
+            _tag: "pairing-code",
+            access: "approval-required",
+            code: pairing.credential,
+          });
+          const token = yield* handler(
+            at(
+              "/oauth/mcp/token",
+              form({
+                grant_type: "authorization_code",
+                code: new URL(approved.redirectTo!).searchParams.get("code")!,
+                redirect_uri: redirect,
+                client_id: client.client_id,
+                code_verifier: verifier,
+              }),
+            ),
+          ).pipe(Effect.flatMap(json<{ expires_in: number }>));
+          return Math.round(token.expires_in / 86_400);
+        });
+
+      expect(yield* lifeInDays("firstmate", "http://127.0.0.1:1/fm-t3-callback")).toBe(3650);
+      expect(yield* lifeInDays("firstmate", "https://t3connect.example/oauth/callback")).toBe(30);
+      expect(yield* lifeInDays("Claude Code", "http://127.0.0.1:1/callback")).toBe(30);
+    }),
+  ),
+);
+
+it("treats only exact loopback hosts as loopback redirects", () => {
+  const loopback = McpOAuth.isLoopbackRedirect;
+  for (const uri of [
+    "http://127.0.0.1:1/cb",
+    "http://localhost/cb",
+    "http://LOCALHOST:8080/cb",
+    "http://[::1]:9/cb",
+    "https://localhost/cb",
+  ]) {
+    expect(loopback(uri)).toBe(true);
+  }
+  for (const uri of [
+    "https://t3connect.example/cb",
+    "http://127.0.0.1.example.com/cb",
+    "http://localhost.evil.com/cb",
+    "http://evil.com/localhost",
+    "http://127.0.0.1@evil.com/cb",
+    "http://127.0.0.2/cb",
+    "http://0.0.0.0/cb",
+    "custom-scheme://localhost/cb",
+    "localhost",
+    "",
+  ]) {
+    expect(loopback(uri)).toBe(false);
+  }
+});
+
 it.live("rejects a wrong PKCE verifier and spends the code", () =>
   withRoutes((handler, auth) =>
     Effect.gen(function* () {

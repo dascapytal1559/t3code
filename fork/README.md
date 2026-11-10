@@ -786,12 +786,16 @@ tool's `tools/list` `action` enum. Upstream main had no equivalent at
 
 Upstream gives every MCP sign-in a 30-day pass, most likely so a leaked or
 forgotten pass does not stay valid forever. Here the pass for the client named
-`firstmate` lasts 10 years; every other client stays at 30 days. Anything able to
+`firstmate` lasts 10 years when its sign-in redirects to loopback (`127.0.0.1`,
+`localhost` or `[::1]`); every other client stays at 30 days. Anything able to
 read that pass on this machine already runs as the owner and could mint a new
 one, and a pass can still be revoked, so the short life added little and a
-renewal job was more machinery than it saved. The match is on the exact label
-`firstmate`, which is the `client_name` FirstMate signs in with. Code:
-`apps/server/src/auth/EnvironmentAuth.ts` (`FIRSTMATE_SESSION_TTL`).
+renewal job was more machinery than it saved. The loopback condition is needed
+because the name is only the `client_name` a client registers with, and cloud
+apps now sign in through a public URL, so any of them could claim it. FirstMate
+signs in locally, so nothing changes for it. Code:
+`apps/server/src/auth/EnvironmentAuth.ts` (`FIRSTMATE_SESSION_TTL`) and
+`isLoopbackRedirect` in `McpOAuth.ts`.
 
 ## Messages record which client sent them
 
