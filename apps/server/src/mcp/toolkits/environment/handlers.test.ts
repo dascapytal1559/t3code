@@ -26,6 +26,7 @@ import * as ManagedPolicy from "../../../policy/ManagedPolicy.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
+import * as Rules from "../../../rules/Rules.ts";
 import * as Settings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
@@ -98,7 +99,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Bridge tools", (
                 : Effect.fail(new Decisions.DecisionsReplyThreadError({ threadId: replyTo })),
           }),
           Layer.succeed(McpInvocationContext.McpInvocationContext, caller),
-        ),
+        ).pipe((dependencies) => Rules.layer.pipe(Layer.provideMerge(dependencies))),
       ),
     );
   const layerTools = layerToolsAs(firstMate);
@@ -195,6 +196,31 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Bridge tools", (
       ),
     ),
   );
+
+  it.effect("t3_rules_set answers with counts of what was stored", () =>
+    Effect.gen(function* () {
+      const toolkit = yield* EnvironmentToolkit;
+      const results = yield* toolkit
+        .handle("t3_rules_set", {
+          rules: [
+            { id: "R001", group: "How to work", text: "Ask first.", status: "approved" },
+            {
+              id: "R002",
+              group: "How to work",
+              text: "Never push.",
+              status: "pending",
+              recommendation: { choice: "keep", label: "Keep" },
+            },
+          ],
+        })
+        .pipe(Stream.unwrap, Stream.runCollect);
+      expect(results.at(-1)?.result).toEqual({ rules: 2, pending: 1, sent: [] });
+    }).pipe(
+      Effect.provide(
+        layerTools.pipe(Layer.provideMerge(layerSettings), Layer.provideMerge(layerHome)),
+      ),
+    ),
+  );
 });
 
 it.effect("refuses a preferences update when the caller's turn ends while it waits", () =>
@@ -206,6 +232,7 @@ it.effect("refuses a preferences update when the caller's turn ends while it wai
       ThreadCommandExecutor.layer,
       Layer.mock(Orchestrator.OrchestratorV2)({}),
       Layer.mock(Decisions.Decisions)({}),
+      Layer.mock(Rules.Rules)({}),
       Layer.succeed(McpInvocationContext.McpInvocationContext, {
         environmentId,
         requestNamespace: "provider:preferences",

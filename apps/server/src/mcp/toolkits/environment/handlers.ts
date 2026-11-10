@@ -7,6 +7,7 @@ import * as Effect from "effect/Effect";
 import * as Decisions from "../../../decisions/Decisions.ts";
 import * as Environment from "../../../environment/ServerEnvironment.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
+import * as Rules from "../../../rules/Rules.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
 import * as Settings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -113,6 +114,19 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
           revision,
           answered: answered !== undefined,
         })),
+      };
+    }),
+  ),
+  t3_rules_set: McpToolAccess.writesEnvironment((input) =>
+    Effect.gen(function* () {
+      yield* access;
+      const stored = yield* (yield* Rules.Rules)
+        .set(input)
+        .pipe(Effect.mapError(() => unavailable()));
+      return {
+        rules: stored.rules.length,
+        pending: stored.rules.filter((rule) => rule.status === "pending").length,
+        sent: stored.sent,
       };
     }),
   ),

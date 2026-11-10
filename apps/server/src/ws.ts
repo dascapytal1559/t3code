@@ -64,6 +64,7 @@ import {
   OrchestrationV2GetThreadProjectionError,
   OrchestrationV2ThreadLaunchError,
   DecisionReplyError,
+  RuleAnswerError,
   type OrchestrationProjectShell,
   type OrchestrationV2ShellSnapshot,
   type OrchestrationV2ShellStreamItem,
@@ -131,6 +132,7 @@ import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
 import * as GuestShareService from "./guest/GuestShareService.ts";
 import * as Decisions from "./decisions/Decisions.ts";
+import * as Rules from "./rules/Rules.ts";
 import {
   bufferShellLiveStream,
   coalesceShellApplicationEvents,
@@ -286,6 +288,10 @@ const decisionReplyStartupError =
   (input: { readonly decisionId: string }) =>
   (cause: ServerRuntimeStartup.ServerRuntimeStartupError) =>
     Effect.fail(new DecisionReplyError({ decisionId: input.decisionId, reason: "failed", cause }));
+
+const ruleAnswerStartupError =
+  (input: { readonly ruleId: string }) => (cause: ServerRuntimeStartup.ServerRuntimeStartupError) =>
+    Effect.fail(new RuleAnswerError({ ruleId: input.ruleId, reason: "failed", cause }));
 
 const CONFIG_DISCOVERY_TIMEOUT = Duration.seconds(5);
 const isProviderUploadFeedbackError = Schema.is(ProviderUploadFeedbackError);
@@ -1463,6 +1469,7 @@ export const layerWsRpc = (
       const secretRequests = yield* SecretRequests.SecretRequests;
       const guestShares = yield* GuestShareService.GuestShareService;
       const decisions = yield* Decisions.Decisions;
+      const rules = yield* Rules.Rules;
       const pullRequests = yield* PullRequestService.PullRequestService;
       const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
@@ -2134,6 +2141,10 @@ export const layerWsRpc = (
             .pipe(
               Effect.catchTags({ ServerRuntimeStartupError: decisionReplyStartupError(input) }),
             ),
+        [ORCHESTRATION_V2_WS_METHODS.answerRule]: (input) =>
+          startup
+            .enqueueCommand(rules.answer(input, clientOrigin))
+            .pipe(Effect.catchTags({ ServerRuntimeStartupError: ruleAnswerStartupError(input) })),
         [ORCHESTRATION_V2_WS_METHODS.getWorkflowScript]: (input) =>
           readWorkflowScript({ scriptPath: input.scriptPath }),
         [ORCHESTRATION_V2_WS_METHODS.getNativeChildWork]: (input) =>
@@ -3548,6 +3559,7 @@ export const layerWsRpc = (
         [WS_METHODS.subscribeRestartRequest]: (_input) =>
           orchestrationEngine.restartRequestChanges.pipe(Stream.map((request) => ({ request }))),
         [WS_METHODS.subscribeDecisions]: (_input) => decisions.changes,
+        [WS_METHODS.subscribeRules]: (_input) => rules.changes,
       });
       const splitHandlers: Pick<typeof handlers, SplitWsRpc["_tag"]> = handlers;
       const otherHandlers: Pick<typeof handlers, Exclude<ServerWsRpc, SplitWsRpc>["_tag"]> =

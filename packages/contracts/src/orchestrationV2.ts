@@ -51,6 +51,7 @@ import {
   DecisionUndoReplyInput,
   DecisionUndoReplyResult,
 } from "./decisions.ts";
+import { RuleAnswerInput, RuleAnswerResult } from "./rules.ts";
 import { StoredThreadTags, ThreadTag } from "./threadTags.ts";
 import {
   OrchestrationSearchThreadsInput,
@@ -3774,6 +3775,7 @@ export const ORCHESTRATION_V2_WS_METHODS = {
   forceStopThread: "orchestration.forceStopThread",
   replyToDecision: "orchestration.replyToDecision",
   undoDecisionReply: "orchestration.undoDecisionReply",
+  answerRule: "orchestration.answerRule",
   getTurnItem: "orchestration.getTurnItem",
   launchThread: "orchestration.launchThread",
   subscribeShell: "orchestration.subscribeShell",
@@ -4479,6 +4481,10 @@ export const OrchestrationV2RpcSchemas = {
   undoDecisionReply: {
     input: DecisionUndoReplyInput,
     output: DecisionUndoReplyResult,
+  },
+  answerRule: {
+    input: RuleAnswerInput,
+    output: RuleAnswerResult,
   },
   getWorkflowScript: {
     input: OrchestrationV2GetWorkflowScriptInput,

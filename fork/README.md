@@ -367,13 +367,13 @@ arrive unchanged, and mobile still shows the composer. Code:
 
 The right panel's "Bridge" tab (once "Needs me") is the captain's overview
 beside any chat: their objectives on top, then what FirstMate needs from them,
-then FirstMate's model routing table. It
+then FirstMate's model routing table, then the captain's rules for FirstMate. It
 opens from the panel's launcher or "+" menu (N), or "Open Bridge" in the
 command palette, which still finds it by "needs me". On phone web it opens as a
 sheet like the other right-panel tabs. Internal names (`needs-me` surface kind,
 `components/needsMe/`) keep the old name.
 
-Each section (Objectives, Needs you, Scheduled, Model routing) has a header
+Each section (Objectives, Needs you, Scheduled, Model routing, Rules) has a header
 with a chevron and its count, where it has one, that collapses and expands it.
 Each client remembers what it collapsed in local storage
 (`t3code:bridge:collapsed:<section>`), so it survives a reload. Objectives has a
@@ -525,6 +525,73 @@ in `mcp/toolkits/environment/`, their rows in `t3McpToolPresentation.ts` and the
 larger `agentContextBudget.json`. Collapsible sections and the pin live in
 `components/needsMe/BridgeSection.tsx`; the routing table's stacked layout is
 the `.bridge-routing` block in `apps/web/src/index.css`.
+
+### Rules
+
+![The Rules section: rules under two headings, approved ones with a solid Approved chip and date, pending ones with FirstMate's recommendation in a dashed chip, its note and proposed wording beneath, two agreed chips filled as Sent, and a copy button on every rule](media/bridge-rules.jpg)
+
+Rules are the captain's standing instructions to FirstMate, kept in
+FirstMate's own rule files; one is in force only once he approves it. The
+Rules section, last in the Bridge, shows every rule FirstMate sends, approved
+or not, under its heading (headings in the order they first appear), with a
+header count such as "Rules · 160 · 91 to review". Each rule shows its full
+text, wrapped, then its id and source file small. An approved rule carries a
+solid "Approved" chip with its date. A pending one carries FirstMate's
+recommendation (Keep, Keep narrower, Make it a rule, Fact or Drop) as a dashed
+chip, with FirstMate's one-line why and any proposed wording beneath the text.
+
+Clicking a dashed chip agrees: it sends FirstMate's chat (the decisions'
+`replyTo`, the same chat a decision reply goes to) one message, queued behind a
+running turn, and the chip fills as Sent. It stays Sent while FirstMate sends
+that rule unchanged; once FirstMate changes it, such as approving it with the
+new wording, the new version shows. There is no Undo. To disagree or comment,
+the copy button on each rule copies `Rule <id> (<group>): <text>`, plus for a
+pending one `Your recommendation: <label> — <note>` and `Proposed wording:
+<proposedText>` when there is one, to paste into FirstMate's chat. "To review
+only" (remembered per client, `t3code:bridge:rules-to-review-only`) hides the
+approved rules; the default shows all. On phone web the section reads the same
+in the Bridge sheet and its chips wrap; chips and copy work there too. Like
+objectives, the list is the chat's own environment's, else the first connected
+environment's that has rules.
+
+The records, for FirstMate's side:
+
+- `t3_rules_set` replaces the whole list. Input: `{ rules: Rule[] }`; an empty
+  array clears the section. A rule is `{ id, group, source?, text, status:
+  "approved" | "pending", approvedOn? }` (approved; `approvedOn` is
+  `YYYY-MM-DD`) or `{ id, group, source?, text, status: "pending",
+  recommendation: { choice: "keep" | "keep-narrower" | "make-rule" | "fact" |
+  "drop", label, note?, proposedText? } }`. At most 400 rules, each `id` once;
+  `text`, `note` and `proposedText` at most 2,000 characters, `id`, `group`
+  and `label` 200, `source` 1,000. Anything over a limit is refused with the
+  schema's error, never cut. An identical list changes nothing. The result is
+  `{ rules, pending, sent[] }`: the stored counts and the ids of pending rules
+  the captain has agreed to. Same access rules and refusals as
+  `t3_objectives_set`.
+- The agreement message is exactly two lines: `Agree with your recommendation
+  on rule <id>: <label>.` then `rule-answer: <id> <choice>`, the line
+  FirstMate parses. An answer to a rule whose recommendation changed since the
+  captain read it, or that is no longer pending, sends nothing and says so.
+- T3 keeps the list in `rules.json` beside `decisions.json`, so it survives a
+  restart; a file it cannot read starts empty. It is not in `settings.json`,
+  so a few hundred rules never ride the settings stream.
+
+Clients read the list on the `subscribeRules` stream (`{ rules[], sent[] }`),
+only while a Bridge tab is open, and agree with `orchestration.answerRule`
+(`{ ruleId, recommendation, commandId }`; a retry with the same `commandId`
+sends nothing twice).
+
+Code: `packages/contracts/src/rules.ts`, `apps/server/src/rules/Rules.ts`,
+`apps/web/src/state/rules.ts` and `components/needsMe/RulesSection.tsx` and
+`rules.logic.ts`. Shared files it touches, for syncs: the stream and the RPC in
+`rpc.ts`, `orchestrationV2.ts` and `ws.ts`, with their scopes in
+`clientRpcPermissions.ts`, `RpcAuthorization.ts` and `RpcInstrumentation.ts`;
+`replyTo` on the `Decisions` service; the layer in
+`orchestration-v2/runtimeLayer.ts`; `rpc/client.ts`, `state/server.ts` and
+`state/orchestration.ts` in `packages/client-runtime`; the tool in
+`mcp/toolkits/environment/`, its row in `t3McpToolPresentation.ts` and the
+larger `agentContextBudget.json`; the `rules` id and `detail` on
+`BridgeSection.tsx`.
 
 ## Restart registry
 

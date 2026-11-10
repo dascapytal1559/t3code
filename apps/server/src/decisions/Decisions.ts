@@ -63,6 +63,8 @@ export class Decisions extends Context.Service<
   {
     /** The current list, then every change. */
     readonly changes: Stream.Stream<DecisionsState>;
+    /** FirstMate's chat, where replies go: the last list's `replyTo`. */
+    readonly replyTo: Effect.Effect<ThreadId | null>;
     /**
      * Replaces the list. A decision left out is gone; one that changed shows again even if it was
      * answered; an identical list changes nothing, so callers may send it as often as they like.
@@ -301,7 +303,13 @@ const make = Effect.gen(function* () {
     );
   });
 
-  return Decisions.of({ changes: SubscriptionRef.changes(state), set, reply, undoReply });
+  return Decisions.of({
+    changes: SubscriptionRef.changes(state),
+    replyTo: SubscriptionRef.get(state).pipe(Effect.map((current) => current.replyTo)),
+    set,
+    reply,
+    undoReply,
+  });
 });
 
 export const layer = Layer.effect(Decisions, make);

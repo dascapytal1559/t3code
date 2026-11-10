@@ -6,6 +6,7 @@ import { ChevronRightIcon } from "lucide-react";
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { cn } from "../../lib/utils";
 import { bridgeDecisionsAtom, type BridgeDecision } from "../../state/decisions";
+import { bridgeRulesAtom } from "../../state/rules";
 import { useProject, useQuietThreadShell, useServerConfigs } from "../../state/entities";
 import ChatMarkdown from "../ChatMarkdown";
 import { ProjectFavicon, ProjectNameMonogram } from "../ProjectFavicon";
@@ -21,18 +22,22 @@ import {
   type NeedsMeGroups,
 } from "./needsMe.logic";
 import { useNeedsMeOpenRow } from "./needsMeReveal";
+import { pickBridgeRules } from "./rules.logic";
+import { RulesSection } from "./RulesSection";
 
 type RowGroup = keyof NeedsMeGroups<unknown>;
 
 /**
  * The Bridge tab: the user's objectives, then the decisions FirstMate needs now beside any chat,
- * then those with a return date under Scheduled, then FirstMate's model routing table.
+ * then those with a return date under Scheduled, then FirstMate's model routing table, then the
+ * user's rules for FirstMate.
  */
 export function NeedsMePanel(props: { readonly threadRef: ScopedThreadRef }) {
   const decisions = useAtomValue(bridgeDecisionsAtom);
   const serverConfigs = useServerConfigs();
   const objectives = bridgeSetting(serverConfigs, props.threadRef.environmentId, "objectives");
   const modelRouting = bridgeSetting(serverConfigs, props.threadRef.environmentId, "modelRouting");
+  const rules = pickBridgeRules(useAtomValue(bridgeRulesAtom), props.threadRef.environmentId);
   const nowMinute = useNowMinute();
   const nowMs = Date.parse(`${nowMinute}:00.000Z`);
   const groups = groupNeedsMeDecisions(decisions, new Date(nowMs));
@@ -68,6 +73,9 @@ export function NeedsMePanel(props: { readonly threadRef: ScopedThreadRef }) {
           modelRouting={modelRouting}
           environmentId={props.threadRef.environmentId}
         />
+      )}
+      {rules === null ? null : (
+        <RulesSection environmentId={rules.environmentId} state={rules.state} />
       )}
     </div>
   );

@@ -1412,6 +1412,11 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:decisions",
       tag: WS_METHODS.subscribeDecisions,
     }),
+    // Fork-only, like `decisions`: an older server fails it, which reads as no rules.
+    rules: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:server:rules",
+      tag: WS_METHODS.subscribeRules,
+    }),
     consumeResetCredit: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:consume-reset-credit",
       tag: WS_METHODS.providerConsumeResetCredit,
