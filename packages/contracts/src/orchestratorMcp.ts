@@ -47,7 +47,6 @@ import {
   OrchestrationV2TurnItemStatus,
   ThreadStatusLabel,
 } from "./orchestrationV2.ts";
-import { ThreadDecision } from "./threadDecision.ts";
 import { ProviderOptionSelection, ProviderOptionSelectionValue } from "./model.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 
@@ -392,8 +391,6 @@ export const OrchestratorMcpThreadListItem = Schema.Struct({
   coordinator: Schema.optional(Schema.Boolean),
   /** Its crew card's label, when it has one. Linked servers without it omit it. */
   statusLabel: Schema.optional(ThreadStatusLabel),
-  /** On a decision thread: the coordinator it is for. Linked servers without it omit it. */
-  decisionOf: Schema.optional(ThreadId),
   itemCount: NonNegativeInt,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -468,10 +465,6 @@ export const OrchestratorMcpThreadDetail = Schema.Struct({
   coordinator: Schema.optional(Schema.Boolean),
   /** Its crew card's label, when it has one. Linked servers without it omit it. */
   statusLabel: Schema.optional(ThreadStatusLabel),
-  /** On a decision thread: the coordinator it is for. Linked servers without it omit it. */
-  decisionOf: Schema.optional(ThreadId),
-  /** On a decision thread: the decision, null once cleared. */
-  decision: Schema.optional(Schema.NullOr(ThreadDecision)),
   runCount: NonNegativeInt,
   itemCount: NonNegativeInt,
   pendingRequestCount: NonNegativeInt,

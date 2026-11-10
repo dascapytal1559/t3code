@@ -29,7 +29,6 @@ import {
   sortScopedProjectsForSidebar,
   sortSnoozedThreads,
   sortSidebarV2ProjectGroups,
-  filterSidebarV2VisibleThreads,
   shouldNavigateAfterThreadPark,
   type SidebarListItem,
   type SidebarListMarker,
@@ -1633,33 +1632,6 @@ describe("resolveSidebarRouteReveal", () => {
         findThread,
       }),
     ).toEqual({ pendingKey: hiddenKey, widensScope: false });
-  });
-});
-
-describe("filterSidebarV2VisibleThreads", () => {
-  it("leaves out archived threads and FirstMate's decision threads", () => {
-    const listed = (id: string, extra: { archivedAt?: string; decisionOf?: ThreadId } = {}) => ({
-      environmentId: EnvironmentId.make("environment-test"),
-      id: ThreadId.make(id),
-      projectId: "project-test",
-      lineage: {
-        rootThreadId: ThreadId.make(id),
-        parentThreadId: null,
-        relationshipToParent: null,
-      },
-      archivedAt: extra.archivedAt ?? null,
-      ...(extra.decisionOf === undefined ? {} : { decisionOf: extra.decisionOf }),
-    });
-    const visible = filterSidebarV2VisibleThreads(
-      [
-        listed("firstmate"),
-        listed("decision", { decisionOf: ThreadId.make("firstmate") }),
-        listed("archived", { archivedAt: "2026-11-01T00:00:00.000Z" }),
-      ],
-      null,
-      new Set(),
-    );
-    expect(visible.map((thread) => thread.id)).toEqual(["firstmate"]);
   });
 });
 

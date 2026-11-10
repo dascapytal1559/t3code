@@ -613,12 +613,8 @@ export function resolveSidebarRowThreadId(
  * `delegatedUnderParent` holds the tasks linked environments run for a thread
  * the sidebar lists, by thread key; they show under that thread, as subagents do.
  */
-/** Decision threads are listed in the right panel's Needs me tab, never in the sidebar. */
 export function filterSidebarV2VisibleThreads<
-  T extends Pick<
-    SidebarThreadSummary,
-    "archivedAt" | "decisionOf" | "environmentId" | "id" | "lineage"
-  > & {
+  T extends Pick<SidebarThreadSummary, "archivedAt" | "environmentId" | "id" | "lineage"> & {
     projectId: string;
   },
 >(
@@ -629,7 +625,6 @@ export function filterSidebarV2VisibleThreads<
   return threads.filter(
     (thread) =>
       thread.archivedAt === null &&
-      thread.decisionOf === undefined &&
       !isShownUnderParent(
         { environmentId: thread.environmentId, threadId: thread.id },
         thread.lineage,

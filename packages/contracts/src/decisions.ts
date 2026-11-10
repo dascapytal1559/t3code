@@ -15,13 +15,13 @@ import {
  * names in `replyTo`. Bounded so the list stays small; pictures and reports travel as paths.
  */
 
-export const DecisionText = (max: number) => TrimmedNonEmptyString.check(Schema.isMaxLength(max));
+const DecisionText = (max: number) => TrimmedNonEmptyString.check(Schema.isMaxLength(max));
 
-export const DecisionTime = Schema.String.check(
+const DecisionTime = Schema.String.check(
   Schema.makeFilter((value) => Number.isFinite(Date.parse(value)) || "Expected an ISO date-time."),
 );
 
-export const DecisionOption = Schema.Struct({
+const DecisionOption = Schema.Struct({
   label: DecisionText(200),
   detail: Schema.optional(DecisionText(2_000)),
 });
@@ -34,7 +34,7 @@ export const DecisionAttachment = Schema.Struct({
 });
 export type DecisionAttachment = typeof DecisionAttachment.Type;
 
-export const decisionEntryFields = {
+const decisionEntryFields = {
   at: DecisionTime,
   kind: Schema.Literals(["raised", "update"]),
   /** One line on what an update changed. */

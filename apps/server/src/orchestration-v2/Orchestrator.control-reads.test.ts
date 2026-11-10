@@ -1679,124 +1679,6 @@ it.effect("a status label sets and clears without counting as activity or upsett
   }).pipe(Effect.provide(layerTest)),
 );
 
-it.effect(
-  "a decision thread is created without a turn, refuses agent turns and follows set and clear",
-  () =>
-    Effect.gen(function* () {
-      const orchestrator = yield* Orchestrator.OrchestratorV2;
-      const projections = yield* ProjectionStore.ProjectionStoreV2;
-      const coordinator = ThreadId.make("thread:decision-coordinator");
-      const decisionThread = ThreadId.make("thread:decision");
-      const plain = ThreadId.make("thread:decision-plain");
-      const decision = {
-        taskId: "camera-view-first-camera",
-        title: "First window camera",
-        projectName: "home-server",
-        question: "Give the word to buy the first window-view camera?",
-        options: [{ label: "Buy it" }, { label: "Not yet" }],
-        entries: [
-          { at: "2026-10-26T06:53:24.000Z", kind: "raised" as const, text: "Cameras: three ways." },
-          {
-            at: "2026-11-05T05:11:27.000Z",
-            kind: "update" as const,
-            changed: "Now only the purchase.",
-            text: "View camera: ready to buy.",
-          },
-        ],
-      };
-      const create = (
-        threadId: ThreadId,
-        extra: { decisionOf?: ThreadId; decision?: typeof decision } = {},
-      ) =>
-        orchestrator.dispatch({
-          type: "thread.create",
-          commandId: CommandId.make(`create:${threadId}`),
-          threadId,
-          projectId: ProjectId.make("project:decision"),
-          title: "Launch title",
-          modelSelection,
-          runtimeMode: "full-access",
-          interactionMode: "default",
-          branch: null,
-          worktreePath: null,
-          createdBy: "agent",
-          creationSource: "mcp",
-          ...extra,
-        });
-      yield* create(coordinator);
-      yield* create(plain);
-      yield* create(decisionThread, { decisionOf: coordinator, decision });
-
-      const created = yield* crewReadsDecodeUpstream(decisionThread, "active");
-      assert.equal(created.thread.decisionOf, coordinator);
-      assert.equal(created.thread.decision?.revision, 1);
-      assert.equal(created.thread.title, "First window camera");
-      assert.equal(created.shell.decisionOf, coordinator);
-      // Needs me orders decisions by their latest entry, not by when they were made.
-      assert.equal(created.shell.decisionUpdatedAt, "2026-11-05T05:11:27.000Z");
-      assert.equal(created.thread.decision?.projectName, "home-server");
-      assert.equal(created.shell.decisionProjectName, "home-server");
-      // With no `since`, the wait began at the raised entry.
-      assert.equal(created.shell.decisionSince, "2026-10-26T06:53:24.000Z");
-      assert.equal(created.shell.decisionChangedAt, "2026-11-05T05:11:27.000Z");
-      assert.equal(created.shell.latestRunId, null);
-
-      // An upstream-built client typing into it must not start an agent.
-      const typed = yield* orchestrator
-        .dispatch({
-          type: "message.dispatch",
-          commandId: CommandId.make("decision:typed"),
-          threadId: decisionThread,
-          messageId: MessageId.make("decision:typed"),
-          text: "Buy it",
-          attachments: [],
-          dispatchMode: { type: "start_immediately" },
-          createdBy: "user",
-          creationSource: "mobile",
-        })
-        .pipe(Effect.flip);
-      assert.equal(typed._tag, "OrchestratorCommandRejectedError");
-      const records = yield* projections.getThreadRecords(decisionThread, ["runs"]);
-      assert.equal(records.runs.length, 0);
-
-      for (const [threadId, extra] of [
-        [ThreadId.make("thread:decision-half"), { decision }],
-        [
-          ThreadId.make("thread:decision-orphan"),
-          { decisionOf: ThreadId.make("thread:decision-missing"), decision },
-        ],
-      ] as const) {
-        const refused = yield* create(threadId, extra).pipe(Effect.flip);
-        assert.equal(refused._tag, "OrchestratorCommandRejectedError");
-        assert.ok(Result.isFailure(yield* projections.getThread(threadId).pipe(Effect.result)));
-      }
-
-      const setDecision = (threadId: ThreadId, value: typeof decision | null, n: number) =>
-        orchestrator.dispatch({
-          type: "thread.metadata.update",
-          commandId: CommandId.make(`decision:set:${n}`),
-          threadId,
-          decision: value,
-        });
-      const onPlain = yield* setDecision(plain, decision, 1).pipe(Effect.flip);
-      assert.equal(onPlain._tag, "OrchestratorCommandRejectedError");
-
-      yield* setDecision(decisionThread, { ...decision, title: "First camera: buy it?" }, 2);
-      const updated = yield* projections.getThread(decisionThread);
-      assert.equal(updated.decision?.revision, 2);
-      assert.equal(updated.title, "First camera: buy it?");
-
-      yield* setDecision(decisionThread, null, 3);
-      const cleared = yield* crewReadsDecodeUpstream(decisionThread, "active");
-      assert.equal(cleared.thread.decision, null);
-      assert.equal(cleared.shell.decisionOf, coordinator);
-      assert.equal(cleared.shell.decisionUpdatedAt, undefined);
-      assert.equal(cleared.shell.decisionProjectName, undefined);
-      assert.equal(cleared.shell.decisionSince, undefined);
-      assert.equal(cleared.shell.decisionChangedAt, undefined);
-    }).pipe(Effect.provide(layerTest)),
-);
-
 it.effect("reads a crew thread stored with legacy crew lineage as crewOf", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -1844,6 +1726,48 @@ it.effect("reads a crew thread stored with legacy crew lineage as crewOf", () =>
         pullRequests.threads.map((thread) => thread.id),
         [crew],
       );
+    }
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("reads an archived decision thread from before decisions were a list", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const sql = yield* SqlClient.SqlClient;
+    const threadId = ThreadId.make("thread:legacy-decision");
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make(`create:${threadId}`),
+      threadId,
+      projectId: ProjectId.make("project:legacy-decision"),
+      title: "Garden shed paint",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "agent",
+      creationSource: "mcp",
+    });
+    yield* orchestrator.dispatch({
+      type: "thread.archive",
+      commandId: CommandId.make(`archive:${threadId}`),
+      threadId,
+    });
+    // What FirstMate's decision threads stored; FirstMate archived them all before they were removed.
+    const legacyDecision = sql`json_set(payload_json,
+      '$.decisionOf', 'thread:firstmate',
+      '$.decision', json(${JSON.stringify({ taskId: "garden-shed-paint", revision: 2 })}))`;
+    yield* sql`UPDATE orchestration_v2_projection_threads SET payload_json = ${legacyDecision}
+      WHERE thread_id = ${threadId}`;
+    yield* sql`UPDATE orchestration_events SET payload_json = ${legacyDecision}
+      WHERE stream_id = ${threadId} AND event_type = 'thread.created'`;
+
+    const reads = yield* crewReadsDecodeUpstream(threadId, "archive");
+    for (const read of Object.values(reads)) {
+      assert.equal(read.title, "Garden shed paint");
+      assert.notProperty(read, "decisionOf");
+      assert.notProperty(read, "decision");
     }
   }).pipe(Effect.provide(layerTest)),
 );

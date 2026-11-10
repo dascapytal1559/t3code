@@ -1,10 +1,5 @@
 import type { ProjectThreadAwarenessV2Input } from "@t3tools/shared/agentAwareness";
-import {
-  pendingGuestMessageCount,
-  threadDecisionChangedAt,
-  threadDecisionSince,
-  threadDecisionUpdatedAt,
-} from "@t3tools/contracts";
+import { pendingGuestMessageCount } from "@t3tools/contracts";
 import { applyThreadPullRequestLinkUpdate } from "../sourceControl/threadPullRequests.ts";
 import { projectTurnItemForWire } from "./WireProjection.ts";
 import * as Stream from "effect/Stream";
@@ -442,7 +437,6 @@ export interface ActiveShellIndexEntry extends Pick<
   | "pinnedAt"
   | "snoozedUntil"
   | "snoozedAt"
-  | "decisionOf"
 > {
   /** False only when no run, request, work item, or watch can make the shell live. */
   readonly mayBeLive: boolean;
@@ -452,8 +446,6 @@ export interface OlderSettledThreadsQuery {
   readonly before: OrchestrationV2OlderSettledCursor;
   readonly projectIds?: ReadonlyArray<ProjectId> | undefined;
   readonly limit: number;
-  /** Fork: leaves out decision threads, as the shell does for clients without Needs me. */
-  readonly omitDecisions?: boolean | undefined;
 }
 
 export interface OlderSettledThreadsListing {
@@ -1558,26 +1550,6 @@ const linkCardStillAsks = (
   latestUserAuthoredMessageAt === null ||
   !DateTime.isGreaterThan(latestUserAuthoredMessageAt, item.startedAt ?? item.updatedAt);
 
-function decisionShellFields(
-  thread: Pick<OrchestrationV2AppThread, "decisionOf" | "decision">,
-): Pick<
-  OrchestrationV2ThreadShell,
-  "decisionOf" | "decisionUpdatedAt" | "decisionProjectName" | "decisionSince" | "decisionChangedAt"
-> {
-  if (thread.decisionOf === undefined) return {};
-  const decisionUpdatedAt = threadDecisionUpdatedAt(thread.decision);
-  const decisionProjectName = thread.decision?.projectName;
-  const decisionSince = threadDecisionSince(thread.decision);
-  const decisionChangedAt = threadDecisionChangedAt(thread.decision);
-  return {
-    decisionOf: thread.decisionOf,
-    ...(decisionUpdatedAt === null ? {} : { decisionUpdatedAt }),
-    ...(decisionProjectName === undefined ? {} : { decisionProjectName }),
-    ...(decisionSince === null ? {} : { decisionSince }),
-    ...(decisionChangedAt === null ? {} : { decisionChangedAt }),
-  };
-}
-
 export function threadShellFromProjection(
   projection: OrchestrationV2ThreadProjection,
 ): OrchestrationV2ThreadShell {
@@ -1684,7 +1656,6 @@ export function threadShellFromProjection(
     ...(projection.thread.statusLabelSince == null
       ? {}
       : { statusLabelSince: projection.thread.statusLabelSince }),
-    ...decisionShellFields(projection.thread),
     forkedFrom: projection.thread.forkedFrom,
     activeProviderThreadId: projection.thread.activeProviderThreadId,
     ...(projection.thread.historyOrigin === undefined
@@ -1974,7 +1945,6 @@ function shellFromState(input: {
     ...(input.state.thread.statusLabelSince == null
       ? {}
       : { statusLabelSince: input.state.thread.statusLabelSince }),
-    ...decisionShellFields(input.state.thread),
     forkedFrom: input.state.thread.forkedFrom,
     activeProviderThreadId: input.state.thread.activeProviderThreadId,
     ...(input.state.thread.historyOrigin === undefined
@@ -7319,7 +7289,6 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         readonly pinned_at: string | null;
         readonly snoozed_until: string | null;
         readonly snoozed_at: string | null;
-        readonly decision_of: string | null;
         readonly may_be_live: number;
       }>`
         SELECT
@@ -7334,7 +7303,6 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           json_extract(t.payload_json, '$.pinnedAt') AS pinned_at,
           json_extract(t.payload_json, '$.snoozedUntil') AS snoozed_until,
           json_extract(t.payload_json, '$.snoozedAt') AS snoozed_at,
-          json_extract(t.payload_json, '$.decisionOf') AS decision_of,
           -- A superset of isLiveSubagentShell: the sources of its run status, pending request,
           -- and pending background work.
           (
@@ -7395,7 +7363,6 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         pinnedAt: row.pinned_at === null ? null : DateTime.makeUnsafe(row.pinned_at),
         snoozedUntil: row.snoozed_until === null ? null : DateTime.makeUnsafe(row.snoozed_until),
         snoozedAt: row.snoozed_at === null ? null : DateTime.makeUnsafe(row.snoozed_at),
-        ...(row.decision_of === null ? {} : { decisionOf: ThreadId.make(row.decision_of) }),
         mayBeLive: row.may_be_live === 1,
       }));
     }, Effect.mapError(shellSnapshotReadError));
@@ -7444,7 +7411,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
 
     const listOlderSettledThreads: ProjectionStoreV2Shape["listOlderSettledThreads"] = Effect.fn(
       "ProjectionStore.listOlderSettledThreads",
-    )(function* ({ before, projectIds, limit, omitDecisions }) {
+    )(function* ({ before, projectIds, limit }) {
       // ISO strings in one format, so string order is time order.
       const older = sql`
         SELECT t.thread_id, t.project_id,
@@ -7457,10 +7424,6 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           AND json_extract(t.payload_json, '$.settledOverride') = 'settled'
           AND json_extract(t.payload_json, '$.settledAt') IS NOT NULL${
             projectIds === undefined ? sql`` : sql` AND t.project_id IN ${sql.in(projectIds)}`
-          }${
-            omitDecisions === true
-              ? sql` AND json_extract(t.payload_json, '$.decisionOf') IS NULL`
-              : sql``
           }
       `;
       const belowCursor =

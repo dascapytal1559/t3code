@@ -1,10 +1,8 @@
 import {
   CLIENT_CAPABILITIES_QUERY_PARAM,
-  DECISION_THREADS_CAPABILITY,
   ORCHESTRATION_PROTOCOL_QUERY_PARAM,
   ORCHESTRATION_PROTOCOL_VERSION,
   SETTINGS_SECRET_REFERENCES_CAPABILITY,
-  type ClientSurface,
   type ExecutionEnvironmentDescriptor,
 } from "@t3tools/contracts";
 
@@ -38,17 +36,9 @@ function canSelfUpdate(descriptor: ExecutionEnvironmentDescriptor): boolean {
   );
 }
 
-export function appendOrchestrationProtocol(
-  socketUrl: string,
-  surface: ClientSurface | undefined,
-): string {
+export function appendOrchestrationProtocol(socketUrl: string): string {
   const url = new URL(socketUrl);
   url.searchParams.set(ORCHESTRATION_PROTOCOL_QUERY_PARAM, String(ORCHESTRATION_PROTOCOL_VERSION));
-  // Fork: only the web app, also inside desktop, has Needs me to show decision threads in.
-  const capabilities =
-    surface === "web" || surface === "desktop"
-      ? [SETTINGS_SECRET_REFERENCES_CAPABILITY, DECISION_THREADS_CAPABILITY]
-      : [SETTINGS_SECRET_REFERENCES_CAPABILITY];
-  url.searchParams.set(CLIENT_CAPABILITIES_QUERY_PARAM, capabilities.join(","));
+  url.searchParams.set(CLIENT_CAPABILITIES_QUERY_PARAM, SETTINGS_SECRET_REFERENCES_CAPABILITY);
   return url.toString();
 }

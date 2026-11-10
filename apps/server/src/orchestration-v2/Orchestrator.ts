@@ -3276,32 +3276,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         });
       }
     }
-    const { decisionOf } = command;
-    if ((decisionOf === undefined) !== (command.decision === undefined)) {
-      return yield* new OrchestratorCommandRejectedError({
-        commandId: command.commandId,
-        commandType: command.type,
-        cause: "A decision thread needs both decisionOf and decision.",
-      });
-    }
-    if (decisionOf !== undefined) {
-      const coordinator =
-        decisionOf === command.threadId
-          ? null
-          : yield* projectionStore.getThread(decisionOf).pipe(
-              Effect.catchTags({ ProjectionStoreThreadNotFoundError: () => Effect.succeed(null) }),
-              Effect.mapError(
-                (cause) => new OrchestratorProjectionError({ threadId: decisionOf, cause }),
-              ),
-            );
-      if (coordinator === null || coordinator.deletedAt !== null) {
-        return yield* new OrchestratorCommandRejectedError({
-          commandId: command.commandId,
-          commandType: command.type,
-          cause: `Coordinator thread ${decisionOf} was not found.`,
-        });
-      }
-    }
 
     const now = yield* DateTime.now;
     const emitEvent = emit(events, command);
@@ -3310,8 +3284,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       creationSource: command.creationSource,
       id: command.threadId,
       projectId: command.projectId,
-      // A decision thread is named by its decision.
-      title: command.decision?.title ?? command.title,
+      title: command.title,
       providerInstanceId: command.modelSelection.instanceId,
       modelSelection: command.modelSelection,
       runtimeMode: command.runtimeMode,
@@ -3328,12 +3301,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ...(command.environment === undefined ? {} : { environment: command.environment }),
       ...(command.instructions === undefined ? {} : { instructions: command.instructions }),
       ...(crewOf === undefined ? {} : { crewOf }),
-      ...(decisionOf === undefined || command.decision === undefined
-        ? {}
-        : {
-            decisionOf,
-            decision: { ...command.decision, revision: command.decision.revision ?? 1 },
-          }),
       lineage: {
         parentThreadId: null,
         relationshipToParent: null,
@@ -3721,17 +3688,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         commandId: command.commandId,
         commandType: command.type,
         cause: `Thread ${command.threadId} branch changed before the metadata update could be applied.`,
-      });
-    }
-    if (
-      command.type === "thread.metadata.update" &&
-      command.decision !== undefined &&
-      thread.decisionOf === undefined
-    ) {
-      return yield* new OrchestratorCommandRejectedError({
-        commandId: command.commandId,
-        commandType: command.type,
-        cause: `Thread ${command.threadId} is not a decision thread. Launch one with decisionOf.`,
       });
     }
     if (command.type === "thread.metadata.update" && command.expectedEmpty === true) {
@@ -4261,17 +4217,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                         ? (thread.statusLabelSince ?? now)
                         : now,
                 }),
-            ...(command.decision === undefined
-              ? {}
-              : command.decision === null
-                ? { decision: null }
-                : {
-                    title: command.decision.title,
-                    decision: {
-                      ...command.decision,
-                      revision: command.decision.revision ?? (thread.decision?.revision ?? 0) + 1,
-                    },
-                  }),
             ...(command.linkedPullRequest === undefined
               ? {}
               : {
@@ -13995,16 +13940,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           return yield* new OrchestratorSubagentThreadReadOnlyError({
             commandId: command.commandId,
             threadId: command.threadId,
-          });
-        }
-        // Upstream-built clients show a decision thread as an empty chat; typing there must not
-        // start an agent.
-        if (thread.decisionOf !== undefined) {
-          return yield* new OrchestratorCommandRejectedError({
-            commandId: command.commandId,
-            commandType: command.type,
-            cause:
-              "This thread holds a decision for FirstMate and has no agent. Reply to it in T3 Code (Fork), or answer in FirstMate's chat.",
           });
         }
         const guestSend =

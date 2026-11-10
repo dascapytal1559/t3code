@@ -2763,7 +2763,6 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         shellStreamItemFromThreadShell({
           stored: archive.storedEvents[0]!,
           shell: yield* orchestrator.getThreadShell(threadId),
-          omitDecisions: false,
         }),
         {
           kind: "thread.removed",
@@ -2791,7 +2790,6 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         shellStreamItemFromThreadShell({
           stored: remove.storedEvents[0]!,
           shell: yield* orchestrator.getThreadShell(threadId),
-          omitDecisions: false,
         }),
         {
           kind: "thread.removed",

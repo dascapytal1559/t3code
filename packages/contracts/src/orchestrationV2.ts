@@ -51,7 +51,6 @@ import {
   DecisionUndoReplyInput,
   DecisionUndoReplyResult,
 } from "./decisions.ts";
-import { ThreadDecision, ThreadDecisionInput } from "./threadDecision.ts";
 import { StoredThreadTags, ThreadTag } from "./threadTags.ts";
 import {
   OrchestrationSearchThreadsInput,
@@ -544,13 +543,6 @@ export const OrchestrationV2AppThread = Schema.Struct({
   statusLabel: Schema.optional(Schema.NullOr(ThreadStatusLabel)),
   /** When the current label was first set; re-sending the same label keeps it. */
   statusLabelSince: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
-  /**
-   * The coordinator this thread holds a decision for. Such a thread has no agent: replies go to
-   * the coordinator. Kept out of `lineage` for the same reason as `crewOf`.
-   */
-  decisionOf: Schema.optional(ThreadId),
-  /** The decision itself; null once the coordinator clears it. */
-  decision: Schema.optional(Schema.NullOr(ThreadDecision)),
   lineage: OrchestrationV2AppThreadLineage,
   forkedFrom: Schema.NullOr(
     Schema.Union([
@@ -2212,14 +2204,6 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   crewOf: OrchestrationV2AppThread.fields.crewOf,
   statusLabel: OrchestrationV2AppThread.fields.statusLabel,
   statusLabelSince: OrchestrationV2AppThread.fields.statusLabelSince,
-  decisionOf: OrchestrationV2AppThread.fields.decisionOf,
-  /** The decision's latest entry; the shell leaves the payload itself to the thread read. */
-  decisionUpdatedAt: Schema.optional(IsoDateTime),
-  decisionProjectName: ThreadDecision.fields.projectName,
-  /** When the decision began waiting on the user; its Needs me row's age counts from it. */
-  decisionSince: Schema.optional(IsoDateTime),
-  /** The decision's latest `update` entry; the row's age counts from it once there is one. */
-  decisionChangedAt: Schema.optional(IsoDateTime),
   forkedFrom: Schema.NullOr(OrchestrationV2AppThread.fields.forkedFrom),
   activeProviderThreadId: Schema.NullOr(ProviderThreadId),
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),
@@ -3107,9 +3091,6 @@ export const OrchestrationV2Command = Schema.Union([
     delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
     /** A thread in this environment that this one works for; the sidebar lists it under that coordinator. */
     crewOf: Schema.optional(ThreadId),
-    /** With `decision`: a thread holding that decision for this coordinator, with no agent. */
-    decisionOf: Schema.optional(ThreadId),
-    decision: Schema.optional(ThreadDecisionInput),
     environment: Schema.optional(OrchestrationV2ThreadEnvironment),
     instructions: Schema.optional(OrchestrationV2ThreadInstructions),
     importedNativeThread: Schema.optional(
@@ -3254,8 +3235,6 @@ export const OrchestrationV2Command = Schema.Union([
     coordinator: Schema.optional(Schema.Boolean),
     /** Set (string) or clear (null) the label; absent leaves it unchanged. */
     statusLabel: OrchestrationV2AppThread.fields.statusLabel,
-    /** Replace (object) or clear (null) a decision thread's decision; absent leaves it unchanged. */
-    decision: Schema.optional(Schema.NullOr(ThreadDecisionInput)),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.pull-request.link"),

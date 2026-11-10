@@ -24,13 +24,13 @@ Also:
 - [Board](fork/README.md#board): a tab to sketch on screenshots and attach them to the chat.
 - [Twelve months of usage](fork/README.md#usage-reaches-twelve-months): longer periods, drawn as stacked bars.
 - [Muted usage rows](fork/README.md#usage-rows-can-be-muted): click a provider on the Usage page to mute it.
-- [Usage in the sidebar](fork/README.md#usage-limits-in-the-sidebar): one bar per provider shows what is left this week.
+- [Usage in the sidebar](fork/README.md#usage-limits-in-the-sidebar): one bar per account shows what is left this week.
 - [Archived usage](fork/README.md#archived-usage): counts machines that no longer run T3.
 - [Upstream release note](fork/README.md#upstream-release-indicator): the sidebar says when upstream ships a release.
 - [App-bundled CLIs](fork/README.md#app-bundled-clis-are-updated-by-their-app): a CLI inside a macOS app is left for that app to update.
 - [`~` in provider paths](fork/README.md#-in-a-providers-executable-path): works for every provider.
 - [Stopped turns](fork/README.md#stopped-turns-close-their-approvals): their approvals close instead of staying pending.
-- [Snooze with no date](fork/README.md#snooze-with-no-date): a thread waits on the Snoozed shelf until you wake it; FirstMate parks decisions older than a day there.
+- [Snooze with no date](fork/README.md#snooze-with-no-date): a thread waits on the Snoozed shelf until you wake it.
 - [Two-line cards](fork/README.md#sidebar-cards-stay-two-lines): a lone PR badge no longer adds a third line.
 - [Thread details hidden](fork/README.md#thread-details-open-hidden): new threads open without the details card; a setting shows it.
 - [Window grows for the panel](fork/README.md#the-window-grows-for-the-right-panel): opening the right panel widens the desktop window, so the chat keeps its width.

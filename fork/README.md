@@ -474,18 +474,9 @@ client with no Bridge never subscribes, so it is sent nothing: there is nothing
 to hide from the App Store mobile app or app.t3.codes. Decisions raise no
 notifications. The mobile app has no Bridge screen yet.
 
-Before the list, FirstMate kept each decision as a thread with no agent
-(`t3_thread_launch` with `decisionOf` and `decision`, `t3_thread_update`
-`set_decision` and `clear_decision`). The Bridge no longer lists those threads.
-The tools still work and the threads stay hidden exactly as before, until
-FirstMate has moved to `t3_decisions_set` and archived them; then this code
-goes. While it stays: the server sends decision threads only to clients that
-declare the `decisionThreads` capability on their socket (`clientCapabilities`),
-so other clients get none in their thread list, older-settled pages and counts,
-archive, search or thread families; it refuses any agent turn on one
-(`message.dispatch` in `Orchestrator.ts`); the fields stay out of `lineage` and
-forks drop them; the sidebar leaves them out; and a decision thread's own
-address opens FirstMate's chat.
+Decisions were once threads with no agent. FirstMate archived every one of them
+when it moved to `t3_decisions_set`, and T3 no longer knows them as decisions:
+they are ordinary empty threads in the archive.
 
 Code: `packages/contracts/src/decisions.ts`,
 `apps/server/src/decisions/Decisions.ts`, `apps/web/src/state/decisions.ts` and
@@ -501,19 +492,7 @@ larger `agentContextBudget.json`; on the web, the `needs-me` surface kind in
 `rightPanelStore.ts` (and `closedViewStore.ts`), the launcher and "+" menu
 entries and tab title and icon in `RightPanelTabs.tsx`,
 `RightPanelSurfaceContent.tsx`, `useRightPanelActions.ts`, the prop in
-`ChatView.tsx` and a command palette item. Decision threads, until they are
-removed: `packages/contracts/src/threadDecision.ts`; the optional fields in
-`orchestrationV2.ts`, `orchestratorMcp.ts` and `threadMetadataMcp.ts`; create,
-update and the turn refusal in `Orchestrator.ts`; `ProjectionStore.ts` shells,
-shell index and older-settled listing; the capability filter in
-`ShellStream.ts`, `ws.ts` and `orchestration-v2/http.ts`,
-`DECISION_THREADS_CAPABILITY` in `environment.ts`, its query field in
-`environmentHttp.ts`, and on clients `appendOrchestrationProtocol` in
-`connection/compatibility.ts` (with its caller in `resolver.ts`) and
-`shellSnapshotHttp.ts`; the launch handler and tool in `mcp/toolkits/project/`;
-`ThreadMetadataMcpService.ts`; the drop in `ThreadForkService.ts`; the
-sidebar's visibility filter (`filterSidebarV2VisibleThreads` in
-`Sidebar.logic.ts`) and the redirect in `ThreadRouteView.tsx`.
+`ChatView.tsx` and a command palette item.
 Objectives: `packages/contracts/src/objectives.ts`, the
 `objectives` field in `ServerSettings` and `ServerSettingsPatch`
 (`settings.ts`), its whole-value replace in `applyServerSettingsPatch`
@@ -596,8 +575,8 @@ of `ComposerPrimaryActions.tsx`.
 
 A thread can be snoozed with no wake time: it sits on the Snoozed shelf until
 someone wakes it, and no timer brings it back. It was added for FirstMate's
-decision threads, which no longer use it; nothing in T3 or FirstMate sets one
-now, so it stays only for MCP callers.
+decision threads, which are gone; nothing in T3 or FirstMate sets one now, so it
+stays only for MCP callers.
 On the shelf, dated snoozes come first, soonest wake first, then undated ones,
 newest first by upstream's row age (`resolveThreadActivityTimestamp`), each
 showing that age ("3d") where a dated row shows the alarm and time left

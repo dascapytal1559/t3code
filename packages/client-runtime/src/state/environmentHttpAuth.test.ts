@@ -53,8 +53,7 @@ const PREPARED: PreparedConnection = {
   environmentId: TARGET.environmentId,
   label: TARGET.label,
   httpBaseUrl: "https://previous.example.test",
-  socketUrl:
-    "wss://previous.example.test/ws?clientCapabilities=settingsSecretReferences,decisionThreads",
+  socketUrl: "wss://previous.example.test/ws",
   httpAuthorization: { _tag: "Dpop", accessToken: "expired-token", expiresAtEpochMs: 0 },
   target: TARGET,
 };
@@ -313,12 +312,6 @@ describe("authenticated environment HTTP requests", () => {
       ]);
       if (loader.name === "older thread history") {
         expect(url.searchParams.get("cursor")).toBe("older-page");
-      }
-      // The snapshot must match the socket's stream, so it carries the socket's capabilities.
-      if (loader.name === "shell snapshot") {
-        expect(url.searchParams.get("clientCapabilities")).toBe(
-          "settingsSecretReferences,decisionThreads",
-        );
       }
       expect(PREPARED.httpAuthorization).toMatchObject({ accessToken: "expired-token" });
     }),
