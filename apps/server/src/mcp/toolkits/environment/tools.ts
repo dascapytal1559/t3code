@@ -4,6 +4,7 @@ import {
   DecisionsSetInput,
   DecisionsSetResult,
   ExecutionEnvironmentDescriptor,
+  ModelRouting,
   Objectives,
   OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpFailure,
@@ -85,6 +86,15 @@ const ObjectivesSetTool = Tool.make("t3_objectives_set", {
   }),
   success: Schema.Struct({ objectives: Schema.NullOr(Objectives) }),
 }).annotate(Tool.Destructive, true);
+const RoutingSetTool = Tool.make("t3_routing_set", {
+  ...shared,
+  description:
+    "Replace the model routing table shown in T3's Bridge tab. `markdown`: the whole table, one rule per row; null clears it.",
+  parameters: Schema.Struct({
+    markdown: Schema.NullOr(ModelRouting.fields.markdown),
+  }),
+  success: Schema.Struct({ modelRouting: Schema.NullOr(ModelRouting) }),
+}).annotate(Tool.Destructive, true);
 const DecisionsSetTool = Tool.make("t3_decisions_set", {
   ...shared,
   description:
@@ -115,6 +125,7 @@ export const EnvironmentToolkit = Toolkit.make(
   EnvironmentReadTool,
   EnvironmentPreferencesTool,
   ObjectivesSetTool,
+  RoutingSetTool,
   DecisionsSetTool,
   RestartRequestTool,
   RestartStatusTool,

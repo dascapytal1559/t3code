@@ -11,3 +11,13 @@ export const Objectives = Schema.Struct({
   markdown: TrimmedNonEmptyString.check(Schema.isMaxLength(8_192)),
 });
 export type Objectives = typeof Objectives.Type;
+
+/**
+ * FirstMate's model routing table, which it pushes over MCP (`t3_routing_set`) and the Bridge tab
+ * shows read-only after its decisions. FirstMate is the only writer.
+ */
+export const ModelRouting = Schema.Struct({
+  /** A Markdown table: one rule per row (the kind of work, then harness, model, effort and why). */
+  markdown: TrimmedNonEmptyString.check(Schema.isMaxLength(8_192)),
+});
+export type ModelRouting = typeof ModelRouting.Type;

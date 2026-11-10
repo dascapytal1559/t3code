@@ -2,7 +2,7 @@ import { CommandId, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  bridgeObjectives,
+  bridgeSetting,
   decisionAgeTimestamp,
   decisionMarkdownScope,
   formatDay,
@@ -89,7 +89,7 @@ describe("needsMeRowDetail", () => {
   });
 });
 
-describe("bridgeObjectives", () => {
+describe("bridgeSetting", () => {
   it("shows the host environment's objectives, else another environment's, else none", () => {
     const host = EnvironmentId.make("host");
     const other = EnvironmentId.make("other");
@@ -97,24 +97,30 @@ describe("bridgeObjectives", () => {
       settings: { objectives: markdown === null ? null : { markdown } },
     });
     expect(
-      bridgeObjectives(
+      bridgeSetting(
         new Map([
           [other, config("- **Other**")],
           [host, config("- **Host**")],
         ]),
         host,
+        "objectives",
       ),
     ).toEqual({ markdown: "- **Host**" });
     expect(
-      bridgeObjectives(
+      bridgeSetting(
         new Map([
           [host, config(null)],
           [other, config("- **Other**")],
         ]),
         host,
+        "objectives",
       ),
     ).toEqual({ markdown: "- **Other**" });
-    expect(bridgeObjectives(new Map([[host, config(null)]]), host)).toBeNull();
+    expect(bridgeSetting(new Map([[host, config(null)]]), host, "objectives")).toBeNull();
+    // With no routing table set anywhere, the Bridge leaves its section out.
+    expect(
+      bridgeSetting(new Map([[host, { settings: { modelRouting: null } }]]), host, "modelRouting"),
+    ).toBeNull();
   });
 });
 

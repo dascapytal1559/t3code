@@ -64,76 +64,110 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Bridge tools", (
     entries: [],
     revision: 3,
   };
-  const layerTools = McpToolAccess.HandlersLayer.layer(EnvironmentHandlers.layer).pipe(
-    Layer.provideMerge(
-      Layer.mergeAll(
-        ThreadCommandExecutor.layer,
-        layerServerEnvironment,
-        Layer.mock(Orchestrator.OrchestratorV2)({}),
-        Layer.mock(ThreadManagement.ThreadManagementService)({}),
-        Layer.mock(Decisions.Decisions)({
-          set: ({ replyTo }) =>
-            replyTo === threadId
-              ? Effect.succeed({
-                  replyTo,
-                  decisions: [
-                    {
-                      ...answeredDecision,
-                      answered: { commandId: CommandId.make("reply"), at: "2026-11-09T00:00:00Z" },
-                    },
-                  ],
-                })
-              : Effect.fail(new Decisions.DecisionsReplyThreadError({ threadId: replyTo })),
-        }),
-        Layer.succeed(McpInvocationContext.McpInvocationContext, {
-          environmentId,
-          requestNamespace: "client:firstmate",
-          thread: undefined,
-          client: { sessionId: "firstmate", label: "FirstMate", access: "full-access" },
-          capabilities: new Set(["orchestration" as const]),
-          issuedAt: 0,
-        }),
+  const firstMate: McpInvocationContext.McpInvocationContext["Service"] = {
+    environmentId,
+    requestNamespace: "client:firstmate",
+    thread: undefined,
+    client: { sessionId: "firstmate", label: "FirstMate", access: "full-access" },
+    capabilities: new Set(["orchestration" as const]),
+    issuedAt: 0,
+  };
+  const layerToolsAs = (caller: McpInvocationContext.McpInvocationContext["Service"]) =>
+    McpToolAccess.HandlersLayer.layer(EnvironmentHandlers.layer).pipe(
+      Layer.provideMerge(
+        Layer.mergeAll(
+          ThreadCommandExecutor.layer,
+          layerServerEnvironment,
+          Layer.mock(Orchestrator.OrchestratorV2)({}),
+          Layer.mock(ThreadManagement.ThreadManagementService)({}),
+          Layer.mock(Decisions.Decisions)({
+            set: ({ replyTo }) =>
+              replyTo === threadId
+                ? Effect.succeed({
+                    replyTo,
+                    decisions: [
+                      {
+                        ...answeredDecision,
+                        answered: {
+                          commandId: CommandId.make("reply"),
+                          at: "2026-11-09T00:00:00Z",
+                        },
+                      },
+                    ],
+                  })
+                : Effect.fail(new Decisions.DecisionsReplyThreadError({ threadId: replyTo })),
+          }),
+          Layer.succeed(McpInvocationContext.McpInvocationContext, caller),
+        ),
       ),
-    ),
-  );
-  const setObjectives = (params: { markdown: string | null }) =>
+    );
+  const layerTools = layerToolsAs(firstMate);
+  const setBridge = (
+    tool: "t3_objectives_set" | "t3_routing_set",
+    params: { markdown: string | null },
+  ) =>
     Effect.gen(function* () {
       const toolkit = yield* EnvironmentToolkit;
-      const results = yield* toolkit
-        .handle("t3_objectives_set", params)
-        .pipe(Stream.unwrap, Stream.runCollect);
+      const results = yield* toolkit.handle(tool, params).pipe(Stream.unwrap, Stream.runCollect);
       return results.at(-1)?.result;
     });
-  const savedObjectives = Settings.ServerSettingsService.pipe(
-    Effect.flatMap((settings) => settings.getSettings),
-    Effect.map((settings) => settings.objectives),
-    Effect.provide(Layer.fresh(layerSettings)),
-  );
+  const saved = (field: "objectives" | "modelRouting") =>
+    Settings.ServerSettingsService.pipe(
+      Effect.flatMap((settings) => settings.getSettings),
+      Effect.map((settings) => settings[field]),
+      Effect.provide(Layer.fresh(layerSettings)),
+    );
 
-  it.effect(
-    "t3_objectives_set sets, replaces and clears them, saved across a restart and sent to clients",
-    () =>
+  it.effect.each([
+    ["t3_objectives_set", "objectives", "- **Ship** the Bridge.", "- **Rest** on Sundays."],
+    [
+      "t3_routing_set",
+      "modelRouting",
+      "| When | Model |\n| --- | --- |\n| Review | opus |",
+      "| When | Model |\n| --- | --- |\n| Docs | haiku |",
+    ],
+  ] as const)(
+    "%s sets, replaces and clears it, saved across a restart and sent to clients",
+    ([tool, field, firstMarkdown, secondMarkdown]) =>
       Effect.gen(function* () {
-        const first = { markdown: "- **Ship** the Bridge." };
-        const second = { markdown: "- **Rest** on Sundays." };
-        // Older FirstMate builds still send the retired `lastReviewed`; the call must not fail.
+        const first = { markdown: firstMarkdown };
+        const second = { markdown: secondMarkdown };
+        // Older FirstMate builds still send objectives' retired `lastReviewed`; it must not fail.
         const staleCall = { ...first, lastReviewed: "2026-11-05" };
         yield* Effect.gen(function* () {
           const settings = yield* Settings.ServerSettingsService;
           const changes = yield* settings.subscribeChanges;
-          expect(yield* setObjectives(staleCall)).toEqual({ objectives: first });
+          expect(yield* setBridge(tool, staleCall)).toEqual({ [field]: first });
           // The settings stream is what every connected client's Bridge listens to.
-          expect(Option.getOrThrow(yield* Stream.runHead(changes)).objectives).toEqual(first);
-          expect(yield* setObjectives(second)).toEqual({ objectives: second });
+          expect(Option.getOrThrow(yield* Stream.runHead(changes))[field]).toEqual(first);
+          expect(yield* setBridge(tool, second)).toEqual({ [field]: second });
         }).pipe(Effect.provide(layerTools.pipe(Layer.provideMerge(Layer.fresh(layerSettings)))));
-        expect(yield* savedObjectives).toEqual(second);
+        expect(yield* saved(field)).toEqual(second);
 
-        const cleared = yield* setObjectives({ markdown: null }).pipe(
+        const cleared = yield* setBridge(tool, { markdown: null }).pipe(
           Effect.provide(layerTools.pipe(Layer.provideMerge(Layer.fresh(layerSettings)))),
         );
-        expect(cleared).toEqual({ objectives: null });
-        expect(yield* savedObjectives).toBeNull();
+        expect(cleared).toEqual({ [field]: null });
+        expect(yield* saved(field)).toBeNull();
       }).pipe(Effect.provide(layerHome)),
+  );
+
+  it.effect("t3_routing_set refuses read-only clients and other environments' credentials", () =>
+    Effect.gen(function* () {
+      const table = { markdown: "| When | Model |\n| --- | --- |\n| Review | opus |" };
+      const readOnly = {
+        ...firstMate,
+        client: { sessionId: "firstmate", label: "FirstMate", access: "read-only" as const },
+      };
+      const elsewhere = { ...firstMate, environmentId: EnvironmentId.make("environment:other") };
+      for (const caller of [readOnly, elsewhere]) {
+        const result = yield* setBridge("t3_routing_set", table).pipe(
+          Effect.provide(layerToolsAs(caller)),
+        );
+        expect(result).toMatchObject({ code: "capability_denied" });
+      }
+      expect(yield* saved("modelRouting")).toBeNull();
+    }).pipe(Effect.provide(layerSettings.pipe(Layer.provideMerge(layerHome)))),
   );
 
   it.effect("t3_decisions_set answers with what was stored, and names a missing replyTo", () =>

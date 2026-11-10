@@ -2274,6 +2274,57 @@ code {
   max-width: none;
 }
 
+/* The Bridge's model routing table. A narrow panel or phone stacks each row: the
+   first cell (the kind of work) as its title, the middle cells on one line, the
+   last (why) beneath, so it never scrolls sideways. */
+.bridge-routing {
+  container-type: inline-size;
+}
+
+.bridge-routing .chat-markdown-table-container {
+  margin: 0;
+}
+
+@container (max-width: 36rem) {
+  .bridge-routing thead {
+    display: none;
+  }
+
+  .bridge-routing :is(table, tbody, tr) {
+    display: block;
+  }
+
+  .bridge-routing tbody tr {
+    border-bottom: 1px solid color-mix(in srgb, var(--contrast-border) 60%, transparent);
+    padding-block: 0.5rem;
+  }
+
+  .bridge-routing tbody td {
+    display: inline;
+    border: 0;
+    padding: 0;
+    max-width: none;
+  }
+
+  .bridge-routing tbody td:not(:first-child, :last-child, :nth-last-child(2))::after {
+    content: " · ";
+  }
+
+  .bridge-routing tbody td:is(:first-child, :last-child) {
+    display: block;
+  }
+
+  .bridge-routing tbody td:first-child {
+    font-weight: 600;
+    color: var(--foreground);
+  }
+
+  .bridge-routing tbody td:last-child:not(:first-child) {
+    margin-top: 0.125rem;
+    color: var(--muted-foreground);
+  }
+}
+
 /* Keep overflow discoverable when the edge fade falls between columns. */
 .chat-markdown
   .chat-markdown-table-container

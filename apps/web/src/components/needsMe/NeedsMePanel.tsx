@@ -1,8 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, Objectives, ScopedThreadRef } from "@t3tools/contracts";
+import type { EnvironmentId, ModelRouting, Objectives, ScopedThreadRef } from "@t3tools/contracts";
 import { ChevronRightIcon } from "lucide-react";
-import type { ReactNode } from "react";
 
 import { useNowMinute } from "../../hooks/useNowMinute";
 import { cn } from "../../lib/utils";
@@ -10,10 +9,11 @@ import { bridgeDecisionsAtom, type BridgeDecision } from "../../state/decisions"
 import { useProject, useQuietThreadShell, useServerConfigs } from "../../state/entities";
 import ChatMarkdown from "../ChatMarkdown";
 import { ProjectFavicon, ProjectNameMonogram } from "../ProjectFavicon";
+import { BridgeSection, useObjectivesPinned } from "./BridgeSection";
 import { DecisionDetail } from "./DecisionDetail";
 import {
   bridgeDecisionKey,
-  bridgeObjectives,
+  bridgeSetting,
   groupNeedsMeDecisions,
   needsMeRowDetail,
   parseObjective,
@@ -26,11 +26,13 @@ type RowGroup = keyof NeedsMeGroups<unknown>;
 
 /**
  * The Bridge tab: the user's objectives, then the decisions FirstMate needs now beside any chat,
- * then those with a return date under Scheduled.
+ * then those with a return date under Scheduled, then FirstMate's model routing table.
  */
 export function NeedsMePanel(props: { readonly threadRef: ScopedThreadRef }) {
   const decisions = useAtomValue(bridgeDecisionsAtom);
-  const objectives = bridgeObjectives(useServerConfigs(), props.threadRef.environmentId);
+  const serverConfigs = useServerConfigs();
+  const objectives = bridgeSetting(serverConfigs, props.threadRef.environmentId, "objectives");
+  const modelRouting = bridgeSetting(serverConfigs, props.threadRef.environmentId, "modelRouting");
   const nowMinute = useNowMinute();
   const nowMs = Date.parse(`${nowMinute}:00.000Z`);
   const groups = groupNeedsMeDecisions(decisions, new Date(nowMs));
@@ -49,17 +51,23 @@ export function NeedsMePanel(props: { readonly threadRef: ScopedThreadRef }) {
       {objectives === null ? null : (
         <ObjectivesSection objectives={objectives} environmentId={props.threadRef.environmentId} />
       )}
-      <NeedsMeSection title="Needs you" count={groups.open.length}>
+      <BridgeSection id="needs-you" title="Needs you" count={groups.open.length}>
         {groups.open.length === 0 ? (
           <p className="px-2 py-3 text-sm text-muted-foreground">Nothing needs you right now.</p>
         ) : (
           groups.open.map(row("open"))
         )}
-      </NeedsMeSection>
+      </BridgeSection>
       {groups.scheduled.length === 0 ? null : (
-        <NeedsMeSection title="Scheduled" count={groups.scheduled.length}>
+        <BridgeSection id="scheduled" title="Scheduled" count={groups.scheduled.length}>
           {groups.scheduled.map(row("scheduled"))}
-        </NeedsMeSection>
+        </BridgeSection>
+      )}
+      {modelRouting === null ? null : (
+        <ModelRoutingSection
+          modelRouting={modelRouting}
+          environmentId={props.threadRef.environmentId}
+        />
       )}
     </div>
   );
@@ -73,47 +81,58 @@ function ObjectivesSection(props: {
   readonly objectives: Objectives;
   readonly environmentId: EnvironmentId;
 }) {
+  const [pinned, setPinned] = useObjectivesPinned();
+  const entries = splitObjectives(props.objectives.markdown);
   return (
-    <ul
-      aria-label="Objectives"
-      className="mb-5 grid grid-cols-[repeat(auto-fill,minmax(min(280px,100%),1fr))] gap-2"
+    <BridgeSection
+      id="objectives"
+      title="Objectives"
+      count={entries.length}
+      pin={{ pinned, onToggle: () => setPinned(!pinned) }}
     >
-      {splitObjectives(props.objectives.markdown).map((entry) => {
-        const objective = parseObjective(entry);
-        return (
-          <li key={entry} className="min-w-0 rounded-xl border border-border bg-muted/60 px-4 py-3">
-            {objective.name === undefined ? null : (
-              <h3 className="mb-1 text-sm leading-5 font-semibold text-foreground">
-                {objective.name}
-              </h3>
-            )}
-            {objective.text === "" ? null : (
-              <ChatMarkdown
-                text={objective.text}
-                cwd={undefined}
-                environmentId={props.environmentId}
-                className="text-sm leading-relaxed text-foreground/80 [&_p]:my-0"
-              />
-            )}
-          </li>
-        );
-      })}
-    </ul>
+      <ul className="mb-1 grid grid-cols-[repeat(auto-fill,minmax(min(280px,100%),1fr))] gap-2">
+        {entries.map((entry) => {
+          const objective = parseObjective(entry);
+          return (
+            <li
+              key={entry}
+              className="min-w-0 rounded-xl border border-border bg-muted/60 px-4 py-3"
+            >
+              {objective.name === undefined ? null : (
+                <h3 className="mb-1 text-sm leading-5 font-semibold text-foreground">
+                  {objective.name}
+                </h3>
+              )}
+              {objective.text === "" ? null : (
+                <ChatMarkdown
+                  text={objective.text}
+                  cwd={undefined}
+                  environmentId={props.environmentId}
+                  className="text-sm leading-relaxed text-foreground/80 [&_p]:my-0"
+                />
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </BridgeSection>
   );
 }
 
-function NeedsMeSection(props: {
-  readonly title: string;
-  readonly count: number;
-  readonly children: ReactNode;
+/** Read-only: FirstMate sets it over MCP. `.bridge-routing` stacks its rows in a narrow panel. */
+function ModelRoutingSection(props: {
+  readonly modelRouting: ModelRouting;
+  readonly environmentId: EnvironmentId;
 }) {
   return (
-    <section className="mb-4">
-      <h3 className="px-2 pb-1 text-xs font-medium text-muted-foreground">
-        {props.title} · {props.count}
-      </h3>
-      {props.children}
-    </section>
+    <BridgeSection id="model-routing" title="Model routing">
+      <ChatMarkdown
+        text={props.modelRouting.markdown}
+        cwd={undefined}
+        environmentId={props.environmentId}
+        className="bridge-routing px-2 text-sm text-foreground/80"
+      />
+    </BridgeSection>
   );
 }
 

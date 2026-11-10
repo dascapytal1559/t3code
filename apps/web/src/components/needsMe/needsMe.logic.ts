@@ -5,7 +5,6 @@ import {
   decisionUpdatedAt,
   type DecisionAttachment,
   type EnvironmentId,
-  type Objectives,
   type ScopedThreadRef,
   type ServerSettings,
   type StoredDecision,
@@ -128,20 +127,18 @@ export function parseObjective(entry: string): { readonly name?: string; readonl
 }
 
 /**
- * The objectives the Bridge shows: the host chat's environment's, else the first connected
- * environment that has some. FirstMate normally sets them on one environment only.
+ * The objectives or routing table the Bridge shows: the host chat's environment's, else the first
+ * connected environment that has one. FirstMate normally sets them on one environment only.
  */
-export function bridgeObjectives(
-  settingsByEnvironment: ReadonlyMap<
-    EnvironmentId,
-    { readonly settings: Pick<ServerSettings, "objectives"> }
-  >,
+export function bridgeSetting<K extends "objectives" | "modelRouting">(
+  settingsByEnvironment: ReadonlyMap<EnvironmentId, { readonly settings: Pick<ServerSettings, K> }>,
   hostEnvironmentId: EnvironmentId,
-): Objectives | null {
-  const host = settingsByEnvironment.get(hostEnvironmentId)?.settings.objectives;
+  key: K,
+): ServerSettings[K] | null {
+  const host = settingsByEnvironment.get(hostEnvironmentId)?.settings[key];
   if (host != null) return host;
   for (const config of settingsByEnvironment.values()) {
-    if (config.settings.objectives != null) return config.settings.objectives;
+    if (config.settings[key] != null) return config.settings[key];
   }
   return null;
 }

@@ -411,6 +411,7 @@ export function applyServerSettingsPatch(
     projectScriptOverrides: _legacyScripts,
     // Replaced whole, so `null` clears them.
     objectives,
+    modelRouting,
     ...patchForMerge
   } = patch;
   const currentBackgroundActivity = normalizeServerBackgroundActivitySettings(current);
@@ -544,6 +545,7 @@ export function applyServerSettingsPatch(
       ? { providerInstances: patch.providerInstances }
       : {}),
     ...(objectives !== undefined ? { objectives } : {}),
+    ...(modelRouting !== undefined ? { modelRouting } : {}),
     ...(patch.worktreesDirectory !== undefined &&
     patch.worktreesDirectory !== current.worktreesDirectory
       ? {

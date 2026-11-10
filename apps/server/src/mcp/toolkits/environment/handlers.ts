@@ -88,6 +88,11 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
       Effect.map(({ objectives }) => ({ objectives })),
     ),
   ),
+  t3_routing_set: McpToolAccess.writesEnvironment(({ markdown }, check) =>
+    updateSettings({ modelRouting: markdown === null ? null : { markdown } }, check).pipe(
+      Effect.map(({ modelRouting }) => ({ modelRouting })),
+    ),
+  ),
   t3_decisions_set: McpToolAccess.writesEnvironment((input) =>
     Effect.gen(function* () {
       yield* access;

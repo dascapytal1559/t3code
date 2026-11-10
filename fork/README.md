@@ -366,19 +366,37 @@ arrive unchanged, and mobile still shows the composer. Code:
 ![A chat with the Bridge tab beside it: four objectives on top, then three decisions under Needs you and two under Scheduled with their return days](media/bridge-list.jpg)
 
 The right panel's "Bridge" tab (once "Needs me") is the captain's overview
-beside any chat: their objectives on top, then what FirstMate needs from them. It
+beside any chat: their objectives on top, then what FirstMate needs from them,
+then FirstMate's model routing table. It
 opens from the panel's launcher or "+" menu (N), or "Open Bridge" in the
 command palette, which still finds it by "needs me". On phone web it opens as a
 sheet like the other right-panel tabs. Internal names (`needs-me` surface kind,
 `components/needsMe/`) keep the old name.
 
+Each section (Objectives, Needs you, Scheduled, Model routing) has a header
+with a chevron and its count, where it has one, that collapses and expands it.
+Each client remembers what it collapsed in local storage
+(`t3code:bridge:collapsed:<section>`), so it survives a reload. Objectives has a
+pin in its header: pinned, it stays open and its header cannot collapse it;
+unpinned, it collapses like the others. A new client starts pinned, and the pin
+is remembered the same way (`t3code:bridge:objectives-pinned`).
+
 Objectives are a short Markdown list FirstMate pushes (see the records below),
-shown read-only as one card per top-level bullet, with no heading: its bold
+shown read-only as one card per top-level bullet: its bold
 lead as the card's name over the rest of it, a summary of about two lines, in
 full. The cards wrap in a grid, one column in a narrow panel and side by side
 as it widens, cards in a row sharing a height. With none set there are no
 cards. The tab shows the objectives of the chat's own
 environment, else of the first connected environment that has some.
+
+Model routing is FirstMate's routing table (its `config/crew-dispatch.json`: a
+"when" sentence naming a kind of work, the harness, model and effort it routes
+to, and why, plus a default), pushed as a Markdown table and shown read-only
+after the decisions. A wide panel shows the table. Below 36rem (a narrow panel,
+phone web) each row stacks instead of scrolling sideways: the first cell as its
+title, the middle cells on one line joined by " · ", the last cell beneath. With
+none set the section does not show. Like objectives, it is the chat's own
+environment's, else the first connected environment's that has one.
 
 Something FirstMate needs from the captain is a decision. FirstMate sends T3
 the whole list of them (see the records below), and T3 keeps it apart from
@@ -458,6 +476,12 @@ The records, for FirstMate's side:
   stored value. Like `t3_environment_preferences_update` it needs
   a full-access client or a live full-access caller thread, and refuses a
   linked environment's caller. The captain cannot edit them in T3.
+- `t3_routing_set` replaces the model routing table the same way, kept as
+  `modelRouting` in `settings.json`. Input: `{ markdown: string | null }`, the
+  whole Markdown table (header row first, one rule per row, the default as the
+  last row), at most 8,192 characters, trimmed and not empty; `null` clears it.
+  The result is `{ modelRouting: { markdown } | null }`. Same access rules and
+  refusals as `t3_objectives_set`. The captain cannot edit it in T3.
 - The reply message reads `**Decision · <title>**`, then the line
   `needs-me-task: <id>`, a blank line, the question quoted with `> `, a
   blank line, then the captain's words. Upstream renders user messages without
@@ -493,12 +517,14 @@ larger `agentContextBudget.json`; on the web, the `needs-me` surface kind in
 entries and tab title and icon in `RightPanelTabs.tsx`,
 `RightPanelSurfaceContent.tsx`, `useRightPanelActions.ts`, the prop in
 `ChatView.tsx` and a command palette item.
-Objectives: `packages/contracts/src/objectives.ts`, the
-`objectives` field in `ServerSettings` and `ServerSettingsPatch`
-(`settings.ts`), its whole-value replace in `applyServerSettingsPatch`
-(`packages/shared/src/serverSettings.ts`), the tool in
-`mcp/toolkits/environment/`, its row in `t3McpToolPresentation.ts` and the
-larger `agentContextBudget.json`.
+Objectives and model routing: `packages/contracts/src/objectives.ts`, the
+`objectives` and `modelRouting` fields in `ServerSettings` and
+`ServerSettingsPatch` (`settings.ts`), their whole-value replace in
+`applyServerSettingsPatch` (`packages/shared/src/serverSettings.ts`), the tools
+in `mcp/toolkits/environment/`, their rows in `t3McpToolPresentation.ts` and the
+larger `agentContextBudget.json`. Collapsible sections and the pin live in
+`components/needsMe/BridgeSection.tsx`; the routing table's stacked layout is
+the `.bridge-routing` block in `apps/web/src/index.css`.
 
 ## Restart registry
 
