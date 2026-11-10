@@ -640,6 +640,31 @@ you show or hide it, whichever way the setting points. Code:
 `defaultThreadPanelVisibility` in `apps/web/src/rightPanelStore.ts`, whose
 persisted map now keeps open choices too.
 
+## Context window meter
+
+The composer's footer shows a ring for how full the thread's context window
+is. Hovering it opens the usage, total processed tokens, cost, the
+auto-compact threshold and a Compact context button when the provider has
+`/compact`. It shows on web and desktop with no setting; mobile has none.
+Upstream's #33131 (8 Nov 2026) deleted it with the Labs toggle that hid it,
+"Context window indicator (legacy)". The fork keeps the meter, not the toggle,
+because a glance at the composer is the quickest way to see when a long
+thread needs compacting.
+
+Upstream's branch `maria/redesign/6-workspace-panes` has its own view of what
+fills a Claude thread's context ("feat(web): show what fills a Claude thread's
+context window"). If upstream ships a context view like it, drop this meter
+for theirs.
+
+For syncs, the meter lives in `apps/web/src/components/chat/ContextWindowMeter.tsx`
+and `ContextWindowMeter.logic.ts`, both fork files. Upstream files it touches:
+`ComposerFooterControls.tsx` (renders it before the primary actions),
+`ChatComposer.tsx` (the context window, thread shell, sync phase and compact
+props), `ChatView.tsx` (passes them, and `compactDisabledReason`), and
+`compaction.logic.ts` (exports `providerSupportsManualCompaction`), plus a
+sentence on the ring in `docs/user/composer.md`. The meter
+offers no Refresh context; the fork removed that feature.
+
 ## The window grows for the right panel
 
 ![The desktop app with a README open in the right panel: the window grew by the panel's width, and the sidebar and chat kept theirs](media/window-grows-for-panel.jpg)
