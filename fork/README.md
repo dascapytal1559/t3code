@@ -593,8 +593,9 @@ preparation retry, Stop, queue resume). The recovery kinds in
 `ProjectionStore.ts`, the hold strip in `ProviderRuntimeRecoveryService.ts`,
 the startup release in `serverRuntimeStartup.ts`, the tools in
 `mcp/toolkits/environment/` with rows in `t3McpToolPresentation.ts` and the
-larger `agentContextBudget.json`; on the web, `RestartPendingNotice.tsx`
-(mounted in `__root.tsx`), `useRestartPending.ts` and the `restartPending` prop
+larger `agentContextBudget.json`; on the web, `useRestartPendingBanner.tsx`
+(a notice in the composer's banner stack, above the message box),
+`useRestartPending.ts` and the `restartPending` prop
 of `ComposerPrimaryActions.tsx`.
 
 ## Sidebar cards stay two lines

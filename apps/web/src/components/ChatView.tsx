@@ -39,7 +39,7 @@ import { useQueuedRunEdit } from "./chat/useQueuedRunEdit";
 import { recallCheckoutIsRepo, rememberCheckoutIsRepo } from "./ChatView.logic";
 import { useLogicalProjectEnvironments } from "../hooks/useLogicalProjectEnvironments";
 import { useStableCallback } from "../hooks/useStableCallback";
-import { useRestartPending } from "../hooks/useRestartPending";
+import { useRestartPendingBanner } from "./chat/useRestartPendingBanner";
 import { useProjectScriptEditing } from "./chat/useProjectScriptEditing";
 import { RightPanelSurfaceContent } from "./chat/RightPanelSurfaceContent";
 import { usePendingThreadRequests } from "./chat/usePendingThreadRequests";
@@ -427,7 +427,8 @@ export default function ChatView(props: ChatViewProps) {
   const embedded = parentPanel !== undefined;
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
-  const restartPending = useRestartPending(environmentId);
+  const restartPendingBanner = useRestartPendingBanner(environmentId);
+  const restartPending = restartPendingBanner !== null;
   const draftId = routeKind === "draft" ? props.draftId : null;
   const handleNewThread = useNewThreadHandler();
   const routeThreadRef = scopeThreadRef(environmentId, threadId);
@@ -2636,6 +2637,7 @@ export default function ChatView(props: ChatViewProps) {
       freshSessionAvailable && freshSessionArmed && activePendingApproval === null
         ? [freshSessionBannerItem(() => disarmFreshSession(routeThreadKey))]
         : [];
+    const restartPendingItems = restartPendingBanner === null ? [] : [restartPendingBanner];
     if (!localCheckoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
       return [
         ...feedbackBannerItems,
@@ -2645,6 +2647,7 @@ export default function ChatView(props: ChatViewProps) {
         ...usageLimitsItems,
         ...projectCloneItems,
         ...freshSessionItems,
+        ...restartPendingItems,
         ...systemComposerBannerItems,
       ];
     }
@@ -2656,6 +2659,7 @@ export default function ChatView(props: ChatViewProps) {
       ...usageLimitsItems,
       ...projectCloneItems,
       ...freshSessionItems,
+      ...restartPendingItems,
       ...systemComposerBannerItems,
       branchMismatchBannerItem({
         mismatchKey: activeBranchMismatchKey,
