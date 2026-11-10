@@ -7,8 +7,8 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { RotateCwIcon } from "lucide-react";
 import { useState } from "react";
 
-import { primaryEnvironmentIdAtom } from "../../state/primaryEnvironment";
-import { primaryRestartRequestAtom, serverEnvironment } from "../../state/server";
+import { useRestartRequest } from "../../hooks/useRestartPending";
+import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
@@ -18,15 +18,14 @@ import type { ComposerBannerStackItem } from "./ComposerBannerStack";
 export function useRestartPendingBanner(
   environmentId: EnvironmentId,
 ): ComposerBannerStackItem | null {
-  const request = useAtomValue(primaryRestartRequestAtom);
-  const primaryEnvironmentId = useAtomValue(primaryEnvironmentIdAtom);
+  const request = useRestartRequest(environmentId);
   const cancel = useAtomCommand(serverEnvironment.cancelRestartRequest);
   const permitted = useAtomValue(
     serverEnvironment.cancelRestartRequest.permissionAtom(environmentId),
   );
   const [cancelling, setCancelling] = useState(false);
 
-  if (request === null || primaryEnvironmentId !== environmentId) return null;
+  if (request === null) return null;
 
   const cancelRestart = async () => {
     setCancelling(true);

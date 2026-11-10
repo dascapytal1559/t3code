@@ -21,6 +21,7 @@ import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as ServerSettings from "../serverSettings.ts";
+import { notifyCoordinators } from "./CoordinatorRestartNote.ts";
 import { restartContinuationRun, continueRestartedRun } from "./RestartContinuation.ts";
 import { continuationStartRetryDelayMs } from "./RestartBackgroundNote.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
@@ -1268,39 +1269,60 @@ it.effect.each(["completed", "failed", "interrupted"] as const)(
 const serverStartedAt = DateTime.makeUnsafe("2026-10-03T12:30:00.000Z");
 const restartLine = `The T3 server restarted at ${DateTime.formatIso(serverStartedAt)}.\n`;
 
-/** Runs the continuation for a thread pinned as its project's coordinator. */
+const crewId = ThreadId.make("thread:crew");
+
+/**
+ * Starts the server for a pinned coordinator and its crew, both cut by the restart, then runs the
+ * coordinator's continuation after the crew's own continuation has started.
+ */
 const pinnedContinuationDispatches = (projection: OrchestrationV2ThreadProjection) =>
   Effect.gen(function* () {
     const dispatches: Array<Extract<OrchestrationV2Command, { type: "message.dispatch" }>> = [];
     const thread = { ...projection.thread, coordinator: true };
-    yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(
-      Effect.provide(
-        Layer.merge(
-          Layer.mock(ThreadManagementService.ThreadManagementService)({
-            serverStartedAt: Effect.succeed(serverStartedAt),
-            getShellSnapshot: () =>
-              Effect.succeed({
-                threads: [{ ...thread, status: "cancelled", activeRunId: null }],
-              } as never),
-            getThreadRecords: () =>
-              Effect.succeed({
-                ...projection,
-                thread,
-                messages: [
-                  ...projection.messages,
-                  ...dispatches.map((command) => ({ id: command.messageId })),
-                ],
-              } as never),
-            recoverDelegatedTask: () => Effect.void,
-            dispatch: (command) => {
-              if (command.type === "message.dispatch") dispatches.push(command);
-              return Effect.succeed({} as never);
-            },
-          }),
-          ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
-        ),
-      ),
+    const shellThread = (id: ThreadId, status: string, extra: Record<string, unknown> = {}) => ({
+      ...thread,
+      id,
+      title: id,
+      status,
+      activeRunId: null,
+      latestRunStartedAt: now,
+      latestRunStopRequested: false,
+      snoozedUntil: null,
+      settledOverride: null,
+      ...extra,
+    });
+    let crewStatus = "cancelled";
+    const layer = Layer.merge(
+      Layer.mock(ThreadManagementService.ThreadManagementService)({
+        serverStartedAt: Effect.succeed(serverStartedAt),
+        getShellSnapshot: () =>
+          Effect.succeed({
+            threads: [
+              shellThread(threadId, "cancelled"),
+              shellThread(crewId, crewStatus, { coordinator: undefined, crewOf: threadId }),
+            ],
+          } as never),
+        getThreadRecords: () =>
+          Effect.succeed({
+            ...projection,
+            thread,
+            messages: [
+              ...projection.messages,
+              ...dispatches.map((command) => ({ id: command.messageId })),
+            ],
+          } as never),
+        restartContinuationPending: () => Effect.succeed(true),
+        recoverDelegatedTask: () => Effect.void,
+        dispatch: (command) => {
+          if (command.type === "message.dispatch") dispatches.push(command);
+          return Effect.succeed({} as never);
+        },
+      }),
+      ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
     );
+    yield* notifyCoordinators().pipe(Effect.provide(layer));
+    crewStatus = "running";
+    yield* continueRestartedRun({ threadId, sourceRunId: runId }).pipe(Effect.provide(layer));
     return dispatches;
   });
 
@@ -1311,6 +1333,7 @@ it.effect("opens a pinned coordinator's resumed turn with its restart note", () 
     const [command] = dispatches;
     assert.equal(command!.messageId, `message:restart-continuation:${runId}`);
     assert.isTrue(command!.text.startsWith(restartLine));
+    assert.include(command!.text, `- ${crewId} (${crewId})`);
     assert.include(command!.text, "Continue where you left off.");
   }),
 );
@@ -1328,6 +1351,7 @@ it.effect("tells a pinned coordinator about the restart when its continuation de
       `message:restart-note:${threadId}:${DateTime.formatIso(serverStartedAt)}`,
     );
     assert.isTrue(command!.text.startsWith(restartLine));
+    assert.include(command!.text, `- ${crewId} (${crewId})`);
     assert.notInclude(command!.text, "Continue where you left off.");
   }),
 );

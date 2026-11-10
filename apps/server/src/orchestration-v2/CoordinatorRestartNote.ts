@@ -107,16 +107,16 @@ const logNoteFailure = <A, E, R>(effect: Effect.Effect<A, E, R>, threadId: Threa
   );
 
 const sendNote = Effect.fn("CoordinatorRestartNote.sendNote")(
-  function* (roster: Roster, coordinatorId: ThreadId, text: string) {
+  function* (startedAt: string, coordinatorId: ThreadId, text: string) {
     const threads = yield* ThreadManagementService.ThreadManagementService;
-    const messageId = MessageId.make(`message:restart-note:${coordinatorId}:${roster.startedAt}`);
+    const messageId = MessageId.make(`message:restart-note:${coordinatorId}:${startedAt}`);
     const { messages } = yield* threads.getThreadRecords(coordinatorId, ["messages"], {
       messageIds: [messageId],
     });
     if (messages.some((message) => message.id === messageId)) return;
     yield* threads.dispatch({
       type: "message.dispatch",
-      commandId: CommandId.make(`command:restart-note:${coordinatorId}:${roster.startedAt}`),
+      commandId: CommandId.make(`command:restart-note:${coordinatorId}:${startedAt}`),
       threadId: coordinatorId,
       messageId,
       text,
@@ -132,7 +132,7 @@ const sendNote = Effect.fn("CoordinatorRestartNote.sendNote")(
       creationSource: "server",
     });
   },
-  (effect, _roster, threadId) => logNoteFailure(effect, threadId),
+  (effect, _startedAt, threadId) => logNoteFailure(effect, threadId),
 );
 
 /** Whether T3 is about to resume this thread's last run, the one restartContinuationRun picks. */
@@ -151,21 +151,24 @@ const resumePending = Effect.fn("CoordinatorRestartNote.resumePending")(function
   return source !== undefined && (yield* threads.restartContinuationPending(source));
 });
 
+let heldNotes: { readonly startedAt: string; readonly notes: Map<ThreadId, string> } | undefined;
+
 /**
- * A restart ends a coordinator's session and nothing inside it can wake it, so server start
- * sends each one it owes a note. A note that started first would make the orchestrator drop a
- * pending restart continuation, so one T3 resumes waits for that turn, which carries the note
- * for a pinned coordinator.
+ * A restart ends a coordinator's session, so server start sends each one it owes a note. A note
+ * that started first would make the orchestrator drop a pending restart continuation, so one T3
+ * resumes holds its note, written here while its crew still read cancelled, for that turn.
  */
 export const notifyCoordinators = Effect.fn("CoordinatorRestartNote.notifyCoordinators")(
   function* () {
     const roster = yield* loadRoster;
     if (!roster) return;
+    heldNotes = { startedAt: roster.startedAt, notes: new Map() };
     for (const coordinator of roster.live) {
       const text = owedNote(roster, coordinator);
       if (text === undefined) continue;
       const resuming = yield* resumePending(coordinator.id).pipe(Effect.orElseSucceed(() => false));
-      if (!resuming) yield* sendNote(roster, coordinator.id, text);
+      if (resuming) heldNotes.notes.set(coordinator.id, text);
+      else yield* sendNote(roster.startedAt, coordinator.id, text);
     }
   },
   // A missed note must not hold up startup.
@@ -175,19 +178,19 @@ export const notifyCoordinators = Effect.fn("CoordinatorRestartNote.notifyCoordi
   ),
 );
 
-const pinnedNote = Effect.fn("CoordinatorRestartNote.pinnedNote")(function* (threadId: ThreadId) {
-  const roster = yield* loadRoster;
-  const coordinator = roster?.live.find((thread) => thread.id === threadId);
-  return roster === undefined || coordinator?.coordinator !== true
-    ? undefined
-    : { roster, text: owedNote(roster, coordinator) };
+const heldNote = Effect.fn("CoordinatorRestartNote.heldNote")(function* (threadId: ThreadId) {
+  const startedAt = DateTime.formatIso(
+    yield* (yield* ThreadManagementService.ThreadManagementService).serverStartedAt,
+  );
+  const text = heldNotes?.startedAt === startedAt ? heldNotes.notes.get(threadId) : undefined;
+  return { startedAt, text };
 });
 
 /** The note that opens a pinned coordinator's resumed turn, or undefined for any other thread. */
 export const resumedCoordinatorNote = Effect.fn("CoordinatorRestartNote.resumedCoordinatorNote")(
   function* (thread: { readonly id: ThreadId; readonly coordinator?: boolean | undefined }) {
     if (thread.coordinator !== true) return undefined;
-    return (yield* pinnedNote(thread.id))?.text;
+    return (yield* heldNote(thread.id)).text;
   },
 );
 
@@ -202,8 +205,8 @@ export const notifyCoordinatorUnlessResumed = Effect.fn(
     });
     if (thread.coordinator !== true || messages.some((message) => message.id === resumeMessageId))
       return;
-    const note = yield* pinnedNote(threadId);
-    if (note?.text !== undefined) yield* sendNote(note.roster, threadId, note.text);
+    const note = yield* heldNote(threadId);
+    if (note.text !== undefined) yield* sendNote(note.startedAt, threadId, note.text);
   },
   (effect, threadId) => logNoteFailure(effect, threadId),
 );

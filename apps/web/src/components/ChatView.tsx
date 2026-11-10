@@ -3715,9 +3715,7 @@ export default function ChatView(props: ChatViewProps) {
                                   activeThreadModelSelection={activeThread?.modelSelection}
                                   activeProjectId={activeProject?.id ?? null}
                                   projectName={activeProject?.title}
-                                  contextWindowEntries={serverVisibleTurnItems}
-                                  contextWindowLiveUsage={activeThreadLiveTokenUsage}
-                                  contextWindowProviderThread={activeProviderThread}
+                                  activeContextWindow={activeContextWindow}
                                   compactThreadUnavailable={compactThreadUnavailable}
                                   compactDisabled={compactDisabled}
                                   compactDisabledReason={compactDisabledReason}
