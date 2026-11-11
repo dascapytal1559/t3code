@@ -269,12 +269,14 @@ it.layer(layerTest)("ProjectService", (it) => {
         commandId: CommandId.make("command:project:update"),
         projectId,
         title: "Renamed",
+        agentName: "Life log",
         autoPull: true,
         projectIcon: { kind: "emoji", emoji: "🦊" },
         faviconPath: "/work/project/custom.svg",
         defaultThreadEnvMode: "worktree",
       });
       assert.equal(updated.title, "Renamed");
+      assert.equal(updated.agentName, "Life log");
       assert.equal(updated.createdAt, created.createdAt);
       assert.isTrue(updated.autoPull);
       assert.deepEqual(updated.projectIcon, { kind: "emoji", emoji: "🦊" });
@@ -290,14 +292,17 @@ it.layer(layerTest)("ProjectService", (it) => {
       assert.deepEqual(Option.getOrThrow(byId).projectIcon, updated.projectIcon);
       assert.equal(Option.getOrThrow(byId).faviconPath, updated.faviconPath);
       assert.equal(Option.getOrThrow(byId).defaultThreadEnvMode, "worktree");
+      assert.equal(Option.getOrThrow(yield* service.getShell(projectId)).agentName, "Life log");
       const reset = yield* service.update({
         commandId: CommandId.make("command:project:reset-appearance"),
         projectId,
+        agentName: null,
         autoPull: false,
         projectIcon: null,
         faviconPath: null,
         defaultThreadEnvMode: null,
       });
+      assert.isNull(reset.agentName);
       assert.isFalse(reset.autoPull);
       assert.isNull(reset.projectIcon);
       assert.equal(reset.faviconPath, hydratedCreated.faviconPath);

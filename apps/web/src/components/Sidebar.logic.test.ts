@@ -17,6 +17,7 @@ import {
   resolveSidebarSweepKeys,
   sidebarSectionHasHoverActions,
   resolveSidebarThreadStatus,
+  resolveThreadCardHeading,
   resolveThreadStatusPill,
   resolveWorkingStartedAt,
   searchSidebarThreads,
@@ -690,6 +691,28 @@ describe("getFallbackThreadIdAfterDelete", () => {
     });
 
     expect(fallbackThreadId).toBe(ThreadId.make("thread-visible"));
+  });
+});
+
+describe("resolveThreadCardHeading", () => {
+  it("heads the card with the project's agent name and drops the project line", () => {
+    expect(
+      resolveThreadCardHeading({
+        title: "Log today's run",
+        agentName: "Life log",
+        projectDisplayName: "rituals-agent",
+      }),
+    ).toEqual({ heading: "Life log", projectDisplayName: null, isAgent: true });
+  });
+
+  it.each([null, undefined])("keeps title and project when the agent name is %s", (agentName) => {
+    expect(
+      resolveThreadCardHeading({
+        title: "Fix login",
+        agentName,
+        projectDisplayName: "acme-app",
+      }),
+    ).toEqual({ heading: "Fix login", projectDisplayName: "acme-app", isAgent: false });
   });
 });
 

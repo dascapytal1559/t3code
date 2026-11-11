@@ -30,6 +30,7 @@ export interface ProjectMetaUpdateCommand {
   readonly commandId: CommandId;
   readonly projectId: ProjectId;
   readonly title?: string;
+  readonly agentName?: string | null;
   readonly workspaceRoot?: string;
   readonly defaultModelSelection?: ModelSelection | null;
   readonly defaultThreadEnvMode?: ThreadEnvMode | null;
@@ -199,6 +200,7 @@ export function planProjectCommand(input: {
         payload: {
           projectId: command.projectId,
           ...(command.title === undefined ? {} : { title: command.title }),
+          ...(command.agentName === undefined ? {} : { agentName: command.agentName }),
           ...(command.workspaceRoot === undefined ? {} : { workspaceRoot: command.workspaceRoot }),
           ...(command.defaultModelSelection === undefined
             ? {}

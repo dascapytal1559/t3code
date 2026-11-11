@@ -7,7 +7,12 @@ import { useNowMinute } from "../../hooks/useNowMinute";
 import { cn } from "../../lib/utils";
 import { bridgeDecisionsAtom, type BridgeDecision } from "../../state/decisions";
 import { bridgeRulesAtom } from "../../state/rules";
-import { useProject, useQuietThreadShell, useServerConfigs } from "../../state/entities";
+import {
+  useProject,
+  useProjects,
+  useQuietThreadShell,
+  useServerConfigs,
+} from "../../state/entities";
 import ChatMarkdown from "../ChatMarkdown";
 import { ProjectFavicon, ProjectNameMonogram } from "../ProjectFavicon";
 import { BridgeSection } from "./BridgeSection";
@@ -116,7 +121,13 @@ function NeedsMeRow(props: {
   const project = useProject(
     coordinator === null ? null : scopeProjectRef(environmentId, coordinator.projectId),
   );
-  const projectName = decision.projectName ?? project?.title ?? null;
+  // Fork: a named project's standing agent stands in for the project.
+  const namedProject = useProjects().find(
+    (candidate) =>
+      candidate.environmentId === environmentId && candidate.title === decision.projectName,
+  );
+  const projectName =
+    (namedProject ?? project)?.agentName ?? decision.projectName ?? project?.title ?? null;
   const detail = needsMeRowDetail(decision, props.group, props.nowMs);
 
   return (

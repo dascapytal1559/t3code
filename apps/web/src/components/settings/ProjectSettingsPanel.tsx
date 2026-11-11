@@ -326,6 +326,13 @@ function ProjectDetail({
     await updateAllMembers({ title }, "Failed to rename project");
   };
 
+  const agentName = representative.agentName ?? null;
+  const saveAgentName = (value: string) => {
+    const next = value.trim() || null;
+    if (next === agentName) return;
+    void updateAllMembers({ agentName: next }, "Failed to save agent name");
+  };
+
   const [faviconPickerOpen, setFaviconPickerOpen] = useComposerMenuState(!canEditGroup);
   const [iconPickerOpen, setIconPickerOpen] = useComposerMenuState(!canEditGroup);
   const [isSavingFavicon, setIsSavingFavicon] = useState(false);
@@ -553,6 +560,36 @@ function ProjectDetail({
                   projectNameEditedRef.current = false;
                   void renameGroup(event.currentTarget.value, wasEdited);
                 }}
+                onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+                  if (event.key === "Enter") event.currentTarget.blur();
+                }}
+              />
+            }
+          />
+          <SettingsRow
+            title="Agent name"
+            description="For a standing agent: its thread cards show this name instead of the thread title and project."
+            resetAction={
+              agentName !== null ? (
+                <SettingResetButton
+                  label="agent name"
+                  disabled={!canEditGroup}
+                  onClick={() => saveAgentName("")}
+                />
+              ) : null
+            }
+            control={
+              <Input
+                key={`${group.projectKey}:agent:${agentName ?? ""}`}
+                size="sm"
+                className="w-full sm:w-64"
+                aria-label="Agent name"
+                placeholder="None"
+                maxLength={64}
+                disabled={!canEditGroup}
+                defaultValue={agentName ?? ""}
+                onBlur={(event) => saveAgentName(event.currentTarget.value)}
                 onKeyDown={(event) => {
                   if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                   if (event.key === "Enter") event.currentTarget.blur();

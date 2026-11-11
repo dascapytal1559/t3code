@@ -32,6 +32,7 @@ export class ProjectStoreV2Error extends Schema.TaggedError<ProjectStoreV2Error>
 export const ProjectRow = Schema.Struct({
   projectId: ProjectId,
   title: Schema.String,
+  agentName: Schema.optional(Schema.NullOr(Schema.String)),
   workspaceRoot: Schema.String,
   defaultModelSelection: Schema.NullOr(ModelSelection),
   defaultThreadEnvMode: Schema.NullOr(ThreadEnvMode),
@@ -59,6 +60,7 @@ function toShell(row: ProjectRow): OrchestrationProjectShell {
   return {
     id: row.projectId,
     title: row.title,
+    agentName: row.agentName ?? null,
     workspaceRoot: row.workspaceRoot,
     repositoryIdentity: null,
     defaultModelSelection: row.defaultModelSelection,
@@ -117,6 +119,7 @@ export const make = Effect.gen(function* () {
       SELECT
         project_id AS "projectId",
         title,
+        agent_name AS "agentName",
         workspace_root AS "workspaceRoot",
         default_model_selection_json AS "defaultModelSelection",
         default_thread_env_mode AS "defaultThreadEnvMode",
@@ -149,6 +152,7 @@ export const make = Effect.gen(function* () {
           INSERT INTO projection_projects (
             project_id,
             title,
+            agent_name,
             workspace_root,
             default_model_selection_json,
             default_thread_env_mode,
@@ -165,6 +169,7 @@ export const make = Effect.gen(function* () {
           VALUES (
             ${encoded.projectId},
             ${encoded.title},
+            ${encoded.agentName ?? null},
             ${encoded.workspaceRoot},
             ${encoded.defaultModelSelection},
             ${encoded.defaultThreadEnvMode},
@@ -181,6 +186,7 @@ export const make = Effect.gen(function* () {
           ON CONFLICT (project_id)
           DO UPDATE SET
             title = excluded.title,
+            agent_name = excluded.agent_name,
             workspace_root = excluded.workspace_root,
             default_model_selection_json = excluded.default_model_selection_json,
             default_thread_env_mode = excluded.default_thread_env_mode,
@@ -259,6 +265,7 @@ export const make = Effect.gen(function* () {
       yield* upsertRow({
         ...row,
         ...(payload.title === undefined ? {} : { title: payload.title }),
+        ...(payload.agentName === undefined ? {} : { agentName: payload.agentName }),
         ...(payload.workspaceRoot === undefined ? {} : { workspaceRoot: payload.workspaceRoot }),
         ...(payload.defaultModelSelection === undefined
           ? {}

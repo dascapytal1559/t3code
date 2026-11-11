@@ -61,6 +61,22 @@ export function shouldNavigateAfterThreadPark(input: {
 
 const THREAD_JUMP_HINT_SHOW_DELAY_MS = 200;
 
+/** Fork: a standing agent's name heads its thread cards in place of the title and project line. */
+export function resolveThreadCardHeading(input: {
+  readonly title: string;
+  readonly agentName: string | null | undefined;
+  readonly projectDisplayName: string | null;
+}): {
+  readonly heading: string;
+  readonly projectDisplayName: string | null;
+  readonly isAgent: boolean;
+} {
+  const agentName = input.agentName ?? null;
+  return agentName === null
+    ? { heading: input.title, projectDisplayName: input.projectDisplayName, isAgent: false }
+    : { heading: agentName, projectDisplayName: null, isAgent: true };
+}
+
 export function resolveSidebarRowAccessibility(input: {
   readonly title: string;
   readonly statusLabel: string | null;

@@ -150,9 +150,13 @@ export const ReceivedProjectIcon = ForwardCompatibleUnion(projectIconMembers, "k
   ),
 );
 
+export const ProjectAgentName = TrimmedNonEmptyString.check(Schema.isMaxLength(64));
+
 export const Project = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
+  // Fork: a standing agent's name; its thread cards show it instead of title and project.
+  agentName: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   workspaceRoot: TrimmedNonEmptyString,
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
@@ -187,6 +191,11 @@ export type ProjectCreatePayload = typeof ProjectCreatePayload.Type;
 
 export const ProjectUpdatePayload = Schema.Struct({
   title: Schema.optional(TrimmedNonEmptyString),
+  agentName: Schema.optional(
+    Schema.NullOr(ProjectAgentName).annotate({
+      description: "Thread cards show it instead of title and project.",
+    }),
+  ),
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   autoPull: Schema.optional(Schema.Boolean),

@@ -84,6 +84,7 @@ import {
   hasUnseenCompletion,
   isThreadMetaLineEmpty,
   resolveSidebarRowAccessibility,
+  resolveThreadCardHeading,
   type SidebarDropVerb,
   resolveSidebarThreadStatus,
   resolveThreadLastVisitedAt,
@@ -686,6 +687,15 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     return leaseRowRef(row);
   };
   const isRegeneratingTitle = thread.titleRegeneration != null;
+  const {
+    heading,
+    projectDisplayName,
+    isAgent: hasAgentName,
+  } = resolveThreadCardHeading({
+    title: thread.title,
+    agentName: props.project?.agentName,
+    projectDisplayName: props.projectDisplayName,
+  });
   const localLastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
   const lastVisitedAt = resolveThreadLastVisitedAt(thread.lastVisitedAt, localLastVisitedAt);
   const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(threadKey));
@@ -1054,9 +1064,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     ) : null;
 
   const accessibility = resolveSidebarRowAccessibility({
-    title: thread.title,
+    title: heading,
     statusLabel: crewStatusLabel ?? (coordinatorShowsAge ? null : topStatus?.label) ?? null,
-    projectDisplayName: props.projectDisplayName,
+    projectDisplayName,
     isActive: props.isActive,
   });
 
@@ -1094,12 +1104,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             ),
         isRegeneratingTitle && "opacity-55",
       )}
-      dir={textDirection(thread.title)}
+      dir={textDirection(heading)}
     >
-      {thread.title}
+      {heading}
     </span>
   );
-  const accessibleTitle = isRenaming ? null : <span className="sr-only">{thread.title}</span>;
+  const accessibleTitle = isRenaming ? null : <span className="sr-only">{heading}</span>;
 
   const prBadgeShape = supportsMultiplePullRequests
     ? resolveThreadPullRequestBadge(thread.pullRequests)
@@ -1511,7 +1521,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           <div
             className={cn(
               "relative z-10 h-[4.875rem] px-(--sidebar-row-content-inset) py-(--sidebar-content-inset)",
-              metaLineEmpty && "h-auto",
+              (metaLineEmpty || hasAgentName) && "h-auto",
             )}
           >
             <div className="flex h-5 min-w-0 items-center gap-1.5">
@@ -1524,12 +1534,18 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               {/* Left of the status slot, the pin would slide when hover swaps the
                 label for the wider row controls. */}
               {pinIndicator}
-              {props.projectDisplayName ? (
+              {projectDisplayName ? (
                 <span
                   className={cn("min-w-0 flex-1 truncate font-normal text-secondary-label text-xs")}
                 >
-                  {props.projectDisplayName}
+                  {projectDisplayName}
                 </span>
+              ) : hasAgentName ? (
+                <>
+                  {title}
+                  {titleLineBadges}
+                  {titleLineIcons}
+                </>
               ) : (
                 <span className="flex-1" />
               )}
@@ -1675,16 +1691,18 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               )}
               {props.sweepAction !== null ? dragDestination : null}
             </div>
-            <div className="mt-1 flex min-w-0 items-center gap-1.5">
-              {title}
-              {isRegeneratingTitle ? (
-                <span role="status" className="sr-only">
-                  Regenerating title
-                </span>
-              ) : null}
-              {titleLineBadges}
-              {titleLineIcons}
-            </div>
+            {!hasAgentName ? (
+              <div className="mt-1 flex min-w-0 items-center gap-1.5">
+                {title}
+                {isRegeneratingTitle ? (
+                  <span role="status" className="sr-only">
+                    Regenerating title
+                  </span>
+                ) : null}
+                {titleLineBadges}
+                {titleLineIcons}
+              </div>
+            ) : null}
             {metaLine}
           </div>
         </TooltipTrigger>

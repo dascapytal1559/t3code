@@ -8,6 +8,7 @@ import { ProjectScript, ReceivedProjectIcon } from "./project.ts";
 export const OrchestrationProjectShell = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
+  agentName: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   workspaceRoot: TrimmedNonEmptyString,
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),

@@ -54,6 +54,7 @@ export type ApplicationProjectCreatedPayload = typeof ApplicationProjectCreatedP
 export const ApplicationProjectMetaUpdatedPayload = Schema.Struct({
   projectId: ProjectId,
   title: Schema.optional(TrimmedNonEmptyString),
+  agentName: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),

@@ -182,6 +182,7 @@ export const make = Effect.gen(function* () {
   ): Project => ({
     id: row.projectId,
     title: row.title,
+    agentName: row.agentName ?? null,
     workspaceRoot: row.workspaceRoot,
     repositoryIdentity: enrichment?.repositoryIdentity ?? null,
     faviconPath: row.faviconPath ?? enrichment?.faviconPath ?? null,
@@ -390,6 +391,7 @@ export const make = Effect.gen(function* () {
         commandId: input.commandId,
         projectId: input.projectId,
         ...(input.title === undefined ? {} : { title: input.title }),
+        ...(input.agentName === undefined ? {} : { agentName: input.agentName }),
         ...(workspaceRoot === previousRoot ? {} : { workspaceRoot }),
         ...(input.defaultModelSelection === undefined
           ? {}
