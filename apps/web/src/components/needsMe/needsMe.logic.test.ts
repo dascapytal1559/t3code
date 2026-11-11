@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   agentNameByProjectTitle,
+  bridgeReports,
   bridgeSetting,
   decisionAgeTimestamp,
   decisionMarkdownScope,
@@ -123,6 +124,37 @@ describe("bridgeSetting", () => {
     expect(
       bridgeSetting(new Map([[host, { settings: { modelRouting: null } }]]), host, "modelRouting"),
     ).toBeNull();
+  });
+
+  it("shows the reports of the first environment with any, newest pin first", () => {
+    const host = EnvironmentId.make("host");
+    const other = EnvironmentId.make("other");
+    const report = (title: string, pinnedAt: string) => ({
+      title,
+      summary: "Found it.",
+      location: "/reports/a.md",
+      pinnedAt,
+    });
+    const configs = new Map([
+      [
+        other,
+        {
+          settings: {
+            pinnedReports: { old: report("Old", at(1, 9)), new: report("New", at(2, 9)) },
+          },
+        },
+      ],
+      [host, { settings: { pinnedReports: {} } }],
+    ]);
+    // A host with none falls through: an empty record is not a set value.
+    expect(bridgeReports(configs, host)).toEqual({
+      environmentId: other,
+      reports: [
+        { id: "new", ...report("New", at(2, 9)) },
+        { id: "old", ...report("Old", at(1, 9)) },
+      ],
+    });
+    expect(bridgeReports(new Map([[host, { settings: { pinnedReports: {} } }]]), host)).toBeNull();
   });
 });
 

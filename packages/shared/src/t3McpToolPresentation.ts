@@ -362,6 +362,11 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     ["Update", "Updating", "Updated", "Bridge model routing"],
     "environment-update",
   ),
+  t3_reports_pin: tool(["Pin", "Pinning", "Pinned", "a Bridge report"], "environment-update"),
+  t3_reports_unpin: tool(
+    ["Unpin", "Unpinning", "Unpinned", "a Bridge report"],
+    "environment-update",
+  ),
   t3_rules_set: tool(["Update", "Updating", "Updated", "Bridge rules"], "environment-update"),
   t3_decisions_set: tool(
     ["Update", "Updating", "Updated", "Bridge decisions"],

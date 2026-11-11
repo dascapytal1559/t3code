@@ -368,13 +368,14 @@ arrive unchanged, and mobile still shows the composer. Code:
 
 The right panel's "Bridge" tab (once "Needs me") is the captain's overview
 beside any chat: their objectives on top, then what FirstMate needs from them,
-then FirstMate's model routing table, then the captain's rules for FirstMate. It
+then the reports FirstMate pinned, then FirstMate's model routing table, then
+the captain's rules for FirstMate. It
 opens from the panel's launcher or "+" menu (N), or "Open Bridge" in the
 command palette, which still finds it by "needs me". On phone web it opens as a
 sheet like the other right-panel tabs. Internal names (`needs-me` surface kind,
 `components/needsMe/`) keep the old name.
 
-Each section (Objectives, Needs you, Scheduled, Model routing, Rules) has a header
+Each section (Objectives, Needs you, Scheduled, Reports, Model routing, Rules) has a header
 with a chevron and its count, where it has one, that collapses and expands it.
 Each client remembers what it collapsed in local storage
 (`t3code:bridge:collapsed:<section>`), so it survives a reload. Objectives has a
@@ -527,6 +528,51 @@ in `mcp/toolkits/environment/`, their rows in `t3McpToolPresentation.ts` and the
 larger `agentContextBudget.json`. Collapsible sections and the pin live in
 `components/needsMe/BridgeSection.tsx`; the routing table's stacked layout is
 the `.bridge-routing` block in `apps/web/src/index.css`.
+
+### Reports
+
+![The Reports section: two pinned reports, each with its title and pin date, a one-line summary, and the report as a file chip or a web link, with an unpin button on the right](media/bridge-reports.jpg)
+
+Reports are finished reports FirstMate pins for the captain to read, newest pin
+first, after the decisions: the title with the day it was pinned, FirstMate's
+one-line summary, then the report itself. A file opens in a tab of this same
+panel, as a decision's file chips do; a web link opens as any chat link does.
+The unpin button beside a report takes it off the list for everyone. On phone
+web the section is read-only: the reports open, but there is no unpin. With
+none pinned the section does not show. Like objectives, the list is the chat's
+own environment's, else the first connected environment's that has some; a
+host chat on another environment cannot open the files, so there a file chip
+does nothing visible.
+
+The records, for FirstMate's side:
+
+- `t3_reports_pin` pins one report. Input: `{ id, title, summary, location }`.
+  `id` is FirstMate's own (at most 200 characters), such as the task id;
+  pinning an id again replaces that report and moves it to the top. `title` is
+  at most 200 characters, `summary` 500. `location` is an absolute path to the
+  report on the server's machine (`/…` or `C:\…`) or an `http(s)://` link, at
+  most 2,000 characters; anything else is refused. T3 stamps `pinnedAt`, the
+  date the row shows. At most 50 reports are pinned; a new one past that is
+  refused until one is unpinned.
+- `t3_reports_unpin` unpins one: `{ id }`. An id that is not pinned changes
+  nothing.
+- Both return `{ reports[{ id, title, pinnedAt }] }`, every report pinned now,
+  newest first, so FirstMate sees what the captain unpinned.
+- Same access rules and refusals as `t3_objectives_set`.
+- T3 keeps them as `pinnedReports` in `settings.json`, keyed by id, so they
+  survive a restart and reach every client on the settings stream. A settings
+  patch changes one id at a time (`null` unpins it), so FirstMate's pin and the
+  captain's unpin never overwrite each other. The captain unpins with an
+  ordinary settings update, which needs the settings-write scope.
+
+Code: `PinnedReport` in `packages/contracts/src/objectives.ts`,
+`components/needsMe/ReportsSection.tsx` and `bridgeReports` and
+`reportLinkMarkdown` in `needsMe.logic.ts`. Shared files it touches, for syncs:
+the `pinnedReports` fields in `ServerSettings` and `ServerSettingsPatch`
+(`settings.ts`), its per-id merge in `applyServerSettingsPatch`
+(`packages/shared/src/serverSettings.ts`), the tools in
+`mcp/toolkits/environment/`, their rows in `t3McpToolPresentation.ts`, the
+larger `agentContextBudget.json`, and the `reports` id on `BridgeSection.tsx`.
 
 ### Rules
 

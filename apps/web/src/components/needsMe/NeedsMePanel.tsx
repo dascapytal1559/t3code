@@ -20,6 +20,7 @@ import { DecisionDetail } from "./DecisionDetail";
 import {
   agentNameByProjectTitle,
   bridgeDecisionKey,
+  bridgeReports,
   bridgeSetting,
   groupNeedsMeDecisions,
   needsMeRowDetail,
@@ -27,6 +28,7 @@ import {
 } from "./needsMe.logic";
 import { useNeedsMeOpenRow } from "./needsMeReveal";
 import { ObjectivesSection } from "./ObjectivesSection";
+import { ReportsSection } from "./ReportsSection";
 import { pickBridgeRules } from "./rules.logic";
 import { RulesSection } from "./RulesSection";
 
@@ -34,14 +36,15 @@ type RowGroup = keyof NeedsMeGroups<unknown>;
 
 /**
  * The Bridge tab: the user's objectives, then the decisions FirstMate needs now beside any chat,
- * then those with a return date under Scheduled, then FirstMate's model routing table, then the
- * user's rules for FirstMate.
+ * then those with a return date under Scheduled, then the reports FirstMate pinned, then its model
+ * routing table, then the user's rules for FirstMate.
  */
 export function NeedsMePanel(props: { readonly threadRef: ScopedThreadRef }) {
   const decisions = useAtomValue(bridgeDecisionsAtom);
   const serverConfigs = useServerConfigs();
   const objectives = bridgeSetting(serverConfigs, props.threadRef.environmentId, "objectives");
   const modelRouting = bridgeSetting(serverConfigs, props.threadRef.environmentId, "modelRouting");
+  const reports = bridgeReports(serverConfigs, props.threadRef.environmentId);
   const rules = pickBridgeRules(useAtomValue(bridgeRulesAtom), props.threadRef.environmentId);
   const nowMinute = useNowMinute();
   const nowMs = Date.parse(`${nowMinute}:00.000Z`);
@@ -78,6 +81,13 @@ export function NeedsMePanel(props: { readonly threadRef: ScopedThreadRef }) {
         <BridgeSection id="scheduled" title="Scheduled" count={groups.scheduled.length}>
           {groups.scheduled.map(row("scheduled"))}
         </BridgeSection>
+      )}
+      {reports === null ? null : (
+        <ReportsSection
+          environmentId={reports.environmentId}
+          reports={reports.reports}
+          hostRef={props.threadRef}
+        />
       )}
       {modelRouting === null ? null : (
         <ModelRoutingSection

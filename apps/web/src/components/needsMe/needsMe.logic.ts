@@ -3,8 +3,10 @@ import {
   decisionChangedAt,
   decisionSince,
   decisionUpdatedAt,
+  pinnedReportsNewestFirst,
   type DecisionAttachment,
   type EnvironmentId,
+  type PinnedReport,
   type ScopedThreadRef,
   type ServerSettings,
   type StoredDecision,
@@ -219,11 +221,43 @@ export function decisionAttachmentsMarkdown(
     const label = escapeLabel(
       attachment.label ?? attachment.path.split("/").at(-1) ?? attachment.kind,
     );
-    const target = `<${attachment.path.replace(/[<>]/g, encodeURIComponent)}>`;
+    const target = markdownTarget(attachment.path);
     if (PICTURE_PATH.test(attachment.path)) pictures.push(`![${label}](${target})`);
     else links.push(`- [${label}](${target})`);
   }
   return [...pictures, ...(links.length === 0 ? [] : [links.join("\n")])].join("\n\n");
+}
+
+const markdownTarget = (path: string) => `<${path.replace(/[<>]/g, encodeURIComponent)}>`;
+
+/**
+ * Where a pinned report lives as a Markdown link, which the chat's renderer opens as it would
+ * there: a file by its name, a web page by its address without the scheme.
+ */
+export function reportLinkMarkdown(location: PinnedReport["location"]): string {
+  const label = /^https?:\/\//.test(location)
+    ? location.replace(/^https?:\/\//, "")
+    : (location.split(/[\\/]/).at(-1) ?? location);
+  return `[${escapeLabel(label)}](${markdownTarget(location)})`;
+}
+
+/**
+ * The pinned reports the Bridge shows: the host chat's environment's, else the first connected
+ * environment that has some, with that environment so an unpin reaches it.
+ */
+export function bridgeReports(
+  settingsByEnvironment: ReadonlyMap<
+    EnvironmentId,
+    { readonly settings: Pick<ServerSettings, "pinnedReports"> }
+  >,
+  hostEnvironmentId: EnvironmentId,
+) {
+  for (const environmentId of [hostEnvironmentId, ...settingsByEnvironment.keys()]) {
+    const pinned = settingsByEnvironment.get(environmentId)?.settings.pinnedReports ?? {};
+    const reports = pinnedReportsNewestFirst(pinned);
+    if (reports.length > 0) return { environmentId, reports };
+  }
+  return null;
 }
 
 export function decisionReplyCommandId(): CommandId {

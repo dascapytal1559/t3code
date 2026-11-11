@@ -15,6 +15,7 @@ For FirstMate:
 - [Mark read](fork/README.md#mcp-can-mark-a-thread-read): FirstMate clears a worker's Done card without opening the app.
 - [Long sign-in](fork/README.md#firstmates-sign-in-lasts-10-years): FirstMate's sign-in lasts 10 years instead of 30 days, so it never needs renewing.
 - [Bridge](fork/README.md#bridge): FirstMate's objectives, then each call it needs from you, in the right panel's Bridge tab.
+- [Reports in the Bridge](fork/README.md#reports): finished reports FirstMate pins, to open and unpin.
 - [Rules in the Bridge](fork/README.md#rules): every standing rule for FirstMate, approved or with its recommendation; one click agrees.
 - [Clean session close](fork/README.md#a-closed-claude-session-waits-for-its-cli-to-exit): a closed Claude session waits for its CLI to exit, so FirstMate's next one keeps its lock.
 
