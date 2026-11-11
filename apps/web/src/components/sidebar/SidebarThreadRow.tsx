@@ -694,7 +694,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     isAgent: hasAgentName,
   } = resolveThreadCardHeading({
     title: thread.title,
-    agentName: props.project?.agentName,
+    agentName: variant === "card" ? props.project?.agentName : null,
     projectDisplayName: props.projectDisplayName,
   });
   const localLastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
