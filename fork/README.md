@@ -685,12 +685,13 @@ A project can carry an agent name (**Settings → Projects → Agent name**, or
 `agentName` on `t3_project_update`; `null` clears it) for a standing agent such
 as a life log. Its thread cards on web and desktop then show the agent name as
 their heading in place of the thread title, with no project line, and the hover
-card keeps the real title and project. In Bridge, Needs you shows it in place of
-the project name, matched by project title. Mobile is unchanged. The column
-(`agent_name`) is added by `apps/server/src/persistence/forkSchema.ts` after
-upstream's migrations rather than by a numbered migration, which would collide
-with upstream's next id. Code: `resolveThreadCardHeading` in
-`apps/web/src/components/Sidebar.logic.ts`.
+card keeps the real title and project. Settled and folder rows keep the thread
+title. In Bridge, Needs you shows it in place of the project name, matched by
+project title only when that title is unique in its environment. Mobile is
+unchanged. The column (`agent_name`) is added by
+`apps/server/src/persistence/forkSchema.ts` after upstream's migrations rather
+than by a numbered migration, which would collide with upstream's next id. Code:
+`resolveThreadCardHeading` in `apps/web/src/components/Sidebar.logic.ts`.
 
 ## Thread details open hidden
 
