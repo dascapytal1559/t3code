@@ -689,6 +689,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const isRegeneratingTitle = thread.titleRegeneration != null;
   const {
     heading,
+    accessibleTitle: accessibleHeading,
     projectDisplayName,
     isAgent: hasAgentName,
   } = resolveThreadCardHeading({
@@ -1064,7 +1065,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     ) : null;
 
   const accessibility = resolveSidebarRowAccessibility({
-    title: heading,
+    title: accessibleHeading,
     statusLabel: crewStatusLabel ?? (coordinatorShowsAge ? null : topStatus?.label) ?? null,
     projectDisplayName,
     isActive: props.isActive,
@@ -1109,7 +1110,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       {heading}
     </span>
   );
-  const accessibleTitle = isRenaming ? null : <span className="sr-only">{heading}</span>;
+  const accessibleTitle = isRenaming ? null : <span className="sr-only">{accessibleHeading}</span>;
+  const regeneratingTitleStatus = isRegeneratingTitle ? (
+    <span role="status" className="sr-only">
+      Regenerating title
+    </span>
+  ) : null;
 
   const prBadgeShape = supportsMultiplePullRequests
     ? resolveThreadPullRequestBadge(thread.pullRequests)
@@ -1327,11 +1333,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               {multiline ? titleLineIcons : null}
               {pinIndicator}
               {multiline ? null : terminalStatusIcon}
-              {isRegeneratingTitle ? (
-                <span role="status" className="sr-only">
-                  Regenerating title
-                </span>
-              ) : null}
+              {regeneratingTitleStatus}
               {sortable?.isDragging ? (
                 dragDestination
               ) : (
@@ -1471,8 +1473,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       {...sortableRootProps}
       {...(fileDropHandlers ?? {})}
       className={cn(
-        "list-none py-0.5 [content-visibility:auto] [contain-intrinsic-size:auto_78px]",
-        metaLineEmpty && "[contain-intrinsic-size:auto_58px]",
+        "list-none py-0.5 [content-visibility:auto]",
+        hasAgentName
+          ? metaLineEmpty
+            ? "[contain-intrinsic-size:auto_34px]"
+            : "[contain-intrinsic-size:auto_54px]"
+          : metaLineEmpty
+            ? "[contain-intrinsic-size:auto_58px]"
+            : "[contain-intrinsic-size:auto_78px]",
         props.crewTree !== undefined && cn("relative", CREW_TREE_INDENT_CLASS_NAME),
         // Joins this row's guide line to the next one's across the list gap.
         props.crewTree === "branch" && "-mb-px",
@@ -1543,6 +1551,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               ) : hasAgentName ? (
                 <>
                   {title}
+                  {regeneratingTitleStatus}
                   {titleLineBadges}
                   {titleLineIcons}
                 </>
@@ -1694,11 +1703,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             {!hasAgentName ? (
               <div className="mt-1 flex min-w-0 items-center gap-1.5">
                 {title}
-                {isRegeneratingTitle ? (
-                  <span role="status" className="sr-only">
-                    Regenerating title
-                  </span>
-                ) : null}
+                {regeneratingTitleStatus}
                 {titleLineBadges}
                 {titleLineIcons}
               </div>

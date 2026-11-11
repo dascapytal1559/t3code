@@ -68,13 +68,24 @@ export function resolveThreadCardHeading(input: {
   readonly projectDisplayName: string | null;
 }): {
   readonly heading: string;
+  readonly accessibleTitle: string;
   readonly projectDisplayName: string | null;
   readonly isAgent: boolean;
 } {
   const agentName = input.agentName ?? null;
   return agentName === null
-    ? { heading: input.title, projectDisplayName: input.projectDisplayName, isAgent: false }
-    : { heading: agentName, projectDisplayName: null, isAgent: true };
+    ? {
+        heading: input.title,
+        accessibleTitle: input.title,
+        projectDisplayName: input.projectDisplayName,
+        isAgent: false,
+      }
+    : {
+        heading: agentName,
+        accessibleTitle: `${agentName}, ${input.title}`,
+        projectDisplayName: null,
+        isAgent: true,
+      };
 }
 
 export function resolveSidebarRowAccessibility(input: {

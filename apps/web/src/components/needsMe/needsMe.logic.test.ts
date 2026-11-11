@@ -2,6 +2,7 @@ import { CommandId, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  agentNameByProjectTitle,
   bridgeSetting,
   decisionAgeTimestamp,
   decisionMarkdownScope,
@@ -234,5 +235,37 @@ describe("decisionAgeTimestamp", () => {
     expect(
       decisionAgeTimestamp({ entries: [raised(at(1, 9)), update(at(2, 9))], since: at(3, 9) }),
     ).toBe(at(3, 9));
+  });
+});
+
+describe("agentNameByProjectTitle", () => {
+  const local = EnvironmentId.make("environment-local");
+  const remote = EnvironmentId.make("environment-remote");
+
+  it("names the agent of the one project with that title in the environment", () => {
+    const agentNameFor = agentNameByProjectTitle([
+      { environmentId: local, title: "rituals", agentName: "Life log" },
+      { environmentId: local, title: "api", agentName: null },
+      { environmentId: remote, title: "rituals" },
+    ]);
+    expect(agentNameFor(local, "rituals")).toBe("Life log");
+    expect(agentNameFor(remote, "rituals")).toBeNull();
+    expect(agentNameFor(local, "api")).toBeNull();
+    expect(agentNameFor(local, "missing")).toBeNull();
+  });
+
+  it("names no agent when two projects in the environment share the title", () => {
+    for (const projects of [
+      [
+        { environmentId: local, title: "api" },
+        { environmentId: local, title: "api", agentName: "Life log" },
+      ],
+      [
+        { environmentId: local, title: "api", agentName: "Life log" },
+        { environmentId: local, title: "api" },
+      ],
+    ]) {
+      expect(agentNameByProjectTitle(projects)(local, "api")).toBeNull();
+    }
   });
 });

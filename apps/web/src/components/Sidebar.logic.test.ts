@@ -695,14 +695,19 @@ describe("getFallbackThreadIdAfterDelete", () => {
 });
 
 describe("resolveThreadCardHeading", () => {
-  it("heads the card with the project's agent name and drops the project line", () => {
+  it("heads the card with the agent name, keeps the thread title for screen readers, and drops the project line", () => {
     expect(
       resolveThreadCardHeading({
         title: "Log today's run",
         agentName: "Life log",
         projectDisplayName: "rituals-agent",
       }),
-    ).toEqual({ heading: "Life log", projectDisplayName: null, isAgent: true });
+    ).toEqual({
+      heading: "Life log",
+      accessibleTitle: "Life log, Log today's run",
+      projectDisplayName: null,
+      isAgent: true,
+    });
   });
 
   it.each([null, undefined])("keeps title and project when the agent name is %s", (agentName) => {
@@ -712,7 +717,12 @@ describe("resolveThreadCardHeading", () => {
         agentName,
         projectDisplayName: "acme-app",
       }),
-    ).toEqual({ heading: "Fix login", projectDisplayName: "acme-app", isAgent: false });
+    ).toEqual({
+      heading: "Fix login",
+      accessibleTitle: "Fix login",
+      projectDisplayName: "acme-app",
+      isAgent: false,
+    });
   });
 });
 

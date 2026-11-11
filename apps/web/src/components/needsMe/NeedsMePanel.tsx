@@ -18,6 +18,7 @@ import { ProjectFavicon, ProjectNameMonogram } from "../ProjectFavicon";
 import { BridgeSection } from "./BridgeSection";
 import { DecisionDetail } from "./DecisionDetail";
 import {
+  agentNameByProjectTitle,
   bridgeDecisionKey,
   bridgeSetting,
   groupNeedsMeDecisions,
@@ -45,10 +46,16 @@ export function NeedsMePanel(props: { readonly threadRef: ScopedThreadRef }) {
   const nowMinute = useNowMinute();
   const nowMs = Date.parse(`${nowMinute}:00.000Z`);
   const groups = groupNeedsMeDecisions(decisions, new Date(nowMs));
+  const agentNameFor = agentNameByProjectTitle(useProjects());
   const row = (group: RowGroup) => (item: BridgeDecision) => (
     <NeedsMeRow
       key={bridgeDecisionKey(item)}
       item={item}
+      namedAgent={
+        item.decision.projectName === undefined
+          ? null
+          : agentNameFor(item.environmentId, item.decision.projectName)
+      }
       group={group}
       hostRef={props.threadRef}
       nowMs={nowMs}
@@ -104,6 +111,8 @@ function ModelRoutingSection(props: {
 
 function NeedsMeRow(props: {
   readonly item: BridgeDecision;
+  /** The standing agent of the project the decision names, if any. */
+  readonly namedAgent: string | null;
   readonly group: RowGroup;
   readonly hostRef: ScopedThreadRef;
   readonly nowMs: number;
@@ -121,13 +130,9 @@ function NeedsMeRow(props: {
   const project = useProject(
     coordinator === null ? null : scopeProjectRef(environmentId, coordinator.projectId),
   );
-  // Fork: a named project's standing agent stands in for the project.
-  const namedProject = useProjects().find(
-    (candidate) =>
-      candidate.environmentId === environmentId && candidate.title === decision.projectName,
-  );
+  // Fork: a project's standing agent stands in for the project.
   const projectName =
-    (namedProject ?? project)?.agentName ?? decision.projectName ?? project?.title ?? null;
+    props.namedAgent ?? decision.projectName ?? project?.agentName ?? project?.title ?? null;
   const detail = needsMeRowDetail(decision, props.group, props.nowMs);
 
   return (

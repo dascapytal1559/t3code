@@ -24,6 +24,25 @@ export interface NeedsMeGroups<T> {
 
 const ms = (iso: string | null | undefined) => (iso == null ? 0 : Date.parse(iso) || 0);
 
+/**
+ * Fork: decisions name their project by title, which is not unique, so a title shared by two
+ * projects in one environment resolves to no agent name.
+ */
+export function agentNameByProjectTitle(
+  projects: ReadonlyArray<{
+    readonly environmentId: EnvironmentId;
+    readonly title: string;
+    readonly agentName?: string | null | undefined;
+  }>,
+): (environmentId: EnvironmentId, title: string) => string | null {
+  const byKey = new Map<string, string | null>();
+  for (const project of projects) {
+    const key = `${project.environmentId}\u0000${project.title}`;
+    byKey.set(key, byKey.has(key) ? null : (project.agentName ?? null));
+  }
+  return (environmentId, title) => byKey.get(`${environmentId}\u0000${title}`) ?? null;
+}
+
 /** One decision's key in the tab: ids are FirstMate's own, so unique per environment only. */
 export const bridgeDecisionKey = (item: {
   readonly environmentId: EnvironmentId;
