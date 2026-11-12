@@ -436,4 +436,23 @@ it.layer(Layer.provideMerge(layerTools, layerOrchestration))("work a link starts
       assert.equal(yield* readLabel, undefined);
     }),
   );
+
+  it.effect("asks for the alert on the thread's running turn, and only while one runs", () =>
+    Effect.gen(function* () {
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const threadId = yield* launch(claudeCode, "Coordinator");
+      const alert = call(claudeCode, "t3_thread_update", { threadId, action: "alert_when_done" });
+      assert.equal(failureCode(yield* alert), "run_not_found");
+
+      const sent = yield* call(claudeCode, "t3_thread_send", { threadId, message: "Go" });
+      assert.equal(sent.isError, false, JSON.stringify(sent.content));
+      const shell = yield* projections.getThreadShell(threadId);
+      assert.isNotNull(shell?.activeRunId);
+      const alerted = yield* alert;
+      assert.equal(alerted.isError, false, JSON.stringify(alerted.content));
+      const { thread } = yield* projections.getThreadProjection(threadId);
+      assert.equal(thread.alertRunId, shell?.activeRunId);
+      assert.deepEqual(thread.updatedAt, shell?.updatedAt);
+    }),
+  );
 });

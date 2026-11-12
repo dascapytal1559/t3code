@@ -254,19 +254,28 @@ it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
   },
 );
 
-it("presents completion notifications and sound as soon as the shell completes", async () => {
-  await using app = setup();
-  state.mode = "notifications-and-sound";
-  app.start();
-  state.shells.set(
-    "one",
-    shell({
+it.each([
+  [false, ["Thread completed"]],
+  [true, []],
+] as const)(
+  "presents completion notifications and sound as soon as the shell completes, unless the run is supervision (%s)",
+  async (latestRunSupervision, titles) => {
+    await using app = setup();
+    state.mode = "notifications-and-sound";
+    app.start();
+    const completed = shell({
       latestTurn: { turnId: "turn", state: "completed", completedAt: "2026-09-13T07:00:01.000Z" },
-    }),
-  );
-  expect(TestNotification.sent.map((sent) => sent.title)).toEqual(["Thread completed"]);
-  expect(state.sound).toHaveBeenCalledWith("completion", expect.any(Function));
-});
+    });
+    state.shells.set("one", {
+      ...completed,
+      snapshot: Option.map(completed.snapshot, ({ threads }) => ({
+        threads: threads.map((shell) => ({ ...shell, latestRunSupervision })),
+      })),
+    });
+    expect(TestNotification.sent.map((sent) => sent.title)).toEqual(titles);
+    expect(state.sound.mock.calls).toEqual(titles.map(() => ["completion", expect.any(Function)]));
+  },
+);
 
 it.each([false, true])(
   "presents one completion when a monitor ends with a final wake (disconnected: %s)",

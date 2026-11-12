@@ -575,6 +575,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
   statusLabel: Schema.optional(Schema.NullOr(ThreadStatusLabel)),
   /** When the current label was first set; re-sending the same label keeps it. */
   statusLabelSince: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
+  /** The run whose end alerts the user although it is a coordinator's supervision run. */
+  alertRunId: Schema.optional(RunId),
   executionFence: Schema.optional(Schema.NullOr(OrchestrationV2ThreadExecutionFence)),
   lineage: OrchestrationV2AppThreadLineage,
   forkedFrom: Schema.NullOr(
@@ -2258,6 +2260,11 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   latestRunStopRequested: Schema.optional(Schema.Boolean),
   /** The latest run answers a background-work progress wake, like a Monitor line, not a terminal one. Absent from older servers. */
   latestRunBackgroundWake: Schema.optional(Schema.Boolean),
+  /**
+   * Fork: the latest run is a coordinator's supervision: a notification started it, the user did
+   * not steer into it, and its agent did not ask to alert. Its end stays quiet. Absent from older servers.
+   */
+  latestRunSupervision: Schema.optional(Schema.Boolean),
   activeRunId: Schema.NullOr(RunId),
   activityRunStartedAt: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   activityRunStatus: Schema.optional(
@@ -3281,6 +3288,7 @@ export const OrchestrationV2Command = Schema.Union([
     coordinator: Schema.optional(Schema.Boolean),
     /** Set (string) or clear (null) the label; absent leaves it unchanged. */
     statusLabel: OrchestrationV2AppThread.fields.statusLabel,
+    alertRunId: OrchestrationV2AppThread.fields.alertRunId,
   }),
   Schema.Struct({
     type: Schema.Literal("thread.pull-request.link"),

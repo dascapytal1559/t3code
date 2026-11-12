@@ -46,6 +46,7 @@ export const ThreadMetadataMcpAction = Schema.Literals([
   "regenerate_title",
   "set_status_label",
   "clear_status_label",
+  "alert_when_done",
 ]);
 export type ThreadMetadataMcpAction = typeof ThreadMetadataMcpAction.Type;
 

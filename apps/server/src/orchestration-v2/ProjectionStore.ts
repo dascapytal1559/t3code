@@ -1044,6 +1044,7 @@ type ShellThreadRow = {
   readonly latest_run_completed_at: string | null;
   readonly latest_run_stop_requested: number;
   readonly latest_run_background_wake: number;
+  readonly latest_run_supervision: number;
   readonly active_run_id: string | null;
   readonly active_run_status: string | null;
   readonly activity_run_status: string | null;
@@ -1056,6 +1057,7 @@ type ShellThreadRow = {
   readonly blocking_run_completed_at: string | null;
   readonly blocking_run_stop_requested: number;
   readonly blocking_run_background_wake: number;
+  readonly blocking_run_supervision: number;
   readonly blocking_failure_payload_json: string | null;
   readonly pending_request_payload_json: string | null;
   readonly pending_secret_request_payload_json: string | null;
@@ -1679,6 +1681,7 @@ export function threadShellFromProjection(
       ),
     latestRunBackgroundWake:
       latestRun != null && isBackgroundWakeRunForShell(latestRun, projection),
+    latestRunSupervision: latestRun != null && isSupervisionRunForShell(latestRun, projection),
     activeRunId: activeRun?.id ?? null,
     blockedOnThreadWait: deriveBlockedOnThreadWait({ activeRun, turnItems: projection.turnItems }),
     activityRunStatus: activityRun?.status ?? null,
@@ -1787,9 +1790,29 @@ function isBackgroundWakeRunForShell(
     message?.notification?.outcome === "updated" &&
     BACKGROUND_WAKE_SOURCE_KINDS.has(message.notification.source.kind) &&
     // A follow-up the user steered into the wake makes the run theirs.
-    !projection.messages.some(
-      (candidate) => candidate.runId === run.id && candidate.createdBy === "user",
-    )
+    !userSteeredIntoRun(run, projection.messages)
+  );
+}
+
+function userSteeredIntoRun(
+  run: OrchestrationV2ThreadProjection["runs"][number],
+  messages: OrchestrationV2ThreadProjection["messages"],
+): boolean {
+  return messages.some((candidate) => candidate.runId === run.id && candidate.createdBy === "user");
+}
+
+// Fork: a coordinator's notification-started runs are supervision, so their end stays quiet.
+function isSupervisionRunForShell(
+  run: OrchestrationV2ThreadProjection["runs"][number],
+  projection: Pick<OrchestrationV2ThreadProjection, "thread" | "messages">,
+): boolean {
+  return (
+    projection.thread.coordinator === true &&
+    projection.thread.alertRunId !== run.id &&
+    projection.messages.some(
+      (message) => message.id === run.userMessageId && message.notification !== undefined,
+    ) &&
+    !userSteeredIntoRun(run, projection.messages)
   );
 }
 
@@ -1816,6 +1839,7 @@ type ShellThreadState = {
   readonly latestRunCompletedAt: DateTime.Utc | null;
   readonly latestRunStopRequested: boolean;
   readonly latestRunBackgroundWake: boolean;
+  readonly latestRunSupervision: boolean;
   readonly activeRunId: RunId | null;
   readonly blockedOnThreadWait: boolean;
   readonly activityRunStatus: ShellActivityRunStatus | null;
@@ -1985,6 +2009,7 @@ function shellFromState(input: {
     latestRunCompletedAt: input.state.latestRunCompletedAt,
     latestRunStopRequested: input.state.latestRunStopRequested,
     latestRunBackgroundWake: input.state.latestRunBackgroundWake,
+    latestRunSupervision: input.state.latestRunSupervision,
     activeRunId: input.state.activeRunId,
     blockedOnThreadWait: input.state.blockedOnThreadWait,
     activityRunStatus: input.state.activityRunStatus,
@@ -6380,6 +6405,23 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           AND json_extract(steer.payload_json, '$.createdBy') = 'user'
       )`;
     };
+    // Mirrors isSupervisionRunForShell; the coordinator test first keeps other threads cheap.
+    const isSupervisionShellRun = (alias: string) => {
+      const run = sql.literal(alias);
+      return sql`(
+        json_extract(t.payload_json, '$.coordinator') IS 1
+        AND json_extract(t.payload_json, '$.alertRunId') IS NOT ${run}.run_id
+        AND EXISTS (
+          SELECT 1 FROM orchestration_v2_projection_messages wake
+          WHERE wake.message_id = json_extract(${run}.payload_json, '$.userMessageId')
+            AND json_extract(wake.payload_json, '$.notification') IS NOT NULL
+        ) AND NOT EXISTS (
+          SELECT 1 FROM orchestration_v2_projection_messages steer
+          WHERE steer.run_id = ${run}.run_id
+            AND json_extract(steer.payload_json, '$.createdBy') = 'user'
+        )
+      )`;
+    };
 
     const selectShellThreadRows = (
       threadId?: ThreadId,
@@ -6414,6 +6456,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   AND stop_request.type = 'run_interrupt_request'
               ) AS latest_run_stop_requested,
               ${isBackgroundWakeShellRun("presented")} AS latest_run_background_wake,
+              ${isSupervisionShellRun("presented")} AS latest_run_supervision,
               active.run_id AS active_run_id,
               active.status AS active_run_status,
               (
@@ -6472,6 +6515,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
                   AND stop_request.type = 'run_interrupt_request'
               ) AS blocking_run_stop_requested,
               ${isBackgroundWakeShellRun("blocked")} AS blocking_run_background_wake,
+              ${isSupervisionShellRun("blocked")} AS blocking_run_supervision,
               (
                 SELECT item.payload_json
                 FROM orchestration_v2_projection_turn_items item
@@ -7045,6 +7089,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             : DateTime.makeUnsafe(row.latest_run_completed_at);
         let latestRunStopRequested = row.latest_run_stop_requested === 1;
         let latestRunBackgroundWake = row.latest_run_background_wake === 1;
+        let latestRunSupervision = row.latest_run_supervision === 1;
         if (row.blocking_run_id !== null && row.blocking_failure_payload_json !== null) {
           const blockingFailure = yield* decodeTurnItemPayload(
             row.blocking_failure_payload_json,
@@ -7059,6 +7104,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
             latestRunId = RunId.make(row.blocking_run_id);
             latestRunStopRequested = row.blocking_run_stop_requested === 1;
             latestRunBackgroundWake = row.blocking_run_background_wake === 1;
+            latestRunSupervision = row.blocking_run_supervision === 1;
             latestRunStatus = "failed";
             latestRunRequestedAt =
               row.blocking_run_requested_at === null
@@ -7100,6 +7146,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           latestRunCompletedAt,
           latestRunStopRequested,
           latestRunBackgroundWake,
+          latestRunSupervision,
           activeRunId: row.active_run_id === null ? null : RunId.make(row.active_run_id),
           blockedOnThreadWait: deriveBlockedOnThreadWait({
             activeRun:

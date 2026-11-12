@@ -409,6 +409,36 @@ only: the server takes messages for crew as before, so FirstMate's MCP messages
 arrive unchanged, and mobile still shows the composer. Code:
 `crewComposerHidden` in `apps/web/src/components/ChatView.tsx`.
 
+## FirstMate's automatic turns are quiet
+
+FirstMate runs a turn each time a worker event wakes it, and each of those
+turns used to end with the completion sound. Now, on a pinned coordinator, a
+turn that a T3 notification started (background work reporting in, a delegated
+task finishing, or T3's restart note) ends without the sound, toast or desktop
+notification, unless the user sent a message into it. Turns the user starts
+alert as before, and so do approval, input, request, failed and usage-limit
+states on every thread. Other threads are unchanged, and crew stay silent.
+
+When such a turn needs the user, the agent calls `t3_thread_update` with
+`action: "alert_when_done"` (no `threadId` means its own thread) while the turn
+runs. That turn's end then alerts as usual. The call fails with `run_not_found`
+when the thread has no running turn, and it cannot be taken back. The thread
+stores the turn as `alertRunId`, which does not count as activity. Clients
+detect the action by `alert_when_done` in the tool's `tools/list` `action` enum.
+
+Upstream alerts whenever any thread's background work reports its end: a
+terminal wake ("Command … finished") alerts at once, and a progress wake alerts
+after a 5-second grace when no other turn follows (#32520), so the user hears
+when unattended work finishes. The fork departs because a coordinator's
+automatic turns are supervision, not the user's work: FirstMate's thread had
+about 1,700 turns, most of them such wakes, each ending in a ping. The server
+puts `latestRunSupervision` on the thread shell and the web and desktop
+notification gate treats it like a stopped run. The mobile app is unchanged.
+Code: `isSupervisionRunForShell` and its SQL mirror `isSupervisionShellRun` in
+`apps/server/src/orchestration-v2/ProjectionStore.ts`, the `quiet` option in
+`apps/web/src/components/ThreadNotificationCoordinator.tsx`, and
+`alert_when_done` in `apps/server/src/mcp/ThreadMetadataMcpService.ts`.
+
 ## Bridge
 
 ![A chat with the Bridge tab beside it: four objectives on top, then three decisions under Needs you and two under Scheduled with their return days](media/bridge-list.jpg)

@@ -4573,6 +4573,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                         ? (thread.statusLabelSince ?? now)
                         : now,
                 }),
+            ...(command.alertRunId === undefined ? {} : { alertRunId: command.alertRunId }),
             ...(command.linkedPullRequest === undefined
               ? {}
               : {
@@ -4605,8 +4606,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               : command.regenerateTitle === false || title !== undefined
                 ? { titleRegeneration: null }
                 : {}),
-            // A label is not activity: it must not reorder cards or reset a thread's age.
-            updatedAt: command.statusLabel === undefined ? now : thread.updatedAt,
+            // A label or alert is not activity: it must not reorder cards or reset a thread's age.
+            updatedAt:
+              command.statusLabel === undefined && command.alertRunId === undefined
+                ? now
+                : thread.updatedAt,
           };
         }
         case "thread.pull-request.link":

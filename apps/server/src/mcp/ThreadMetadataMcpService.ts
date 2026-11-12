@@ -3,6 +3,7 @@ import {
   OrchestratorMcpFailure,
   type OrchestrationV2AppThread,
   type OrchestrationV2Command,
+  type RunId,
   type ThreadMetadataMcpAction,
   type ThreadMetadataMcpUpdateInput,
   type ThreadMetadataMcpUpdateResult,
@@ -63,6 +64,7 @@ function metadataCommand(input: {
   readonly commandId: CommandId;
   readonly threadId: ThreadId;
   readonly update: ThreadMetadataMcpUpdateInput;
+  readonly activeRunId: RunId | null;
 }): Extract<OrchestrationV2Command, { readonly type: "thread.metadata.update" }> {
   switch (input.update.action) {
     case "rename":
@@ -92,6 +94,13 @@ function metadataCommand(input: {
         commandId: input.commandId,
         threadId: input.threadId,
         statusLabel: null,
+      };
+    case "alert_when_done":
+      return {
+        type: "thread.metadata.update",
+        commandId: input.commandId,
+        threadId: input.threadId,
+        alertRunId: input.activeRunId!,
       };
   }
 }
@@ -159,6 +168,9 @@ const make = Effect.gen(function* () {
     if (shell === null || shell.deletedAt !== null) {
       return yield* threadNotFound(threadManagement, threadId, `Thread ${threadId} was not found.`);
     }
+    if (input.action === "alert_when_done" && shell.activeRunId === null) {
+      return yield* failure("run_not_found", `Thread ${threadId} has no running turn to alert on.`);
+    }
     const requestKey =
       input.clientRequestId === undefined ? yield* random.uuidV4() : input.clientRequestId;
     const updateCommandId = commandId({
@@ -173,6 +185,7 @@ const make = Effect.gen(function* () {
           commandId: updateCommandId,
           threadId,
           update: input,
+          activeRunId: shell.activeRunId,
         }),
       )
       .pipe(
