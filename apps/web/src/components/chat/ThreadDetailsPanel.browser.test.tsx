@@ -81,7 +81,9 @@ vi.mock(import("~/state/vcs"), async (importOriginal) => {
   };
 });
 
+import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import { render } from "../../../test/render";
+import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import { useRightPanelStore } from "../../rightPanelStore";
 import { PopoverCreateHandle } from "../ui/popover";
 import { ChatCanvasContext } from "./ChatCanvasContext";
@@ -115,6 +117,7 @@ function setup(input: {
   state.workspaceRoot = input.workspaceRoot;
   state.folder = input.folder;
   state.pullRequests = input.pullRequests ?? [];
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, threadDetailsDefaultOpen: true });
   useRightPanelStore.setState({ threadPanelVisibilityByThreadKey: {} });
   const anchor = document.createElement("div");
   document.body.append(anchor);
