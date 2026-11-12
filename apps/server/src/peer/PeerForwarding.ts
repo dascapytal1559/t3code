@@ -134,7 +134,7 @@ const make = Effect.gen(function* () {
     const encoded = (yield* Schema.encodeUnknownEffect(parameters as Schema.Encoder<unknown>)(
       params,
     ).pipe(Effect.mapError(unavailable))) as Record<string, unknown>;
-    const { environmentId: _target, ...args } = encoded;
+    const { environmentId: _target, causedBy: _cause, ...args } = encoded;
     // A pending upload lives here, so it cannot go with the call.
     if (Array.isArray(args.attachments) && args.attachments.length > 0) {
       return yield* new OrchestratorMcpFailure({

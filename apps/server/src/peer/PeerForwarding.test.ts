@@ -413,15 +413,17 @@ it.effect("an agent here works on a linked environment's threads within its own 
         threadId: boxThread,
         message: "Carry on there.",
         clientRequestId: "send-1",
+        causedBy: { threadId: "thread:laptop-full", messageId: "message:laptop-prompt" },
       });
       expect(sent.isError).toBe(false);
       expect(sent.structuredContent).toMatchObject({ threadId: boxThread, delivery: "started" });
-      // The box records which thread here sent it.
+      // The box records which thread here sent it, but not a cause it cannot look up.
       expect((yield* Ref.get(seen)).sends[0]?.linkedSender).toEqual({
         environmentId: laptop.environmentId,
         threadId: "thread:laptop-full",
         title: "thread:laptop-full",
       });
+      expect((yield* Ref.get(seen)).sends[0]?.causedBy).toBeUndefined();
 
       // A plan-mode agent here may not steer that thread there: the box
       // refuses it, because the call carries the agent's own modes.
