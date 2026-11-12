@@ -228,6 +228,10 @@ it.effect("re-sends a steer that missed its turn with the sender it recorded", (
     const now = yield* DateTime.now;
     const messageId = MessageId.make("message:effect-worker-steer-follow-up");
     const origin = { surface: "mobile", deviceType: "mobile" } as const;
+    const causedBy = {
+      threadId: ThreadId.make("thread:effect-worker-cause"),
+      messageId: MessageId.make("message:effect-worker-cause"),
+    };
     const dispatched = yield* Ref.make<ReadonlyArray<OrchestrationV2ServerCommand>>([]);
     const layer = layerExecutorFor({
       events: yield* Ref.make<ReadonlyArray<string>>([]),
@@ -250,6 +254,7 @@ it.effect("re-sends a steer that missed its turn with the sender it recorded", (
                 createdBy: "user",
                 creationSource: "web",
                 origin,
+                causedBy,
               },
             ],
             runs: [{ id: runId }],
@@ -277,6 +282,7 @@ it.effect("re-sends a steer that missed its turn with the sender it recorded", (
     assert.ok(followUp?.type === "message.dispatch");
     assert.equal(followUp.messageId, messageId);
     assert.deepEqual(followUp.origin, origin);
+    assert.deepEqual(followUp.causedBy, causedBy);
   }),
 );
 
