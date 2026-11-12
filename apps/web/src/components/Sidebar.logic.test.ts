@@ -706,6 +706,7 @@ describe("resolveThreadCardHeading", () => {
       heading: "Life log",
       accessibleTitle: "Life log, Log today's run",
       projectDisplayName: null,
+      projectLabel: null,
       isAgent: true,
     });
   });
@@ -721,9 +722,25 @@ describe("resolveThreadCardHeading", () => {
       heading: "Fix login",
       accessibleTitle: "Fix login",
       projectDisplayName: "acme-app",
+      projectLabel: "acme-app",
       isAgent: false,
     });
   });
+
+  it.each([
+    ["equal", "Logger", "Logger", null],
+    ["case-different", "Firstmate", "firstmate", null],
+    ["whitespace", " Inspirations ", "Inspirations", null],
+    ["different", "Ahoy!", "firstmate", "firstmate"],
+    ["no project", "Logger", null, null],
+  ] as const)(
+    "drops the line-one project label only when it repeats the title (%s)",
+    (_case, title, projectDisplayName, projectLabel) => {
+      const resolved = resolveThreadCardHeading({ title, agentName: null, projectDisplayName });
+      expect(resolved.projectLabel).toBe(projectLabel);
+      expect(resolved.projectDisplayName).toBe(projectDisplayName);
+    },
+  );
 });
 
 describe("sortScopedProjectsForSidebar", () => {

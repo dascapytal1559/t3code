@@ -691,6 +691,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     heading,
     accessibleTitle: accessibleHeading,
     projectDisplayName,
+    projectLabel,
     isAgent: hasAgentName,
   } = resolveThreadCardHeading({
     title: thread.title,
@@ -1542,11 +1543,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               {/* Left of the status slot, the pin would slide when hover swaps the
                 label for the wider row controls. */}
               {pinIndicator}
-              {projectDisplayName ? (
+              {projectLabel ? (
                 <span
                   className={cn("min-w-0 flex-1 truncate font-normal text-secondary-label text-xs")}
                 >
-                  {projectDisplayName}
+                  {projectLabel}
                 </span>
               ) : hasAgentName ? (
                 <>
