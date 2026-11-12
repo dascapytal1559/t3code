@@ -71,7 +71,11 @@ export function shouldNavigateAfterThreadPark(input: {
 
 export const THREAD_JUMP_HINT_SHOW_DELAY_MS = 200;
 
-/** Fork: a standing agent's name heads its thread cards in place of the title and project line. */
+/**
+ * Fork: a standing agent's name heads its thread cards in place of the title and project line.
+ * `projectLabel` is the visible line-one label, left out when it would repeat the title;
+ * `projectDisplayName` still names the project for screen readers.
+ */
 export function resolveThreadCardHeading(input: {
   readonly title: string;
   readonly agentName: string | null | undefined;
@@ -80,22 +84,29 @@ export function resolveThreadCardHeading(input: {
   readonly heading: string;
   readonly accessibleTitle: string;
   readonly projectDisplayName: string | null;
+  readonly projectLabel: string | null;
   readonly isAgent: boolean;
 } {
   const agentName = input.agentName ?? null;
-  return agentName === null
-    ? {
-        heading: input.title,
-        accessibleTitle: input.title,
-        projectDisplayName: input.projectDisplayName,
-        isAgent: false,
-      }
-    : {
-        heading: agentName,
-        accessibleTitle: `${agentName}, ${input.title}`,
-        projectDisplayName: null,
-        isAgent: true,
-      };
+  if (agentName !== null) {
+    return {
+      heading: agentName,
+      accessibleTitle: `${agentName}, ${input.title}`,
+      projectDisplayName: null,
+      projectLabel: null,
+      isAgent: true,
+    };
+  }
+  const repeatsTitle =
+    input.projectDisplayName !== null &&
+    input.projectDisplayName.trim().toLowerCase() === input.title.trim().toLowerCase();
+  return {
+    heading: input.title,
+    accessibleTitle: input.title,
+    projectDisplayName: input.projectDisplayName,
+    projectLabel: repeatsTitle ? null : input.projectDisplayName,
+    isAgent: false,
+  };
 }
 
 export function resolveSidebarRowAccessibility(input: {

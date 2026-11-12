@@ -740,6 +740,14 @@ unchanged. The column (`agent_name`) is added by
 than by a numbered migration, which would collide with upstream's next id. Code:
 `resolveThreadCardHeading` in `apps/web/src/components/Sidebar.logic.ts`.
 
+## No repeated project name on cards
+
+When a thread's title matches its project's name (ignoring case and surrounding
+spaces), as for a standing thread named after its project, the card leaves the
+project label out of its first line, which keeps the project icon, pin, status
+and time. The title line is unchanged, and the hover card and screen-reader label
+still name the project. Code: `projectLabel` from `resolveThreadCardHeading`.
+
 ## Thread details open hidden
 
 Upstream shows the thread details card on every thread until you hide it. Here a
