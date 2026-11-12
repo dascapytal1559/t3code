@@ -861,28 +861,35 @@ the two-line layout.
 Every row draws only the account the thread runs on now. Upstream draws up to
 two greyed earlier accounts in front of it from `providerInstanceHistory`, to
 show that a thread was handed from one provider account to another; here that
-history stays in the hover card. The account badge shows the account's place
-among its provider's accounts in Settings › Providers (default first, then as
-saved, the order usage limits follow), so Claude, Claude2 and Claude3 read 1, 2
-and 3. Upstream's badge shows the first two letters of the account's name, and
-every "ClaudeN" reads CL. A provider with one account shows no number, and an
-account accent colour still tints the badge (upstream's main way to tell
-accounts apart). Disabled accounts keep their number, but removing an account
-renumbers the ones after it, and each environment numbers its own. In a card's lead
+history stays in the hover card.
+
+The account badge shows a number, and that applies app-wide on web and desktop,
+not just in the sidebar: the composer's model picker, model lists, subagent bar,
+lineage and timeline rows all show it. The number is the account's place among
+its provider's accounts in Settings › Providers (default first, then as saved,
+the order usage limits follow), so Claude, Claude2 and Claude3 read 1, 2 and 3.
+Upstream's badge shows the first two letters of the account's name, and every
+"ClaudeN" reads CL. A provider with one account shows no number, and an account
+accent colour still tints the badge (upstream's main way to tell accounts
+apart). Disabled accounts keep their number, but removing an account renumbers
+the ones after it, and each environment numbers its own. Screens that print the
+account's name beside its icon (the Settings › Providers card, Usage) show the
+accent dot without a number, since the name is already there. In a card's lead
 slot the badge is the default size (8px digit), since the compact badge's 7px
 digit does not read there.
 
 Upstream code it touches, for syncs: the card branch of `SidebarThreadRow`
 (`modelLeads`, `titleOnTopLine`) and `SidebarModelIcon`, which replaces
 upstream's `SidebarProviderStack`, in
-`apps/web/src/components/sidebar/SidebarThreadRow.tsx`; `badgeContent:
-"label"` with `badgeLabel` on `ProviderInstanceIcon`; and `accountNumber` on the
-sidebar's provider entries (`withAccountNumbers` in
-`apps/web/src/components/Sidebar.tsx`). The numbering is
-`providerAccountNumbers` in `packages/shared/src/usageLimits.ts`. The mobile
-app keeps upstream's rows and badge. Leave `resolveThreadProviderStack` and
-`providerInstanceHistory` as upstream has them: mobile and the hover card read
-them.
+`apps/web/src/components/sidebar/SidebarThreadRow.tsx`; `accountNumber` on
+`ProviderInstanceIcon`, which replaces upstream's `badgeContent`, and on
+`ProviderInstanceEntry`, set by the entry helpers in
+`apps/web/src/providerInstances.ts` (`numberProviderAccounts`); and each badge
+caller passing `entry.accountNumber`. The numbering is `providerAccountNumbers`
+in `packages/shared/src/usageLimits.ts`. The mobile app has its own provider
+icon and keeps upstream's rows and initials badge. Leave
+`resolveThreadProviderStack` and `providerInstanceHistory` as upstream has them:
+mobile and the hover card read them.
 
 ## Agent names on cards
 

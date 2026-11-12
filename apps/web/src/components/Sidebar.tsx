@@ -58,7 +58,6 @@ import {
   AuthOrchestrationOperateScope,
   ProjectId,
   type ScopedThreadRef,
-  type ServerSettings,
   type ThreadId,
 } from "@t3tools/contracts";
 import type { OlderSettledScope } from "@t3tools/client-runtime/state/threads";
@@ -226,11 +225,7 @@ import {
   type SnoozePreset,
 } from "./Sidebar.snooze";
 import { ProjectFavicon } from "./ProjectFavicon";
-import {
-  deriveProviderEntriesByEnvironment,
-  type ProviderInstanceEntry,
-} from "../providerInstances";
-import { providerAccountNumbers } from "@t3tools/shared/usageLimits";
+import { deriveProviderEntriesByEnvironment } from "../providerInstances";
 import { useStableCallback } from "../hooks/useStableCallback";
 import {
   resolveSidebarRouteReveal,
@@ -310,38 +305,11 @@ function sameSidebarProviderEntries(
   return true;
 }
 
-function withAccountNumbers(
-  entries: ReadonlyMap<string, ProviderInstanceEntry>,
-  providerInstances: ServerSettings["providerInstances"] | undefined,
-): ReadonlyMap<string, SidebarProviderEntry> {
-  // Registry agents share one driver, so each agent numbers its own accounts.
-  const numbers = providerAccountNumbers(
-    [...entries.values()].map((entry) => entry.snapshot),
-    providerInstances,
-    (snapshot) => {
-      const entry = entries.get(snapshot.instanceId);
-      return entry?.driverKind === "acpRegistry"
-        ? `acpRegistry:${entry.acpRegistryAgentId ?? ""}`
-        : snapshot.driver;
-    },
-  );
-  return new Map(
-    [...entries].map(([instanceId, entry]) => {
-      const account = numbers.get(instanceId);
-      return [
-        instanceId,
-        { ...entry, accountNumber: account && account.of > 1 ? account.number : null },
-      ] as const;
-    }),
-  );
-}
-
 // Resolve providers per environment because default instance ids collide across environments.
 const sidebarProviderEntriesAtom = Atom.make((get) => {
   const providersByEnvironment = get(environmentPresentations.providersByEnvironmentAtom);
-  const serverConfigs = get(environmentPresentations.serverConfigsAtom);
   const derived = deriveProviderEntriesByEnvironment(
-    [...serverConfigs].map(
+    [...get(environmentPresentations.serverConfigsAtom)].map(
       ([environmentId, config]) =>
         [environmentId, providersByEnvironment.get(environmentId) ?? [], config.settings] as const,
     ),
@@ -351,11 +319,7 @@ const sidebarProviderEntriesAtom = Atom.make((get) => {
   );
   const next = new Map<string, ReadonlyMap<string, SidebarProviderEntry>>();
   let changed = previous === null || previous.size !== derived.size;
-  for (const [environmentId, derivedEntries] of derived) {
-    const entries = withAccountNumbers(
-      derivedEntries,
-      serverConfigs.get(environmentId as EnvironmentId)?.settings?.providerInstances,
-    );
+  for (const [environmentId, entries] of derived) {
     const prior = previous?.get(environmentId);
     if (prior !== undefined && sameSidebarProviderEntries(prior, entries)) {
       next.set(environmentId, prior);

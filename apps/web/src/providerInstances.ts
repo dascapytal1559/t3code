@@ -17,6 +17,7 @@ import {
   resolveProviderInstanceDisplayName,
   shouldShowInstanceBadge,
 } from "@t3tools/client-runtime/state/provider-instance-display";
+import { providerAccountNumbers } from "@t3tools/shared/usageLimits";
 
 export { normalizeProviderAccentColor, shouldShowInstanceBadge };
 
@@ -41,6 +42,8 @@ export interface ProviderInstanceEntry {
   readonly isAvailable: boolean;
   readonly snapshot: ServerProvider;
   readonly models: ReadonlyArray<ServerProviderModel>;
+  /** Place among its provider's accounts in Settings › Providers order; null for a lone account. */
+  readonly accountNumber: number | null;
 }
 
 /** Disabled instances may retain ready status until reconciliation. */
@@ -52,10 +55,11 @@ export function isProviderInstancePickerVisible(entry: ProviderInstanceEntry): b
   return entry.enabled;
 }
 
+/** Without settings, accounts number default first, then by name; branding renumbers them. */
 export function deriveProviderInstanceEntries(
   providers: ReadonlyArray<ServerProvider>,
 ): ReadonlyArray<ProviderInstanceEntry> {
-  return providers.map((snapshot) => {
+  const entries = providers.map((snapshot) => {
     const instanceId = snapshot.instanceId;
     const driverKind = snapshot.driver;
     const defaultId = defaultInstanceIdForDriver(driverKind);
@@ -76,7 +80,35 @@ export function deriveProviderInstanceEntries(
       isAvailable: snapshot.availability !== "unavailable",
       snapshot,
       models: snapshot.models,
+      accountNumber: null,
     } satisfies ProviderInstanceEntry;
+  });
+  return numberProviderAccounts(entries, undefined);
+}
+
+/**
+ * Sets each entry's account number. Disabled accounts count, so turning one off renumbers nothing;
+ * registry agents share a driver, so each agent numbers its own accounts.
+ */
+function numberProviderAccounts(
+  entries: ReadonlyArray<ProviderInstanceEntry>,
+  providerInstances: ServerSettings["providerInstances"] | undefined,
+): ReadonlyArray<ProviderInstanceEntry> {
+  const byInstanceId = new Map(entries.map((entry) => [entry.instanceId as string, entry]));
+  const numbers = providerAccountNumbers(
+    entries.map((entry) => entry.snapshot),
+    providerInstances,
+    (snapshot) => {
+      const entry = byInstanceId.get(snapshot.instanceId);
+      return entry?.driverKind === "acpRegistry"
+        ? `acpRegistry:${entry.acpRegistryAgentId ?? ""}`
+        : snapshot.driver;
+    },
+  );
+  return entries.map((entry) => {
+    const account = numbers.get(entry.instanceId);
+    const accountNumber = account && account.of > 1 ? account.number : null;
+    return accountNumber === entry.accountNumber ? entry : { ...entry, accountNumber };
   });
 }
 
@@ -107,7 +139,10 @@ export function brandProviderInstanceEntries(
   entries: ReadonlyArray<ProviderInstanceEntry>,
   settings: Pick<ServerSettings, "providerInstances">,
 ): ReadonlyArray<ProviderInstanceEntry> {
-  return entries.map((entry) => applyProviderInstanceBranding(entry, settings));
+  return numberProviderAccounts(
+    entries.map((entry) => applyProviderInstanceBranding(entry, settings)),
+    settings.providerInstances,
+  );
 }
 
 /** projectId applies project overrides; explicit null uses machine settings. */
@@ -116,13 +151,16 @@ export function applyProviderInstanceSettings(
   settings: Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides">,
   projectId: ProjectId | null,
 ): ReadonlyArray<ProviderInstanceEntry> {
-  return entries.map((entry) => {
-    const enabled = resolveProjectProviderInstanceEnabled(settings, projectId, entry.instanceId);
-    return applyProviderInstanceBranding(
-      enabled === entry.enabled ? entry : { ...entry, enabled },
-      settings,
-    );
-  });
+  return numberProviderAccounts(
+    entries.map((entry) => {
+      const enabled = resolveProjectProviderInstanceEnabled(settings, projectId, entry.instanceId);
+      return applyProviderInstanceBranding(
+        enabled === entry.enabled ? entry : { ...entry, enabled },
+        settings,
+      );
+    }),
+    settings.providerInstances,
+  );
 }
 
 function applyProviderInstanceBranding(

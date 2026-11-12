@@ -218,6 +218,7 @@ function SubagentAvatar({
   iconUrl,
   accentColor,
   showBadge,
+  accountNumber,
   status,
   className,
 }: {
@@ -226,6 +227,7 @@ function SubagentAvatar({
   iconUrl?: string | undefined;
   accentColor?: string | undefined;
   showBadge: boolean;
+  accountNumber?: number | null | undefined;
   status?: OrchestrationV2TurnItem["status"] | undefined;
   className?: string;
 }) {
@@ -244,6 +246,7 @@ function SubagentAvatar({
           accentColor={accentColor}
           acpRegistryIconUrl={iconUrl}
           showBadge={showBadge}
+          accountNumber={accountNumber}
           size="compact"
           className="z-auto"
           iconClassName="size-3.5"
@@ -306,6 +309,11 @@ export function EnvironmentSubagentAvatar({
     const entry = all.find((candidate) => candidate.instanceId === providerInstanceId);
     return entry !== undefined && shouldShowInstanceBadge(entry, all);
   });
+  const accountNumber = useAtomValue(
+    providersAtom,
+    (providers) =>
+      entries(providers).find((entry) => entry.instanceId === providerInstanceId)?.accountNumber,
+  );
   const iconUrl = useAtomValue(
     providersAtom,
     (providers) =>
@@ -319,6 +327,7 @@ export function EnvironmentSubagentAvatar({
       iconUrl={iconUrl}
       accentColor={accentColor}
       showBadge={showBadge}
+      accountNumber={accountNumber}
     />
   );
 }
@@ -709,6 +718,7 @@ function HandoffEndpoint(props: {
               acpRegistryAgentId={entry?.acpRegistryAgentId}
               acpRegistryIconUrl={entry?.acpRegistryIconUrl}
               showBadge={showBadge}
+              accountNumber={entry?.accountNumber}
               size="compact"
               iconClassName={cn(showBadge && "opacity-60")}
               indicatorBackground="var(--background)"

@@ -140,10 +140,8 @@ export type SidebarProviderEntry = Pick<
   | "acpRegistryAgentId"
   | "acpRegistryIconUrl"
   | "models"
-> & {
-  // Place among the provider's accounts in Settings › Providers; null when it is the only one.
-  readonly accountNumber: number | null;
-};
+  | "accountNumber"
+>;
 function compactSidebarTimeLabel(label: string): string {
   if (label === "just now") return "now";
   return label.endsWith(" ago") ? label.slice(0, -4) : label;
@@ -215,8 +213,7 @@ function SidebarModelIcon(props: {
         acpRegistryAgentId={entry.acpRegistryAgentId}
         acpRegistryIconUrl={entry.acpRegistryIconUrl}
         showBadge={showBadge}
-        badgeContent={entry.accountNumber === null ? "none" : "label"}
-        badgeLabel={entry.accountNumber === null ? undefined : String(entry.accountNumber)}
+        accountNumber={entry.accountNumber}
         size="compact"
         iconClassName={props.lead ? "size-4" : "opacity-60"}
         // The compact badge's 7px digit is too small to read as the row's lead.
@@ -317,7 +314,6 @@ function SidebarThreadTooltip({
               acpRegistryAgentId={providerEntry?.acpRegistryAgentId}
               acpRegistryIconUrl={providerEntry?.acpRegistryIconUrl}
               showBadge={showInstanceBadge && providerEntry?.accentColor !== undefined}
-              badgeContent="none"
               badgeClassName="h-2 min-w-2 px-0"
               iconClassName="size-3 shrink-0 grayscale opacity-60"
             />

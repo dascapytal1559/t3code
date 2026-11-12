@@ -253,6 +253,56 @@ describe("deriveProviderEntriesByEnvironment", () => {
 
     expect(personal && shouldShowInstanceBadge(personal, entries?.values() ?? [])).toBe(true);
   });
+
+  it("numbers each provider's accounts in Settings › Providers order", () => {
+    const claude = ProviderDriverKind.make("claudeAgent");
+    const acp = ProviderDriverKind.make("acpRegistry");
+    const agent = (agentId: string) => ({ driver: acp, enabled: true, config: { agentId } });
+    const providers = [
+      provider({ provider: ProviderDriverKind.make("codex"), instanceId: "codex" }),
+      provider({ provider: claude, instanceId: "claudeAgent" }),
+      provider({
+        provider: claude,
+        instanceId: "claude_2",
+        displayName: "Claude2",
+        enabled: false,
+      }),
+      provider({ provider: claude, instanceId: "claude_3", displayName: "Claude3" }),
+      provider({ provider: acp, instanceId: "kiro_a" }),
+      provider({ provider: acp, instanceId: "gemini" }),
+      provider({ provider: acp, instanceId: "kiro_b" }),
+    ];
+    // Saved order, not name order: Claude3 comes before Claude2.
+    const settings = {
+      providerInstances: {
+        [ProviderInstanceId.make("claude_3")]: { driver: claude, enabled: true },
+        [ProviderInstanceId.make("claude_2")]: { driver: claude, enabled: false },
+        [ProviderInstanceId.make("kiro_a")]: agent("kiro"),
+        [ProviderInstanceId.make("gemini")]: agent("gemini"),
+        [ProviderInstanceId.make("kiro_b")]: agent("kiro"),
+      },
+      projectSettingsOverrides: {},
+    };
+    const expected = {
+      codex: null,
+      claudeAgent: 1,
+      claude_3: 2,
+      claude_2: 3,
+      kiro_a: 1,
+      gemini: null,
+      kiro_b: 2,
+    };
+    const numbers = (entries: Iterable<{ instanceId: string; accountNumber: number | null }>) =>
+      Object.fromEntries([...entries].map((entry) => [entry.instanceId, entry.accountNumber]));
+
+    const byEnvironment = deriveProviderEntriesByEnvironment([["local", providers, settings]]);
+    expect(numbers(byEnvironment.get("local")?.values() ?? [])).toEqual(expected);
+    expect(
+      numbers(
+        applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings, null),
+      ),
+    ).toEqual(expected);
+  });
 });
 
 describe("brandProviderInstanceEntries", () => {

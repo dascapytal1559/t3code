@@ -93,9 +93,8 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
   acpRegistryAgentId?: string | undefined;
   acpRegistryIconUrl?: string | undefined;
   showBadge?: boolean;
-  // "label" shows badgeLabel, such as an account's number.
-  badgeContent?: "initials" | "label" | "none";
-  badgeLabel?: string | undefined;
+  // The badge's text (ProviderInstanceEntry.accountNumber); without one it is a plain dot.
+  accountNumber?: number | null | undefined;
   size?: "default" | "compact";
   className?: string;
   iconClassName?: string;
@@ -112,7 +111,6 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
         "--provider-accent-foreground": providerAccentForegroundColor(accentColor),
       } as CSSProperties)
     : undefined;
-  const badgeContent = props.badgeContent ?? "initials";
   const iconClassName = cn(props.size === "compact" && "size-3.5", props.iconClassName);
   const isAcpRegistry = props.driverKind === "acpRegistry";
   // A custom OpenAI-compatible endpoint has no brand: show its name, marked with the protocol.
@@ -188,11 +186,7 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
           style={{ borderColor: indicatorBackground }}
           aria-hidden
         >
-          {badgeContent === "initials"
-            ? providerInstanceInitials(props.displayName)
-            : badgeContent === "label"
-              ? props.badgeLabel
-              : null}
+          {props.accountNumber ?? null}
         </span>
       ) : null}
     </span>

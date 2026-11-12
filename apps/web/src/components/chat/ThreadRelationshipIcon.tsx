@@ -71,6 +71,7 @@ export function ThreadRelationshipIcon({
           acpRegistryAgentId={entry?.acpRegistryAgentId}
           acpRegistryIconUrl={entry?.acpRegistryIconUrl ?? provider?.iconUrl}
           showBadge={showInstanceBadge}
+          accountNumber={entry?.accountNumber}
           size="compact"
           iconClassName={iconClassName}
           className="z-auto"
