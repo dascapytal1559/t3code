@@ -5,11 +5,16 @@ import type {
   UsageDay,
   UsageModelFilter,
   UsageModelSelector,
+  UsageOrigin,
+  UsageOriginBasis,
+  UsageOrigins,
+  UsageProviderKind,
   UsageResolution,
   UsageTokenTotals,
 } from "@t3tools/contracts";
 
 import { EMPTY_TOTALS, type UsageRecord } from "@t3tools/provider-core/server/usage";
+import type { UsageOriginKey } from "./UsageOrigins.ts";
 import { cacheSavingsUsd, priceUsage, type RateTable } from "./usagePricing.ts";
 
 // en-CA gives ISO-ordered parts in the requested zone; Date getters are host-local.
@@ -73,6 +78,13 @@ export interface AggregateOptions {
   readonly resolution?: UsageResolution;
   readonly sinceTimeMs?: number;
   readonly untilTimeMs?: number;
+  /** Splits kept records by origin after dedupe and filtering, so the origins partition the totals. */
+  readonly attributeOrigin?: (record: UsageRecord) => UsageOriginKey | null;
+}
+
+interface MutableOriginUsage {
+  totals: { -readonly [K in keyof UsageTokenTotals]: number };
+  costUsd: number;
 }
 
 export function resolveModelAliases(
@@ -125,6 +137,7 @@ export function canonicalModelFilter(
 
 export interface AggregateResult {
   readonly buckets: readonly UsageBucket[];
+  readonly origins?: UsageOrigins;
   readonly duplicatesDropped: number;
   readonly outOfWindow: number;
 }
@@ -146,9 +159,13 @@ export class UsageAggregator {
   } | null = null;
   #duplicatesDropped = 0;
   #outOfWindow = 0;
+  readonly #originUsage: Map<string, MutableOriginUsage> | null;
+  readonly #originPrompts: Map<string, number> | null;
 
   constructor(options: AggregateOptions) {
     this.#options = options;
+    this.#originUsage = options.attributeOrigin === undefined ? null : new Map();
+    this.#originPrompts = options.attributeOrigin === undefined ? null : new Map();
     this.#toDay = makeDayFormatter(options.timeZone);
     if (options.resolution === "hour") {
       if (options.sinceTimeMs === undefined || options.untilTimeMs === undefined) {
@@ -174,20 +191,8 @@ export class UsageAggregator {
       this.#seen.add(record.dedupeKey);
     }
 
-    if (
-      this.#hourlyWindow !== null &&
-      (record.timestampMs < this.#hourlyWindow.sinceTimeMs ||
-        record.timestampMs >= this.#hourlyWindow.untilTimeMs)
-    ) {
-      this.#outOfWindow += 1;
-      return false;
-    }
-
-    const day = this.#toDay(record.timestampMs);
-    if (
-      this.#hourlyWindow === null &&
-      (day < this.#options.sinceDay || day > this.#options.untilDay)
-    ) {
+    const day = this.#windowDay(record.timestampMs);
+    if (day === null) {
       this.#outOfWindow += 1;
       return false;
     }
@@ -232,7 +237,42 @@ export class UsageAggregator {
     if (priced.costSource === "unpriced") bucket.unpricedRecords += 1;
     if (priced.costSource === "providerReported") bucket.providerReportedRecords += 1;
     if (record.sessionId.length > 0) bucket.sessions.add(record.sessionId);
+    if (this.#originUsage !== null) {
+      const key = this.#options.attributeOrigin?.(record) ?? null;
+      if (key !== null) {
+        const originKey = `${key.origin}\u0000${key.basis}\u0000${record.provider}\u0000${sourcePath ?? ""}`;
+        let origin = this.#originUsage.get(originKey);
+        if (origin === undefined) {
+          origin = { totals: { ...EMPTY_TOTALS }, costUsd: 0 };
+          this.#originUsage.set(originKey, origin);
+        }
+        origin.totals.uncachedInputTokens += record.totals.uncachedInputTokens;
+        origin.totals.cachedInputTokens += record.totals.cachedInputTokens;
+        origin.totals.cacheCreationTokens += record.totals.cacheCreationTokens;
+        origin.totals.outputTokens += record.totals.outputTokens;
+        origin.totals.reasoningTokens += record.totals.reasoningTokens;
+        origin.costUsd += priced.costUsd;
+      }
+    }
     return true;
+  }
+
+  /** Counts a T3 prompt sent inside the window; needs `attributeOrigin`. */
+  countPrompt(timestampMs: number, key: UsageOriginKey): void {
+    if (this.#originPrompts === null || this.#windowDay(timestampMs) === null) return;
+    const promptKey = `${key.origin}\u0000${key.basis}`;
+    this.#originPrompts.set(promptKey, (this.#originPrompts.get(promptKey) ?? 0) + 1);
+  }
+
+  #windowDay(timestampMs: number): string | null {
+    const window = this.#hourlyWindow;
+    if (window !== null) {
+      return timestampMs < window.sinceTimeMs || timestampMs >= window.untilTimeMs
+        ? null
+        : this.#toDay(timestampMs);
+    }
+    const day = this.#toDay(timestampMs);
+    return day < this.#options.sinceDay || day > this.#options.untilDay ? null : day;
   }
 
   // Aliases use the target's rate, replacing provider-specific rateModel.
@@ -334,10 +374,40 @@ export class UsageAggregator {
 
     return {
       buckets,
+      ...(this.#originUsage === null || this.#originPrompts === null
+        ? {}
+        : { origins: finishOrigins(this.#originUsage, this.#originPrompts) }),
       duplicatesDropped: this.#duplicatesDropped,
       outOfWindow: this.#outOfWindow,
     };
   }
+}
+
+function finishOrigins(
+  usage: ReadonlyMap<string, MutableOriginUsage>,
+  prompts: ReadonlyMap<string, number>,
+): UsageOrigins {
+  return {
+    usage: [...usage].map(([key, entry]) => {
+      const [origin = "", basis = "", provider = "", sourcePath = ""] = key.split("\u0000");
+      return {
+        origin: origin as UsageOrigin,
+        basis: basis as UsageOriginBasis,
+        provider: provider as UsageProviderKind,
+        ...(sourcePath === "" ? {} : { sourcePath }),
+        totals: { ...entry.totals },
+        costUsd: entry.costUsd,
+      };
+    }),
+    prompts: [...prompts].map(([key, count]) => {
+      const [origin = "", basis = ""] = key.split("\u0000");
+      return {
+        origin: origin as UsageOrigin,
+        basis: basis as UsageOriginBasis,
+        prompts: count,
+      };
+    }),
+  };
 }
 
 function roundUsd(value: number): number {

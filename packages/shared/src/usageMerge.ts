@@ -2,6 +2,9 @@ import {
   USAGE_MERGE_COMPATIBLE_SINCE,
   type EnvironmentId,
   type UsageBucket,
+  type UsageOrigin,
+  type UsageOriginBasis,
+  type UsageOriginUsage,
   type UsageProviderKind,
   type UsageSource,
   type UsageSourceFingerprint,
@@ -106,7 +109,40 @@ export interface MergedUsage {
   readonly duplicateSources: readonly string[];
   readonly contributingEnvironments: readonly EnvironmentId[];
   readonly contractMismatches: readonly UsageContractMismatch[];
+  /** Null when no selected server reports origins. */
+  readonly origins: MergedOrigins | null;
 }
+
+export interface OriginBasisTotals {
+  readonly basis: UsageOriginBasis;
+  readonly prompts: number;
+  readonly costUsd: number;
+  readonly totalTokens: number;
+}
+
+export interface OriginTotals {
+  readonly origin: UsageOrigin;
+  readonly prompts: number;
+  readonly costUsd: number;
+  readonly totalTokens: number;
+  readonly bases: readonly OriginBasisTotals[];
+}
+
+export interface MergedOrigins {
+  /** Phone, computer, agent, crew, unknown; only origins with prompts or usage. */
+  readonly rows: readonly OriginTotals[];
+  /** The rest of the merged totals: records in no T3 run, or from servers that do not report origins. */
+  readonly unlinkedCostUsd: number;
+  readonly unlinkedTokens: number;
+}
+
+const USAGE_ORIGIN_ORDER: readonly UsageOrigin[] = [
+  "phone",
+  "computer",
+  "agent",
+  "crew",
+  "unknown",
+];
 
 // volumeId distinguishes machines sharing a hostname and home path.
 function fingerprintKey(fingerprint: UsageSourceFingerprint): string {
@@ -226,6 +262,7 @@ function ownedContribution(
   sessionsByFingerprint: ReadonlyMap<string, number>,
 ): {
   readonly buckets: readonly UsageBucket[];
+  readonly originUsage: readonly UsageOriginUsage[];
   readonly sessionsByProvider: ReadonlyMap<UsageProviderKind, number>;
 } {
   const ownedProviders = new Set<UsageProviderKind>();
@@ -246,19 +283,92 @@ function ownedContribution(
       );
     }
   }
+  const owned = (row: {
+    readonly provider: UsageProviderKind;
+    readonly sourcePath?: string | undefined;
+  }) =>
+    row.sourcePath === undefined
+      ? ownedProviders.has(row.provider)
+      : ownedSources.has(`${row.provider}\u0000${row.sourcePath}`);
   return {
     buckets: environment.summary.buckets.filter(
-      (bucket) =>
-        supplementalBuckets.has(bucket) ||
-        (bucket.sourcePath === undefined
-          ? ownedProviders.has(bucket.provider)
-          : ownedSources.has(`${bucket.provider}\u0000${bucket.sourcePath}`)),
+      (bucket) => supplementalBuckets.has(bucket) || owned(bucket),
     ),
+    // Origins have no cells to supplement from a partial scan; those cells count as unlinked.
+    originUsage: environment.summary.origins?.usage.filter(owned) ?? [],
     sessionsByProvider,
   };
 }
 
-function bucketTokens(bucket: UsageBucket): number {
+function mergeOrigins(
+  current: readonly EnvironmentUsage[],
+  originUsage: readonly UsageOriginUsage[],
+  costUsd: number,
+  totalTokens: number,
+): MergedOrigins | null {
+  if (!current.some((environment) => environment.summary.origins !== undefined)) return null;
+  const bases = new Map<UsageOrigin, Map<UsageOriginBasis, OriginBasisTotals>>();
+  const add = (
+    origin: UsageOrigin,
+    basis: UsageOriginBasis,
+    amount: Omit<OriginBasisTotals, "basis">,
+  ) => {
+    const byBasis = bases.get(origin) ?? new Map<UsageOriginBasis, OriginBasisTotals>();
+    const entry = byBasis.get(basis);
+    byBasis.set(basis, {
+      basis,
+      prompts: (entry?.prompts ?? 0) + amount.prompts,
+      costUsd: (entry?.costUsd ?? 0) + amount.costUsd,
+      totalTokens: (entry?.totalTokens ?? 0) + amount.totalTokens,
+    });
+    bases.set(origin, byBasis);
+  };
+  for (const row of originUsage) {
+    add(row.origin, row.basis, {
+      prompts: 0,
+      costUsd: row.costUsd,
+      totalTokens: bucketTokens(row),
+    });
+  }
+  for (const environment of current) {
+    for (const row of environment.summary.origins?.prompts ?? []) {
+      add(row.origin, row.basis, { prompts: row.prompts, costUsd: 0, totalTokens: 0 });
+    }
+  }
+  const rows: OriginTotals[] = [];
+  let linkedCostUsd = 0;
+  let linkedTokens = 0;
+  for (const origin of USAGE_ORIGIN_ORDER) {
+    const byBasis = [...(bases.get(origin)?.values() ?? [])].sort(
+      (a, b) => b.prompts - a.prompts || b.totalTokens - a.totalTokens,
+    );
+    if (byBasis.length === 0) continue;
+    let prompts = 0;
+    let originCostUsd = 0;
+    let originTokens = 0;
+    for (const basis of byBasis) {
+      prompts += basis.prompts;
+      originCostUsd += basis.costUsd;
+      originTokens += basis.totalTokens;
+    }
+    linkedCostUsd += originCostUsd;
+    linkedTokens += originTokens;
+    rows.push({
+      origin,
+      prompts,
+      costUsd: originCostUsd,
+      totalTokens: originTokens,
+      bases: byBasis,
+    });
+  }
+  return {
+    rows,
+    unlinkedCostUsd: Math.max(0, costUsd - linkedCostUsd),
+    unlinkedTokens: Math.max(0, totalTokens - linkedTokens),
+  };
+}
+
+function bucketTokens(bucket: { readonly totals: UsageTokenTotals }): number {
   // reasoningTokens is a subset of outputTokens and must not be added again.
   return (
     bucket.totals.uncachedInputTokens +
@@ -297,6 +407,7 @@ const EMPTY_MERGED: MergedUsage = {
   duplicateSources: [],
   contributingEnvironments: [],
   contractMismatches: [],
+  origins: null,
 };
 
 export function mergeUsage(
@@ -380,15 +491,21 @@ export function mergeUsage(
     }
   >();
   const contributingEnvironments: EnvironmentId[] = [];
+  const originUsage: UsageOriginUsage[] = [];
 
   for (const environment of current) {
-    const { buckets, sessionsByProvider } = ownedContribution(
+    const {
+      buckets,
+      originUsage: ownedOriginUsage,
+      sessionsByProvider,
+    } = ownedContribution(
       environment,
       ownerByFingerprint,
       supplementalBucketsByEnvironment.get(environment.environmentId) ?? new Set(),
       sessionsByFingerprint,
     );
     if (buckets.length > 0) contributingEnvironments.push(environment.environmentId);
+    originUsage.push(...ownedOriginUsage);
 
     for (const [providerKind, providerSessions] of sessionsByProvider) {
       sessions += providerSessions;
@@ -585,5 +702,6 @@ export function mergeUsage(
     duplicateSources: duplicates,
     contributingEnvironments,
     contractMismatches,
+    origins: mergeOrigins(current, originUsage, costUsd, totalTokens),
   };
 }

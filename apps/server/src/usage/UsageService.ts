@@ -41,6 +41,7 @@ import type {
 } from "@t3tools/provider-core/server/usage";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import { canonicalModelFilter, resolveModelAliases, UsageAggregator } from "./usageAggregation.ts";
+import * as UsageOrigins from "./UsageOrigins.ts";
 import {
   discoverUsageArchive,
   upgradeArchivedScanCache,
@@ -170,6 +171,7 @@ export const make = Effect.gen(function* () {
   const hostEnvironment = yield* HostProcess.Environment;
   const hostname = yield* HostProcess.Hostname;
   const readerContext = yield* Effect.context<BuiltInUsageReadersEnv>();
+  const usageOrigins = yield* UsageOrigins.UsageOrigins;
 
   const fileCache: ScanCache = new Map();
   // Reads from concurrent windows can still hold the original record after it is corrected.
@@ -849,15 +851,25 @@ export const make = Effect.gen(function* () {
     const windowStartMs =
       (hourlyWindow?.sinceTimeMs ?? DateTime.toEpochMillis(windowStart.value)) - MTIME_SLACK_MS;
 
+    const windowEndMs =
+      hourlyWindow?.untilTimeMs ??
+      Date.parse(`${input.untilDay}T00:00:00Z`) + 86400000 + MTIME_SLACK_MS;
+
     const retentionCutoffMs = startedAtMs - CACHE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
-    const [, scannedDirs] = yield* Effect.all(
+    const [, scannedDirs, origins] = yield* Effect.all(
       [
         ensureRates(false),
         collectDirs(windowStartMs, settings, retentionCutoffMs, input.awaitRefresh === true),
+        // Usage still loads without origins; the summary then omits them.
+        usageOrigins.read(windowStartMs, windowEndMs).pipe(
+          Effect.tapError((error) => Effect.logWarning(error.message, error.cause)),
+          Effect.orElseSucceed(() => null),
+        ),
       ],
-      { concurrency: 2 },
+      { concurrency: 3 },
     );
+    const originIndex = origins === null ? null : new UsageOrigins.UsageOriginIndex(origins.turns);
 
     const aggregator = new UsageAggregator({
       timeZone: input.timeZone,
@@ -869,7 +881,16 @@ export const make = Effect.gen(function* () {
       priceOverrides: createOverrideRateTable(settings.usagePriceOverrides),
       modelAliases: resolveModelAliases(settings.usageModelAliases),
       ...(input.modelFilter === undefined ? {} : { modelFilter: input.modelFilter }),
+      ...(originIndex === null
+        ? {}
+        : {
+            attributeOrigin: (record: UsageRecord) =>
+              originIndex.lookup(record.sessionId, record.timestampMs),
+          }),
     });
+    for (const prompt of origins?.prompts ?? []) {
+      aggregator.countPrompt(prompt.createdAtMs, prompt.key);
+    }
 
     const sources: UsageSource[] = [];
 
@@ -894,9 +915,6 @@ export const make = Effect.gen(function* () {
       }
       return retainedFiles;
     });
-    const windowEndMs =
-      hourlyWindow?.untilTimeMs ??
-      Date.parse(`${input.untilDay}T00:00:00Z`) + 86400000 + MTIME_SLACK_MS;
     let resolvedAny = false;
     for (const { reader } of transcriptReaders) {
       if (reader.resolveServiceTiers === undefined) continue;
@@ -1023,6 +1041,7 @@ export const make = Effect.gen(function* () {
       sinceDay: input.sinceDay,
       untilDay: input.untilDay,
       buckets: aggregated.buckets,
+      ...(aggregated.origins === undefined ? {} : { origins: aggregated.origins }),
       sources,
       pricing: pricing(),
       scanDurationMs: Math.max(0, finishedAtMs - startedAtMs),

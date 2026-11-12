@@ -98,6 +98,65 @@ describe("UsageAggregator", () => {
     expect(result.buckets[0]?.totals.outputTokens).toBe(50);
   });
 
+  it("splits kept records by origin so the origins and the unlinked rest partition the totals", () => {
+    const aggregator = new UsageAggregator({
+      timeZone: "UTC",
+      sinceDay: "2026-08-01",
+      untilDay: "2026-08-31",
+      rates,
+      modelFilter: { exclude: [{ model: "claude-excluded" }] },
+      attributeOrigin: (item) =>
+        item.sessionId === "phone-session"
+          ? { origin: "phone", basis: "stamp" }
+          : item.sessionId === "crew-session"
+            ? { origin: "crew", basis: "sender" }
+            : null,
+    });
+    for (const item of [
+      record({ sessionId: "phone-session", dedupeKey: "msg_1:" }),
+      record({ sessionId: "phone-session", dedupeKey: "msg_1:" }),
+      record({ sessionId: "phone-session", model: "claude-excluded" }),
+      record({ sessionId: "phone-session", timestampMs: Date.parse("2026-07-30T00:00:00Z") }),
+      record({ sessionId: "crew-session" }),
+      record({ sessionId: "terminal-session" }),
+    ]) {
+      aggregator.add(item, "/claude");
+    }
+    aggregator.countPrompt(Date.parse("2026-08-07T00:00:00Z"), { origin: "phone", basis: "stamp" });
+    aggregator.countPrompt(Date.parse("2026-08-08T00:00:00Z"), { origin: "phone", basis: "stamp" });
+    aggregator.countPrompt(Date.parse("2026-07-30T00:00:00Z"), { origin: "phone", basis: "stamp" });
+    aggregator.countPrompt(Date.parse("2026-08-07T00:00:00Z"), {
+      origin: "unknown",
+      basis: "unstamped",
+    });
+    const result = aggregator.finish();
+
+    const recordCost = result.buckets[0]!.costUsd / 3;
+    expect(result.buckets[0]?.records).toBe(3);
+    expect(result.origins?.usage).toEqual([
+      {
+        origin: "phone",
+        basis: "stamp",
+        provider: "claude",
+        sourcePath: "/claude",
+        totals: record().totals,
+        costUsd: expect.closeTo(recordCost),
+      },
+      {
+        origin: "crew",
+        basis: "sender",
+        provider: "claude",
+        sourcePath: "/claude",
+        totals: record().totals,
+        costUsd: expect.closeTo(recordCost),
+      },
+    ]);
+    expect(result.origins?.prompts).toEqual([
+      { origin: "phone", basis: "stamp", prompts: 2 },
+      { origin: "unknown", basis: "unstamped", prompts: 1 },
+    ]);
+  });
+
   it("buckets by the day in the requested time zone", () => {
     const utc = aggregate([record()], "UTC");
     const losAngeles = aggregate([record()], "America/Los_Angeles");

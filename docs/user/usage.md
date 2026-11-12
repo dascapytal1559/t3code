@@ -57,6 +57,14 @@ saved totals first, then updates them when Cursor's API responds.
 If recent work is missing or a new model shows no cost, refresh to rescan session history and
 update model pricing.
 
+On web and desktop, **By origin** shows where the period's prompts were sent from (**Phone**,
+**Computer**, **Agent** or **Unknown**) and the tokens and cost of the runs they started. A run
+counts toward the message that started it; messages sent while it runs do not split it. Phone
+includes tablets. Messages from before T3 recorded the sending device are Unknown, except those
+sent from the mobile app, which count as Phone. **FirstMate crew** is work an agent started in a
+FirstMate crew thread; which device started the FirstMate work behind it is not recorded yet.
+**Outside T3 runs** is usage no T3 prompt started, such as terminal sessions and archived history.
+
 ## Set custom model prices
 
 On web or desktop, open the environment dropdown on **Usage**, then choose **Model prices** to add,
