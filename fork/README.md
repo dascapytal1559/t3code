@@ -168,11 +168,18 @@ no new meter and no device guessing.
   or `creationSource` `mcp`/`provider` is Agent; everything else (older web
   messages, server-made messages) is Unknown. Each row's second line says how
   its prompts were read.
-- Agent prompts in a FirstMate crew thread (`crewOf`) are **FirstMate crew**,
-  shown under "Not tied to a device" with usage no T3 run started (**Outside
-  T3 runs**: terminal sessions, archives, other machines, servers without
-  origins). Which phone prompt started a crew worker is stage 2: FirstMate
-  must record it.
+- An agent prompt (Agent or crew) follows its recorded cause (see
+  [Work records the prompt that caused it](#work-records-the-prompt-that-caused-it)):
+  its own `causedBy`, else its thread's. If the chain reaches a Phone or
+  Computer prompt within 8 hops, the prompt and its run count there, keeping
+  the root's basis and adding `via` (`agent` or `crew`) for who sent it; the
+  row reads "6 via FirstMate crew". Any other root (an agent acting on its
+  own, a server or unstamped prompt), a missing message or a cycle leaves the
+  prompt where it was.
+- Agent prompts in a FirstMate crew thread (`crewOf`) with no such chain are
+  **FirstMate crew**, shown under "Not tied to a device" with usage no T3 run
+  started (**Outside T3 runs**: terminal sessions, archives, other machines,
+  servers without origins).
 - Tokens are joined before aggregation: a transcript record's native
   `sessionId` finds the provider thread (`nativeThreadRef.nativeId`), and its
   timestamp the turn running then. A record more than five minutes after that
@@ -181,10 +188,10 @@ no new meter and no device guessing.
   add up to the page's totals.
 
 The server sends `origins` on `UsageSummary` (optional; usage rows keyed by
-origin, basis, provider and source with no day, so the payload stays small),
+origin, basis, `via`, provider and source with no day, so the payload stays small),
 and clients merge the rows with the same source ownership as buckets. The mobile app gets the merged
 figures but does not show them yet. Code: `apps/server/src/usage/UsageOrigins.ts`
-(classifier, SQL, turn index), `attributeOrigin` and `countPrompt` in
+(classifier, cause chains, SQL, turn index), `attributeOrigin` and `countPrompt` in
 `usageAggregation.ts`, `mergeOrigins` in `packages/shared/src/usageMerge.ts`,
 and `apps/web/src/components/usage/UsageOriginBreakdown.tsx`.
 
@@ -1049,8 +1056,40 @@ sends and launch briefs, the `t3 thread` CLI) read `surface: "mcp"`,
 (scheduled tasks, continuations) and messages from before this change have
 none, which means unknown; nothing is backfilled. A run's sender is its
 `userMessageId`'s origin. Code: `withCreationProvenance` in
-`apps/server/src/orchestration-v2/ThreadManagementService.ts`, `messageOrigin`
+`apps/server/src/orchestration-v2/ThreadManagementService.ts`, `messageProvenance`
 in `Orchestrator.ts`, `clientOrigin` in `apps/server/src/ws.ts`.
+
+## Work records the prompt that caused it
+
+An MCP-sent message is stamped `mcp`/`bot`, which says an agent sent it but
+not why. So FirstMate can tie a worker back to the phone or computer prompt
+it acted on, `t3_thread_launch` and `t3_thread_send` take an optional
+`causedBy`:
+
+```json
+"causedBy": { "threadId": "<thread>", "runId": "<run, optional>", "messageId": "<message>" }
+```
+
+- The server checks it before doing anything: the thread exists and is not
+  deleted, the message is a user-role message (a prompt) in that thread, and,
+  when `runId` is given, the message belongs to that run. Any thread an MCP
+  caller may read is allowed, in any project. A failure is `invalid_request`
+  with a `causedBy: ...` message, and nothing is launched or sent.
+- `t3_thread_launch` stores it on the new thread (`thread.causedBy`) and on
+  its first message when it has one. `t3_thread_send` stores it on the sent
+  message, through queueing and steering. Both are event-sourced:
+  `thread.created` and `message.updated` payloads carry it.
+- `t3_thread_read` returns the thread's in `thread.causedBy` and each
+  message's on its `user_message` items. Absent means none was recorded;
+  T3 never infers one. Linked servers without this omit both.
+- Only server code sets it: a client's `thread.create` or `message.dispatch`
+  loses any `causedBy` it carries. It refers to this environment only.
+  `t3_thread_send_attachments` and `delegate_task` do not take it (delegated
+  tasks already record their parent run).
+
+Usage follows these links ([Usage by origin](#usage-by-origin)). Code:
+`verifyCause` in `apps/server/src/mcp/threadAccess.ts`, `OrchestrationV2CausedBy`
+in `packages/contracts/src/orchestrationV2.ts`.
 
 ## Queued messages can be stashed
 

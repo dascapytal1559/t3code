@@ -16,6 +16,7 @@ import {
   ProjectCreatePayload,
   ProjectUpdatePayload,
   ProjectId,
+  OrchestratorMcpCausedBy,
   OrchestratorMcpClientRequestId,
   OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpFailure,
@@ -171,6 +172,7 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
       }),
     ),
     clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
+    causedBy: Schema.optional(OrchestratorMcpCausedBy),
     /** Set by a linked environment launching its agent's delegated task here; ignored otherwise. */
     delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
   }),

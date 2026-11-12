@@ -35,6 +35,7 @@ import {
   readThread,
   resolveProjectId,
   unavailable,
+  verifyCause,
 } from "../../threadAccess.ts";
 import { ProjectToolkit } from "./tools.ts";
 
@@ -123,6 +124,10 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           });
         // Reading the parent is enough: naming it grants nothing on it.
         if (input.parentThreadId !== undefined) yield* readThread(input.parentThreadId, []);
+        const causedBy =
+          input.causedBy === undefined
+            ? undefined
+            : yield* verifyCause(context.threads, input.causedBy);
         const projectId =
           input.scratch === true
             ? (yield* ManagedProjectFolders.ManagedProjectFolders.pipe(
@@ -244,6 +249,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           workspaceStrategy: input.workspaceStrategy ?? { type: "root" },
           ...(input.environment === undefined ? {} : { environment: input.environment }),
           ...(input.parentThreadId === undefined ? {} : { crewOf: input.parentThreadId }),
+          ...(causedBy === undefined ? {} : { causedBy }),
           ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
           ...(input.message === undefined && attachments.length === 0
             ? {}

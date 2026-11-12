@@ -4,7 +4,9 @@ import {
   type UsageBucket,
   type UsageOrigin,
   type UsageOriginBasis,
+  type UsageOriginPrompts,
   type UsageOriginUsage,
+  type UsageOriginVia,
   type UsageProviderKind,
   type UsageSource,
   type UsageSourceFingerprint,
@@ -115,6 +117,8 @@ export interface MergedUsage {
 
 export interface OriginBasisTotals {
   readonly basis: UsageOriginBasis;
+  /** Who sent these prompts when the origin is the root of their recorded cause chain. */
+  readonly via?: UsageOriginVia;
   readonly prompts: number;
   readonly costUsd: number;
   readonly totalTokens: number;
@@ -307,32 +311,29 @@ function mergeOrigins(
   totalTokens: number,
 ): MergedOrigins | null {
   if (!current.some((environment) => environment.summary.origins !== undefined)) return null;
-  const bases = new Map<UsageOrigin, Map<UsageOriginBasis, OriginBasisTotals>>();
+  const bases = new Map<UsageOrigin, Map<string, OriginBasisTotals>>();
   const add = (
-    origin: UsageOrigin,
-    basis: UsageOriginBasis,
-    amount: Omit<OriginBasisTotals, "basis">,
+    row: Pick<UsageOriginPrompts, "origin" | "basis" | "via">,
+    amount: Pick<OriginBasisTotals, "prompts" | "costUsd" | "totalTokens">,
   ) => {
-    const byBasis = bases.get(origin) ?? new Map<UsageOriginBasis, OriginBasisTotals>();
-    const entry = byBasis.get(basis);
-    byBasis.set(basis, {
-      basis,
+    const byBasis = bases.get(row.origin) ?? new Map<string, OriginBasisTotals>();
+    const key = `${row.basis}\u0000${row.via ?? ""}`;
+    const entry = byBasis.get(key);
+    byBasis.set(key, {
+      basis: row.basis,
+      ...(row.via === undefined ? {} : { via: row.via }),
       prompts: (entry?.prompts ?? 0) + amount.prompts,
       costUsd: (entry?.costUsd ?? 0) + amount.costUsd,
       totalTokens: (entry?.totalTokens ?? 0) + amount.totalTokens,
     });
-    bases.set(origin, byBasis);
+    bases.set(row.origin, byBasis);
   };
   for (const row of originUsage) {
-    add(row.origin, row.basis, {
-      prompts: 0,
-      costUsd: row.costUsd,
-      totalTokens: bucketTokens(row),
-    });
+    add(row, { prompts: 0, costUsd: row.costUsd, totalTokens: bucketTokens(row) });
   }
   for (const environment of current) {
     for (const row of environment.summary.origins?.prompts ?? []) {
-      add(row.origin, row.basis, { prompts: row.prompts, costUsd: 0, totalTokens: 0 });
+      add(row, { prompts: row.prompts, costUsd: 0, totalTokens: 0 });
     }
   }
   const rows: OriginTotals[] = [];

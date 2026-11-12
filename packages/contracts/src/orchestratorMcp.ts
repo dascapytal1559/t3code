@@ -43,6 +43,7 @@ import { ThreadTitleRegeneration } from "./threadTitle.ts";
 import {
   OrchestrationV2Actor,
   OrchestrationV2CreationSource,
+  OrchestrationV2CausedBy,
   OrchestrationV2RunStatus,
   OrchestrationV2ThreadExecutionFence,
   OrchestrationV2TurnItemStatus,
@@ -478,6 +479,8 @@ export const OrchestratorMcpThreadDetail = Schema.Struct({
   ...OrchestratorMcpThreadKeepFields,
   /** Set while no run may start here. Linked servers without it omit it. */
   executionFence: Schema.optional(OrchestrationV2ThreadExecutionFence),
+  /** The prompt recorded as this thread's cause at launch. Linked servers without causes omit it. */
+  causedBy: Schema.optional(OrchestrationV2CausedBy),
   runCount: NonNegativeInt,
   itemCount: NonNegativeInt,
   pendingRequestCount: NonNegativeInt,
@@ -515,6 +518,8 @@ export const OrchestratorMcpThreadTimelineItem = Schema.Struct({
   createdBy: Schema.NullOr(OrchestrationV2Actor),
   creationSource: Schema.NullOr(OrchestrationV2CreationSource),
   senderThreadId: Schema.optional(ThreadId),
+  /** A message's recorded cause. Linked servers without causes omit it. */
+  causedBy: Schema.optional(OrchestrationV2CausedBy),
   type: Schema.String,
   status: OrchestrationV2TurnItemStatus,
   title: Schema.NullOr(Schema.String),
@@ -534,6 +539,12 @@ export const OrchestratorMcpThreadReadResult = Schema.Struct({
 });
 export type OrchestratorMcpThreadReadResult = typeof OrchestratorMcpThreadReadResult.Type;
 
+/** The cause `t3_thread_launch` and `t3_thread_send` accept. */
+export const OrchestratorMcpCausedBy = OrchestrationV2CausedBy.annotate({
+  description:
+    "The prompt that led to this work, by ids you were given. T3 checks them; Usage counts this work to that prompt's device.",
+});
+
 export const OrchestratorMcpThreadSendInput = Schema.Struct({
   environmentId: OrchestratorMcpEnvironmentTarget,
   threadId: ThreadId,
@@ -546,6 +557,7 @@ export const OrchestratorMcpThreadSendInput = Schema.Struct({
     }),
   ),
   clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
+  causedBy: Schema.optional(OrchestratorMcpCausedBy),
 });
 export type OrchestratorMcpThreadSendInput = typeof OrchestratorMcpThreadSendInput.Type;
 

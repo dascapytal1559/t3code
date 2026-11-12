@@ -106,6 +106,18 @@ export const OrchestrationV2CreationSource = Schema.Literals([
 ]);
 export type OrchestrationV2CreationSource = typeof OrchestrationV2CreationSource.Type;
 
+/**
+ * The prompt (a user-role message, and the run it belongs to) whose work led an agent to
+ * launch a thread or send a message. Only the server records one, after checking that the
+ * message exists; absent means the caller named none.
+ */
+export const OrchestrationV2CausedBy = Schema.Struct({
+  threadId: ThreadId,
+  runId: Schema.optional(RunId),
+  messageId: MessageId,
+});
+export type OrchestrationV2CausedBy = typeof OrchestrationV2CausedBy.Type;
+
 export const OrchestrationV2ThreadHistoryOrigin = Schema.Literals(["native", "v1_import"]);
 export type OrchestrationV2ThreadHistoryOrigin = typeof OrchestrationV2ThreadHistoryOrigin.Type;
 
@@ -557,6 +569,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
    * upstream clients decode strictly.
    */
   crewOf: Schema.optional(ThreadId),
+  /** The prompt whose work launched this thread; Usage counts the thread's agent prompts to it. */
+  causedBy: Schema.optional(OrchestrationV2CausedBy),
   /** A coordinator's short word on this thread's state, shown on its crew card. */
   statusLabel: Schema.optional(Schema.NullOr(ThreadStatusLabel)),
   /** When the current label was first set; re-sending the same label keeps it. */
@@ -1422,6 +1436,8 @@ export const OrchestrationV2ConversationMessage = Schema.Struct({
   ...OrchestrationV2CreationFields,
   scheduledTaskId: Schema.optional(ScheduledTaskId),
   senderThreadId: Schema.optional(ThreadId),
+  /** The prompt whose work led an agent to send this message. */
+  causedBy: Schema.optional(OrchestrationV2CausedBy),
   idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
   origin: Schema.optional(OrchestrationClientOrigin),
   /**
@@ -3120,6 +3136,8 @@ export const OrchestrationV2Command = Schema.Union([
     delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
     /** A thread in this environment that this one works for; the sidebar lists it under that coordinator. */
     crewOf: Schema.optional(ThreadId),
+    /** Only the server sets this, after checking the message; a client's value is dropped. */
+    causedBy: Schema.optional(OrchestrationV2CausedBy),
     environment: Schema.optional(OrchestrationV2ThreadEnvironment),
     instructions: Schema.optional(OrchestrationV2ThreadInstructions),
     importedNativeThread: Schema.optional(
@@ -3357,6 +3375,8 @@ export const OrchestrationV2Command = Schema.Union([
     ...OrchestrationV2CreationFields,
     scheduledTaskId: Schema.optional(ScheduledTaskId),
     senderThreadId: Schema.optional(ThreadId),
+    /** Only the server sets this, after checking the message; a client's value is dropped. */
+    causedBy: Schema.optional(OrchestrationV2CausedBy),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
     /** Set by the server from the sending connection; a client's value is dropped. */
     origin: Schema.optional(OrchestrationClientOrigin),

@@ -592,6 +592,8 @@ describe("mergeUsage", () => {
             prompts: [
               { origin: "phone", basis: "stamp", prompts: 2 },
               { origin: "phone", basis: "nativeApp", prompts: 3 },
+              // A crew prompt whose cause leads to a phone prompt keeps its sender apart.
+              { origin: "phone", basis: "stamp", via: "crew", prompts: 1 },
             ],
           }),
         ),
@@ -620,12 +622,13 @@ describe("mergeUsage", () => {
       rows: [
         {
           origin: "phone",
-          prompts: 5,
+          prompts: 6,
           costUsd: 4,
           totalTokens: 100,
           bases: [
             { basis: "nativeApp", prompts: 3, costUsd: 0, totalTokens: 0 },
             { basis: "stamp", prompts: 2, costUsd: 4, totalTokens: 100 },
+            { basis: "stamp", via: "crew", prompts: 1, costUsd: 0, totalTokens: 0 },
           ],
         },
         {

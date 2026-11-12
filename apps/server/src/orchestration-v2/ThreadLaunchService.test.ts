@@ -22,6 +22,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   OrchestrationV2ThreadProjectionJson,
+  RunId,
   ScheduledTaskId,
   type ServerProvider,
   ThreadId,
@@ -505,16 +506,22 @@ it.effect("retains automation and sender attribution while a message waits in th
   return Effect.gen(function* () {
     const launches = yield* ThreadLaunch.ThreadLaunchService;
     const threads = yield* ThreadManagement.ThreadManagementService;
-    const launched = yield* launches.launch(
-      launchInput({
-        command: "command:automation:queue",
-        thread: "thread:automation:queue",
-        message: "First message",
-        workspace: { type: "worktree", baseRef: "main" },
-      }),
-    );
+    const sql = yield* SqlClient.SqlClient;
+    const launchCause = {
+      threadId: ThreadId.make("thread:coordinator"),
+      runId: RunId.make("run:coordinator:1"),
+      messageId: MessageId.make("message:coordinator:phone"),
+    };
+    const input = launchInput({
+      command: "command:automation:queue",
+      thread: "thread:automation:queue",
+      message: "First message",
+      workspace: { type: "worktree", baseRef: "main" },
+    });
+    const launched = yield* launches.launch({ ...input, causedBy: launchCause });
     const scheduledTaskId = ScheduledTaskId.make("scheduled-task:queued");
     const senderThreadId = ThreadId.make("thread:agent-sender");
+    const sendCause = { threadId: launched.threadId, messageId: input.initialMessage!.messageId };
     const queued = yield* threads.sendToThread({
       projectId,
       commandId: CommandId.make("command:automation:queued"),
@@ -522,6 +529,7 @@ it.effect("retains automation and sender attribution while a message waits in th
       messageId: MessageId.make("message:automation:queued"),
       scheduledTaskId,
       senderThreadId,
+      causedBy: sendCause,
       text: "Run the audit",
       attachments: [],
       mode: "queue",
@@ -533,6 +541,27 @@ it.effect("retains automation and sender attribution while a message waits in th
     const message = projection.messages.find((item) => item.id === queued.message.id);
     assert.equal(message?.scheduledTaskId, scheduledTaskId);
     assert.equal(message?.senderThreadId, senderThreadId);
+    // The launch's cause lands on the thread and its first message; a send's on its message.
+    assert.deepStrictEqual(projection.thread.causedBy, launchCause);
+    assert.deepStrictEqual(
+      projection.messages.find((item) => item.id === input.initialMessage!.messageId)?.causedBy,
+      launchCause,
+    );
+    assert.deepStrictEqual(message?.causedBy, sendCause);
+    const recorded = yield* sql<{ readonly event_type: string; readonly cause: string }>`
+      SELECT event_type, json_extract(payload_json, '$.causedBy.messageId') AS cause
+      FROM orchestration_events
+      WHERE stream_id = ${launched.threadId}
+        AND event_type IN ('thread.created', 'message.updated')
+        AND json_extract(payload_json, '$.causedBy') IS NOT NULL
+      GROUP BY event_type, cause
+      ORDER BY event_type, cause
+    `;
+    assert.deepStrictEqual(recorded, [
+      { event_type: "message.updated", cause: input.initialMessage!.messageId },
+      { event_type: "message.updated", cause: launchCause.messageId },
+      { event_type: "thread.created", cause: launchCause.messageId },
+    ]);
     // A scheduled run keeps its task's creationSource, but no client sent it.
     assert.isUndefined(message?.origin);
     assert.equal(message?.text, "Run the audit");

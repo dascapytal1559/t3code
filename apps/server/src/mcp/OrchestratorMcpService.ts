@@ -126,7 +126,7 @@ import {
   runtimeModeRank,
   taskPrompt,
 } from "./delegatedTaskModes.ts";
-import { isLiveCallerShell, threadNotFound } from "./threadAccess.ts";
+import { isLiveCallerShell, threadNotFound, verifyCause } from "./threadAccess.ts";
 import { listPendingRequests } from "./pendingRequests.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
@@ -909,6 +909,7 @@ function threadDetail(
     ...(projection.thread.executionFence == null
       ? {}
       : { executionFence: projection.thread.executionFence }),
+    ...(projection.thread.causedBy === undefined ? {} : { causedBy: projection.thread.causedBy }),
     runCount: projection.runs.length,
     itemCount,
     pendingRequestCount: projection.runtimeRequests.filter(
@@ -1063,6 +1064,7 @@ function timelineItem(input: {
     createdBy: message?.createdBy ?? null,
     creationSource: message?.creationSource ?? null,
     ...(message?.senderThreadId === undefined ? {} : { senderThreadId: message.senderThreadId }),
+    ...(message?.causedBy === undefined ? {} : { causedBy: message.causedBy }),
     type: input.row.item.type,
     status: input.row.item.status,
     title: input.row.item.title,
@@ -3178,6 +3180,10 @@ const make = Effect.gen(function* () {
       yield* assertLiveCallerForOtherThread(scope, parent, target);
       yield* resolveRuntimeMode(limits.runtimeMode, target.thread.runtimeMode);
       yield* resolveInteractionMode(limits.interactionMode, target.thread.interactionMode);
+      const causedBy =
+        input.causedBy === undefined
+          ? undefined
+          : yield* verifyCause(threadManagement, input.causedBy);
 
       const mode = input.mode ?? "auto";
       const key = yield* requestKey(input.clientRequestId);
@@ -3196,6 +3202,7 @@ const make = Effect.gen(function* () {
           }),
           threadId: input.threadId,
           ...(parent === undefined ? {} : { senderThreadId: parent.thread.id }),
+          ...(causedBy === undefined ? {} : { causedBy }),
           messageId,
           text: input.message,
           attachments: [],

@@ -9,6 +9,7 @@ import {
   type ModelSelection,
   type OrchestrationClientOrigin,
   type OrchestrationV2Actor,
+  type OrchestrationV2CausedBy,
   type OrchestrationV2CreationSource,
   type OrchestrationV2DelegatedFrom,
   type OrchestrationV2ThreadEnvironment,
@@ -111,6 +112,8 @@ export interface ThreadLaunchInput {
   readonly instructions?: string;
   /** The coordinator thread this one works for, in the same environment. */
   readonly crewOf?: ThreadId;
+  /** The prompt whose work led to this launch; set on the thread and its initial message. */
+  readonly causedBy?: OrchestrationV2CausedBy;
 }
 
 type PreparationInput = Pick<
@@ -969,6 +972,7 @@ const make = Effect.gen(function* () {
                 ...(input.environment === undefined ? {} : { environment: input.environment }),
                 ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
                 ...(input.crewOf === undefined ? {} : { crewOf: input.crewOf }),
+                ...(input.causedBy === undefined ? {} : { causedBy: input.causedBy }),
                 createdBy: input.createdBy,
                 creationSource: input.creationSource,
               });
@@ -1015,6 +1019,7 @@ const make = Effect.gen(function* () {
               attachments: input.initialMessage.attachments,
               ...(input.initialMessage.context ? { context: input.initialMessage.context } : {}),
               ...(input.initialMessage.origin ? { origin: input.initialMessage.origin } : {}),
+              ...(input.causedBy === undefined ? {} : { causedBy: input.causedBy }),
               ...(input.generateTitle === true ? { titleSeed: input.title } : {}),
               modelSelection: input.modelSelection,
               dispatchMode: { type: "defer_start", workspaceStrategy },

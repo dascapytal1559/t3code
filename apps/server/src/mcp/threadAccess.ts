@@ -7,6 +7,7 @@ import {
   type ProviderInteractionMode,
   type RuntimeMode,
   ThreadId,
+  type OrchestrationV2CausedBy,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -204,6 +205,36 @@ export const readThread = Effect.fn("mcp.readThread")(function* <
       ),
     );
   return { ...context, projection };
+});
+
+const invalidCause = (message: string) =>
+  new OrchestratorMcpFailure({ code: "invalid_request", message: `causedBy: ${message}` });
+
+/** A cause must name a prompt that exists, in a thread any caller may read, from the run it names. */
+export const verifyCause = Effect.fn("mcp.verifyCause")(function* (
+  threads: Pick<
+    ThreadManagement.ThreadManagementService["Service"],
+    "getThreadShell" | "getThreadRecords"
+  >,
+  cause: OrchestrationV2CausedBy,
+) {
+  const shell = yield* threads.getThreadShell(cause.threadId).pipe(Effect.mapError(unavailable));
+  if (shell === null || shell.deletedAt !== null) {
+    return yield* invalidCause(`thread ${cause.threadId} was not found.`);
+  }
+  const { messages } = yield* threads
+    .getThreadRecords(cause.threadId, ["messages"], { messageIds: [cause.messageId] })
+    .pipe(Effect.mapError(unavailable));
+  const message = messages.find((candidate) => candidate.id === cause.messageId);
+  if (message === undefined || message.role !== "user") {
+    return yield* invalidCause(
+      `message ${cause.messageId} is not a prompt in thread ${cause.threadId}.`,
+    );
+  }
+  if (cause.runId !== undefined && message.runId !== cause.runId) {
+    return yield* invalidCause(`message ${cause.messageId} is not part of run ${cause.runId}.`);
+  }
+  return cause;
 });
 
 export const newCommandId = Effect.fn("mcp.newCommandId")(function* () {

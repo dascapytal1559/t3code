@@ -61,8 +61,10 @@ On web and desktop, **By origin** shows where the period's prompts were sent fro
 **Computer**, **Agent** or **Unknown**) and the tokens and cost of the runs they started. A run
 counts toward the message that started it; messages sent while it runs do not split it. Phone
 includes tablets. Messages from before T3 recorded the sending device are Unknown, except those
-sent from the mobile app, which count as Phone. **FirstMate crew** is work an agent started in a
-FirstMate crew thread; which device started the FirstMate work behind it is not recorded yet.
+sent from the mobile app, which count as Phone. When an agent records which prompt led it to start
+or message a thread, its prompts count toward that prompt's device, labelled "via an agent" or
+"via FirstMate crew". **FirstMate crew** is work an agent started in a FirstMate crew thread with
+no such record.
 **Outside T3 runs** is usage no T3 prompt started, such as terminal sessions and archived history.
 
 ## Set custom model prices

@@ -8,8 +8,11 @@ import * as Sqlite from "../persistence/Sqlite.ts";
 import {
   classifyMessageOrigin,
   layer as usageOriginsLayer,
+  MAX_CAUSE_DEPTH,
+  resolveMessageOrigin,
   UsageOriginIndex,
   UsageOrigins,
+  type CausalMessage,
   type OriginMessage,
 } from "./UsageOrigins.ts";
 
@@ -23,6 +26,17 @@ const message = (overrides: Partial<OriginMessage>): OriginMessage => ({
   crew: false,
   ...overrides,
 });
+
+const causal = (id: string, overrides: Partial<CausalMessage>): CausalMessage => ({
+  ...message(overrides),
+  id,
+  causedBy: overrides.causedBy ?? null,
+});
+
+const messages = (list: ReadonlyArray<CausalMessage>) => {
+  const byId = new Map(list.map((entry) => [entry.id, entry]));
+  return (id: string) => byId.get(id);
+};
 
 describe("classifyMessageOrigin", () => {
   it("buckets stamps by device and leaves older messages unknown unless their creation says more", () => {
@@ -57,6 +71,63 @@ describe("classifyMessageOrigin", () => {
   });
 });
 
+describe("resolveMessageOrigin", () => {
+  const phone = causal("phone", { surface: "web", deviceType: "mobile" });
+  const computer = causal("computer", { surface: "desktop", deviceType: "desktop" });
+  const fromMcp = { createdBy: "agent", creationSource: "mcp", surface: "mcp", deviceType: "bot" };
+
+  it("counts an agent prompt to the phone or computer prompt at the root of its causes", () => {
+    const lead = causal("lead", { ...fromMcp, causedBy: "phone" });
+    const brief = causal("brief", { ...fromMcp, crew: true, causedBy: "lead" });
+    const direct = causal("direct", { ...fromMcp, causedBy: "computer" });
+    const byId = messages([phone, computer, lead, brief, direct]);
+    assert.deepStrictEqual(resolveMessageOrigin(brief, byId), {
+      origin: "phone",
+      basis: "stamp",
+      via: "crew",
+    });
+    assert.deepStrictEqual(resolveMessageOrigin(direct, byId), {
+      origin: "computer",
+      basis: "stamp",
+      via: "agent",
+    });
+    // A human prompt is a root even if something named a cause for it.
+    const typed = causal("typed", { surface: "web", deviceType: "desktop", causedBy: "phone" });
+    assert.deepStrictEqual(resolveMessageOrigin(typed, byId), {
+      origin: "computer",
+      basis: "stamp",
+    });
+  });
+
+  it("keeps the prompt's own origin when its chain is missing, cyclic, too deep or not a device's", () => {
+    const missing = causal("missing", { ...fromMcp, crew: true, causedBy: "deleted" });
+    const left = causal("left", { ...fromMcp, causedBy: "right" });
+    const right = causal("right", { ...fromMcp, causedBy: "left" });
+    const scheduled = causal("scheduled", { createdBy: "user", creationSource: "server" });
+    const fromServer = causal("from-server", { ...fromMcp, crew: true, causedBy: "scheduled" });
+    const uncaused = causal("uncaused", { ...fromMcp, crew: true });
+    const hops = Array.from({ length: MAX_CAUSE_DEPTH + 1 }, (_, index) =>
+      causal(`hop-${index}`, { ...fromMcp, causedBy: index === 0 ? "phone" : `hop-${index - 1}` }),
+    );
+    const byId = messages([phone, missing, left, right, scheduled, fromServer, uncaused, ...hops]);
+    const crew = { origin: "crew", basis: "stamp" };
+    assert.deepStrictEqual(resolveMessageOrigin(missing, byId), crew);
+    assert.deepStrictEqual(resolveMessageOrigin(left, byId), { origin: "agent", basis: "stamp" });
+    assert.deepStrictEqual(resolveMessageOrigin(fromServer, byId), crew);
+    assert.deepStrictEqual(resolveMessageOrigin(uncaused, byId), crew);
+    // MAX_CAUSE_DEPTH hops reach the phone; one more does not.
+    assert.deepStrictEqual(resolveMessageOrigin(hops[MAX_CAUSE_DEPTH - 1]!, byId), {
+      origin: "phone",
+      basis: "stamp",
+      via: "agent",
+    });
+    assert.deepStrictEqual(resolveMessageOrigin(hops[MAX_CAUSE_DEPTH]!, byId), {
+      origin: "agent",
+      basis: "stamp",
+    });
+  });
+});
+
 describe("UsageOriginIndex", () => {
   it("credits a record to its session's turn running at the time", () => {
     const phone = { origin: "phone", basis: "stamp" } as const;
@@ -81,7 +152,7 @@ describe("UsageOriginIndex", () => {
   });
 });
 
-const seedThread = (input: { id: string; crewOf?: string }) =>
+const seedThread = (input: { id: string; crewOf?: string; causedBy?: Record<string, string> }) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     yield* sql`INSERT INTO orchestration_v2_projection_threads ${sql.insert({
@@ -93,7 +164,11 @@ const seedThread = (input: { id: string; crewOf?: string }) =>
       interaction_mode: "default",
       created_at: "2026-08-07T00:00:00.000Z",
       updated_at: "2026-08-07T00:00:00.000Z",
-      payload_json: encodeJson({ id: input.id, crewOf: input.crewOf ?? null }),
+      payload_json: encodeJson({
+        id: input.id,
+        crewOf: input.crewOf ?? null,
+        ...(input.causedBy === undefined ? {} : { causedBy: input.causedBy }),
+      }),
     })}`;
   });
 
@@ -196,6 +271,34 @@ describe("UsageOrigins.read", () => {
           origin: { surface: "mcp", deviceType: "bot" },
         },
       });
+      // A worker launched for the phone prompt: its uncaused prompts follow the thread's cause.
+      yield* seedThread({
+        id: "caused-worker",
+        crewOf: "lead",
+        causedBy: { threadId: "lead", messageId: "message-phone" },
+      });
+      yield* seedRun({
+        id: "wake",
+        ordinal: 1,
+        threadId: "caused-worker",
+        sessionId: "caused-session",
+        startedAt: "2026-08-07T01:07:00.000Z",
+        message: { createdBy: "agent", creationSource: "provider" },
+      });
+      // Two hops: relay -> wake -> (its thread's cause) phone.
+      yield* seedRun({
+        id: "relay",
+        ordinal: 2,
+        threadId: "worker",
+        sessionId: "worker-session",
+        startedAt: "2026-08-07T01:20:00.000Z",
+        message: {
+          createdBy: "agent",
+          creationSource: "mcp",
+          origin: { surface: "mcp", deviceType: "bot" },
+          causedBy: { threadId: "caused-worker", messageId: "message-wake" },
+        },
+      });
       yield* seedRun({
         id: "gone",
         ordinal: 2,
@@ -243,14 +346,25 @@ describe("UsageOrigins.read", () => {
         origin: "crew",
         basis: "stamp",
       });
+      const viaCrew = { origin: "phone", basis: "stamp", via: "crew" } as const;
+      assert.deepStrictEqual(
+        index.lookup("caused-session", Date.parse("2026-08-07T01:08:00Z")),
+        viaCrew,
+      );
+      assert.deepStrictEqual(
+        index.lookup("worker-session", Date.parse("2026-08-07T01:21:00Z")),
+        viaCrew,
+      );
       assert.deepStrictEqual(index.lookup("lead-session", Date.parse("2026-08-07T02:01:00Z")), {
         origin: "unknown",
         basis: "noPrompt",
       });
       assert.strictEqual(index.lookup("old-session", Date.parse("2026-07-01T00:01:00Z")), null);
       assert.deepStrictEqual(
-        snapshot.prompts.map(({ key }) => `${key.origin}/${key.basis}`).toSorted(),
-        ["crew/stamp", "phone/stamp"],
+        snapshot.prompts
+          .map(({ key }) => `${key.origin}/${key.basis}/${key.via ?? "-"}`)
+          .toSorted(),
+        ["crew/stamp/-", "phone/stamp/-", "phone/stamp/crew", "phone/stamp/crew"],
       );
     }).pipe(Effect.provide(usageOriginsLayer.pipe(Layer.provideMerge(Sqlite.layerMemory)))),
   );

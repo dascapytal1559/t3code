@@ -71,8 +71,9 @@ export const UsageBucket = Schema.Struct({
 export type UsageBucket = typeof UsageBucket.Type;
 
 /**
- * Where the T3 prompt that started a run came from. `crew` is agent-sent work in a FirstMate
- * crew thread: the device behind the FirstMate prompt that started it is not recorded.
+ * Where the T3 prompt that started a run came from. An agent's prompt whose recorded cause
+ * chain reaches a phone or computer prompt counts there. `crew` is agent-sent work in a
+ * FirstMate crew thread with no such chain.
  */
 export const UsageOrigin = Schema.Literals(["phone", "computer", "agent", "crew", "unknown"]);
 export type UsageOrigin = typeof UsageOrigin.Type;
@@ -92,10 +93,18 @@ export const UsageOriginBasis = Schema.Literals([
 ]);
 export type UsageOriginBasis = typeof UsageOriginBasis.Type;
 
+/**
+ * Who sent a prompt counted to a phone or computer through its recorded `causedBy` chain:
+ * an agent, or an agent in a FirstMate crew thread. Absent when the origin's device sent it.
+ */
+export const UsageOriginVia = Schema.Literals(["agent", "crew"]);
+export type UsageOriginVia = typeof UsageOriginVia.Type;
+
 /** Usage of records inside a T3 run, by the origin of the run's starting message. */
 export const UsageOriginUsage = Schema.Struct({
   origin: UsageOrigin,
   basis: UsageOriginBasis,
+  via: Schema.optional(UsageOriginVia),
   provider: UsageProviderKind,
   sourcePath: Schema.optional(TrimmedNonEmptyString),
   totals: UsageTokenTotals,
@@ -106,6 +115,7 @@ export type UsageOriginUsage = typeof UsageOriginUsage.Type;
 export const UsageOriginPrompts = Schema.Struct({
   origin: UsageOrigin,
   basis: UsageOriginBasis,
+  via: Schema.optional(UsageOriginVia),
   prompts: NonNegativeInt,
 });
 export type UsageOriginPrompts = typeof UsageOriginPrompts.Type;

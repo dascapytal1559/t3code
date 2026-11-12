@@ -25,6 +25,7 @@ import {
   type OrchestrationV2GetTurnItemResult,
   type OrchestrationV2ServerCommand,
   type OrchestrationV2ConversationMessage,
+  type OrchestrationV2CausedBy,
   type OrchestrationV2CreationSource,
   type OrchestrationV2Run,
   type OrchestrationV2RuntimeRequest,
@@ -86,12 +87,17 @@ export function withCreationProvenance(
 ): OrchestrationV2Command {
   switch (command.type) {
     case "thread.create": {
-      // Only the server stamps a link's origin, so a client cannot set one.
-      const { linkOrigin: _linkOrigin, delegatedFrom: _delegatedFrom, ...rest } = command;
+      // Only the server stamps a link's origin or a cause, so a client cannot set one.
+      const {
+        linkOrigin: _linkOrigin,
+        delegatedFrom: _delegatedFrom,
+        causedBy: _causedBy,
+        ...rest
+      } = command;
       return { ...rest, ...provenance };
     }
     case "message.dispatch": {
-      const { origin: _origin, ...rest } = command;
+      const { origin: _origin, causedBy: _causedBy, ...rest } = command;
       return { ...rest, ...provenance, ...(origin === undefined ? {} : { origin }) };
     }
     case "thread.fork":
@@ -151,6 +157,7 @@ export interface ThreadManagementSendInput {
   readonly messageId: MessageId;
   readonly scheduledTaskId?: ScheduledTaskId;
   readonly senderThreadId?: ThreadId;
+  readonly causedBy?: OrchestrationV2CausedBy;
   readonly text: string;
   readonly attachments: ReadonlyArray<ChatAttachment>;
   readonly modelSelection?: ModelSelection;
@@ -926,6 +933,7 @@ const make = Effect.gen(function* () {
       messageId: input.messageId,
       ...(input.scheduledTaskId === undefined ? {} : { scheduledTaskId: input.scheduledTaskId }),
       ...(input.senderThreadId === undefined ? {} : { senderThreadId: input.senderThreadId }),
+      ...(input.causedBy === undefined ? {} : { causedBy: input.causedBy }),
       text: input.text,
       attachments: input.attachments,
       ...(input.modelSelection === undefined ? {} : { modelSelection: input.modelSelection }),

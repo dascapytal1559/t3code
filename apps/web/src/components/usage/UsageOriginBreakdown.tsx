@@ -1,4 +1,4 @@
-import type { UsageOrigin, UsageOriginBasis } from "@t3tools/contracts";
+import type { UsageOrigin, UsageOriginBasis, UsageOriginVia } from "@t3tools/contracts";
 import { formatCount, formatPercent, formatTokens, formatUsd } from "@t3tools/shared/usageFormat";
 import type { MergedOrigins, OriginBasisTotals } from "@t3tools/shared/usageMerge";
 
@@ -25,14 +25,25 @@ const BASIS_LABEL: Record<UsageOriginBasis, string> = {
   noPrompt: "run's prompt is gone",
 };
 
+const VIA_LABEL: Record<UsageOriginVia, string> = {
+  agent: "via an agent",
+  crew: "via FirstMate crew",
+};
+
+function basisLabel(origin: UsageOrigin, { basis, via }: OriginBasisTotals): string {
+  if (via !== undefined) {
+    return basis === "stamp" ? VIA_LABEL[via] : `${VIA_LABEL[via]} (${BASIS_LABEL[basis]})`;
+  }
+  return origin === "unknown" && basis === "stamp" ? "stamped, device unknown" : BASIS_LABEL[basis];
+}
+
 function basisLine(origin: UsageOrigin, bases: readonly OriginBasisTotals[]): string {
-  const parts = bases.map(({ basis, prompts }) => {
-    const label =
-      origin === "unknown" && basis === "stamp" ? "stamped, device unknown" : BASIS_LABEL[basis];
-    return prompts > 0 ? `${formatCount(prompts)} ${label}` : label;
+  const parts = bases.map((entry) => {
+    const label = basisLabel(origin, entry);
+    return entry.prompts > 0 ? `${formatCount(entry.prompts)} ${label}` : label;
   });
   if (origin === "crew") {
-    parts.push("which device started the FirstMate thread's work is not recorded yet");
+    parts.push("no recorded cause leads back to a phone or computer prompt");
   }
   return parts.join(" · ");
 }
@@ -142,7 +153,8 @@ export function UsageOriginBreakdown({
         <h2 className="text-sm font-medium text-foreground">By origin</h2>
         <p className="text-xs text-muted-foreground">
           Where each prompt was sent from, and the {metric === "tokens" ? "tokens" : "cost"} of the
-          runs those prompts started.
+          runs those prompts started. An agent&apos;s prompt counts to the phone or computer prompt
+          its recorded cause leads back to.
         </p>
       </div>
       <table className="w-full text-sm">

@@ -45,6 +45,10 @@ import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 
 it("stamps authoritative provenance on commands that create threads or messages", () => {
+  const forgedCause = {
+    threadId: ThreadId.make("thread:elsewhere"),
+    messageId: MessageId.make("message:elsewhere"),
+  };
   const command: OrchestrationV2Command = {
     type: "thread.create",
     createdBy: "agent",
@@ -61,7 +65,8 @@ it("stamps authoritative provenance on commands that create threads or messages"
     interactionMode: "default",
     branch: null,
     worktreePath: null,
-    // A client cannot claim a linked environment's origin, or a parent there.
+    // A client cannot claim a linked environment's origin, a parent there, or a cause.
+    causedBy: forgedCause,
     linkOrigin: { sessionId: "forged", label: "Somewhere else" },
     delegatedFrom: {
       environmentId: EnvironmentId.make("environment:elsewhere"),
@@ -80,6 +85,7 @@ it("stamps authoritative provenance on commands that create threads or messages"
   });
   expect(stamped).not.toHaveProperty("linkOrigin");
   expect(stamped).not.toHaveProperty("delegatedFrom");
+  expect(stamped).not.toHaveProperty("causedBy");
 
   // A client cannot claim another client's origin either; the connection's replaces it.
   const message: OrchestrationV2Command = {
@@ -87,6 +93,7 @@ it("stamps authoritative provenance on commands that create threads or messages"
     createdBy: "user",
     creationSource: "web",
     origin: { surface: "mcp", deviceType: "bot" },
+    causedBy: forgedCause,
     commandId: CommandId.make("command:thread-management:message"),
     threadId: ThreadId.make("thread:thread-management:create"),
     messageId: MessageId.make("message:thread-management:origin"),
@@ -102,6 +109,9 @@ it("stamps authoritative provenance on commands that create threads or messages"
   });
   expect(ThreadManagementService.withCreationProvenance(message, provenance)).not.toHaveProperty(
     "origin",
+  );
+  expect(ThreadManagementService.withCreationProvenance(message, provenance)).not.toHaveProperty(
+    "causedBy",
   );
 });
 

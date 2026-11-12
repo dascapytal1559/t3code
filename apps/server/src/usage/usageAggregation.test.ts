@@ -110,7 +110,9 @@ describe("UsageAggregator", () => {
           ? { origin: "phone", basis: "stamp" }
           : item.sessionId === "crew-session"
             ? { origin: "crew", basis: "sender" }
-            : null,
+            : item.sessionId === "caused-crew-session"
+              ? { origin: "phone", basis: "stamp", via: "crew" }
+              : null,
     });
     for (const item of [
       record({ sessionId: "phone-session", dedupeKey: "msg_1:" }),
@@ -118,6 +120,7 @@ describe("UsageAggregator", () => {
       record({ sessionId: "phone-session", model: "claude-excluded" }),
       record({ sessionId: "phone-session", timestampMs: Date.parse("2026-07-30T00:00:00Z") }),
       record({ sessionId: "crew-session" }),
+      record({ sessionId: "caused-crew-session" }),
       record({ sessionId: "terminal-session" }),
     ]) {
       aggregator.add(item, "/claude");
@@ -126,13 +129,18 @@ describe("UsageAggregator", () => {
     aggregator.countPrompt(Date.parse("2026-08-08T00:00:00Z"), { origin: "phone", basis: "stamp" });
     aggregator.countPrompt(Date.parse("2026-07-30T00:00:00Z"), { origin: "phone", basis: "stamp" });
     aggregator.countPrompt(Date.parse("2026-08-07T00:00:00Z"), {
+      origin: "phone",
+      basis: "stamp",
+      via: "crew",
+    });
+    aggregator.countPrompt(Date.parse("2026-08-07T00:00:00Z"), {
       origin: "unknown",
       basis: "unstamped",
     });
     const result = aggregator.finish();
 
-    const recordCost = result.buckets[0]!.costUsd / 3;
-    expect(result.buckets[0]?.records).toBe(3);
+    const recordCost = result.buckets[0]!.costUsd / 4;
+    expect(result.buckets[0]?.records).toBe(4);
     expect(result.origins?.usage).toEqual([
       {
         origin: "phone",
@@ -150,9 +158,19 @@ describe("UsageAggregator", () => {
         totals: record().totals,
         costUsd: expect.closeTo(recordCost),
       },
+      {
+        origin: "phone",
+        basis: "stamp",
+        via: "crew",
+        provider: "claude",
+        sourcePath: "/claude",
+        totals: record().totals,
+        costUsd: expect.closeTo(recordCost),
+      },
     ]);
     expect(result.origins?.prompts).toEqual([
       { origin: "phone", basis: "stamp", prompts: 2 },
+      { origin: "phone", basis: "stamp", via: "crew", prompts: 1 },
       { origin: "unknown", basis: "unstamped", prompts: 1 },
     ]);
   });

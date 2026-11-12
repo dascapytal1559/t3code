@@ -5,8 +5,7 @@ import type {
   UsageDay,
   UsageModelFilter,
   UsageModelSelector,
-  UsageOrigin,
-  UsageOriginBasis,
+  UsageOriginPrompts,
   UsageOrigins,
   UsageProviderKind,
   UsageResolution,
@@ -83,9 +82,21 @@ export interface AggregateOptions {
 }
 
 interface MutableOriginUsage {
+  readonly key: UsageOriginKey;
+  readonly provider: UsageProviderKind;
+  readonly sourcePath: string | undefined;
   totals: { -readonly [K in keyof UsageTokenTotals]: number };
   costUsd: number;
 }
+
+const originKeyString = (key: UsageOriginKey) =>
+  `${key.origin}\u0000${key.basis}\u0000${key.via ?? ""}`;
+
+const originKeyFields = (key: UsageOriginKey) => ({
+  origin: key.origin,
+  basis: key.basis,
+  ...(key.via === undefined ? {} : { via: key.via }),
+});
 
 export function resolveModelAliases(
   aliases: Readonly<Record<string, string>>,
@@ -160,7 +171,7 @@ export class UsageAggregator {
   #duplicatesDropped = 0;
   #outOfWindow = 0;
   readonly #originUsage: Map<string, MutableOriginUsage> | null;
-  readonly #originPrompts: Map<string, number> | null;
+  readonly #originPrompts: Map<string, UsageOriginPrompts> | null;
 
   constructor(options: AggregateOptions) {
     this.#options = options;
@@ -240,10 +251,16 @@ export class UsageAggregator {
     if (this.#originUsage !== null) {
       const key = this.#options.attributeOrigin?.(record) ?? null;
       if (key !== null) {
-        const originKey = `${key.origin}\u0000${key.basis}\u0000${record.provider}\u0000${sourcePath ?? ""}`;
+        const originKey = `${originKeyString(key)}\u0000${record.provider}\u0000${sourcePath ?? ""}`;
         let origin = this.#originUsage.get(originKey);
         if (origin === undefined) {
-          origin = { totals: { ...EMPTY_TOTALS }, costUsd: 0 };
+          origin = {
+            key,
+            provider: record.provider,
+            sourcePath,
+            totals: { ...EMPTY_TOTALS },
+            costUsd: 0,
+          };
           this.#originUsage.set(originKey, origin);
         }
         origin.totals.uncachedInputTokens += record.totals.uncachedInputTokens;
@@ -260,8 +277,11 @@ export class UsageAggregator {
   /** Counts a T3 prompt sent inside the window; needs `attributeOrigin`. */
   countPrompt(timestampMs: number, key: UsageOriginKey): void {
     if (this.#originPrompts === null || this.#windowDay(timestampMs) === null) return;
-    const promptKey = `${key.origin}\u0000${key.basis}`;
-    this.#originPrompts.set(promptKey, (this.#originPrompts.get(promptKey) ?? 0) + 1);
+    const promptKey = originKeyString(key);
+    this.#originPrompts.set(promptKey, {
+      ...originKeyFields(key),
+      prompts: (this.#originPrompts.get(promptKey)?.prompts ?? 0) + 1,
+    });
   }
 
   #windowDay(timestampMs: number): string | null {
@@ -385,28 +405,17 @@ export class UsageAggregator {
 
 function finishOrigins(
   usage: ReadonlyMap<string, MutableOriginUsage>,
-  prompts: ReadonlyMap<string, number>,
+  prompts: ReadonlyMap<string, UsageOriginPrompts>,
 ): UsageOrigins {
   return {
-    usage: [...usage].map(([key, entry]) => {
-      const [origin = "", basis = "", provider = "", sourcePath = ""] = key.split("\u0000");
-      return {
-        origin: origin as UsageOrigin,
-        basis: basis as UsageOriginBasis,
-        provider: provider as UsageProviderKind,
-        ...(sourcePath === "" ? {} : { sourcePath }),
-        totals: { ...entry.totals },
-        costUsd: entry.costUsd,
-      };
-    }),
-    prompts: [...prompts].map(([key, count]) => {
-      const [origin = "", basis = ""] = key.split("\u0000");
-      return {
-        origin: origin as UsageOrigin,
-        basis: basis as UsageOriginBasis,
-        prompts: count,
-      };
-    }),
+    usage: [...usage.values()].map((entry) => ({
+      ...originKeyFields(entry.key),
+      provider: entry.provider,
+      ...(entry.sourcePath === undefined ? {} : { sourcePath: entry.sourcePath }),
+      totals: { ...entry.totals },
+      costUsd: entry.costUsd,
+    })),
+    prompts: [...prompts.values()],
   };
 }
 
