@@ -2221,6 +2221,46 @@ it.effect("restarts by stopping the running turn when the provider cannot interr
   ),
 );
 
+it.effect("a pending server restart queues a restart send without stopping the running turn", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { started, steered, layer, startFirstTurn, read } = yield* goalHarness(
+        "restart-send-during-pending-restart",
+      );
+      yield* Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        const threadId = yield* startFirstTurn;
+        yield* orchestrator.requestRestart({ reason: "install build", requestedBy: "FirstMate" });
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make("restart"),
+          threadId,
+          messageId: MessageId.make("message:restart"),
+          text: "do this instead",
+          attachments: [],
+          modelSelection: runSelection,
+          dispatchMode: { type: "restart_active", targetRunId: started[0]!.runId },
+          createdBy: "user",
+          creationSource: "web",
+        });
+        yield* worker.drain();
+
+        assert.deepEqual(steered, []);
+        assert.deepEqual(yield* read(threadId), {
+          queue: ["do this instead"],
+          started: ["first"],
+          stopRequested: false,
+        });
+        const queued = (yield* orchestrator.getThreadProjection(threadId)).runs.find(
+          (run) => run.userMessageId === "message:restart",
+        );
+        assert.include(queued, { queueHeld: true, restartHold: true });
+      }).pipe(Effect.provide(layer));
+    }),
+  ),
+);
+
 it.effect("starts a restart that stops the running turn ahead of an older held queue", () =>
   Effect.scoped(
     Effect.gen(function* () {
