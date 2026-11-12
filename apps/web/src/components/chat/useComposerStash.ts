@@ -604,7 +604,7 @@ export function useComposerStash(input: {
       // Clearing a composer edited during the write would wipe the edit.
       const draftNow = readAttachmentDraft();
       if (
-        promptRef.current.trim() !== prompt ||
+        promptRef.current.trim() !== trimmedPrompt ||
         draftNow.images.map((image) => image.id).join(",") !==
           images.map((image) => image.id).join(",") ||
         draftNow.files.map((file) => file.id).join(",") !== files.map((file) => file.id).join(",")

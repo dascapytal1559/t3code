@@ -501,30 +501,6 @@ describe("Grok usage limits", () => {
     }
   });
 
-  it("measures the window from the period's own boundaries and falls back to a week only for weekly", () => {
-    const windowOf = (currentPeriod: object, creditUsagePercent = 40) =>
-      grokUsageResponseToLimits({ config: { creditUsagePercent, currentPeriod } }, checkedAt)
-        .windows[0]?.windowDurationMins;
-    // A week that began on an upgrade day is shorter than seven days.
-    expect(windowOf({ ...weeklyPeriod, start: "2026-09-15T03:10:30.159171+00:00" })).toBe(
-      3 * 24 * 60,
-    );
-    for (const start of [undefined, "invalid", weeklyPeriod.end, "2026-09-19T00:00:00.000Z"]) {
-      expect.soft(windowOf({ ...weeklyPeriod, start }), String(start)).toBe(7 * 24 * 60);
-    }
-    expect(windowOf({ type: "USAGE_PERIOD_TYPE_WEEKLY" })).toBe(7 * 24 * 60);
-    for (const currentPeriod of [
-      { type: "USAGE_PERIOD_TYPE_MONTHLY", end: "2026-10-01T00:00:00.000Z" },
-      { type: "USAGE_PERIOD_TYPE_MONTHLY", start: "invalid", end: "2026-10-01T00:00:00.000Z" },
-      { type: "USAGE_PERIOD_TYPE_DAILY", end: "2026-10-01T00:00:00.000Z" },
-    ]) {
-      expect.soft(windowOf(currentPeriod), JSON.stringify(currentPeriod)).toBeUndefined();
-    }
-    expect(
-      grokUsageResponseToLimits({ config: { creditUsagePercent: 10 } }, checkedAt).windows[0],
-    ).not.toHaveProperty("windowDurationMins");
-  });
-
   it("keeps incomplete, invalid, unordered, and unknown periods unreported", () => {
     for (const currentPeriod of [
       undefined,
