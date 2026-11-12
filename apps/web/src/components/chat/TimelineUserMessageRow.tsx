@@ -893,7 +893,8 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           <FoldedMessageHeader
             icon={fold.note ? NotebookTextIcon : MessagesSquareIcon}
             label={senderLabel}
-            summary={foldSummary}
+            // An open note's body starts with the same line, already rendered.
+            summary={fold.note && expanded ? "" : foldSummary}
             expanded={expanded}
             onToggle={() => setExpanded((value) => !value)}
           />

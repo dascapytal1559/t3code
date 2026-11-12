@@ -1371,7 +1371,8 @@ function AgentMessageFoldHeader(props: {
         {label}
       </Text>
       <Text numberOfLines={1} className="min-w-0 shrink text-sm text-user-bubble-foreground">
-        {props.summary}
+        {/* An open note's body starts with the same line, already rendered. */}
+        {props.note && props.expanded ? "" : props.summary}
       </Text>
       <ThreadDisclosureChevron
         expanded={props.expanded}
