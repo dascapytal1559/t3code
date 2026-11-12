@@ -242,6 +242,7 @@ export function RightPanelSurfaceContent(props: {
             {...(attachment ? { attachment } : {})}
             revealLine={surface.kind === "file" ? (surface.revealLine ?? null) : null}
             revealRequestId={surface.kind === "file" ? surface.revealRequestId : 0}
+            alsoTriedPath={surface.kind === "file" ? surface.alsoTried : undefined}
             onOpenFile={files.onOpenFile}
             onNavigateFolder={(relativePath, folderTrail, keepSource) =>
               useRightPanelStore

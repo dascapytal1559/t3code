@@ -143,6 +143,8 @@ interface FilePreviewPanelProps {
   openInShortcutEnabled: boolean;
   revealLine: number | null;
   revealRequestId: number;
+  /** Another reading of the opening link, also missing; the error view lists it. */
+  alsoTriedPath?: string | undefined;
   onOpenFile: (relativePath: string) => void;
   onNavigateFolder: (relativePath: string, folderTrail: string, keepSource: boolean) => void;
   /** Retained descendant breadcrumb path after navigating up; see navigateFolder. */
@@ -1009,6 +1011,7 @@ export default function FilePreviewPanel({
   openInShortcutEnabled,
   revealLine,
   revealRequestId,
+  alsoTriedPath,
   onOpenFile,
   onNavigateFolder,
   folderTrail,
@@ -1059,6 +1062,9 @@ export default function FilePreviewPanel({
   );
   const [fileRefreshRevision, setFileRefreshRevision] = useState(0);
   const attemptedPath = file.readError?.resolvedPath ?? file.readError?.operationPath;
+  const attemptedPaths = [
+    ...new Set([attemptedPath, alsoTriedPath].filter((path) => path !== undefined)),
+  ];
   // Folder links fail file reads; retain mutation refresh to detect conversion to files. Host folders own
   // roots; folderTrail keeps descendants.
   const breadcrumbPath =
@@ -1465,12 +1471,17 @@ export default function FilePreviewPanel({
                 <p className="text-destructive">
                   {file.readError ? filePreviewReadErrorMessage(file.readError) : file.error}
                 </p>
-                {attemptedPath ? (
+                {attemptedPaths.length > 0 ? (
                   <p className="text-muted-foreground">
-                    Attempted path
-                    <code className="block break-all font-mono text-foreground select-all">
-                      {attemptedPath}
-                    </code>
+                    {attemptedPaths.length > 1 ? "Attempted paths" : "Attempted path"}
+                    {attemptedPaths.map((path) => (
+                      <code
+                        key={path}
+                        className="block break-all font-mono text-foreground select-all"
+                      >
+                        {path}
+                      </code>
+                    ))}
                   </p>
                 ) : null}
                 {!isHostFile ? (

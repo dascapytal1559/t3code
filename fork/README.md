@@ -1130,6 +1130,27 @@ export does not reach an app opened from the Dock: run
 the app from a terminal that has the variable set. Your own OpenTelemetry export
 and the mobile app's crash reports have their own settings.
 
+## Paths in a file open beside it first
+
+A relative path written in a file you are reading, as a link or as inline code
+(`scripts/run.md` in `data/demo/report.md`), opens the file beside it
+(`data/demo/scripts/run.md`) when that exists, and the path from the project's
+top folder (`scripts/run.md`) otherwise. When neither exists, the error view
+lists both attempted paths. Paths starting with `./`, `../` or `~/`, absolute
+paths, URLs, paths in a file at the project's top folder and paths in chat
+messages resolve as before; the existing read rules still decide what may
+open. Upstream resolves inline code that has a folder from the top folder
+only, and links from the file's folder only.
+
+The choice happens on click: `fallbackFilePath` on the link
+(`apps/web/src/markdown-links.ts`), `pickMarkdownFileCandidate` in
+`apps/web/src/markdownFileHostPath.ts` (one metadata call for both paths, which
+also serves open in editor, copy and reveal), and `alsoTried` on the file
+surface for the error view in `FilePreviewPanel.tsx`. Mobile's file viewer
+already reads links from the file's folder, has no fallback, and does not make
+inline code tappable. On syncs, keep `resolveInlineCodeFileLinkMeta` resolving
+from the file's folder.
+
 ## Version
 
 The fork keeps upstream's version number. The desktop app sets up an SSH or

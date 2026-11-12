@@ -7,7 +7,11 @@ import {
   parseMarkdownFileLink,
   resolveMarkdownFileLinkTarget,
 } from "@t3tools/shared/markdownLinks";
-import { parseFileUrlHref, splitFilePathPosition } from "@t3tools/shared/fileLinks";
+import {
+  parseFileUrlHref,
+  resolvePathLinkTarget,
+  splitFilePathPosition,
+} from "@t3tools/shared/fileLinks";
 
 import { formatWorkspaceRelativePath } from "./filePathDisplay";
 import { isTerminalLinkActivation } from "./terminal-links";
@@ -18,6 +22,8 @@ export interface MarkdownFileLinkMeta {
   targetPath: string;
   displayPath: string;
   workspaceRelativePath: string | null;
+  /** Workspace-root reading of a path written inside a file, opened when nothing sits beside the file. */
+  fallbackFilePath: string | null;
   basename: string;
   line?: number;
   column?: number;
@@ -57,22 +63,23 @@ export function resolveInlineCodeFileLinkMeta(
   const candidate = inlineCodeFilePathCandidate(codeText);
   if (candidate === null) return null;
 
-  return resolveMarkdownFileLinkMeta(
-    candidate,
-    cwd,
-    inlineCodePathNamesFromWorkspaceRoot(candidate, cwd, baseDir) ? cwd : baseDir,
-  );
+  return resolveMarkdownFileLinkMeta(candidate, cwd, baseDir);
 }
 
-function inlineCodePathNamesFromWorkspaceRoot(
-  candidate: string,
+/** A bare relative path written in a file below the workspace root may name a path from that root. */
+function workspaceRootFallbackPath(
+  sourcePath: string,
+  filePath: string,
   cwd: string | undefined,
   baseDir: string | undefined,
-): boolean {
-  if (!cwd || !baseDir || !isRelativeFilePath(candidate)) return false;
-  if (/^(?:~|\.{1,2})\//.test(candidate)) return false;
-  if (!splitFilePathPosition(candidate).path.includes("/")) return false;
-  return workspaceRelativeFilePath(baseDir, cwd) !== null;
+): string | null {
+  if (!cwd || !baseDir || !isRelativeFilePath(sourcePath)) return null;
+  if (/^(?:~|\.{1,2})[\\/]/.test(sourcePath)) return null;
+  if (workspaceRelativeFilePath(baseDir, cwd) === ".") return null;
+  const fallback = resolvePathLinkTarget(sourcePath, cwd);
+  return fallback !== filePath && workspaceRelativeFilePath(fallback, cwd) !== null
+    ? fallback
+    : null;
 }
 
 export function resolveMarkdownFileLinkMeta(
@@ -83,8 +90,11 @@ export function resolveMarkdownFileLinkMeta(
   const targetPath = resolveMarkdownFileLinkTarget(href, cwd, baseDir);
   if (!targetPath) return null;
   const source = href ? parseMarkdownFileLink(href) : null;
+  const meta = buildFileLinkMetaFromTarget(targetPath, cwd);
   return {
-    ...buildFileLinkMetaFromTarget(targetPath, cwd),
+    ...meta,
+    fallbackFilePath:
+      source === null ? null : workspaceRootFallbackPath(source.path, meta.filePath, cwd, baseDir),
     ...(source?.endLine !== undefined ? { endLine: source.endLine } : {}),
     workspaceLookupPath:
       source !== null &&

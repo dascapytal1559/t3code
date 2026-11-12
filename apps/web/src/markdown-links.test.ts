@@ -9,6 +9,7 @@ import {
 import {
   markdownFileCopyPaths,
   markdownFileEditorTarget,
+  pickMarkdownFileCandidate,
   resolveMarkdownFileHostPath,
 } from "./markdownFileHostPath";
 
@@ -86,6 +87,121 @@ describe("relative links inside a rendered host file", () => {
       workspaceRelativePath: "docs/src/main.ts",
     });
   });
+
+  it("read beside the file first and keep the workspace-root reading as the fallback", () => {
+    const cases: ReadonlyArray<
+      [
+        label: string,
+        meta: ReturnType<typeof resolveMarkdownFileLinkMeta>,
+        file: string,
+        fallback: string | null,
+      ]
+    > = [
+      [
+        "inline code with a folder",
+        resolveInlineCodeFileLinkMeta("scripts/run.md", "/ws", "/ws/data/demo"),
+        "/ws/data/demo/scripts/run.md",
+        "/ws/scripts/run.md",
+      ],
+      [
+        "markdown link",
+        resolveMarkdownFileLinkMeta("src/main.ts:4", "/ws", "/ws/docs"),
+        "/ws/docs/src/main.ts",
+        "/ws/src/main.ts",
+      ],
+      [
+        "file outside the workspace",
+        resolveMarkdownFileLinkMeta("src/main.ts", "/ws", "/tmp/report"),
+        "/tmp/report/src/main.ts",
+        "/ws/src/main.ts",
+      ],
+      [
+        "file at the workspace root",
+        resolveInlineCodeFileLinkMeta("src/main.ts", "/ws", "/ws"),
+        "/ws/src/main.ts",
+        null,
+      ],
+      [
+        "explicit ./",
+        resolveInlineCodeFileLinkMeta("./src/main.ts", "/ws", "/ws/docs"),
+        "/ws/docs/./src/main.ts",
+        null,
+      ],
+      [
+        "explicit ../",
+        resolveMarkdownFileLinkMeta("../b/notes.md", "/ws", "/ws/docs/a"),
+        "/ws/docs/a/../b/notes.md",
+        null,
+      ],
+      [
+        "fallback that would leave the workspace",
+        resolveMarkdownFileLinkMeta("a/../../x.md", "/ws", "/ws/docs"),
+        "/ws/docs/a/../../x.md",
+        null,
+      ],
+      [
+        "absolute path",
+        resolveMarkdownFileLinkMeta("/etc/hosts", "/ws", "/ws/docs"),
+        "/etc/hosts",
+        null,
+      ],
+      [
+        "home path",
+        resolveMarkdownFileLinkMeta("~/notes.md", "/Users/me/ws", "/Users/me/ws/docs"),
+        "/Users/me/notes.md",
+        null,
+      ],
+      [
+        "chat message",
+        resolveInlineCodeFileLinkMeta("src/main.ts", "/ws"),
+        "/ws/src/main.ts",
+        null,
+      ],
+    ];
+    for (const [label, meta, filePath, fallbackFilePath] of cases) {
+      expect(meta, label).toMatchObject({ filePath, fallbackFilePath });
+    }
+    expect(resolveMarkdownFileLinkMeta("https://example.com/a.md", "/ws", "/ws/docs")).toBeNull();
+  });
+});
+
+describe("pickMarkdownFileCandidate", () => {
+  const meta = resolveInlineCodeFileLinkMeta("scripts/run.md", "/ws", "/ws/data/demo");
+  if (!meta) throw new Error("Expected a file link");
+  const existing =
+    (...found: string[]) =>
+    async (paths: readonly string[]) =>
+      paths.map((path) => found.includes(path));
+
+  it("prefers the file beside the document, then the workspace root, else reports both", async () => {
+    await expect(
+      pickMarkdownFileCandidate(
+        meta,
+        existing("/ws/data/demo/scripts/run.md", "/ws/scripts/run.md"),
+      ),
+    ).resolves.toEqual({ filePath: "/ws/data/demo/scripts/run.md", alsoTried: null });
+    await expect(pickMarkdownFileCandidate(meta, existing("/ws/scripts/run.md"))).resolves.toEqual({
+      filePath: "/ws/scripts/run.md",
+      alsoTried: null,
+    });
+    await expect(pickMarkdownFileCandidate(meta, existing())).resolves.toEqual({
+      filePath: "/ws/data/demo/scripts/run.md",
+      alsoTried: "/ws/scripts/run.md",
+    });
+  });
+
+  it("opens editors and copies paths at the workspace-root reading when only it exists", async () => {
+    const hostPath = await resolveMarkdownFileHostPath({
+      meta,
+      cwd: "/ws",
+      findWorkspaceMatch: async () => null,
+      pathsExist: existing("/ws/scripts/run.md"),
+    });
+    expect(markdownFileCopyPaths(meta, hostPath, "/ws")).toEqual({
+      fullPath: "/ws/scripts/run.md",
+      relativePath: "scripts/run.md",
+    });
+  });
 });
 
 describe("resolveInlineCodeFileLinkMeta", () => {
@@ -144,6 +260,7 @@ describe("chat file chip paths", () => {
       meta,
       cwd,
       findWorkspaceMatch: async () => "src/discord/events/user.ts",
+      pathsExist: async () => null,
     });
 
     expect(markdownFileEditorTarget(meta, hostPath)).toBe(

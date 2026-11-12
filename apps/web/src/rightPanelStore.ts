@@ -65,6 +65,7 @@ export type RightPanelSurface =
       attachment?: ChatFileAttachment;
       /** Deepest workspace path retained for navigating back down after moving up. */
       folderTrail?: string;
+      alsoTried?: string;
     }
   | {
       id: `pull-request:${string}`;
@@ -136,7 +137,8 @@ interface RightPanelStoreState {
   openDevice: (ref: ScopedThreadRef, target: DeviceTabTarget, automatic?: boolean) => void;
   renameDevice: (ref: ScopedThreadRef, surfaceId: string, title: string) => void;
   openBrowser: (ref: ScopedThreadRef, tabId: string | null) => void;
-  openFile: (ref: ScopedThreadRef, relativePath: string, line?: number) => void;
+  /** alsoTried names another reading of the link that was missing too, for the error view. */
+  openFile: (ref: ScopedThreadRef, relativePath: string, line?: number, alsoTried?: string) => void;
   /** Moves in place; "" opens the root explorer. folderTrail keeps the return path; keepSource opens beside the source. */
   navigateFolder: (
     ref: ScopedThreadRef,
@@ -254,12 +256,14 @@ const fileSurface = (
   relativePath: string,
   revealLine: number | null,
   revealRequestId: number,
+  alsoTried?: string,
 ): RightPanelSurface => ({
   id: `file:${relativePath}`,
   kind: "file",
   relativePath,
   revealLine,
   revealRequestId,
+  ...(alsoTried === undefined ? {} : { alsoTried }),
 });
 
 const attachmentSurface = (attachment: ChatFileAttachment): RightPanelSurface => ({
@@ -537,7 +541,15 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                         surface.revealRequestId >= 0
                           ? surface.revealRequestId
                           : 0;
-                      return [{ ...surface, revealLine, revealRequestId }];
+                      const { alsoTried, ...rest } = surface;
+                      return [
+                        {
+                          ...rest,
+                          revealLine,
+                          revealRequestId,
+                          ...(typeof alsoTried === "string" ? { alsoTried } : {}),
+                        },
+                      ];
                     }
                     if (surface.kind === "pull-request") {
                       if (
@@ -823,7 +835,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             ),
           }));
         }),
-      openFile: (ref, requestedPath, line) =>
+      openFile: (ref, requestedPath, line, alsoTried) =>
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) => {
             if (requestedPath === ".") {
@@ -845,6 +857,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               relativePath,
               normalizeRevealLine(line),
               (existing?.revealRequestId ?? 0) + 1,
+              alsoTried,
             );
             return {
               ...current,

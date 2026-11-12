@@ -8,7 +8,11 @@ import {
   inlineCodeFilePathCandidate,
 } from "@t3tools/shared/markdownLinks";
 import { taskListMarkerOffset } from "@t3tools/shared/markdownTaskList";
-import { isHostPath, resolveWorkspaceFilePath } from "@t3tools/shared/path";
+import {
+  isHostPath,
+  resolveWorkspaceFilePath,
+  workspaceRelativeFilePath,
+} from "@t3tools/shared/path";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 import {
   AuthFilesystemReadScope,
@@ -145,7 +149,9 @@ import {
 import {
   markdownFileCopyPaths,
   markdownFileEditorTarget,
+  pickMarkdownFileCandidate,
   resolveMarkdownFileHostPath,
+  type MarkdownFilePathsExist,
 } from "../markdownFileHostPath";
 import { isMarkdownFileLinkLabel } from "@t3tools/shared/markdownLinks";
 import { isElectron } from "../env";
@@ -785,12 +791,35 @@ function useChatMarkdownState({
       ? pickWorkspaceLinkMatch(workspaceRelativePath, cwd, result.value.entries)
       : null;
   };
+  const filePathsExist: MarkdownFilePathsExist = async (paths) => {
+    if (environmentId === null || !readEnvironmentScope(environmentId, AuthFilesystemReadScope)) {
+      return null;
+    }
+    const metadata = await getFilesystemMetadata({ environmentId, input: { paths: [...paths] } });
+    return metadata._tag === "Success"
+      ? metadata.value.entries.map((entry) => entry !== null)
+      : null;
+  };
   const openFileInPanel = (fileLinkMeta: MarkdownFileLinkMeta, panelPath: string) => {
     if (!threadRef) return;
     // Every open supersedes pending lookups, including synchronous opens.
     const isLatestLookup = claimWorkspaceBasenameLookup();
-    const openAt = (path: string) =>
-      useRightPanelStore.getState().openFile(threadRef, path, fileLinkMeta.line);
+    const openAt = (path: string, alsoTried: string | null = null) =>
+      alsoTried === null
+        ? useRightPanelStore.getState().openFile(threadRef, path, fileLinkMeta.line)
+        : useRightPanelStore.getState().openFile(threadRef, path, fileLinkMeta.line, alsoTried);
+    if (fileLinkMeta.fallbackFilePath !== null) {
+      void (async () => {
+        const { filePath, alsoTried } = await pickMarkdownFileCandidate(
+          fileLinkMeta,
+          filePathsExist,
+        );
+        if (!isLatestLookup()) return;
+        if (filePath === fileLinkMeta.filePath) openAt(panelPath, alsoTried);
+        else openAt(workspaceRelativeFilePath(filePath, cwd) ?? filePath);
+      })();
+      return;
+    }
     if (
       fileLinkMeta.workspaceLookupPath === null ||
       !cwd ||
@@ -815,6 +844,7 @@ function useChatMarkdownState({
         meta: fileLinkMeta,
         cwd,
         findWorkspaceMatch: () => findWorkspaceFileMatch(fileLinkMeta),
+        pathsExist: filePathsExist,
       });
     const isAppBundle = isMacOS && fileLinkMeta.filePath.endsWith(".app");
     const canOpenApp =
