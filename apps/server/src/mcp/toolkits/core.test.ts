@@ -9,6 +9,7 @@ import {
   ChatImageAttachment,
   CommandId,
   EnvironmentId,
+  MessageId,
   NodeId,
   OrchestratorMcpThreadReadResult,
   ProviderDriverKind,
@@ -717,6 +718,45 @@ it.effect("a client caller targets any thread within its ceiling and cannot act 
       visitedAt: "1970-01-01T00:00:00.000Z",
     });
 
+    yield* call(
+      "t3_thread_organize",
+      { action: "untag", threadId: "other-project-thread", tag: " waiting for captain " },
+      clientScope("auto"),
+    );
+    expect(organizeCommands.at(-1)).toMatchObject({
+      type: "thread.tag.set",
+      tag: "waiting for captain",
+      tagged: false,
+    });
+    const unlabelledFence = yield* call(
+      "t3_thread_organize",
+      { action: "fence", threadId: "other-project-thread", expectedWorktreePath: null },
+      clientScope("auto"),
+    );
+    expect(declaredFailure(unlabelledFence)).toMatchObject({ code: "invalid_request" });
+
+    // A client has no thread, so its note names no sender; nothing it passes can claim one.
+    const note = yield* call(
+      "t3_thread_note",
+      {
+        threadId: "other-project-thread",
+        text: "**Firstmate summary**",
+        clientRequestId: "task-1/handoff-1",
+      },
+      clientScope("auto"),
+    );
+    expect(note.structuredContent).toMatchObject({
+      threadId: "other-project-thread",
+      created: true,
+    });
+    expect(notes).toEqual([
+      {
+        threadId: "other-project-thread",
+        requestId: "task-1/handoff-1",
+        text: "**Firstmate summary**",
+      },
+    ]);
+
     const coordinator = yield* call(
       "t3_thread_configure",
       { threadId: "other-project-thread", coordinator: true },
@@ -766,6 +806,11 @@ it.effect("a client caller targets any thread within its ceiling and cannot act 
                 organizeCommands.push(command);
                 return { sequence: 7, storedEvents: [] };
               }),
+            appendNote: (input) =>
+              Effect.sync(() => {
+                notes.push(input);
+                return { sequence: 9, messageId: MessageId.make("note"), created: true };
+              }),
             setCoordinator: ({ commandId: _commandId, ...input }) =>
               Effect.sync(() => {
                 coordinatorPins.push(input);
@@ -809,6 +854,12 @@ it.effect("a read-only client reads threads and is refused every write before it
       threadId: "other-project-thread",
     });
     expect(declaredFailure(pinned)).toMatchObject({ code: "capability_denied" });
+    const note = yield* call("t3_thread_note", {
+      threadId: "other-project-thread",
+      text: "Summary",
+      clientRequestId: "task-1/handoff-1",
+    });
+    expect(declaredFailure(note)).toMatchObject({ code: "capability_denied" });
     expect(dispatched).toEqual([]);
 
     const configure = yield* call("t3_thread_configure", {
@@ -873,6 +924,7 @@ it.effect("a read-only client reads threads and is refused every write before it
 const dispatched: Array<string> = [];
 const coordinatorPins: Array<object> = [];
 const organizeCommands: Array<object> = [];
+const notes: Array<object> = [];
 
 it.effect("refuses act-as-caller tools to a client caller", () =>
   Effect.gen(function* () {

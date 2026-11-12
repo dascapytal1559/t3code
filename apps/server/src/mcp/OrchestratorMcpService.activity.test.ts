@@ -135,6 +135,13 @@ it("readThread preserves caller access errors and prefers activity-run status ov
       }),
       coordinator: true,
       crewOf: crewCoordinatorId,
+      tags: ["waiting for captain"],
+      autoSettleDisabledAt: now,
+      executionFence: {
+        label: "task-1",
+        worktreePath: "/work/copy-3",
+        fencedAt: "2026-08-04T12:00:00.000Z",
+      },
     },
     runs: [
       makeRun({ id: activeRunId, ordinal: 1, status: "running" }),
@@ -206,6 +213,12 @@ it("readThread preserves caller access errors and prefers activity-run status ov
     // FirstMate reads crew from MCP lineage, though threads carry it outside `lineage`.
     expect(result.thread.parentThreadId).toBe(crewCoordinatorId);
     expect(result.thread.relationshipToParent).toBe("crew");
+    // FirstMate proves a retained thread by reading these back.
+    expect(result.thread).toMatchObject({
+      tags: ["waiting for captain"],
+      autoSettleDisabled: true,
+      executionFence: { label: "task-1", worktreePath: "/work/copy-3" },
+    });
 
     callerUnavailable = true;
     const denied = yield* service

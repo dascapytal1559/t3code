@@ -61,6 +61,7 @@ import {
   type OrchestrationV2ThreadShellSnapshot,
   type OrchestrationV2StoredEvent,
   type OrchestrationV2Subagent,
+  type OrchestrationV2ThreadExecutionFence,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2TurnItem,
   latestProviderTurnForAttempt,
@@ -152,6 +153,7 @@ import { withCommandMetrics } from "../observability/Metrics.ts";
 import type { OrchestrationEffectRequestV2, PendingOrchestrationEffectV2 } from "./EffectOutbox.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
+import { executionFencedCause } from "./ThreadRetention.ts";
 import {
   DispatchModeLimit,
   exceededDispatchModeLimit,
@@ -624,6 +626,8 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.pin.reorder":
     case "thread.active.reorder":
     case "thread.tag.set":
+    case "thread.note.append":
+    case "thread.execution-fence.set":
     case "thread.visit":
     case "thread.mark-unread":
     case "thread.metadata.update":
@@ -3734,6 +3738,165 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     return decided.success;
   });
 
+  const readLiveThread = Effect.fn("orchestrationV2.dispatch.readLiveThread")(function* (
+    command: Extract<
+      OrchestrationV2ServerCommand,
+      { readonly type: "thread.note.append" | "thread.execution-fence.set" }
+    >,
+  ) {
+    const thread = yield* projectionStore
+      .getThread(command.threadId)
+      .pipe(
+        Effect.mapError(
+          (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
+        ),
+      );
+    if (thread.deletedAt !== null) {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: `Thread ${command.threadId} is deleted.`,
+      });
+    }
+    return thread;
+  });
+
+  const dispatchThreadNoteAppend = Effect.fn("orchestrationV2.dispatch.threadNoteAppend")(
+    function* (
+      command: Extract<OrchestrationV2ServerCommand, { readonly type: "thread.note.append" }>,
+      events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    ) {
+      const thread = yield* readLiveThread(command);
+      if (isProviderNativeSubagentThread(thread)) {
+        return yield* new OrchestratorSubagentThreadReadOnlyError({
+          commandId: command.commandId,
+          threadId: command.threadId,
+        });
+      }
+      if (thread.archivedAt !== null) {
+        return yield* new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Thread ${command.threadId} is archived.`,
+        });
+      }
+      const { runs } = yield* projectionStore
+        .getThreadRecords(command.threadId, ["runs"])
+        .pipe(mapDispatchError(command));
+      const latestRun = runs.reduce<OrchestrationV2Run | undefined>(
+        (latest, run) => (latest === undefined || run.ordinal > latest.ordinal ? run : latest),
+        undefined,
+      );
+      const now = yield* DateTime.now;
+      const creation = {
+        createdBy: "agent" as const,
+        creationSource: "mcp" as const,
+        ...(command.senderThreadId === undefined ? {} : { senderThreadId: command.senderThreadId }),
+        note: true,
+      };
+      const emitEvent = emit(events, command);
+      yield* emitEvent({
+        type: "message.updated",
+        threadId: command.threadId,
+        occurredAt: now,
+        payload: {
+          ...creation,
+          origin: MCP_CLIENT_ORIGIN,
+          id: command.messageId,
+          threadId: command.threadId,
+          runId: null,
+          nodeId: null,
+          role: "user",
+          text: command.text,
+          attachments: [],
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      yield* emitEvent({
+        type: "turn-item.updated",
+        threadId: command.threadId,
+        // Places the run-less row after the latest run's rows instead of before the first run.
+        ...(latestRun === undefined ? {} : { runId: latestRun.id }),
+        occurredAt: now,
+        payload: {
+          ...creation,
+          id: idAllocator.derive.userTurnItem({ messageId: command.messageId }),
+          threadId: command.threadId,
+          runId: null,
+          nodeId: null,
+          providerThreadId: null,
+          providerTurnId: null,
+          nativeItemRef: null,
+          parentItemId: null,
+          ordinal: 0,
+          status: "completed",
+          title: null,
+          startedAt: now,
+          completedAt: now,
+          updatedAt: now,
+          type: "user_message",
+          messageId: command.messageId,
+          inputIntent: "turn_start",
+          text: command.text,
+          attachments: [],
+        },
+      });
+    },
+  );
+
+  const dispatchThreadExecutionFence = Effect.fn("orchestrationV2.dispatch.threadExecutionFence")(
+    function* (
+      command: Extract<
+        OrchestrationV2ServerCommand,
+        { readonly type: "thread.execution-fence.set" }
+      >,
+      events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    ) {
+      const thread = yield* readLiveThread(command);
+      const refuse = (cause: string) =>
+        new OrchestratorDispatchError({
+          commandId: command.commandId,
+          commandType: command.type,
+          cause: `Thread ${command.threadId} ${cause}`,
+        });
+      let executionFence: OrchestrationV2ThreadExecutionFence | null = null;
+      if (command.fence !== null) {
+        if (command.fence.expectedWorktreePath !== thread.worktreePath) {
+          return yield* refuse(
+            `works in ${thread.worktreePath ?? "its project folder"}, not ${command.fence.expectedWorktreePath ?? "its project folder"}.`,
+          );
+        }
+        const records = yield* projectionStore
+          .getThreadRecords(command.threadId, ["runs", "runtimeRequests"])
+          .pipe(mapDispatchError(command));
+        // A fence proves nothing still runs here, so the workspace can go back to its owner.
+        if (threadHasUnfinishedWork(records)) {
+          return yield* refuse("still has a run, queued message or open request. Stop it first.");
+        }
+        executionFence =
+          thread.executionFence?.label === command.fence.label &&
+          thread.executionFence.worktreePath === thread.worktreePath
+            ? thread.executionFence
+            : {
+                label: command.fence.label,
+                worktreePath: thread.worktreePath,
+                fencedAt: DateTime.formatIso(yield* DateTime.now),
+              };
+      }
+      yield* emit(
+        events,
+        command,
+      )({
+        type: "thread.metadata-updated",
+        threadId: command.threadId,
+        occurredAt: yield* DateTime.now,
+        payload: { ...thread, executionFence },
+      });
+    },
+  );
+
   const dispatchThreadMutation = Effect.fn("orchestrationV2.dispatch.threadMutation")(function* (
     command: Extract<
       OrchestrationV2ServerCommand,
@@ -5156,6 +5319,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         commandId: command.commandId,
         commandType: command.type,
         cause: `Thread ${command.sourceThreadId} was deleted.`,
+      });
+    }
+    // The fork would copy the worktree path its owner took back.
+    if (sourceProjection.thread.executionFence != null) {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: executionFencedCause(command.sourceThreadId),
       });
     }
     // The fork would copy no worktree path and run in the project checkout.
@@ -14067,6 +14238,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       case "provider.switch":
         yield* dispatchThreadMutation(command, events, effects);
         break;
+      case "thread.note.append":
+        yield* dispatchThreadNoteAppend(command, events);
+        break;
+      case "thread.execution-fence.set":
+        yield* dispatchThreadExecutionFence(command, events);
+        break;
       case "thread.pull-request-watch.sync":
         yield* dispatchPullRequestWatchSync(command, events, effects);
         break;
@@ -14096,6 +14273,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           return yield* new OrchestratorSubagentThreadReadOnlyError({
             commandId: command.commandId,
             threadId: command.threadId,
+          });
+        }
+        if (thread.executionFence != null) {
+          return yield* new OrchestratorDispatchError({
+            commandId: command.commandId,
+            commandType: command.type,
+            cause: executionFencedCause(command.threadId),
           });
         }
         const guestSend =

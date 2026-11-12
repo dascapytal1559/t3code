@@ -202,6 +202,7 @@ const make = Effect.gen(function* () {
       LEFT JOIN orchestration_v2_projection_threads AS thread
         ON thread.thread_id = message.thread_id
       WHERE message.role = 'user' AND message.created_at >= ${since} AND message.created_at < ${until}
+        AND json_extract(message.payload_json, '$.note') IS NULL
     `.pipe(NodeSqliteClient.readOnly);
 
       const turns: OriginTurn[] = [];

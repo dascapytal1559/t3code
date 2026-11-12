@@ -965,6 +965,52 @@ not count as the user opening the thread. Clients detect it by `mark_read` in th
 tool's `tools/list` `action` enum. Upstream main had no equivalent at
 `337c5858c3`. Code: `apps/server/src/mcp/toolkits/thread/handlers.ts`.
 
+## Threads kept for a reader
+
+FirstMate keeps an exploration's thread open after the work ends, until the
+user closes it, and posts its own summary into it. Four MCP controls do that
+without starting another agent turn:
+
+- **Tags.** `t3_thread_organize` `action: "tag"` or `"untag"` with `tag` (one
+  line, up to 64 characters, matched by exact case after trimming) sends the
+  existing `thread.tag.set`. Repeating either is a no-op.
+- **No automatic settlement.** `action: "disable_auto_settle"` or
+  `"enable_auto_settle"` sends the existing `thread.auto-settle.set`. Manual
+  settle and snooze still work; an archived thread refuses both actions.
+- **Notes.** `t3_thread_note` `{ threadId, text, clientRequestId }` posts
+  `text` (up to 120,000 characters) as a message with no run, no queue entry,
+  no provider turn and no wake. The thread and `clientRequestId` name the note:
+  a retry, from any session and after a restart, returns the same `messageId`
+  with `created: false`; the same id with different text fails
+  `invalid_request`. It returns `{ threadId, messageId, sequence, created }`.
+  An archived or deleted thread refuses a new note, though a retry of one
+  already posted still succeeds. A note reads as an agent message (folded,
+  labelled with its sender thread when an agent thread sent it, else "Agent")
+  in web, desktop and mobile, and in `t3_thread_read`'s `messages` and
+  `activity` views, after the latest run's rows. The thread's agent gets every
+  note posted since its last prompted turn ahead of its next prompt;
+  compaction and `/goal` prompts carry none and wait for the next.
+- **Execution fence.** `action: "fence"` with `fenceLabel` (up to 256
+  characters, for example a task incarnation) and `expectedWorktreePath` (the
+  thread's current worktree path, or `null` for the project folder) marks the
+  thread retired from running once its workspace goes back to its owner. It
+  refuses a thread that works elsewhere or still has a run, queued message or
+  open request. A fenced thread stays readable and takes notes, but sending a
+  message or forking it fails, and any run that still reaches turn start fails
+  there before a session or worktree is touched, whichever client or schedule
+  started it. Unarchive keeps the fence; `action: "unfence"` lifts it.
+  Fencing again with the same label keeps the first `fencedAt`.
+
+`t3_thread_list` items and `t3_thread_read`'s `thread` report `tags` and
+`autoSettleDisabled`; `thread` also reports `executionFence`
+`{ label, worktreePath, fencedAt }` while one is set. Linked servers without
+these omit the fields. Clients detect the controls by the `action` enum and
+the `t3_thread_note` tool in `tools/list`. Code: `ThreadRetention.ts`,
+`appendNote` in `ThreadManagementService.ts`, the `thread.note.append` and
+`thread.execution-fence.set` handlers in `Orchestrator.ts` (all in
+`apps/server/src/orchestration-v2/`), and
+`apps/server/src/mcp/toolkits/thread/`.
+
 ## FirstMate's sign-in lasts 10 years
 
 Upstream gives every MCP sign-in a 30-day pass, most likely so a leaked or

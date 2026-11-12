@@ -277,6 +277,8 @@ function makeLocalCommandHarness(input: {
   readonly fileSystem?: FileSystem.FileSystem;
   readonly previousNativeSession?: boolean;
   readonly previousMessages?: ReadonlyArray<string>;
+  /** Open a session that accepts the prompt, to read what the provider was sent. */
+  readonly prompts?: true;
   readonly logoutFailure?: string;
   readonly openFailure?: unknown;
   readonly ensureThreadFailure?: unknown;
@@ -811,7 +813,7 @@ function makeLocalCommandHarness(input: {
     startTurn,
   };
   const open = vi.fn(() =>
-    input.sideChat !== undefined
+    input.sideChat !== undefined || input.prompts === true
       ? Effect.succeed(sideChatSession as never)
       : input.interruptOpen === true
         ? Effect.interrupt
@@ -845,7 +847,7 @@ function makeLocalCommandHarness(input: {
   const startRootRun = vi.fn<
     (input: RunExecutionService.RunExecutionServiceV2StartRootRunInput) => Effect.Effect<void>
   >((runInput) =>
-    input.sideChat !== undefined
+    input.sideChat !== undefined || input.prompts === true
       ? runInput.session.startTurn(runInput as never).pipe(Effect.orDie)
       : input.failReadsAfterRunning === true || input.previousTurn !== undefined
         ? Effect.suspend(() =>
@@ -1275,6 +1277,126 @@ effectIt.effect("recovers an abandoned failed turn before continuing its native 
       "existing-native-conversation",
     );
   }),
+);
+
+effectIt.effect("fails a run on a fenced thread before opening its provider or workspace", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Continue",
+      worktreePath: `${managedWorktreesDir}/returned-copy`,
+    });
+    const projection = harness.projection();
+    harness.setProjection({
+      ...projection,
+      thread: {
+        ...projection.thread,
+        executionFence: {
+          label: "task-1",
+          worktreePath: `${managedWorktreesDir}/returned-copy`,
+          fencedAt: "2026-09-04T11:00:00.000Z",
+        },
+      },
+    });
+
+    yield* harness.start;
+
+    expect(harness.createWorktree).not.toHaveBeenCalled();
+    expect(harness.open).not.toHaveBeenCalled();
+    expect(harness.startRootRun).not.toHaveBeenCalled();
+    expect(harness.projection().runs.at(-1)?.status).toBe("failed");
+    expect(harness.projection().turnItems).toMatchObject([
+      { type: "error", title: "Thread is retired from running" },
+    ]);
+  }),
+);
+
+effectIt.effect.each([
+  { earlierTurn: null, delivered: true },
+  { earlierTurn: { text: "Earlier", afterNote: true }, delivered: false },
+  // A compaction prompt carries no context, so it delivers no note.
+  { earlierTurn: { text: "/compact", afterNote: true }, delivered: true },
+  { earlierTurn: { text: "Earlier", afterNote: false }, delivered: true },
+] as const)(
+  "sends notes posted since the last prompted turn ahead of the next prompt: %j",
+  ({ earlierTurn, delivered }) =>
+    Effect.gen(function* () {
+      const harness = makeLocalCommandHarness({ text: "Go on", prompts: true });
+      const projection = harness.projection();
+      const noteAt = DateTime.makeUnsafe("2026-09-04T11:00:00Z");
+      const turnAt = DateTime.makeUnsafe(
+        earlierTurn?.afterNote === false ? "2026-09-04T10:00:00Z" : "2026-09-04T11:30:00Z",
+      );
+      const current = projection.runs.at(-1)!;
+      const earlierRun = {
+        ...current,
+        id: RunId.make("earlier-run"),
+        ordinal: 1,
+        status: "completed" as const,
+        userMessageId: MessageId.make("earlier-message"),
+        activeAttemptId: RunAttemptId.make("earlier-attempt"),
+        completedAt: turnAt,
+      };
+      const userMessage = projection.messages.at(-1)!;
+      harness.setProjection({
+        ...projection,
+        ...(earlierTurn === null
+          ? {}
+          : {
+              runs: [earlierRun, current],
+              attempts: [
+                {
+                  ...projection.attempts[0]!,
+                  id: earlierRun.activeAttemptId,
+                  runId: earlierRun.id,
+                  status: "completed",
+                },
+                ...projection.attempts,
+              ],
+              providerTurns: [
+                {
+                  id: ProviderTurnId.make("earlier-turn"),
+                  providerThreadId: current.providerThreadId!,
+                  nodeId: current.rootNodeId!,
+                  runAttemptId: earlierRun.activeAttemptId,
+                  nativeTurnRef: null,
+                  ordinal: 1,
+                  status: "completed",
+                  startedAt: turnAt,
+                  completedAt: turnAt,
+                },
+              ],
+            }),
+        messages: [
+          ...(earlierTurn === null
+            ? []
+            : [{ ...userMessage, id: earlierRun.userMessageId, text: earlierTurn.text }]),
+          {
+            ...userMessage,
+            id: MessageId.make("note"),
+            runId: null,
+            nodeId: null,
+            createdBy: "agent",
+            creationSource: "mcp",
+            note: true,
+            text: "**Firstmate summary**\nRead the report.",
+            createdAt: noteAt,
+            updatedAt: noteAt,
+          },
+          userMessage,
+        ],
+      });
+
+      yield* harness.start;
+
+      expect(harness.startTurn.mock.calls.map(([turn]) => turn.message.text)).toEqual([
+        delivered
+          ? withInlineContext(
+              "Notes posted to this thread since your last turn. The user saw them here:\n\n---\n\n**Firstmate summary**\nRead the report.",
+              "Go on",
+            )
+          : "Go on",
+      ]);
+    }),
 );
 
 effectIt.effect.each([

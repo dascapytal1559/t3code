@@ -211,6 +211,23 @@ describe("UsageOrigins.read", () => {
         startedAt: "2026-07-01T00:00:00.000Z",
         message: { createdBy: "user", creationSource: "web" },
       });
+      // A note starts no run, so it is no prompt.
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`INSERT INTO orchestration_v2_projection_messages ${sql.insert({
+        message_id: "message-note",
+        thread_id: "worker",
+        run_id: null,
+        role: "user",
+        streaming: 0,
+        created_at: "2026-08-07T03:00:00.000Z",
+        updated_at: "2026-08-07T03:00:00.000Z",
+        payload_json: encodeJson({
+          createdBy: "agent",
+          creationSource: "mcp",
+          origin: { surface: "mcp", deviceType: "bot" },
+          note: true,
+        }),
+      })}`;
 
       const origins = yield* UsageOrigins;
       const snapshot = yield* origins.read(

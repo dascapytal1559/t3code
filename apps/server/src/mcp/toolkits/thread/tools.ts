@@ -21,6 +21,10 @@ import {
   RunId,
   NonNegativeInt,
   ProjectId,
+  ThreadTag,
+  OrchestrationV2ExecutionFenceLabel,
+  OrchestratorMcpClientRequestId,
+  MessageId,
 } from "@t3tools/contracts";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Schema from "effect/Schema";
@@ -34,7 +38,7 @@ import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
 const ThreadOrganizeTool = Tool.make("t3_thread_organize", {
   description:
-    "Pin, snooze, settle, archive, or mark a thread read or unread. Omit `threadId` for this thread. `snooze` needs `snoozedUntil`. Settling this thread applies at turn end. A failed turn or queued message leaves it active.",
+    "Pin, snooze, settle, archive, tag, or mark a thread read or unread. Omit `threadId` for this thread. `snooze` needs `snoozedUntil`. Settling this thread applies at turn end. A failed turn or queued message leaves it active. `tag`/`untag` need `tag`. `fence` (idle thread; `fenceLabel`, `expectedWorktreePath`) blocks runs after its workspace is returned.",
   parameters: Schema.Struct({
     environmentId: OrchestratorMcpEnvironmentTarget,
     threadId: Schema.optional(ThreadId),
@@ -49,8 +53,17 @@ const ThreadOrganizeTool = Tool.make("t3_thread_organize", {
       "unarchive",
       "mark_unread",
       "mark_read",
+      "tag",
+      "untag",
+      "disable_auto_settle",
+      "enable_auto_settle",
+      "fence",
+      "unfence",
     ]),
     snoozedUntil: Schema.optional(IsoDateTime),
+    tag: Schema.optional(ThreadTag),
+    fenceLabel: Schema.optional(OrchestrationV2ExecutionFenceLabel),
+    expectedWorktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   }),
   success: Schema.Union([
     OrchestrationV2DispatchCommandResult,
@@ -111,6 +124,27 @@ const QueueTool = Tool.make("t3_queue", {
     OrchestrationV2DispatchCommandResult,
   ]),
 }).annotate(Tool.Destructive, true);
+
+const ThreadNoteTool = Tool.make("t3_thread_note", {
+  ...commandTool,
+  description:
+    "Post a note to a thread without starting a turn; its agent sees it with its next prompt. One note per `clientRequestId`.",
+  parameters: Schema.Struct({
+    environmentId: OrchestratorMcpEnvironmentTarget,
+    threadId: ThreadId,
+    text: TrimmedNonEmptyString.check(Schema.isMaxLength(120_000)),
+    clientRequestId: OrchestratorMcpClientRequestId,
+  }),
+  success: Schema.Struct({
+    threadId: ThreadId,
+    messageId: MessageId,
+    sequence: NonNegativeInt,
+    /** False when this request id had already posted the note. */
+    created: Schema.Boolean,
+  }),
+})
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true);
 
 const question = Schema.Struct({
   id: Schema.String,
@@ -263,6 +297,7 @@ export const ThreadToolkit = Toolkit.make(
   ThreadConfigureTool,
   ThreadTransferTool,
   ThreadOrganizeTool,
+  ThreadNoteTool,
   PendingRequestTool,
   QueueTool,
 );

@@ -66,6 +66,7 @@ import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import { projectedRowEncodedBytes } from "./threadHistoryPaging.ts";
 import * as ProviderSessionManager from "./ProviderSessionManager.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
+import { noteIds } from "./ThreadRetention.ts";
 import { DispatchModeLimit, exceededDispatchModeLimit } from "./DispatchModeLimit.ts";
 import { projectTurnItemForDetail } from "./WireProjection.ts";
 import * as LegacyV1ThreadImporter from "./legacy/LegacyV1ThreadImporter.ts";
@@ -263,6 +264,17 @@ export class ThreadManagementThreadArchivedError extends Schema.TaggedError<Thre
 ) {
   override get message(): string {
     return `Thread ${this.threadId} is archived and cannot receive messages.`;
+  }
+}
+
+export class ThreadManagementNoteConflictError extends Schema.TaggedError<ThreadManagementNoteConflictError>()(
+  "ThreadManagementNoteConflictError",
+  {
+    threadId: ThreadId,
+  },
+) {
+  override get message(): string {
+    return `This request id already posted a different note to thread ${this.threadId}. Use a new id for new text.`;
   }
 }
 
@@ -480,6 +492,22 @@ export interface ThreadManagementServiceShape {
   }) => Effect.Effect<
     { readonly sequence: number } | { readonly settlesWhenTurnEnds: true },
     Orchestrator.OrchestratorV2Error | ThreadManagementProviderInstanceDisabledError
+  >;
+  /**
+   * Posts a note that starts no run. The thread and request id name the note, so a retry or a
+   * restart posts it once; `created` is false for a retry.
+   */
+  readonly appendNote: (input: {
+    readonly threadId: ThreadId;
+    readonly requestId: string;
+    readonly text: string;
+    readonly senderThreadId?: ThreadId | undefined;
+  }) => Effect.Effect<
+    { readonly sequence: number; readonly messageId: MessageId; readonly created: boolean },
+    | Orchestrator.OrchestratorV2Error
+    | ThreadManagementProviderInstanceDisabledError
+    | ThreadManagementThreadArchivedError
+    | ThreadManagementNoteConflictError
   >;
   /** Pinning a thread as its project's coordinator unpins the project's other ones. */
   readonly setCoordinator: (input: {
@@ -1212,6 +1240,32 @@ const make = Effect.gen(function* () {
     return { sequence: result.sequence };
   });
 
+  const appendNote: ThreadManagementServiceShape["appendNote"] = Effect.fn(
+    "ThreadManagementService.appendNote",
+  )(function* (input) {
+    const { commandId, messageId } = noteIds(input.threadId, input.requestId);
+    // Checked before the first dispatch only, so a retry still finds its note after an archive.
+    if (!(yield* hasReceipt(commandId))) {
+      const shell = yield* orchestrator.getThreadShell(input.threadId);
+      if (shell !== null && shell.archivedAt !== null) {
+        return yield* new ThreadManagementThreadArchivedError({ threadId: input.threadId });
+      }
+    }
+    const result = yield* dispatch({
+      type: "thread.note.append",
+      commandId,
+      threadId: input.threadId,
+      messageId,
+      text: input.text,
+      ...(input.senderThreadId === undefined ? {} : { senderThreadId: input.senderThreadId }),
+    });
+    const posted = result.storedEvents.find(({ event }) => event.type === "message.updated")?.event;
+    if (posted?.type === "message.updated" && posted.payload.text !== input.text) {
+      return yield* new ThreadManagementNoteConflictError({ threadId: input.threadId });
+    }
+    return { sequence: result.sequence, messageId, created: result.replayed !== true };
+  });
+
   const setCoordinator: ThreadManagementServiceShape["setCoordinator"] = Effect.fn(
     "ThreadManagementService.setCoordinator",
   )(function* (input) {
@@ -1722,6 +1776,7 @@ const make = Effect.gen(function* () {
     waitForThread,
     settleAfterRun,
     settleThread,
+    appendNote,
     setCoordinator,
     interruptThread,
     stopDelegatedTasks,

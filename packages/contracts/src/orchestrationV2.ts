@@ -511,6 +511,22 @@ const LenientThreadOpens = Schema.NullOr(OrchestrationV2ThreadOpens).pipe(
   Schema.catchDecoding(() => Effect.succeedSome(null)),
 );
 
+/** Names whoever retired a thread's workspace, such as a task incarnation; opaque to T3. */
+export const OrchestrationV2ExecutionFenceLabel = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(256),
+);
+
+/**
+ * The thread's workspace was handed back to its external owner, so no run may start here: a
+ * reopened thread stays readable but cannot execute. Unarchive keeps it.
+ */
+export const OrchestrationV2ThreadExecutionFence = Schema.Struct({
+  label: OrchestrationV2ExecutionFenceLabel,
+  worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  fencedAt: IsoDateTime,
+});
+export type OrchestrationV2ThreadExecutionFence = typeof OrchestrationV2ThreadExecutionFence.Type;
+
 export const ThreadStatusLabel = TrimmedNonEmptyString.check(Schema.isMaxLength(32));
 
 export const OrchestrationV2AppThread = Schema.Struct({
@@ -545,6 +561,7 @@ export const OrchestrationV2AppThread = Schema.Struct({
   statusLabel: Schema.optional(Schema.NullOr(ThreadStatusLabel)),
   /** When the current label was first set; re-sending the same label keeps it. */
   statusLabelSince: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
+  executionFence: Schema.optional(Schema.NullOr(OrchestrationV2ThreadExecutionFence)),
   lineage: OrchestrationV2AppThreadLineage,
   forkedFrom: Schema.NullOr(
     Schema.Union([
@@ -1412,6 +1429,8 @@ export const OrchestrationV2ConversationMessage = Schema.Struct({
    * the workflow's opening instead and keep the script behind a disclosure.
    */
   workflowScript: Schema.optional(Schema.Boolean),
+  /** Posted without a run; the agent reads it ahead of its next turn's prompt. */
+  note: Schema.optional(Schema.Boolean),
   id: MessageId,
   threadId: ThreadId,
   runId: Schema.NullOr(RunId),
@@ -1725,6 +1744,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
     senderThreadId: Schema.optional(ThreadId),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
+    note: OrchestrationV2ConversationMessage.fields.note,
     freshContext: OrchestrationV2Run.fields.freshContext,
     inputIntent: OrchestrationV2UserMessageInputIntent,
     text: Schema.String,
@@ -2616,6 +2636,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     senderThreadId: Schema.optional(ThreadId),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
+    note: OrchestrationV2ConversationMessage.fields.note,
     freshContext: OrchestrationV2Run.fields.freshContext,
     inputIntent: OrchestrationV2UserMessageInputIntent,
     text: Schema.String,
@@ -3564,6 +3585,28 @@ export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
 
 // Excluded from dispatchCommand so only the server can send these.
 const OrchestrationV2InternalCommand = Schema.Union([
+  /** A message for the thread's reader and its next turn that starts no run. */
+  Schema.Struct({
+    type: Schema.Literal("thread.note.append"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    messageId: MessageId,
+    text: TrimmedNonEmptyString,
+    senderThreadId: Schema.optional(ThreadId),
+  }),
+  /** Set (object) or lift (null) the thread's execution fence. */
+  Schema.Struct({
+    type: Schema.Literal("thread.execution-fence.set"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    fence: Schema.NullOr(
+      Schema.Struct({
+        label: OrchestrationV2ExecutionFenceLabel,
+        /** Refuse unless the thread still works here, so the fence names the copy being returned. */
+        expectedWorktreePath: Schema.NullOr(TrimmedNonEmptyString),
+      }),
+    ),
+  }),
   // Guest share commands the server issues after checking T3 Connect and the guest token.
   Schema.Struct({
     type: Schema.Literal("thread.guest-share.open"),

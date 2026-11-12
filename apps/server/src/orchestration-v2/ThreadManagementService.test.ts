@@ -878,6 +878,74 @@ it.effect.each([
   }),
 );
 
+it.effect("a note posts once per thread and request id, through retries and an archive", () => {
+  const instanceId = ProviderInstanceId.make("codex");
+  const layerDatabase = SqlitePersistence.layerMemory;
+  const layerTest = ThreadManagementService.layer.pipe(
+    Layer.provideMerge(
+      ProviderReplayHarness.layerWithRegistry(
+        { name: "thread-note" },
+        ProviderAdapterRegistry.layerFromAdapters([
+          {
+            instanceId,
+            driver: ProviderDriverKind.make("codex"),
+            getCapabilities: () => Effect.succeed(CodexProviderCapabilitiesV2),
+          } as unknown as ProviderAdapter.ProviderAdapterV2["Service"],
+        ]),
+        { databaseLayer: layerDatabase, runEffectWorker: false },
+      ),
+    ),
+    Layer.provide(ServerSettings.layerTest()),
+    Layer.provide(CommandReceiptStore.layer.pipe(Layer.provide(layerDatabase))),
+    Layer.provideMerge(ProjectionStore.layer.pipe(Layer.provide(layerDatabase))),
+  );
+  return Effect.gen(function* () {
+    const service = yield* ThreadManagementService.ThreadManagementService;
+    const [threadId, otherThreadId] = ["kept", "other"].map((name) =>
+      ThreadId.make(`thread:note-${name}`),
+    ) as [ThreadId, ThreadId];
+    for (const id of [threadId, otherThreadId])
+      yield* service.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make(`create:${id}`),
+        threadId: id,
+        projectId: ProjectId.make("project:note"),
+        title: id,
+        modelSelection: { instanceId, model: "gpt-5" },
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdBy: "agent",
+        creationSource: "mcp",
+      });
+    const note = { threadId, requestId: "home/task/1/report-digest/1", text: "Summary" };
+
+    const first = yield* service.appendNote(note);
+    expect(first.created).toBe(true);
+    expect(yield* service.appendNote(note)).toEqual({ ...first, created: false });
+    expect(
+      yield* Effect.flip(service.appendNote({ ...note, text: "A revised summary" })),
+    ).toBeInstanceOf(ThreadManagementService.ThreadManagementNoteConflictError);
+    // The same id on another thread is another note, not a command id collision.
+    expect((yield* service.appendNote({ ...note, threadId: otherThreadId })).created).toBe(true);
+
+    yield* service.dispatch({
+      type: "thread.archive",
+      commandId: CommandId.make("archive:note"),
+      threadId,
+    });
+    expect((yield* service.appendNote(note)).created).toBe(false);
+    expect(
+      yield* Effect.flip(service.appendNote({ ...note, requestId: "home/task/1/report-digest/2" })),
+    ).toBeInstanceOf(ThreadManagementService.ThreadManagementThreadArchivedError);
+
+    const records = yield* service.getThreadRecords(threadId, ["runs", "messages"]);
+    expect(records.runs).toEqual([]);
+    expect(records.messages.map((message) => message.text)).toEqual(["Summary"]);
+  }).pipe(Effect.provide(layerTest));
+});
+
 it.effect("pinning a coordinator moves its project's pin and leaves other projects alone", () => {
   const instanceId = ProviderInstanceId.make("codex");
   const layerDatabase = SqlitePersistence.layerMemory;

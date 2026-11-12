@@ -407,6 +407,29 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
       }),
     ),
   ),
+  t3_thread_note: writesThread((input) =>
+    Effect.gen(function* () {
+      const { threads, projection, scope } = yield* readThread(input.threadId);
+      const threadId = projection.thread.id;
+      const sender = scope.thread?.threadId;
+      const result = yield* threads
+        .appendNote({
+          threadId,
+          requestId: input.clientRequestId,
+          text: input.text,
+          ...(sender === undefined || sender === threadId ? {} : { senderThreadId: sender }),
+        })
+        .pipe(
+          Effect.mapError((error) =>
+            error._tag === "ThreadManagementThreadArchivedError" ||
+            error._tag === "ThreadManagementNoteConflictError"
+              ? new OrchestratorMcpFailure({ code: "invalid_request", message: error.message })
+              : dispatchFailure(error),
+          ),
+        );
+      return { threadId, ...result };
+    }),
+  ),
   t3_thread_organize: writesThread((input) =>
     Effect.gen(function* () {
       const { threads, projection, caller } = yield* readThread(input.threadId);
@@ -441,6 +464,40 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
             visitedAt: DateTime.formatIso(yield* DateTime.now),
           };
           break;
+        case "tag":
+        case "untag":
+          command = {
+            ...common,
+            type: "thread.tag.set",
+            tag: yield* required(input.tag, "tag"),
+            tagged: input.action === "tag",
+          };
+          break;
+        case "disable_auto_settle":
+        case "enable_auto_settle":
+          command = {
+            ...common,
+            type: "thread.auto-settle.set",
+            enabled: input.action === "enable_auto_settle",
+          };
+          break;
+        case "fence":
+        case "unfence": {
+          const fence =
+            input.action === "unfence"
+              ? null
+              : {
+                  label: yield* required(input.fenceLabel, "fenceLabel"),
+                  expectedWorktreePath: yield* required(
+                    input.expectedWorktreePath,
+                    "expectedWorktreePath",
+                  ),
+                };
+          const result = yield* threads
+            .dispatch({ ...common, type: "thread.execution-fence.set", fence })
+            .pipe(Effect.mapError(dispatchFailure));
+          return { sequence: result.sequence };
+        }
         default:
           command = { ...common, type: `thread.${input.action}` };
       }

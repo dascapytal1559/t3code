@@ -2828,6 +2828,189 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
     }),
   );
 
+  it.effect("a note starts no run, posts once, and sits after the latest run's rows", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const maintenance = yield* ProjectionReplay.ProjectionReplay;
+      const threadId = ThreadId.make("runtime-layer-note-thread");
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("runtime-layer-note-create"),
+        threadId,
+        projectId: ProjectId.make("runtime-layer-note-project"),
+        title: "Exploration",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: "/tmp/runtime-layer-note",
+      });
+      yield* orchestrator.dispatch({
+        type: "message.dispatch",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("runtime-layer-note-message"),
+        threadId,
+        messageId: MessageId.make("runtime-layer-note-message"),
+        text: "Explore it.",
+        attachments: [],
+        modelSelection,
+        dispatchMode: { type: "start_immediately" },
+      });
+      const note = {
+        type: "thread.note.append" as const,
+        commandId: CommandId.make("runtime-layer-note"),
+        threadId,
+        messageId: MessageId.make("runtime-layer-note"),
+        text: "**Firstmate summary**\nRead the report.",
+      };
+      const posted = yield* orchestrator.dispatch(note);
+      const retried = yield* orchestrator.dispatch(note);
+      assert.equal(retried.sequence, posted.sequence);
+      assert.isTrue(retried.replayed);
+
+      const assertOneNote = Effect.gen(function* () {
+        const projection = yield* orchestrator.getThreadProjection(threadId);
+        assert.lengthOf(projection.runs, 1);
+        const notes = projection.messages.filter((message) => message.note === true);
+        assert.lengthOf(notes, 1);
+        assert.deepInclude(notes[0], {
+          runId: null,
+          role: "user",
+          createdBy: "agent",
+          creationSource: "mcp",
+          text: note.text,
+        });
+        const rows = projection.turnItems.filter((item) => item.type === "user_message");
+        assert.deepEqual(
+          rows.map((item) => [item.runId, item.type === "user_message" && item.note === true]),
+          [
+            [projection.runs[0]!.id, false],
+            [null, true],
+          ],
+        );
+        assert.isAbove(rows[1]!.ordinal, rows[0]!.ordinal);
+      });
+      yield* assertOneNote;
+      assert.isTrue((yield* maintenance.rebuild).valid);
+      yield* assertOneNote;
+
+      yield* orchestrator.dispatch({
+        type: "thread.archive",
+        commandId: CommandId.make("runtime-layer-note-archive"),
+        threadId,
+      });
+      const archived = yield* orchestrator
+        .dispatch({ ...note, commandId: CommandId.make("runtime-layer-note-archived") })
+        .pipe(Effect.flip);
+      assert.instanceOf(archived, Orchestrator.OrchestratorDispatchError);
+    }),
+  );
+
+  it.effect("an execution fence stops every start until it is lifted, and survives unarchive", () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const threadId = ThreadId.make("runtime-layer-fence-thread");
+      const worktreePath = "/tmp/runtime-layer-fence";
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make("runtime-layer-fence-create"),
+        threadId,
+        projectId: ProjectId.make("runtime-layer-fence-project"),
+        title: "Returned exploration",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: "fm/explore",
+        worktreePath,
+      });
+      const fence = (step: string, expectedWorktreePath: string | null, label = "task-1") =>
+        orchestrator.dispatch({
+          type: "thread.execution-fence.set",
+          commandId: CommandId.make(`runtime-layer-fence-${step}`),
+          threadId,
+          fence: { label, expectedWorktreePath },
+        });
+      const send = (step: string) =>
+        orchestrator.dispatch({
+          type: "message.dispatch",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make(`runtime-layer-fence-send-${step}`),
+          threadId,
+          messageId: MessageId.make(`runtime-layer-fence-send-${step}`),
+          text: "Keep going.",
+          attachments: [],
+          modelSelection,
+          dispatchMode: { type: "start_immediately" },
+        });
+      const fenceOf = Effect.map(
+        orchestrator.getThreadProjection(threadId),
+        (projection) => projection.thread.executionFence ?? null,
+      );
+
+      assert.instanceOf(
+        yield* fence("other-copy", "/tmp/another-copy").pipe(Effect.flip),
+        Orchestrator.OrchestratorDispatchError,
+      );
+      yield* fence("set", worktreePath);
+      const fenced = yield* fenceOf;
+      assert.deepInclude(fenced, { label: "task-1", worktreePath });
+      yield* TestClock.adjust("1 minute");
+      yield* fence("again", worktreePath);
+      assert.deepEqual(yield* fenceOf, fenced);
+
+      const refusedSend = yield* send("fenced").pipe(Effect.flip);
+      assert.instanceOf(refusedSend, Orchestrator.OrchestratorDispatchError);
+      assert.include(String(refusedSend.cause), "retired from running");
+      const refusedFork = yield* orchestrator
+        .dispatch({
+          type: "thread.fork",
+          commandId: CommandId.make("runtime-layer-fence-fork"),
+          sourceThreadId: threadId,
+          targetThreadId: ThreadId.make("runtime-layer-fence-fork"),
+          sourcePoint: { type: "latest_stable" },
+          createdBy: "user",
+          creationSource: "web",
+        })
+        .pipe(Effect.flip);
+      assert.instanceOf(refusedFork, Orchestrator.OrchestratorDispatchError);
+      assert.include(String(refusedFork.cause), "retired");
+
+      yield* orchestrator.dispatch({
+        type: "thread.archive",
+        commandId: CommandId.make("runtime-layer-fence-archive"),
+        threadId,
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.unarchive",
+        commandId: CommandId.make("runtime-layer-fence-unarchive"),
+        threadId,
+      });
+      assert.deepEqual(yield* fenceOf, fenced);
+      assert.lengthOf((yield* orchestrator.getThreadProjection(threadId)).runs, 0);
+
+      yield* orchestrator.dispatch({
+        type: "thread.execution-fence.set",
+        commandId: CommandId.make("runtime-layer-fence-lift"),
+        threadId,
+        fence: null,
+      });
+      assert.isNull(yield* fenceOf);
+      yield* send("lifted");
+      assert.lengthOf((yield* orchestrator.getThreadProjection(threadId)).runs, 1);
+      // A fence proves nothing runs here, so it waits for the run to end.
+      assert.instanceOf(
+        yield* fence("busy", worktreePath).pipe(Effect.flip),
+        Orchestrator.OrchestratorDispatchError,
+      );
+    }),
+  );
+
   it.effect("keeps the branch pull request when linking another pull request", () =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;

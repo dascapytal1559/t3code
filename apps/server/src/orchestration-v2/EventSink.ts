@@ -369,15 +369,18 @@ const layerBase: Layer.Layer<
       );
       return Effect.forEach(
         events,
-        (event): Effect.Effect<OrchestrationV2DomainEvent, unknown> =>
-          event.type === "turn-item.updated"
-            ? turnItemPositions
-                .normalize(
-                  event.payload,
-                  event.payload.runId === null ? undefined : runOrdinals.get(event.payload.runId),
-                )
-                .pipe(Effect.map((payload) => ({ ...event, payload })))
-            : Effect.succeed(event),
+        (event): Effect.Effect<OrchestrationV2DomainEvent, unknown> => {
+          if (event.type !== "turn-item.updated") return Effect.succeed(event);
+          // A run-less row whose event names a run sits after that run's rows.
+          const placementRunId = event.payload.runId ?? event.runId ?? null;
+          return turnItemPositions
+            .normalize(
+              event.payload,
+              placementRunId === null ? undefined : runOrdinals.get(placementRunId),
+              placementRunId,
+            )
+            .pipe(Effect.map((payload) => ({ ...event, payload })));
+        },
         { concurrency: 1 },
       );
     };

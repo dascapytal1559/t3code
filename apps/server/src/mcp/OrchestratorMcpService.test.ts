@@ -3635,7 +3635,11 @@ describe("OrchestratorMcpService thread list", () => {
     snoozedUntil: snoozed ? DateTime.makeUnsafe("2099-01-01T00:00:00Z") : null,
   });
   const shells = [
-    shell("thread:a-snoozed", "project:a", true),
+    {
+      ...shell("thread:a-snoozed", "project:a", true),
+      tags: ["waiting for captain"],
+      autoSettleDisabledAt: DateTime.makeUnsafe("2026-01-01T00:00:00Z"),
+    },
     shell("thread:a-awake", "project:a", false),
     shell("thread:b-snoozed", "project:b", true),
   ];
@@ -3675,10 +3679,25 @@ describe("OrchestratorMcpService thread list", () => {
       });
       assert.equal(listed.projectId, null);
       assert.deepStrictEqual(
-        listed.threads.map((thread) => [thread.threadId, thread.projectId]),
+        listed.threads.map(({ threadId, projectId, tags, autoSettleDisabled }) => ({
+          threadId: String(threadId),
+          projectId: String(projectId),
+          tags,
+          autoSettleDisabled,
+        })),
         [
-          ["thread:a-snoozed", "project:a"],
-          ["thread:b-snoozed", "project:b"],
+          {
+            threadId: "thread:a-snoozed",
+            projectId: "project:a",
+            tags: ["waiting for captain"],
+            autoSettleDisabled: true,
+          },
+          {
+            threadId: "thread:b-snoozed",
+            projectId: "project:b",
+            tags: [],
+            autoSettleDisabled: false,
+          },
         ],
       );
     }).pipe(Effect.provide(service)),
