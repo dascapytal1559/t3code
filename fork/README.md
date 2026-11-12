@@ -1200,7 +1200,9 @@ it acted on, `t3_thread_launch` and `t3_thread_send` take an optional
   message's on its `user_message` items. Absent means none was recorded;
   T3 never infers one. Linked servers without this omit both.
 - Only server code sets it: a client's `thread.create` or `message.dispatch`
-  loses any `causedBy` it carries. It refers to this environment only.
+  loses any `causedBy` it carries. It refers to this environment only, so a
+  call forwarded to a linked environment goes without it and the work there
+  records no cause.
   `t3_thread_send_attachments` and `delegate_task` do not take it (delegated
   tasks already record their parent run).
 
