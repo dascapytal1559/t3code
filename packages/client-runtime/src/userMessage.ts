@@ -117,6 +117,24 @@ export function resolveUserMessagePresentation(message: {
   };
 }
 
+/**
+ * How an agent-sent message folds. Notes are written for the reader (FirstMate's
+ * summary of an exploration), so they open expanded under their own label.
+ */
+export function resolveAgentMessageFold(
+  message: { readonly note?: boolean | undefined },
+  senderTitle: string | undefined,
+): { readonly note: boolean; readonly label: string; readonly initiallyExpanded: boolean } {
+  const sender = senderTitle?.trim() || undefined;
+  return message.note === true
+    ? {
+        note: true,
+        label: sender === undefined ? "FirstMate note" : `Note from ${sender}`,
+        initiallyExpanded: true,
+      }
+    : { note: false, label: sender ?? "Agent", initiallyExpanded: false };
+}
+
 type GroupableUserMessage = Parameters<typeof resolveUserMessagePresentation>[0] & {
   readonly inputIntent?: OrchestrationV2UserMessageInputIntent;
 };

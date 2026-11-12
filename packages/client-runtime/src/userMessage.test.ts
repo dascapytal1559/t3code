@@ -4,6 +4,7 @@ import { ComposerContextId, GuestMessageId, ScheduledTaskId } from "@t3tools/con
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@t3tools/shared/composerContextReferences";
 
 import {
+  resolveAgentMessageFold,
   resolveUserMessageFileCards,
   resolveUserMessageGrouping,
   resolveUserMessagePresentation,
@@ -150,6 +151,29 @@ describe("resolveUserMessageFileCards", () => {
       expect(resolveUserMessageFileCards({ text: "", attachments: [attachment] })).toBeNull();
       expect(resolveUserMessageFileCards({ text: "", attachments: [file, attachment] })).toBeNull();
     }
+  });
+});
+
+describe("resolveAgentMessageFold", () => {
+  it("opens notes under a note label and keeps other agent messages folded", () => {
+    expect(resolveAgentMessageFold({ note: true }, undefined)).toEqual({
+      note: true,
+      label: "FirstMate note",
+      initiallyExpanded: true,
+    });
+    expect(resolveAgentMessageFold({ note: true }, " Scout ")).toMatchObject({
+      label: "Note from Scout",
+      initiallyExpanded: true,
+    });
+    expect(resolveAgentMessageFold({}, "Scout")).toEqual({
+      note: false,
+      label: "Scout",
+      initiallyExpanded: false,
+    });
+    expect(resolveAgentMessageFold({ note: false }, "  ")).toMatchObject({
+      label: "Agent",
+      initiallyExpanded: false,
+    });
   });
 });
 

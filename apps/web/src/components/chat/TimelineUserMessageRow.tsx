@@ -9,7 +9,10 @@ import {
   type ServerProviderSkill,
   ThreadId,
 } from "@t3tools/contracts";
-import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
+import {
+  resolveAgentMessageFold,
+  resolveUserMessagePresentation,
+} from "@t3tools/client-runtime/user-message";
 import { Link } from "@tanstack/react-router";
 import { useQuietThreadShell } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
@@ -34,6 +37,7 @@ import {
   EyeIcon,
   type LucideIcon,
   MessagesSquareIcon,
+  NotebookTextIcon,
   Redo2Icon,
   PencilIcon,
   LinkIcon,
@@ -457,14 +461,15 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const userMessage = resolveUserMessagePresentation(row.message);
   // Messages from other agents fold to one line so the user's own messages stay easy to find.
   const folded = userMessage.attribution === "agent";
-  const [expanded, setExpanded] = useState(false);
-  const revealFoldRef = findRevealRef(() => setExpanded(true));
   const senderShell = useQuietThreadShell(
     folded && senderThreadId
       ? { environmentId: ctx.activeThreadEnvironmentId, threadId: senderThreadId }
       : null,
   );
-  const senderLabel = senderShell?.title.trim() || "Agent";
+  const fold = resolveAgentMessageFold(row.message, senderShell?.title);
+  const [expanded, setExpanded] = useState(fold.initiallyExpanded);
+  const revealFoldRef = findRevealRef(() => setExpanded(true));
+  const senderLabel = fold.label;
   const resolvedContext = resolveUserMessageContext({ ...row.message, text: userMessage.text });
   const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));
   const revertTurnCount = row.revertTurnCount;
@@ -886,7 +891,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         )}
         {folded ? (
           <FoldedMessageHeader
-            icon={MessagesSquareIcon}
+            icon={fold.note ? NotebookTextIcon : MessagesSquareIcon}
             label={senderLabel}
             summary={foldSummary}
             expanded={expanded}
@@ -901,7 +906,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             dir={markdownProseDirection(resolvedContext.text)}
             className={cn(
               folded && "px-3 pb-3",
-              folded && !ctx.findActive && "max-h-96 overflow-auto",
+              folded && !fold.note && !ctx.findActive && "max-h-96 overflow-auto",
             )}
           >
             {!mediaAboveText && mediaBlock}
@@ -1017,7 +1022,8 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                   renderContextReference={renderContextReference}
                   skills={ctx.skills}
                   markdownCwd={ctx.markdownCwd}
-                  collapsible={!folded}
+                  // A note is read in place, so a long one uses the bubble's own collapse.
+                  collapsible={!folded || fold.note}
                 />
               </div>
             )}

@@ -37,6 +37,7 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { HandoffEndpoints } from "@t3tools/client-runtime/handoff";
 import {
   IDLE_COMPACTING_LABELS,
+  resolveAgentMessageFold,
   resolveUserMessageFileCards,
   resolveUserMessagePresentation,
 } from "@t3tools/client-runtime/user-message";
@@ -1333,6 +1334,7 @@ function useMarkdownStyles(): MarkdownStyleSets {
 function AgentMessageFoldHeader(props: {
   readonly environmentId: EnvironmentId;
   readonly senderThreadId?: ThreadId;
+  readonly note: boolean;
   readonly summary: string;
   readonly expanded: boolean;
   readonly onToggle: () => void;
@@ -1341,7 +1343,7 @@ function AgentMessageFoldHeader(props: {
   const senderShell = useQuietThreadShell(
     props.senderThreadId ? scopeThreadRef(props.environmentId, props.senderThreadId) : null,
   );
-  const label = senderShell?.title.trim() || "Agent";
+  const { label } = resolveAgentMessageFold({ note: props.note }, senderShell?.title);
   return (
     <Pressable
       accessibilityRole="button"
@@ -1356,7 +1358,7 @@ function AgentMessageFoldHeader(props: {
       }}
     >
       <SymbolView
-        name="bubble.left.and.bubble.right"
+        name={props.note ? "doc.text" : "bubble.left.and.bubble.right"}
         size={14}
         weight="medium"
         tintColorClassName="accent-user-bubble-foreground-muted"
@@ -1915,8 +1917,16 @@ function renderFeedEntry(
     }
     if (isUser) {
       const enterAnimated = isFreshTimestamp(message.createdAt);
-      const foldRowId = presentation.attribution === "agent" ? `agent:${message.id}` : null;
-      const foldExpanded = foldRowId !== null && (props.expandedWorkRows[foldRowId] ?? false);
+      const isNote = message.note === true;
+      // A note starts open, so its toggled row state records that it was closed.
+      const foldRowId =
+        presentation.attribution !== "agent"
+          ? null
+          : isNote
+            ? `note-closed:${message.id}`
+            : `agent:${message.id}`;
+      const foldToggled = foldRowId !== null && (props.expandedWorkRows[foldRowId] ?? false);
+      const foldExpanded = foldRowId !== null && foldToggled !== isNote;
       const bubbleBodyVisible = foldRowId === null || foldExpanded;
       const intentBadge = props.userMessageGrouping.continuesSteer
         ? null
@@ -2038,6 +2048,7 @@ function renderFeedEntry(
                 <AgentMessageFoldHeader
                   environmentId={props.environmentId}
                   senderThreadId={message.senderThreadId}
+                  note={isNote}
                   summary={
                     replaceComposerContextReferences(presentation.text, (ref) => ref.label)
                       .split(/\r?\n/)
@@ -3701,6 +3712,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
                 return "message:assistant-progress";
               }
               const { attribution } = resolveUserMessagePresentation(entry.message);
+              if (attribution === "agent" && entry.message.note === true) return "message:note";
               return attribution === "automation" || attribution === "agent"
                 ? `message:${attribution}`
                 : `message:${entry.message.role}`;

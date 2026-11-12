@@ -48,6 +48,8 @@ export function idleCompactionWindow(
 } | null {
   if (thread.deletedAt !== null || thread.archivedAt !== null) return null;
   if (thread.settledAt !== null || thread.settledOverride === "settled") return null;
+  // A thread kept open for its reader stays exactly as they left it.
+  if (thread.autoSettleDisabledAt != null) return null;
   if (thread.snoozedUntil != null && DateTime.toEpochMillis(thread.snoozedUntil) > nowMs)
     return null;
   if (!isListedThreadLineage(thread.lineage)) return null;

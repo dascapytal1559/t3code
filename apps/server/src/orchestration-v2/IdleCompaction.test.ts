@@ -148,7 +148,7 @@ function records(
 }
 
 describe("idleCompactionWindow", () => {
-  it("skips small contexts, unknown expiry, other providers, switched threads, compactions, and side chats", () => {
+  it("skips small contexts, unknown expiry, other providers, switched threads, compactions, kept threads, and side chats", () => {
     const cache = { cacheExpiresInMs: 60 * MINUTE_MS };
     expect(idleCompactionWindow(records({ ...cache, usedTokens: 199_999 }), NOW_MS)).toBeNull();
     expect(idleCompactionWindow(records(), NOW_MS)).toBeNull();
@@ -182,6 +182,9 @@ describe("idleCompactionWindow", () => {
     const archived = records(cache);
     archived.thread = { ...archived.thread, archivedAt: at() };
     expect(idleCompactionWindow(archived, NOW_MS)).toBeNull();
+    const kept = records(cache);
+    kept.thread = { ...kept.thread, autoSettleDisabledAt: at() };
+    expect(idleCompactionWindow(kept, NOW_MS)).toBeNull();
     const sideChat = records(cache);
     expect(idleCompactionWindow(sideChat, NOW_MS)).not.toBeNull();
     sideChat.thread = {

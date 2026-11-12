@@ -976,7 +976,10 @@ without starting another agent turn:
   existing `thread.tag.set`. Repeating either is a no-op.
 - **No automatic settlement.** `action: "disable_auto_settle"` or
   `"enable_auto_settle"` sends the existing `thread.auto-settle.set`. Manual
-  settle and snooze still work; an archived thread refuses both actions.
+  settle and snooze still work; an archived thread refuses both actions. While
+  it is disabled, idle compaction before the prompt cache expires skips the
+  thread too (`IdleCompaction.ts`), so a kept thread stays as its reader left
+  it; compaction when the user sends is unchanged.
 - **Notes.** `t3_thread_note` `{ threadId, text, clientRequestId }` posts
   `text` (up to 120,000 characters) as a message with no run, no queue entry,
   no provider turn and no wake. The thread and `clientRequestId` name the note:
@@ -984,9 +987,12 @@ without starting another agent turn:
   with `created: false`; the same id with different text fails
   `invalid_request`. It returns `{ threadId, messageId, sequence, created }`.
   An archived or deleted thread refuses a new note, though a retry of one
-  already posted still succeeds. A note reads as an agent message (folded,
-  labelled with its sender thread when an agent thread sent it, else "Agent")
-  in web, desktop and mobile, and in `t3_thread_read`'s `messages` and
+  already posted still succeeds. In web, desktop and mobile a note opens
+  expanded (other agent messages stay folded to one line), labelled
+  "FirstMate note", or "Note from <thread>" when an agent thread sent it, with
+  its Markdown rendered; a long one uses the usual "show more" collapse
+  (`resolveAgentMessageFold` in `packages/client-runtime/src/userMessage.ts`).
+  It also shows in `t3_thread_read`'s `messages` and
   `activity` views, after the latest run's rows. The thread's agent gets every
   note posted since its last prompted turn ahead of its next prompt;
   compaction and `/goal` prompts carry none and wait for the next.

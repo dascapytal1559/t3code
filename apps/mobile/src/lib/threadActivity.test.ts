@@ -391,6 +391,9 @@ describe("buildThreadFeed", () => {
       activities: [{ workEntry: { questionAnswer: question.questionAnswer } }],
     });
     expect(buildThreadFeed([projected(reply, 0)])[0]?.type).toBe("message");
+    expect(buildThreadFeed([projected({ ...userMessage(), note: true }, 0)])[0]).toMatchObject({
+      message: { note: true },
+    });
   });
 
   it.each([false, true])(
