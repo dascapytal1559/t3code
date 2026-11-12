@@ -648,11 +648,12 @@ so no new turn starts and nobody's message is cut off. While it is pending:
 
 - No turn starts on any thread. A send from the composer, `t3_thread_send` or
   any other path queues on its thread, held, even on an idle thread; a steer
-  queues instead of joining the running turn, and a queue resumed by hand is
-  held again. Messages already queued are held too. Nothing is dropped. A
-  workspace launch still prepares its worktree and is held when it would start.
-  The one refusal is a fork's first message, which needs the immediate start
-  path; promoting a queued message to a steer is refused too.
+  queues instead of joining the running turn, a restart send or `/goal`
+  queues without stopping it, and a queue resumed by hand is held again.
+  Messages already queued are held too. Nothing is dropped. A workspace launch
+  still prepares its worktree and is held when it would start. The one refusal
+  is a fork's first message, which needs the immediate start path; promoting a
+  queued message to a steer is refused too.
 - Turns already running finish normally.
 - The web app shows a notice naming the reason, with Cancel restart, and the
   composer's send button reads as Queue.
@@ -999,7 +1000,11 @@ WSL remote by downloading upstream's `t3` release for its own version
 data folder tell the fork apart. A sync to an upstream nightly keeps the stable
 version its source carries (upstream stamps nightly versions only when it
 builds): a `-nightly.` version would turn the build into upstream's "T3 Code
-(Nightly)", with its icons and update track.
+(Nightly)", with its icons and update track. A sync to a stable tag stamps that
+tag's version the way upstream's release does,
+`node scripts/update-release-package-versions.ts <version>`, because the tag's
+source still carries the previous release; left at it, the build would announce
+the very release it contains.
 
 ## Build
 
