@@ -600,7 +600,11 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
         expect.arrayContaining([expect.objectContaining({ name: "recovered" })]),
       );
       expect(probeCount).toBeGreaterThan(sameAccountFailureProbeCount);
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(
+      // On macOS the reset check would ask the real Keychain for the fixture's login.
+      Effect.provideService(HostProcess.Platform, "linux"),
+      Effect.provide(layerTest),
+    ),
   );
 
   const redeemClaudeReset = (claim: { result: string; usageFailsAfterClaim: boolean }) =>
@@ -667,7 +671,7 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
       const outcome = yield* instance!.consumeResetCredit!(undefined).pipe(Effect.result);
       return { outcome, after: yield* instance!.snapshot.getSnapshot };
     }).pipe(
-      // macOS logins live in the Keychain, where resets are never read.
+      // The fixture login is a .credentials.json file, not a macOS Keychain entry.
       Effect.provideService(HostProcess.Platform, "linux"),
       Effect.provide(layerTest),
     );

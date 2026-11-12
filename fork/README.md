@@ -195,6 +195,34 @@ figures but does not show them yet. Code: `apps/server/src/usage/UsageOrigins.ts
 `usageAggregation.ts`, `mergeOrigins` in `packages/shared/src/usageMerge.ts`,
 and `apps/web/src/components/usage/UsageOriginBreakdown.tsx`.
 
+## Claude banked resets on macOS
+
+Upstream shows and redeems Claude's banked resets (weekly and Fable resets)
+using the Claude Code login's access token, but reads that login only from
+`<config folder>/.credentials.json`. On macOS, Claude Code keeps it in the
+Keychain instead, so upstream skips macOS. It probably does that on purpose, to
+avoid Keychain prompts and to avoid handling secrets there. The fork reads it on
+macOS too, so Claude accounts there show banked resets the way Codex does.
+
+- Each Claude provider instance reads only its own account's Keychain entry,
+  through `/usr/bin/security find-generic-password`. It names the entry the
+  way Claude Code does: `Claude Code-credentials`, plus `-` and the first 8 hex
+  characters of the SHA-256 of `CLAUDE_CONFIG_DIR` whenever the CLI runs with
+  that variable set. The account is `$USER`. The env used is the one the CLI
+  itself gets (`makeClaudeEnvironment`).
+- Only the access token is used. It stays in memory, and failures carry no
+  output, so it never reaches a log, a file or a client. The login is never
+  refreshed: a missing, denied, malformed or expired entry just means no
+  resets show until Claude Code renews it. Redeeming is still a click.
+- macOS may ask once per account to allow the read ("Always Allow").
+
+When syncing, keep upstream's request, parsing and redemption code as is. The
+fork's part is `claudeKeychainService` and `readKeychainAccessToken`, called
+from the darwin branch of `readAccessToken` in
+`apps/server/src/provider/claudeResetCredits.ts`, plus the `cliEnvironment`
+that `ClaudeDriver.ts` passes to it. If Claude Code changes how it names the
+entry, update `claudeKeychainService` to match.
+
 ## App-bundled CLIs are updated by their app
 
 On macOS, a provider CLI whose real path is inside an app bundle
