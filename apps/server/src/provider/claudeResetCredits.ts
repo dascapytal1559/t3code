@@ -1,5 +1,6 @@
 import type {
   ProviderConsumeResetCreditOutcome,
+  ServerProviderResetCreditKind,
   ServerProviderResetCreditOption,
   ServerProviderResetCredits,
 } from "@t3tools/contracts";
@@ -115,7 +116,7 @@ const RESET_KINDS = {
       "Refills your Fable allowance and gives back what Fable used on your weekly limit. It doesn't reset your whole week.",
   },
   full: { label: "Full reset", description: "Refills your 5-hour and weekly limits." },
-} as const;
+} as const satisfies Record<ServerProviderResetCreditKind, unknown>;
 type ResetKind = keyof typeof RESET_KINDS;
 
 const grantKind = (grant: typeof Grant.Type): ResetKind => {
@@ -163,6 +164,7 @@ export function claudeResetCreditsToContract(
       return [
         {
           creditId: target.id,
+          kind,
           ...RESET_KINDS[kind],
           availableCount: grants.reduce((sum, grant) => sum + grant.resets_left, 0),
           ...(optionExpiresAt ? { expiresAt: optionExpiresAt } : {}),

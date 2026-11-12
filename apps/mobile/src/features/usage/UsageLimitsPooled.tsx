@@ -13,6 +13,7 @@ import {
   formatResetsIn,
   paceRemainingPercent,
   remainingPercent,
+  resetCreditsForWindow,
   type LimitAccount,
   type LimitPoolWindow,
 } from "@t3tools/shared/usageLimits";
@@ -233,7 +234,8 @@ function PoolWindowCard({
           );
         const { account, window } = member;
         const timeLeft = paceRemainingPercent(window, now);
-        const credits = account.limits.resetCredits?.availableCount ?? 0;
+        const credits =
+          resetCreditsForWindow(account.limits.resetCredits, window)?.availableCount ?? 0;
         const resetsIn = formatResetsIn(window, now)?.replace("resets in ", "");
         return (
           <Pressable
@@ -321,7 +323,8 @@ function PoolWindowCard({
       {pool.columns.map(({ account, window }, index) => {
         if (!window) return null;
         const segmentColor = normalizeProviderAccentColor(account.accentColor) ?? color;
-        const credits = account.limits.resetCredits?.availableCount ?? 0;
+        const credits =
+          resetCreditsForWindow(account.limits.resetCredits, window)?.availableCount ?? 0;
         const resetsIn = formatResetsIn(window, now);
         return (
           <Pressable
@@ -536,6 +539,7 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
   const window = pool?.members.find((member) => member.account.key === accountKey)?.window;
   const evenPace = window ? paceRemainingPercent(window, now) : null;
   const reset = pool?.resets.find((candidate) => candidate.member.account.key === accountKey);
+  const credits = window ? resetCreditsForWindow(account?.limits.resetCredits, window) : undefined;
   const [revealed, setRevealed] = useState(false);
   return (
     <SettingsScreen title="Account">
@@ -616,14 +620,14 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
                 <Text className="text-sm text-foreground-muted">{account.sourceLabel}</Text>
               )}
             </View>
-            {account.redeem && account.limits.resetCredits ? (
+            {account.redeem && credits ? (
               <View className="gap-3 rounded-[24px] border-continuous bg-grouped-card p-4">
                 <Text className="text-sm font-t3-medium text-foreground">Reset credits</Text>
                 <ResetCredits
                   key={account.key}
                   environmentId={account.redeem.environmentId}
                   input={account.redeem.input}
-                  credits={account.limits.resetCredits}
+                  credits={credits}
                   now={now}
                 />
               </View>

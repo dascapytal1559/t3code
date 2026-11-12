@@ -223,6 +223,26 @@ from the darwin branch of `readAccessToken` in
 that `ClaudeDriver.ts` passes to it. If Claude Code changes how it names the
 entry, update `claudeKeychainService` to match.
 
+### Each limit row counts only the resets that refill it
+
+Upstream offers each kind of reset (5-hour, weekly, Fable, full) as its own
+option, but the Usage page badges every row with the account's total, so a
+Fable-only reset shows on Session and Weekly too and can be redeemed from them.
+The fork badges and offers a reset only on the rows it refills: Session gets
+5-hour and full resets, Weekly gets weekly and full resets, and Weekly · Fable
+gets only Fable resets. The count, the segment's accessibility label, the
+popover's Use buttons (web) and the account screen's reset list (mobile) all
+follow it.
+
+Upstream likely means to do the same: open PR pingdotgg/t3code#33553 (for
+issue #33509) badges each grant only on the windows Claude says it clears, but it
+reworks the server's grant reading and predates the per-kind options. The fork
+keeps upstream's reading and only adds a `kind` to each option (`kind` in
+`ServerProviderResetCreditOption`, set in `claudeResetCreditsToContract`).
+`resetCreditsForWindow` in `packages/shared/src/usageLimits.ts` maps kinds to
+rows and treats an option with no known kind as refilling every row. If upstream
+lands per-window resets, take its version and drop the fork's `kind`.
+
 ## App-bundled CLIs are updated by their app
 
 On macOS, a provider CLI whose real path is inside an app bundle

@@ -4,6 +4,8 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
+  type ServerProviderResetCreditKind,
+  type ServerProviderResetCredits,
   type ServerSettings,
   UsageLimitSourceId,
 } from "@t3tools/contracts";
@@ -23,6 +25,8 @@ import {
   paceOf,
   paceRemainingPercent,
   providerAccountNumbers,
+  resetCreditChoices,
+  resetCreditsForWindow,
   usesChatGptSharing,
   resolveNewThreadModelSelection,
 } from "./usageLimits.ts";
@@ -1219,6 +1223,57 @@ describe("pooled account columns", () => {
       now,
     );
     expect(keys(pool!)).toEqual([["first", "second", "hub2", "hub10"]]);
+  });
+});
+
+describe("resetCreditsForWindow", () => {
+  const option = (kind: ServerProviderResetCreditKind | undefined, availableCount: number) => ({
+    creditId: `${kind}-grant`,
+    ...(kind ? { kind } : {}),
+    label: `${kind} reset`,
+    description: "Refills.",
+    availableCount,
+  });
+  const credits = (...options: ReturnType<typeof option>[]) => ({
+    availableCount: options.reduce((sum, entry) => sum + entry.availableCount, 0),
+    nextCreditId: options[0]!.creditId,
+    options,
+  });
+  const weekly = { ...window, id: "seven_day", kind: "weekly", label: "Weekly" } as const;
+  const fable = { ...weekly, id: "seven_day_fable", label: "Weekly · Fable" } as const;
+  const monthly = { ...window, id: "monthly_spend", kind: "monthly", label: "Monthly" } as const;
+  const choiceIds = (found: ServerProviderResetCredits | undefined) =>
+    found
+      ? resetCreditChoices(found, { instanceId: ProviderInstanceId.make("claude") }, now).map(
+          (choice) => choice.input,
+        )
+      : [];
+
+  it.each([
+    ["Session", window, 4, ["session-grant", "full-grant"]],
+    ["Weekly", weekly, 6, ["weekly-grant", "full-grant"]],
+    ["Weekly · Fable", fable, 2, ["fable-grant"]],
+    ["Monthly", monthly, undefined, []],
+  ] as const)("counts and offers only the resets that refill %s", (_, row, count, offered) => {
+    const found = resetCreditsForWindow(
+      credits(option("session", 1), option("weekly", 3), option("fable", 2), option("full", 3)),
+      row,
+    );
+    expect(found?.availableCount).toBe(count);
+    expect(choiceIds(found)).toEqual(
+      offered.map((creditId) => ({ instanceId: "claude", creditId })),
+    );
+  });
+
+  it("drops a row's badge when no reset refills it", () => {
+    expect(resetCreditsForWindow(credits(option("fable", 2)), weekly)).toBeUndefined();
+  });
+
+  it("counts resets of no stated kind on every row", () => {
+    const unkinded = credits(option("weekly", 1), option(undefined, 2));
+    expect(resetCreditsForWindow(unkinded, fable)).toBe(unkinded);
+    const codex = { availableCount: 2, nextCreditId: "codex-credit" };
+    expect(resetCreditsForWindow(codex, window)).toBe(codex);
   });
 });
 

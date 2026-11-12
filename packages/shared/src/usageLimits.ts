@@ -12,6 +12,7 @@ import {
   isProviderAvailable,
   PROVIDER_DISPLAY_NAMES,
   type ServerProvider,
+  type ServerProviderResetCreditKind,
   type ServerProviderResetCredits,
   type ServerProviderUsageLimits,
   type ServerProviderUsageWindow,
@@ -739,6 +740,51 @@ export function formatDuration(ms: number): string {
   if (days > 0) return `${days}d ${hours}h`;
   if (hours > 0) return `${hours}h ${minutes}m`;
   return `${minutes}m`;
+}
+
+const RESET_KIND_REFILLS: Record<
+  ServerProviderResetCreditKind,
+  ReadonlyArray<"session" | "weekly" | "scopedWeekly">
+> = {
+  session: ["session"],
+  weekly: ["weekly"],
+  full: ["session", "weekly"],
+  fable: ["scopedWeekly"],
+};
+
+// Only Claude names reset kinds; its model-scoped weekly rows are `seven_day_<model>`.
+const windowRefillTarget = (window: ServerProviderUsageWindow) =>
+  window.kind === "session"
+    ? "session"
+    : window.kind === "weekly"
+      ? window.id.startsWith("seven_day_")
+        ? "scopedWeekly"
+        : "weekly"
+      : null;
+
+/** The banked resets that refill `window`; resets of no stated kind count on every window. */
+export function resetCreditsForWindow(
+  credits: ServerProviderResetCredits | undefined,
+  window: ServerProviderUsageWindow,
+): ServerProviderResetCredits | undefined {
+  if (!credits?.options || credits.options.some((option) => option.kind === undefined)) {
+    return credits;
+  }
+  const target = windowRefillTarget(window);
+  const options = credits.options.filter(
+    (option) =>
+      target !== null &&
+      option.kind !== undefined &&
+      RESET_KIND_REFILLS[option.kind].includes(target),
+  );
+  const first = options[0];
+  if (!first) return undefined;
+  return {
+    availableCount: options.reduce((sum, option) => sum + option.availableCount, 0),
+    nextCreditId: first.creditId,
+    ...(first.expiresAt ? { nextExpiresAt: first.expiresAt } : {}),
+    options,
+  };
 }
 
 /** One redeemable reset as clients offer it; `input` already names the chosen credit. */

@@ -126,15 +126,16 @@ describe("claudeResetCreditsToContract", () => {
       NOW,
     );
     expect(
-      credits?.options?.map(({ creditId, label, availableCount }) => [
+      credits?.options?.map(({ creditId, kind, label, availableCount }) => [
         creditId,
+        kind,
         label,
         availableCount,
       ]),
     ).toEqual([
-      ["session_a", "5-hour reset", 1],
-      ["weekly_a", "Weekly reset", 1],
-      ["fable_a", "Fable reset", 2],
+      ["session_a", "session", "5-hour reset", 1],
+      ["weekly_a", "weekly", "Weekly reset", 1],
+      ["fable_a", "fable", "Fable reset", 2],
     ]);
     expect(credits).toMatchObject({ availableCount: 4, nextCreditId: "weekly_a" });
   });

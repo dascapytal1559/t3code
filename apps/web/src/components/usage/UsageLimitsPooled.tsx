@@ -15,6 +15,7 @@ import {
   remainingPercent,
   type ResetCreditChoice,
   resetCreditChoices,
+  resetCreditsForWindow,
 } from "@t3tools/shared/usageLimits";
 import type { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 import { normalizeProviderAccentColor } from "@t3tools/client-runtime/state/provider-instance-display";
@@ -151,9 +152,10 @@ function SegmentPopover({
     account.environments.length > 0
       ? account.environments.map((environment) => environment.label).join(", ")
       : account.sourceLabel;
+  const credits = resetCreditsForWindow(account.limits.resetCredits, window);
   const choices =
-    redeem && account.redeem && account.limits.resetCredits?.availableCount
-      ? resetCreditChoices(account.limits.resetCredits, account.redeem.input, now, true)
+    redeem && account.redeem && credits?.availableCount
+      ? resetCreditChoices(credits, account.redeem.input, now, true)
       : [];
   return (
     <div className="flex w-72 max-w-[calc(100vw-3rem)] flex-col gap-2.5 text-xs">
@@ -349,7 +351,7 @@ function SegmentTriggers({
   const timeLeft = paceRemainingPercent(window, now);
   const [segmentRef, paceMark] = usePaceMark(timeLeft);
   const resetsIn = formatResetsIn(window, now);
-  const credits = account.limits.resetCredits?.availableCount ?? 0;
+  const credits = resetCreditsForWindow(account.limits.resetCredits, window)?.availableCount ?? 0;
   return (
     <>
       <PopoverTrigger
@@ -452,7 +454,7 @@ function LegendRow({
   const { account, window } = payload;
   const remaining = remainingPercent(window);
   const resetsIn = formatResetsIn(window, now);
-  const credits = account.limits.resetCredits?.availableCount ?? 0;
+  const credits = resetCreditsForWindow(account.limits.resetCredits, window)?.availableCount ?? 0;
   return (
     <PopoverTrigger
       handle={popover}

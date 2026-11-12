@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 
 import {
   ForwardCompatibleArray,
+  ForwardCompatibleOptional,
   IsoDateTime,
   NonNegativeInt,
   TrimmedNonEmptyString,
@@ -20,9 +21,20 @@ export const ServerProviderUsageWindow = Schema.Struct({
 });
 export type ServerProviderUsageWindow = typeof ServerProviderUsageWindow.Type;
 
+/** What a banked reset refills; `fable` refills only the Fable-scoped weekly limit. */
+export const ServerProviderResetCreditKind = Schema.Literals([
+  "session",
+  "weekly",
+  "fable",
+  "full",
+]);
+export type ServerProviderResetCreditKind = typeof ServerProviderResetCreditKind.Type;
+
 /** One kind of banked reset, such as Claude's weekly reset or its Fable-only reset. */
 export const ServerProviderResetCreditOption = Schema.Struct({
   creditId: TrimmedNonEmptyString,
+  // Fork: lets clients badge a reset only on the rows it refills; absent or unknown counts on every row.
+  kind: ForwardCompatibleOptional(ServerProviderResetCreditKind),
   label: TrimmedNonEmptyString,
   description: TrimmedNonEmptyString,
   availableCount: NonNegativeInt,
