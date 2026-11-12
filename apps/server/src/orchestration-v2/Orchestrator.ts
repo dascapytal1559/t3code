@@ -714,7 +714,7 @@ function pendingThreadTitleGenerationEffect(
 }
 
 /** Fork: FirstMate's main thread carries this title instead of a generated one. */
-const COORDINATOR_THREAD_TITLE = "Ahoy!";
+const COORDINATOR_THREAD_TITLE = "Firstmate";
 
 /** Fork: a pinned coordinator that is not itself crew, which rules out FirstMate's secondmates. */
 function isPrimaryCoordinator(thread: Pick<OrchestrationV2AppThread, "coordinator" | "crewOf">) {

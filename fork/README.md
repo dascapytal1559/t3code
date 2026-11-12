@@ -323,7 +323,7 @@ mobile app has no board.
 
 ## FirstMate crew in the sidebar
 
-<img src="media/firstmate-sidebar.jpg" width="256" alt="The sidebar: a FirstMate card titled Ahoy! reading started 1d ago at top right, with two crewmate threads in a tree below it">
+<img src="media/firstmate-sidebar.jpg" width="256" alt="The sidebar: a FirstMate card reading started 1d ago at top right, with two crewmate threads in a tree below it">
 
 A FirstMate session and the worker threads it launches are grouped above the
 sidebar inbox and kept out of Working. The main session is a two-line card: its
@@ -338,12 +338,12 @@ tree that collapses to a count. Its decisions are not in the sidebar; see
 [Bridge](#bridge). A pinned coordinator (see below) gets this card even with
 no crew; without any coordinator the sidebar is unchanged.
 
-The main session is always titled "Ahoy!", because a generated title for
+The main session is always titled "Firstmate", because a generated title for
 FirstMate says nothing new. T3 only knows the thread is FirstMate's once it is
 pinned as coordinator, which FirstMate does during its first turn, after
 upstream's title generation has started; so pinning sets the title and drops
 the generation still in flight. A fresh session on it (`/clear`, or
-`t3_thread_send` with `freshContext`) sets "Ahoy!" again instead of generating;
+`t3_thread_send` with `freshContext`) sets "Firstmate" again instead of generating;
 upstream generates no title there anyway, so a rename by hand lasts until then.
 A secondmate is crew of the main session and keeps upstream's titles, as does
 every other thread. Upstream code it touches, for syncs: two guards in

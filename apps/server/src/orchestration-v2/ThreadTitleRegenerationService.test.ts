@@ -521,7 +521,7 @@ describe("ThreadTitleRegenerationService", () => {
     }),
   );
 
-  it.effect("names FirstMate's main thread Ahoy! when pinned, over the title in flight", () =>
+  it.effect("names FirstMate's main thread Firstmate when pinned, over the title in flight", () =>
     Effect.gen(function* () {
       const harness = makeHarness();
       yield* Effect.gen(function* () {
@@ -555,7 +555,7 @@ describe("ThreadTitleRegenerationService", () => {
 
         assert.equal(harness.generateThreadTitle.mock.calls.length, 0);
         const pinned = yield* threads.getThreadProjection(threadId);
-        assert.equal(pinned.thread.title, "Ahoy!");
+        assert.equal(pinned.thread.title, "Firstmate");
         assert.isNotOk(pinned.thread.titleRegeneration);
 
         // A secondmate is crew of the main thread and keeps its own title.
@@ -576,7 +576,7 @@ describe("ThreadTitleRegenerationService", () => {
     }),
   );
 
-  it.effect("names a fresh session on FirstMate's main thread Ahoy! and leaves others", () =>
+  it.effect("names a fresh session on FirstMate's main thread Firstmate and leaves others", () =>
     Effect.gen(function* () {
       const harness = makeHarness();
       yield* Effect.gen(function* () {
@@ -613,7 +613,7 @@ describe("ThreadTitleRegenerationService", () => {
           freshContext: true,
         });
         const fresh = yield* threads.getThreadProjection(coordinatorId);
-        assert.equal(fresh.thread.title, "Ahoy!");
+        assert.equal(fresh.thread.title, "Firstmate");
         assert.isNotOk(fresh.thread.titleRegeneration);
         assert.deepEqual(
           (yield* outbox.listByCommandId(CommandId.make("command:title:clear:fresh"))).filter(
