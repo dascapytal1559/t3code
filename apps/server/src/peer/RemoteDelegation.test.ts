@@ -568,6 +568,11 @@ const boxToolkitLayer = (thread: BoxThread) => {
     ),
     Layer.provide(
       Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({
+        // The fork's orchestrator_capabilities asks each adapter for its thread-config support.
+        get: (instanceId) =>
+          Effect.fail(
+            new ProviderAdapterRegistry.ProviderAdapterRegistryLookupError({ instanceId }),
+          ),
         list: () => Effect.succeed([boxClaude.instanceId]),
       }),
     ),
