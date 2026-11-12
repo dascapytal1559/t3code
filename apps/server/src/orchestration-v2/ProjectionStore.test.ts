@@ -1009,6 +1009,12 @@ it.effect(
           [supervision, supervision],
           id,
         );
+        // The relay reads this snapshot, so it must carry the flag its completion check silences on.
+        assert.strictEqual(
+          (yield* store.getAgentAwarenessSnapshot(threadId)).threads[0]?.latestRunSupervision,
+          supervision,
+          id,
+        );
         yield* assertShellIndexCoversShells();
       }
     }).pipe(Effect.provide(layerTest)),

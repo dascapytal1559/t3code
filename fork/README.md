@@ -457,8 +457,8 @@ arrive unchanged, and mobile still shows the composer. Code:
 FirstMate runs a turn each time a worker event wakes it, and each of those
 turns used to end with the completion sound. Now, on a pinned coordinator, a
 turn that a T3 notification started (background work reporting in, a delegated
-task finishing, or T3's restart note) ends without the sound, toast or desktop
-notification, unless the user sent a message into it. Turns the user starts
+task finishing, or T3's restart note) ends without the sound, toast, desktop
+notification or the paired phone's completed alert, unless the user sent a message into it. Turns the user starts
 alert as before, and so do approval, input, request, failed and usage-limit
 states on every thread. Other threads are unchanged, and crew stay silent.
 

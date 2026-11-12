@@ -26,6 +26,7 @@ describe("projectThreadAwarenessV2", () => {
         | "activityRunStatus"
         | "latestRunBackgroundWake"
         | "latestRunStopRequested"
+        | "latestRunSupervision"
         | "status"
         | "pendingBackgroundTasks"
         | "pendingRuntimeRequest"
@@ -62,6 +63,19 @@ describe("projectThreadAwarenessV2", () => {
         thread: { ...input.thread, latestRunStopRequested: true },
       }),
     ).toBeNull();
+  });
+
+  it("keeps a supervision turn quiet, unlike a captain-started or alert-flagged turn", () => {
+    const completed = (latestRunSupervision?: boolean) =>
+      projectThreadAwarenessV2({
+        environmentId: "env-1" as EnvironmentId,
+        project,
+        thread: v2Thread({ status: "completed", latestRunSupervision }),
+      })?.phase;
+    // The server sets the flag false for a turn that asked to alert; absent means the user's own turn.
+    expect(completed(true)).toBeUndefined();
+    expect(completed(false)).toBe("completed");
+    expect(completed(undefined)).toBe("completed");
   });
 
   it.each([

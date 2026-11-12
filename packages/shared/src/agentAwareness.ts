@@ -68,6 +68,13 @@ function buildAgentAwarenessDeepLink(input: {
   return `/threads/${encodeURIComponent(input.environmentId)}/${encodeURIComponent(input.threadId)}`;
 }
 
+/** A stopped run, or a coordinator's supervision turn, ends without a completion alert. */
+export function latestRunEndsQuietly(
+  thread: Pick<OrchestrationV2ThreadShell, "latestRunStopRequested" | "latestRunSupervision">,
+): boolean {
+  return thread.latestRunStopRequested === true || thread.latestRunSupervision === true;
+}
+
 export interface ProjectThreadAwarenessV2Input {
   readonly environmentId: EnvironmentId;
   readonly project: Pick<Project, "title">;
@@ -78,6 +85,7 @@ export interface ProjectThreadAwarenessV2Input {
     | "lineage"
     | "latestRunBackgroundWake"
     | "latestRunStopRequested"
+    | "latestRunSupervision"
     | "modelSelection"
     | "pendingBackgroundTasks"
     | "pendingRuntimeRequest"
@@ -100,7 +108,7 @@ export function projectThreadAwarenessV2(
   if (phase === null) {
     return null;
   }
-  if (phase === "completed" && thread.latestRunStopRequested === true) return null;
+  if (phase === "completed" && latestRunEndsQuietly(thread)) return null;
   // Resolve the phase first so live or waiting work stays visible after settlement.
   const runStatus = thread.activityRunStatus ?? thread.status;
   if (
