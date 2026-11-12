@@ -822,14 +822,47 @@ larger `agentContextBudget.json`; on the web, `useRestartPendingBanner.tsx`
 `useRestartPending.ts` and the `restartPending` prop
 of `ComposerPrimaryActions.tsx`.
 
-## Sidebar cards stay two lines
+## One-line thread cards
 
-This one applies to every thread. Upstream gives a card with no branch but a
-linked pull request or running terminal a third line holding just that badge and
-the model icon. Here the meta line appears only for a branch, machine label or
-diff; otherwise those badges sit right-aligned on the title line, which truncates
-before them. Folder multiline rows follow the same rule. Code:
-`isThreadMetaLineEmpty` in `apps/web/src/components/Sidebar.logic.ts`.
+<img src="media/one-line-cards.png" width="256" alt="Three one-line sidebar cards: each starts with the model's icon carrying a small account number (3, 1, 2), then the title, then Done">
+
+The captain wants each top-level thread on one line, with the account it runs
+on in view rather than the project. On web and desktop, a sidebar card outside
+the FirstMate group is one line: the model's icon where upstream puts the
+project icon, then the title (or the project's agent name), then the status or
+age. Upstream's card has a project line over a title line. A card with a branch, machine
+label or diff keeps that meta line under the title. Otherwise its PR and
+terminal badges sit on the title line, which truncates before them, the same
+as folder multi-line rows (`isThreadMetaLineEmpty` in
+`apps/web/src/components/Sidebar.logic.ts`). The hover card and the
+screen-reader label still name the project. FirstMate's coordinator card and its crew keep
+the two-line layout.
+
+Every row draws only the account the thread runs on now. Upstream draws up to
+two greyed earlier accounts in front of it from `providerInstanceHistory`, to
+show that a thread was handed from one provider account to another; here that
+history stays in the hover card. The account badge shows the account's place
+among its provider's accounts in Settings › Providers (default first, then as
+saved, the order usage limits follow), so Claude, Claude2 and Claude3 read 1, 2
+and 3. Upstream's badge shows the first two letters of the account's name, and
+every "ClaudeN" reads CL. A provider with one account shows no number, and an
+account accent colour still tints the badge (upstream's main way to tell
+accounts apart). Disabled accounts keep their number, but removing an account
+renumbers the ones after it, and each environment numbers its own. In a card's lead
+slot the badge is the default size (8px digit), since the compact badge's 7px
+digit does not read there.
+
+Upstream code it touches, for syncs: the card branch of `SidebarThreadRow`
+(`modelLeads`, `titleOnTopLine`) and `SidebarModelIcon`, which replaces
+upstream's `SidebarProviderStack`, in
+`apps/web/src/components/sidebar/SidebarThreadRow.tsx`; `badgeContent:
+"label"` with `badgeLabel` on `ProviderInstanceIcon`; and `accountNumber` on the
+sidebar's provider entries (`withAccountNumbers` in
+`apps/web/src/components/Sidebar.tsx`). The numbering is
+`providerAccountNumbers` in `packages/shared/src/usageLimits.ts`. The mobile
+app keeps upstream's rows and badge. Leave `resolveThreadProviderStack` and
+`providerInstanceHistory` as upstream has them: mobile and the hover card read
+them.
 
 ## Agent names on cards
 
@@ -847,7 +880,9 @@ than by a numbered migration, which would collide with upstream's next id. Code:
 
 ## No repeated project name on cards
 
-When a thread's title matches its project's name (ignoring case and surrounding
+This now matters only for FirstMate cards, the one place a card still has a
+project line (see [One-line thread cards](#one-line-thread-cards)). When a
+thread's title matches its project's name (ignoring case and surrounding
 spaces), as for a standing thread named after its project, the card leaves the
 project label out of its first line, which keeps the project icon, pin, status
 and time. The title line is unchanged, and the hover card and screen-reader label

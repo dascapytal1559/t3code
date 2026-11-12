@@ -21,10 +21,7 @@ import {
   resolveThreadActivityTimestamp,
 } from "@t3tools/client-runtime/state/thread-sort";
 import { type EnvironmentThreadSearchMatch } from "@t3tools/client-runtime/state/thread-search";
-import {
-  formatWorkingDurationLabel,
-  resolveThreadProviderStack,
-} from "@t3tools/client-runtime/state/models";
+import { formatWorkingDurationLabel } from "@t3tools/client-runtime/state/models";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   AuthOrchestrationOperateScope,
@@ -143,7 +140,10 @@ export type SidebarProviderEntry = Pick<
   | "acpRegistryAgentId"
   | "acpRegistryIconUrl"
   | "models"
->;
+> & {
+  // Place among the provider's accounts in Settings › Providers; null when it is the only one.
+  readonly accountNumber: number | null;
+};
 function compactSidebarTimeLabel(label: string): string {
   if (label === "just now") return "now";
   return label.endsWith(" ago") ? label.slice(0, -4) : label;
@@ -196,50 +196,34 @@ function terminalProcessLabel(count: number): string {
   return `${count} terminal ${count === 1 ? "process" : "processes"} running`;
 }
 
-function SidebarProviderStack(props: {
-  thread: SidebarThreadSummary;
+// Only the account the thread runs on now; earlier ones stay in the hover card.
+function SidebarModelIcon(props: {
+  entry: SidebarProviderEntry | null;
   providerEntryByInstanceId: ReadonlyMap<string, SidebarProviderEntry>;
+  // In a card's lead slot, where the project icon used to be.
+  lead?: boolean;
 }) {
-  const stack = resolveThreadProviderStack(props.thread);
-  const currentInstanceId = stack[stack.length - 1]!;
-  const currentEntry = props.providerEntryByInstanceId.get(currentInstanceId) ?? null;
-  if (currentEntry === null) return null;
-  const showInstanceBadge = shouldShowInstanceBadge(
-    currentEntry,
-    props.providerEntryByInstanceId.values(),
-  );
-  const current = (
-    <ProviderInstanceIcon
-      driverKind={currentEntry.driverKind}
-      displayName={currentEntry.displayName}
-      accentColor={currentEntry.accentColor}
-      acpRegistryAgentId={currentEntry.acpRegistryAgentId}
-      acpRegistryIconUrl={currentEntry.acpRegistryIconUrl}
-      showBadge={showInstanceBadge}
-      size="compact"
-      iconClassName="opacity-60"
-    />
-  );
-  if (stack.length === 1) {
-    return <span className="inline-flex shrink-0 items-center">{current}</span>;
-  }
+  const { entry } = props;
+  if (entry === null) return null;
+  const showBadge = shouldShowInstanceBadge(entry, props.providerEntryByInstanceId.values());
   return (
-    <span className="inline-flex shrink-0 items-center gap-1.5">
-      {stack.slice(0, -1).map((instanceId) => {
-        const entry = props.providerEntryByInstanceId.get(instanceId);
-        if (entry === undefined) return null;
-        return (
-          <ProviderInstanceIcon
-            key={instanceId}
-            driverKind={entry.driverKind}
-            displayName={entry.displayName}
-            acpRegistryAgentId={entry.acpRegistryAgentId}
-            acpRegistryIconUrl={entry.acpRegistryIconUrl}
-            iconClassName="size-3 opacity-35 grayscale"
-          />
-        );
-      })}
-      <span className="relative z-10 inline-flex items-center">{current}</span>
+    <span className={cn("inline-flex shrink-0 items-center", props.lead && showBadge && "me-1")}>
+      <ProviderInstanceIcon
+        driverKind={entry.driverKind}
+        displayName={entry.displayName}
+        accentColor={entry.accentColor}
+        acpRegistryAgentId={entry.acpRegistryAgentId}
+        acpRegistryIconUrl={entry.acpRegistryIconUrl}
+        showBadge={showBadge}
+        badgeContent={entry.accountNumber === null ? "none" : "label"}
+        badgeLabel={entry.accountNumber === null ? undefined : String(entry.accountNumber)}
+        size="compact"
+        iconClassName={props.lead ? "size-4" : "opacity-60"}
+        // The compact badge's 7px digit is too small to read as the row's lead.
+        {...(props.lead
+          ? { badgeClassName: "right-[-0.3125rem] bottom-[-0.3125rem] h-3.5 min-w-3.5 text-4xs" }
+          : {})}
+      />
     </span>
   );
 }
@@ -1214,8 +1198,17 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const diff = latestRunDiff(thread);
   // Without a branch or machine to label it, the meta line would hold only trailing
   // badges and icons, so the row moves them to the title line instead.
+  const inFirstMateGroup = props.coordinator === true || props.crewTree !== undefined;
+  // Outside FirstMate a card is one line, led by the model icon where the project icon was.
+  const modelLeads = variant === "card" && !inFirstMateGroup;
+  const trailingModelIcon = modelLeads ? null : (
+    <SidebarModelIcon
+      entry={providerEntry}
+      providerEntryByInstanceId={props.providerEntryByInstanceId}
+    />
+  );
   const metaLineEmpty = isThreadMetaLineEmpty({
-    inFirstMateGroup: props.coordinator === true || props.crewTree !== undefined,
+    inFirstMateGroup,
     branch: thread.branch,
     showsScratchMachine,
     hasDiff: diff !== null,
@@ -1254,10 +1247,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         className="pointer-events-none ml-auto inline-flex shrink-0 items-center gap-1"
       >
         {remoteMachineIcon}
-        <SidebarProviderStack
-          thread={thread}
-          providerEntryByInstanceId={props.providerEntryByInstanceId}
-        />
+        {trailingModelIcon}
       </span>
     </div>
   );
@@ -1268,15 +1258,15 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         {prBadge}
       </span>
     ) : null;
-  const titleLineIcons = metaLineEmpty ? (
-    <span aria-hidden className="inline-flex shrink-0 items-center gap-1">
-      {remoteMachineIcon}
-      <SidebarProviderStack
-        thread={thread}
-        providerEntryByInstanceId={props.providerEntryByInstanceId}
-      />
-    </span>
-  ) : null;
+  const titleLineIcons =
+    metaLineEmpty && (remoteMachineIcon !== null || trailingModelIcon !== null) ? (
+      <span aria-hidden className="inline-flex shrink-0 items-center gap-1">
+        {remoteMachineIcon}
+        {trailingModelIcon}
+      </span>
+    ) : null;
+  // An agent name or a model-led card puts the heading on the first line, with no project line.
+  const titleOnTopLine = hasAgentName || modelLeads;
 
   if (variant !== "card") {
     const multiline = variant === "folder-multiline";
@@ -1483,7 +1473,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       {...(fileDropHandlers ?? {})}
       className={cn(
         "list-none py-0.5 [content-visibility:auto]",
-        hasAgentName
+        titleOnTopLine
           ? metaLineEmpty
             ? "[contain-intrinsic-size:auto_34px]"
             : "[contain-intrinsic-size:auto_54px]"
@@ -1538,32 +1528,38 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
           <div
             className={cn(
               "relative z-10 h-[4.875rem] px-(--sidebar-row-content-inset) py-(--sidebar-content-inset)",
-              (metaLineEmpty || hasAgentName) && "h-auto",
+              (metaLineEmpty || titleOnTopLine) && "h-auto",
             )}
           >
             <div className="flex h-5 min-w-0 items-center gap-1.5">
               {/* A coordinator's project icon stays first, at the card's edge. */}
               {props.coordinator ? null : draftIndicator}
-              {props.project ? (
+              {modelLeads && providerEntry !== null ? (
+                <SidebarModelIcon
+                  entry={providerEntry}
+                  providerEntryByInstanceId={props.providerEntryByInstanceId}
+                  lead
+                />
+              ) : props.project ? (
                 <ProjectFavicon project={props.project} className="size-4 shrink-0" />
               ) : null}
               {props.coordinator ? draftIndicator : null}
               {/* Left of the status slot, the pin would slide when hover swaps the
                 label for the wider row controls. */}
               {pinIndicator}
-              {projectLabel ? (
-                <span
-                  className={cn("min-w-0 flex-1 truncate font-normal text-secondary-label text-xs")}
-                >
-                  {projectLabel}
-                </span>
-              ) : hasAgentName ? (
+              {titleOnTopLine ? (
                 <>
                   {title}
                   {regeneratingTitleStatus}
                   {titleLineBadges}
                   {titleLineIcons}
                 </>
+              ) : projectLabel ? (
+                <span
+                  className={cn("min-w-0 flex-1 truncate font-normal text-secondary-label text-xs")}
+                >
+                  {projectLabel}
+                </span>
               ) : (
                 <span className="flex-1" />
               )}
@@ -1709,7 +1705,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               )}
               {props.sweepAction !== null ? dragDestination : null}
             </div>
-            {!hasAgentName ? (
+            {!titleOnTopLine ? (
               <div className="mt-1 flex min-w-0 items-center gap-1.5">
                 {title}
                 {regeneratingTitleStatus}

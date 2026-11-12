@@ -196,6 +196,38 @@ function sortByProvidersTab<
   );
 }
 
+export interface ProviderAccountNumber {
+  readonly number: number;
+  readonly of: number;
+}
+
+/**
+ * Each instance's 1-based place among its account group's instances, in providers tab order.
+ * Disabled instances count, so turning an account off never renumbers the others.
+ */
+export function providerAccountNumbers<
+  T extends Pick<ServerProvider, "driver" | "instanceId" | "displayName">,
+>(
+  providers: readonly T[],
+  providerInstances: ServerSettings["providerInstances"] | undefined,
+  accountGroup: (provider: T) => string = (provider) => provider.driver,
+): ReadonlyMap<string, ProviderAccountNumber> {
+  const groups = new Map<string, T[]>();
+  for (const provider of sortByProvidersTab(providers, providerInstances)) {
+    const key = accountGroup(provider);
+    const group = groups.get(key);
+    if (group) group.push(provider);
+    else groups.set(key, [provider]);
+  }
+  const numbers = new Map<string, ProviderAccountNumber>();
+  for (const group of groups.values()) {
+    group.forEach((provider, index) =>
+      numbers.set(provider.instanceId, { number: index + 1, of: group.length }),
+    );
+  }
+  return numbers;
+}
+
 export function collectExternalUsageLinks(presentations: LimitPresentations) {
   const links = new Map<
     string,

@@ -93,7 +93,9 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
   acpRegistryAgentId?: string | undefined;
   acpRegistryIconUrl?: string | undefined;
   showBadge?: boolean;
-  badgeContent?: "initials" | "none";
+  // "label" shows badgeLabel, such as an account's number.
+  badgeContent?: "initials" | "label" | "none";
+  badgeLabel?: string | undefined;
   size?: "default" | "compact";
   className?: string;
   iconClassName?: string;
@@ -186,7 +188,11 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
           style={{ borderColor: indicatorBackground }}
           aria-hidden
         >
-          {badgeContent === "initials" ? providerInstanceInitials(props.displayName) : null}
+          {badgeContent === "initials"
+            ? providerInstanceInitials(props.displayName)
+            : badgeContent === "label"
+              ? props.badgeLabel
+              : null}
         </span>
       ) : null}
     </span>

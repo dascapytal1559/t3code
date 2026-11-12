@@ -22,6 +22,7 @@ import {
   exhaustedUsageWindow,
   paceOf,
   paceRemainingPercent,
+  providerAccountNumbers,
   usesChatGptSharing,
   resolveNewThreadModelSelection,
 } from "./usageLimits.ts";
@@ -294,6 +295,42 @@ describe("pools", () => {
       ["Claude", "Claude3", "Claude2"],
     ]);
     expect(composer(reordered)).toEqual(["Claude", "Claude3", "Claude2"]);
+
+    const numbers = (providerInstances: ServerSettings["providerInstances"]) =>
+      Object.fromEntries(
+        [...providerAccountNumbers(providers, providerInstances)].map(([id, { number, of }]) => [
+          id,
+          `${number}/${of}`,
+        ]),
+      );
+    expect(numbers(listed)).toEqual({ claudeAgent: "1/3", claude_2: "2/3", claude_3: "3/3" });
+    expect(numbers(reordered)).toEqual({ claudeAgent: "1/3", claude_3: "2/3", claude_2: "3/3" });
+  });
+
+  it("numbers accounts within their own group, counting disabled ones", () => {
+    const acp = ProviderDriverKind.make("acpRegistry");
+    const providers = [
+      provider({ instanceId: ProviderInstanceId.make("codex") }),
+      provider({ driver: claude, instanceId: ProviderInstanceId.make("claudeAgent") }),
+      provider({ driver: claude, instanceId: ProviderInstanceId.make("claude_2"), enabled: false }),
+      provider({ driver: claude, instanceId: ProviderInstanceId.make("claude_3") }),
+      provider({ driver: acp, instanceId: ProviderInstanceId.make("kiro_a") }),
+      provider({ driver: acp, instanceId: ProviderInstanceId.make("gemini") }),
+      provider({ driver: acp, instanceId: ProviderInstanceId.make("kiro_b") }),
+    ];
+    const agentOf: Record<string, string> = { kiro_a: "kiro", kiro_b: "kiro", gemini: "gemini" };
+    const numbers = providerAccountNumbers(providers, undefined, (entry) =>
+      entry.driver === acp ? `acp:${agentOf[entry.instanceId]}` : entry.driver,
+    );
+    expect(Object.fromEntries(numbers)).toEqual({
+      codex: { number: 1, of: 1 },
+      claudeAgent: { number: 1, of: 3 },
+      claude_2: { number: 2, of: 3 },
+      claude_3: { number: 3, of: 3 },
+      gemini: { number: 1, of: 1 },
+      kiro_a: { number: 1, of: 2 },
+      kiro_b: { number: 2, of: 2 },
+    });
   });
 
   it("uses the freshest reported plan even when the newest quota has no plan", () => {
