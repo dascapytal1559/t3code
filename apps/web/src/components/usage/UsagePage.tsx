@@ -83,6 +83,7 @@ import { UsageProviderChart } from "./UsageProviderChart";
 import { splitSkippedRecords } from "./usageSkippedRecords";
 import { SpeedPremium, UsageModelDialog } from "./UsageModelDialog";
 import { UsageShareBar } from "./UsageShareBar";
+import { UsageOriginBreakdown } from "./UsageOriginBreakdown";
 import {
   costTypeSegments,
   modelShare,
@@ -888,6 +889,16 @@ function UsageOverview({
             </>
           )}
         </section>
+      ) : null}
+
+      {merged.origins !== null && (merged.origins.rows.length > 0 || merged.totalTokens > 0) ? (
+        <UsageOriginBreakdown
+          origins={merged.origins}
+          metric={metric}
+          totalCostUsd={merged.costUsd}
+          totalTokens={merged.totalTokens}
+          loading={loadingPartial}
+        />
       ) : null}
 
       <section className="flex flex-col gap-3">

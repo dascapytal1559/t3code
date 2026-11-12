@@ -42,6 +42,7 @@ import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as Sqlite from "../persistence/Sqlite.ts";
 import * as CodexUsageHistory from "./CodexUsageHistory.ts";
+import * as UsageOrigins from "./UsageOrigins.ts";
 import * as CursorAccountReader from "@t3tools/provider-cursor/server/CursorAccountReader";
 import * as CursorUsageAccounts from "@t3tools/provider-cursor/server/CursorUsageAccounts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
@@ -162,7 +163,11 @@ const layerService = (input: {
     Layer.provideMerge(AntigravityUsage.layer),
     Layer.provideMerge(MuseUsageHome.layer),
     Layer.provideMerge(ProviderHostLive.layer),
-    Layer.provideMerge(CodexUsageHistory.layer.pipe(Layer.provideMerge(Sqlite.layerMemory))),
+    Layer.provideMerge(
+      Layer.mergeAll(CodexUsageHistory.layer, UsageOrigins.layer).pipe(
+        Layer.provideMerge(Sqlite.layerMemory),
+      ),
+    ),
     Layer.provideMerge(Layer.mock(BackgroundPolicy.BackgroundPolicy)({})),
     Layer.provideMerge(
       Layer.mock(ServerSecretStore.ServerSecretStore)({

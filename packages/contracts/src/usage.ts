@@ -70,6 +70,53 @@ export const UsageBucket = Schema.Struct({
 });
 export type UsageBucket = typeof UsageBucket.Type;
 
+/**
+ * Where the T3 prompt that started a run came from. `crew` is agent-sent work in a FirstMate
+ * crew thread: the device behind the FirstMate prompt that started it is not recorded.
+ */
+export const UsageOrigin = Schema.Literals(["phone", "computer", "agent", "crew", "unknown"]);
+export type UsageOrigin = typeof UsageOrigin.Type;
+
+/**
+ * How the origin was read: `stamp` is the message's client stamp; for unstamped messages,
+ * `nativeApp` and `sender` come from how it was created, `server` means the server made it,
+ * `unstamped` means a client sent it before stamps, and `noPrompt` means the run's message is gone.
+ */
+export const UsageOriginBasis = Schema.Literals([
+  "stamp",
+  "nativeApp",
+  "sender",
+  "server",
+  "unstamped",
+  "noPrompt",
+]);
+export type UsageOriginBasis = typeof UsageOriginBasis.Type;
+
+/** Usage of records inside a T3 run, by the origin of the run's starting message. */
+export const UsageOriginUsage = Schema.Struct({
+  origin: UsageOrigin,
+  basis: UsageOriginBasis,
+  provider: UsageProviderKind,
+  sourcePath: Schema.optional(TrimmedNonEmptyString),
+  totals: UsageTokenTotals,
+  costUsd: Schema.Number,
+});
+export type UsageOriginUsage = typeof UsageOriginUsage.Type;
+
+export const UsageOriginPrompts = Schema.Struct({
+  origin: UsageOrigin,
+  basis: UsageOriginBasis,
+  prompts: NonNegativeInt,
+});
+export type UsageOriginPrompts = typeof UsageOriginPrompts.Type;
+
+/** Usage records outside every T3 run (terminal sessions, archives) have no row. */
+export const UsageOrigins = Schema.Struct({
+  usage: ForwardCompatibleArray(UsageOriginUsage),
+  prompts: ForwardCompatibleArray(UsageOriginPrompts),
+});
+export type UsageOrigins = typeof UsageOrigins.Type;
+
 export const UsageSourceFingerprint = Schema.Struct({
   hostId: TrimmedNonEmptyString,
   provider: UsageProviderKind,
@@ -149,6 +196,8 @@ export const UsageSummary = Schema.Struct({
   scanDurationMs: NonNegativeInt,
   /** The filter the server applied; absent means unfiltered, including servers that predate filters. */
   modelFilter: Schema.optional(UsageModelFilter),
+  /** Absent when the server cannot read its T3 prompts, including servers that predate origins. */
+  origins: Schema.optional(UsageOrigins),
 });
 export type UsageSummary = typeof UsageSummary.Type;
 

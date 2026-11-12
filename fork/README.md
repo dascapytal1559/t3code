@@ -148,6 +148,46 @@ defaults to `["~/.t3-usage-archive"]` and can be changed in
 - A remote that still runs T3 and is connected would be counted again next to
   its archive copy. Archive a host after T3 is removed from it.
 
+## Usage by origin
+
+![The Usage page's By origin table: Phone, Computer, Agent and Unknown rows with prompts, share and cost, then FirstMate crew and Outside T3 runs under "Not tied to a device"](media/usage-by-origin.png)
+
+The captain wants to see the prompts he sent from his phone and the work they
+started, so the Usage page on web and desktop has a **By origin** table: for
+each origin, the period's prompts and the tokens or cost of the runs they
+started. It is built only from what T3 already records (see
+[Messages record which client sent them](#messages-record-which-client-sent-them)):
+no new meter and no device guessing.
+
+- A prompt is a user-role message. A run belongs to its `userMessageId`;
+  messages that steer a running turn do not split it.
+- Stamped messages go by `origin`: `mcp` or `bot` is Agent; `mobile` or
+  `tablet` devices, and the native app, are Phone; `desktop` is Computer;
+  anything else is Unknown. Unstamped messages: `creationSource` `mobile` is
+  Phone (labelled as from the phone app, before stamps); `createdBy` `agent`
+  or `creationSource` `mcp`/`provider` is Agent; everything else (older web
+  messages, server-made messages) is Unknown. Each row's second line says how
+  its prompts were read.
+- Agent prompts in a FirstMate crew thread (`crewOf`) are **FirstMate crew**,
+  shown under "Not tied to a device" with usage no T3 run started (**Outside
+  T3 runs**: terminal sessions, archives, other machines, servers without
+  origins). Which phone prompt started a crew worker is stage 2: FirstMate
+  must record it.
+- Tokens are joined before aggregation: a transcript record's native
+  `sessionId` finds the provider thread (`nativeThreadRef.nativeId`), and its
+  timestamp the turn running then. A record more than five minutes after that
+  turn completed, such as a terminal resume, is outside T3. Origins split the
+  kept records after dedupe and the model filter, so with Outside T3 runs they
+  add up to the page's totals.
+
+The server sends `origins` on `UsageSummary` (optional; usage rows keyed by
+origin, basis, provider and source with no day, so the payload stays small),
+and clients merge the rows with the same source ownership as buckets. The mobile app gets the merged
+figures but does not show them yet. Code: `apps/server/src/usage/UsageOrigins.ts`
+(classifier, SQL, turn index), `attributeOrigin` and `countPrompt` in
+`usageAggregation.ts`, `mergeOrigins` in `packages/shared/src/usageMerge.ts`,
+and `apps/web/src/components/usage/UsageOriginBreakdown.tsx`.
+
 ## App-bundled CLIs are updated by their app
 
 On macOS, a provider CLI whose real path is inside an app bundle

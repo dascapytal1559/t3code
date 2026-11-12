@@ -108,14 +108,19 @@ export function mergeAnsweredUsage(
           {
             environmentId,
             label,
+            // Origin rows have no model, so a bucket filter drops them.
             summary:
               keepBucket === undefined
                 ? summary
-                : { ...summary, buckets: summary.buckets.filter(keepBucket) },
+                : { ...withoutOrigins(summary), buckets: summary.buckets.filter(keepBucket) },
           },
         ],
   );
   return mergeUsage(answered, USAGE_CONTRACT_VERSION);
+}
+
+function withoutOrigins({ origins: _origins, ...summary }: UsageSummary): UsageSummary {
+  return summary;
 }
 
 const NO_HIDDEN_PROVIDERS: ReadonlySet<UsageProviderKind> = new Set();
@@ -138,6 +143,16 @@ function withoutProviders(
             sources: environment.summary.sources.filter(
               (source) => !hiddenProviders.has(source.fingerprint.provider),
             ),
+            ...(environment.summary.origins === undefined
+              ? {}
+              : {
+                  origins: {
+                    ...environment.summary.origins,
+                    usage: environment.summary.origins.usage.filter(
+                      (row) => !hiddenProviders.has(row.provider),
+                    ),
+                  },
+                }),
           },
         },
   );
