@@ -112,12 +112,6 @@ statuses as the Limits view and fetches nothing, shows nothing until limits
 arrive, and leaves out providers muted on the page. The phone web sidebar shows
 it too; the mobile app does not.
 
-Grok's window carries its length so the pace mark shows for it (upstream's Grok
-window has a reset time but no length, so no mark). The length is the period's
-end minus start, and a weekly period without a valid start falls back to seven
-days. This deviates from upstream's `grokUsageResponseToLimits` in
-`packages/provider-grok/src/server/usageLimits.ts`; syncs must carry it.
-
 Upstream code it touches, for syncs: `useLimitPresentations` is the Limits
 view's environment and muted-provider filter, moved out of
 `UsageLimitsSection` in `apps/web/src/components/usage/UsageLimits.tsx`, and
@@ -184,8 +178,9 @@ no new meter and no device guessing.
   `sessionId` finds the provider thread (`nativeThreadRef.nativeId`), and its
   timestamp the turn running then. A record more than five minutes after that
   turn completed, such as a terminal resume, is outside T3. Origins split the
-  kept records after dedupe and the model filter, so with Outside T3 runs they
-  add up to the page's totals.
+  kept records after dedupe and the model filter, counting a duplicate's merged
+  copies once in upstream's `#accumulate` as its bucket does, so with Outside
+  T3 runs they add up to the page's totals.
 
 The server sends `origins` on `UsageSummary` (optional; usage rows keyed by
 origin, basis, `via`, provider and source with no day, so the payload stays small),
@@ -1172,7 +1167,9 @@ socket (`desktop`, `mobile`, `web`), `deviceType` from that socket's auth
 session (`desktop`, `mobile`, `tablet`, `bot`, `unknown`), so a phone browser
 reads `web` + `mobile`. Messages sent through T3's MCP tools (FirstMate's
 sends and launch briefs, the `t3 thread` CLI) read `surface: "mcp"`,
-`deviceType: "bot"`. A client cannot set its own origin. Server-made messages
+`deviceType: "bot"`. A client cannot set its own origin, nor upstream's
+`linkedSender` label, which only a linked environment's relayed send may carry
+(upstream lets a client set it; the fork drops it with `origin`). Server-made messages
 (scheduled tasks, continuations) and messages from before this change have
 none, which means unknown; nothing is backfilled. A run's sender is its
 `userMessageId`'s origin. Code: `withCreationProvenance` in
