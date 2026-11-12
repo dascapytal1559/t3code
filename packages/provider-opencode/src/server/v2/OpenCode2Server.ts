@@ -28,6 +28,8 @@ export class OpenCode2Server extends Context.Service<
     ) => Effect.Effect<A, E | OpenCodeRuntime.OpenCodeRuntimeError, R>;
     /** What the server's shells inherit, minus its password; unknown for an external server. */
     readonly shellEnvironment: Readonly<Record<string, string>> | undefined;
+    /** Drops a configured server's verified connection, so the next use reads its version again. */
+    readonly forget: Effect.Effect<void>;
   }
 >()("@t3tools/provider-opencode/server/v2/OpenCode2Server") {}
 
@@ -157,6 +159,9 @@ export const make = Effect.fn("OpenCode2Server.make")(function* (input: {
         );
       }),
       shellEnvironment: undefined,
+      forget: Effect.sync(() => {
+        latest = undefined;
+      }),
     });
   }
 
@@ -176,5 +181,6 @@ export const make = Effect.fn("OpenCode2Server.make")(function* (input: {
       );
     }),
     shellEnvironment: shellEnvironment(input.environment),
+    forget: Effect.void,
   });
 });

@@ -125,6 +125,31 @@ function makeRun(input: {
 
 it("readThread preserves caller access errors and prefers activity-run status over a newer cancelled queued run", async () => {
   let callerUnavailable = false;
+  const pullRequestLink = (number: number, state: "open" | "merged", watched: boolean) => ({
+    host: "github.com",
+    repository: "acme/web",
+    number,
+    url: `https://github.com/acme/web/pull/${number}`,
+    source: "agent",
+    linkedAt: "2026-08-04T11:00:00.000Z",
+    snapshot: { state },
+    stack: null,
+    ...(watched
+      ? {
+          watch: {
+            startedAt: "2026-08-04T11:30:00.000Z",
+            headSha: null,
+            failedChecks: [],
+            passed: false,
+            passedChecks: [],
+            remarksThrough: "2026-08-04T11:30:00.000Z",
+            remarkIds: [],
+            conflicting: false,
+            wakes: 0,
+          },
+        }
+      : {}),
+  });
   const projection = {
     thread: {
       ...baseThread({
@@ -142,6 +167,7 @@ it("readThread preserves caller access errors and prefers activity-run status ov
         worktreePath: "/work/copy-3",
         fencedAt: "2026-08-04T12:00:00.000Z",
       },
+      pullRequests: [pullRequestLink(1, "merged", false), pullRequestLink(2, "open", true)],
     },
     runs: [
       makeRun({ id: activeRunId, ordinal: 1, status: "running" }),
@@ -219,6 +245,19 @@ it("readThread preserves caller access errors and prefers activity-run status ov
       autoSettleDisabled: true,
       executionFence: { label: "task-1", worktreePath: "/work/copy-3" },
     });
+    // Every page read must not repeat each linked PR, and an open PR shows whether it is watched.
+    const listed = result.thread.pullRequests ?? [];
+    expect(listed.map((link) => link.number)).not.toContain(1);
+    expect(listed.find((link) => link.number === 2)).toMatchObject({
+      watching: true,
+      watchStartedAt: "2026-08-04T11:30:00.000Z",
+    });
+    const laterPage = yield* service.readThread(makeScope(), {
+      threadId: parentThreadId,
+      afterPosition: 0,
+    });
+    expect(laterPage.thread.pullRequests).toBeUndefined();
+    expect(laterPage.thread.pullRequestCount).toBe(2);
 
     callerUnavailable = true;
     const denied = yield* service

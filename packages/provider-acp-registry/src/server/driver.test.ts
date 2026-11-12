@@ -1,18 +1,23 @@
-import { AcpRegistryOperationError, ProviderInstanceId } from "@t3tools/contracts";
-import { AcpRegistrySettings } from "../settings.ts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { describe, expect, it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
-
+import { AcpRegistryOperationError, ProviderInstanceId } from "@t3tools/contracts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
+import { AcpRegistrySettings } from "../settings.ts";
+import { describe, expect, it } from "@effect/vitest";
+import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
+
+import * as AcpRegistryRuntimeCoordinator from "./AcpRegistryRuntimeCoordinator.ts";
 import * as AcpRegistrySupport from "./AcpRegistrySupport.ts";
 import {
   AcpRegistryDriver,
@@ -22,6 +27,7 @@ import {
   checkAcpRegistryProviderReadiness,
   checkAcpRegistryProviderStatus,
 } from "./driver.ts";
+import { normalizeAcpRegistryLiveConfiguration } from "./probe.ts";
 
 const decodeSettings = Schema.decodeSync(AcpRegistrySettings);
 const identity = {
@@ -442,8 +448,42 @@ describe("acpRegistrySnapshotReadiness", () => {
   );
 });
 
-const layerDriver = TestProviderHost.layer({ runBackgroundWork: false }).pipe(
-  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+const fakeAgentSource = `
+import { readFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\\n");
+createInterface({ input: process.stdin }).on("line", (line) => {
+  const { id, method } = JSON.parse(line);
+  if (id === undefined) return;
+  if (method === "initialize") {
+    send({ id, result: { protocolVersion: 1, agentCapabilities: {}, authMethods: [] } });
+  } else if (method === "session/new") {
+    const modelIds = JSON.parse(readFileSync(process.argv[2], "utf8"));
+    send({
+      id,
+      result: {
+        sessionId: "probe-session",
+        models: {
+          currentModelId: modelIds[0],
+          availableModels: modelIds.map((modelId) => ({ modelId, name: modelId })),
+        },
+      },
+    });
+    send({
+      method: "session/update",
+      params: {
+        sessionId: "probe-session",
+        update: { sessionUpdate: "available_commands_update", availableCommands: [] },
+      },
+    });
+  } else {
+    send({ id, result: {} });
+  }
+});
+`;
+
+const driverLayer = TestProviderHost.layer({ runBackgroundWork: false }).pipe(
+  Layer.provideMerge(AcpRegistryRuntimeCoordinator.layer),
   Layer.provideMerge(IdAllocator.layer),
   Layer.provideMerge(McpProviderSessions.layer),
   Layer.provideMerge(
@@ -452,9 +492,10 @@ const layerDriver = TestProviderHost.layer({ runBackgroundWork: false }).pipe(
       ProviderEventLoggers.NoOpProviderEventLoggers,
     ),
   ),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
-it.layer(layerDriver)("AcpRegistryDriver", (it) => {
+it.layer(driverLayer, { excludeTestServices: true })("AcpRegistryDriver", (it) => {
   it.effect("expands a configured ~/ local command under the home directory", () =>
     Effect.gen(function* () {
       const inspected: Array<string> = [];
@@ -477,5 +518,65 @@ it.layer(layerDriver)("AcpRegistryDriver", (it) => {
       );
       expect(new Set(inspected)).toEqual(new Set(["/home/ada/bin/agent"]));
     }).pipe(Effect.scoped),
+  );
+
+  it.effect("drops cached and session-reported models when its caches are invalidated", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "acp-driver-" });
+      const agentPath = path.join(directory, "agent.mjs");
+      const modelsPath = path.join(directory, "models.json");
+      yield* fileSystem.writeFileString(agentPath, fakeAgentSource);
+      yield* fileSystem.writeFileString(modelsPath, JSON.stringify(["old-model"]));
+      const coordinator = yield* AcpRegistryRuntimeCoordinator.AcpRegistryRuntimeCoordinator;
+
+      const instance = yield* AcpRegistryDriver.create({
+        instanceId: identity.instanceId,
+        displayName: identity.displayName,
+        enabled: true,
+        environment: [],
+        config: decodeSettings({ agentId: "test-agent" }),
+      }).pipe(
+        Effect.provideService(AcpRegistrySupport.AcpRegistryCatalog, {
+          ...catalogWithInspection({
+            status: "ready",
+            agentId: "test-agent",
+            version: "1.0.0",
+            distribution: "npx",
+          }),
+          resolve: () =>
+            Effect.succeed({
+              distribution: "npx" as const,
+              spawn: { command: process.execPath, args: [agentPath, modelsPath] },
+            }),
+        }),
+      );
+      const modelSlugs = instance.snapshot.streamChanges.pipe(
+        Stream.map((snapshot) => snapshot.models.map((model) => model.slug)),
+      );
+      const waitForModels = (expected: ReadonlyArray<string>) =>
+        modelSlugs.pipe(
+          Stream.filter((slugs) => slugs.join() === expected.join()),
+          Stream.runHead,
+        );
+
+      const probed = yield* waitForModels(["old-model"]).pipe(Effect.forkScoped);
+      yield* instance.snapshot.refresh;
+      yield* Fiber.join(probed);
+      yield* coordinator.publishLiveConfiguration(
+        identity.instanceId,
+        normalizeAcpRegistryLiveConfiguration([], undefined, {
+          currentModelId: "old-model",
+          availableModels: [{ modelId: "old-model", name: "old-model" }],
+        }),
+      );
+      yield* fileSystem.writeFileString(modelsPath, JSON.stringify(["old-model", "new-model"]));
+
+      const refreshed = yield* waitForModels(["old-model", "new-model"]).pipe(Effect.forkScoped);
+      yield* instance.invalidateCaches ?? Effect.void;
+      yield* instance.snapshot.refresh;
+      expect(Option.isSome(yield* Fiber.join(refreshed))).toBe(true);
+    }),
   );
 });

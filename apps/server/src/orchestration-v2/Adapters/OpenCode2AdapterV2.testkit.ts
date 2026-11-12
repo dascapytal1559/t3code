@@ -271,6 +271,7 @@ export const replayServer = (
         options?.external === true || options?.environment === undefined
           ? undefined
           : OpenCode2Server.shellEnvironment(options.environment),
+      forget: Effect.void,
     });
   });
 
