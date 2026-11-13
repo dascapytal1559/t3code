@@ -3,9 +3,7 @@ import * as Schema from "effect/Schema";
 
 import {
   DecisionsSetInput,
-  decisionChangedAt,
   decisionSince,
-  decisionUpdatedAt,
   formatDecisionReply,
 } from "./decisions.ts";
 
@@ -45,17 +43,6 @@ describe("decisions", () => {
       "2026-09-22T00:00:00.000Z",
     );
     expect(decisionSince({ entries: [] })).toBeNull();
-  });
-
-  it("dates the latest change from `update` entries only, not a reworded raise", () => {
-    const entries = [
-      { at: "2026-11-07T09:00:00.000Z", kind: "raised", text: "Reworded." },
-      { at: "2026-11-05T09:00:00.000Z", kind: "update", text: "More context." },
-      { at: "2026-11-03T09:00:00.000Z", kind: "update", text: "Earlier." },
-    ] as const;
-    expect(decisionUpdatedAt({ entries })).toBe("2026-11-07T09:00:00.000Z");
-    expect(decisionChangedAt({ entries })).toBe("2026-11-05T09:00:00.000Z");
-    expect(decisionChangedAt({ entries: [entries[0]] })).toBeNull();
   });
 
   it("puts the decision's id on its own line of the reply, for FirstMate to parse", () => {

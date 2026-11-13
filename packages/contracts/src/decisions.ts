@@ -13,8 +13,9 @@ import {
 
 /**
  * The decisions FirstMate needs from the user: one list per environment, which FirstMate replaces
- * whole over MCP (`t3_decisions_set`) and the Bridge tab shows. A reply goes to the chat the list
- * names in `replyTo`. Bounded so the list stays small; pictures and reports travel as paths.
+ * whole over MCP (`t3_decisions_set`) and each item's thread card in the sidebar shows. A reply
+ * goes to the chat the list names in `replyTo`. Bounded so the list stays small; pictures and
+ * reports travel as paths.
  */
 
 const DecisionText = (max: number) => TrimmedNonEmptyString.check(Schema.isMaxLength(max));
@@ -174,29 +175,7 @@ export const DecisionsSetResult = Schema.Struct({
 });
 export type DecisionsSetResult = typeof DecisionsSetResult.Type;
 
-function latestEntryAt(
-  entries: ReadonlyArray<Pick<DecisionEntry, "at" | "kind">>,
-  kind?: DecisionEntry["kind"],
-): string | null {
-  let latest: string | null = null;
-  for (const entry of entries) {
-    if (kind !== undefined && entry.kind !== kind) continue;
-    if (latest === null || Date.parse(entry.at) > Date.parse(latest)) latest = entry.at;
-  }
-  return latest;
-}
-
 type DecisionEntries = { readonly entries: ReadonlyArray<Pick<DecisionEntry, "at" | "kind">> };
-
-/** The time of the decision's latest entry, which the Bridge sorts by. */
-export function decisionUpdatedAt(decision: DecisionEntries | null | undefined): string | null {
-  return latestEntryAt(decision?.entries ?? []);
-}
-
-/** The time of the latest real change (an `update` entry), so rewording the raise ages nothing. */
-export function decisionChangedAt(decision: DecisionEntries | null | undefined): string | null {
-  return latestEntryAt(decision?.entries ?? [], "update");
-}
 
 /** When the decision began waiting: its `since`, else its earliest entry (the raised one). */
 export function decisionSince(
