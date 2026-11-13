@@ -151,7 +151,9 @@ export function useThreadActionMenu(input: {
         isPinned: thread.pinnedAt != null,
         isSettled: supports.settlement && thread.settledOverride === "settled",
         autoSettleEnabled: thread.autoSettleDisabledAt == null,
-        isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
+        isSnoozed:
+          supports.snooze &&
+          (captainCard?.snoozed != null || effectiveSnoozed(thread, { now: now.toISOString() })),
         canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
         isRegeneratingTitle,
         isRunning: !threadRuntimeCanArchive(thread.runtime),
@@ -243,6 +245,10 @@ export function useThreadActionMenu(input: {
           await reportFailure("Failed to un-settle thread", () => unsettleThread(threadRef));
           return;
         case "unsnooze":
+          if (captainCard?.snoozed != null) {
+            await actOnCaptainItem(captainCard, { type: "unsnooze" });
+            return;
+          }
           await reportFailure("Failed to wake thread", () => unsnoozeThread(threadRef));
           return;
         case "pin":
