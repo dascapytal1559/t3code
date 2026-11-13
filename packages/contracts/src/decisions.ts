@@ -111,7 +111,7 @@ export const StoredDecision = Schema.Struct({
   ...decisionFields,
   answered: Schema.optional(
     Schema.Struct({
-      /** The reply's `commandId`, which Undo names. */
+      /** The reply's `commandId`. */
       commandId: CommandId,
       at: DecisionTime,
     }),
