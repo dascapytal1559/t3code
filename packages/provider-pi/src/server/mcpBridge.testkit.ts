@@ -94,7 +94,7 @@ export async function loadMcpBridge(
     T3_PI_RUNTIME_MODE: options.runtimeMode,
     T3_PI_THREAD_INSTRUCTIONS: options.threadInstructions,
   };
-  await NodeVM.runInNewContext(`${source}\nt3McpExtension(pi)`, {
+  const context = NodeVM.createContext({
     process: { env },
     AbortSignal,
     NodeCrypto,
@@ -156,7 +156,12 @@ export async function loadMcpBridge(
         : {}),
     },
   });
+  // Pi reruns the factory in the same process on session switch and fork.
+  await NodeVM.runInContext(`${source}\nt3McpExtension(pi)`, context);
   return {
+    rerun: async () => {
+      await NodeVM.runInContext("t3McpExtension(pi)", context);
+    },
     env,
     handlers,
     tools,

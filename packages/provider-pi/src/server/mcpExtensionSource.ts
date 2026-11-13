@@ -25,6 +25,7 @@ const TOKEN_ENV = ${JSON.stringify(T3_MCP_BEARER_ENV)};
 const RUNTIME_MODE_ENV = ${JSON.stringify(T3_PI_RUNTIME_MODE_ENV)};
 const EXTENSION_PATH_ENV = ${JSON.stringify(T3_PI_MCP_EXTENSION_PATH_ENV)};
 const THREAD_INSTRUCTIONS_ENV = ${JSON.stringify(T3_PI_THREAD_INSTRUCTIONS_ENV)};
+const THREAD_INSTRUCTIONS_KEY = Symbol.for("t3.pi.threadInstructions");
 const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim())};
 const SERVICE_TIER_COMMAND = ${JSON.stringify(PI_T3_SERVICE_TIER_COMMAND)};
 const PROTOCOL = "2025-06-18";
@@ -253,9 +254,14 @@ function createMcpClient(endpoint: string, token: string) {
 }
 
 export default async function t3McpExtension(pi: ExtensionAPI) {
-  // Read once, then drop it so commands Pi runs do not inherit the text.
-  const threadInstructions = env(THREAD_INSTRUCTIONS_ENV);
+  // Pi reruns this factory (and may re-evaluate the module) on session switch and fork, after
+  // the launch env var is gone. Keep the text on the process object, which child processes
+  // do not inherit, and drop the env var so commands Pi runs never see it.
+  const retained = process as unknown as Record<symbol, string | undefined>;
+  const launchInstructions = env(THREAD_INSTRUCTIONS_ENV);
+  if (launchInstructions !== undefined) retained[THREAD_INSTRUCTIONS_KEY] = launchInstructions;
   delete process.env[THREAD_INSTRUCTIONS_ENV];
+  const threadInstructions = retained[THREAD_INSTRUCTIONS_KEY];
 
   // RPC has no trust prompt, so Pi skips an untrusted folder's protected resources. Session
   // replacement reruns this factory without project_trust, and T3 drops notices outside a turn,

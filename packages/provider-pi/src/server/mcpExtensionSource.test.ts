@@ -95,6 +95,18 @@ describe("Pi orchestration prompt section", () => {
     );
     assert.equal(sections.t3_thread_instructions, "The launch brief is first-party.");
   });
+
+  it("keeps the thread's instructions when Pi reruns the factory on session switch or fork", async () => {
+    const bridge = await loadMcpBridge({ threadInstructions: "The launch brief is first-party." });
+    await bridge.rerun();
+    assert.notProperty(bridge.env, "T3_PI_THREAD_INSTRUCTIONS");
+    const sections: Record<string, string> = {};
+    await bridge.handlers.get("before_agent_start")!(
+      { systemPrompt: "base", systemPromptOptions: { sections } },
+      { ui: { notify: assert.fail } },
+    );
+    assert.equal(sections.t3_thread_instructions, "The launch brief is first-party.");
+  });
 });
 
 describe("Pi project trust", () => {
