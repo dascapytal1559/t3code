@@ -1197,7 +1197,13 @@ describe("Working shelf (beta)", () => {
     });
 
     it("never drops into the crew rows above Pinned, and keeps them out of every order", () => {
-      const withCrew = [row("lead", "crew"), marker("crew-toggle"), row("c1", "crew"), ...items];
+      const withCrew = [
+        row("lead", "crew"),
+        marker("crew-working-header"),
+        row("c1", "crew"),
+        marker("crew-waiting-header"),
+        ...items,
+      ];
       expect(resolveSidebarDropTarget(withCrew, "a1", "lead")).toBeNull();
       expect(resolveSidebarDropTarget(withCrew, "a1", "c1")).toBeNull();
       expect(resolveSidebarDropTarget(withCrew, "a1", "pinned-header")).toBeNull();

@@ -243,7 +243,8 @@ export function resolveSidebarThreadSection(input: {
 const SIDEBAR_MARKER_PREFIX = "sidebar-marker-";
 
 export type SidebarListMarker =
-  | "crew-toggle"
+  | "crew-working-header"
+  | "crew-waiting-header"
   | "pinned-header"
   | "active-placeholder"
   | "settled-placeholder"
@@ -267,7 +268,7 @@ export function sidebarListItemId(item: SidebarListItem): string {
 // Crew rows and their header come first and never move, so the list opens with crew when it has any.
 function leadingSidebarSection(items: readonly SidebarListItem[]): SidebarSection {
   return items.some((item) =>
-    item.kind === "thread" ? item.section === "crew" : item.marker === "crew-toggle",
+    item.kind === "thread" ? item.section === "crew" : item.marker.startsWith("crew-"),
   )
     ? "crew"
     : "pinned";

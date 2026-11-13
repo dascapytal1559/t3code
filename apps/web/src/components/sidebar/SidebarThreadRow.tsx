@@ -110,11 +110,16 @@ import { useThreadShell } from "../../state/entities";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import {
   CREW_TREE_INDENT_CLASS_NAME,
-  CREW_TREE_TRUNK_CLASS_NAME,
   CrewTreeGutter,
   type CrewTreePlace,
+  crewBranchContinues,
+  crewTreeTrunkClassName,
 } from "./SidebarCrewTree";
-import { resolveCrewStatusLabel, showsCoordinatorAge } from "./coordinatorGroup.logic";
+import {
+  type CrewBranch,
+  resolveCrewStatusLabel,
+  showsCoordinatorAge,
+} from "./coordinatorGroup.logic";
 import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
@@ -541,7 +546,9 @@ type SidebarThreadRowProps = {
   // Hides hover Snooze and Settle; the context menu still offers both.
   hideHoverActions?: boolean | undefined;
   crewTree?: CrewTreePlace | undefined;
-  // The coordinator card the expanded crew hangs from, which carries the top of the guide line.
+  // The branch a crewmate row hangs from; set with `crewTree`.
+  crewBranch?: CrewBranch | undefined;
+  // The coordinator card the crew branches hang from, which carries the top of the guide line.
   crewTreeRoot?: boolean | undefined;
   onCrewTreeToggle?: (() => void) | undefined;
   navigationParent?: string | undefined;
@@ -1468,6 +1475,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       data-thread-item={threadKey}
       {...sortableRootProps}
       {...(fileDropHandlers ?? {})}
+      data-crew-branch={props.crewBranch}
       className={cn(
         "list-none py-0.5 [content-visibility:auto]",
         titleOnTopLine
@@ -1479,14 +1487,21 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             : "[contain-intrinsic-size:auto_78px]",
         props.crewTree !== undefined && cn("relative", CREW_TREE_INDENT_CLASS_NAME),
         // Joins this row's guide line to the next one's across the list gap.
-        props.crewTree === "branch" && "-mb-px",
+        props.crewTree !== undefined &&
+          props.crewBranch !== undefined &&
+          (props.crewTree === "branch" || crewBranchContinues(props.crewBranch)) &&
+          "-mb-px",
         sortable?.isDragging && "relative z-20",
       )}
     >
       {props.crewTree !== undefined &&
-      props.crewTree !== "indent" &&
+      props.crewBranch !== undefined &&
       props.onCrewTreeToggle !== undefined ? (
-        <CrewTreeGutter last={props.crewTree === "last"} onToggle={props.onCrewTreeToggle} />
+        <CrewTreeGutter
+          branch={props.crewBranch}
+          place={props.crewTree}
+          onToggle={props.onCrewTreeToggle}
+        />
       ) : null}
       <Tooltip disabled={snoozeMenuOpen || sortable?.isDragging}>
         <TooltipTrigger
@@ -1516,7 +1531,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             <span
               aria-hidden
               className={cn(
-                CREW_TREE_TRUNK_CLASS_NAME,
+                crewTreeTrunkClassName("working"),
                 "bottom-0 h-(--sidebar-content-inset)",
                 surfaceFilled ? "hidden" : "group-hover/sidebar-row:hidden",
               )}
