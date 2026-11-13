@@ -15,6 +15,7 @@ import {
 } from "@t3tools/contracts";
 import { useRouter } from "@tanstack/react-router";
 
+import { SIDEBAR_SETTLED_SHELF } from "../components/sidebar/settledShelf";
 import { pickSnoozePreset, resolveSnoozePresets } from "../components/Sidebar.snooze";
 import { useCaptainCard, useCaptainItemAct } from "../components/sidebar/useCaptainCards";
 import {
@@ -132,8 +133,9 @@ export function useThreadActionMenu(input: {
       const now = new Date();
       const configLoaded = readEnvironmentServerConfigLoaded(threadRef.environmentId);
       const supports = {
-        settlement: configLoaded,
-        autoSettleOptOut: readEnvironmentSupportsAutoSettleOptOut(threadRef.environmentId),
+        settlement: SIDEBAR_SETTLED_SHELF && configLoaded,
+        autoSettleOptOut:
+          SIDEBAR_SETTLED_SHELF && readEnvironmentSupportsAutoSettleOptOut(threadRef.environmentId),
         snooze: configLoaded,
         pinning: configLoaded,
         titleRegeneration: configLoaded,

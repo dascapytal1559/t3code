@@ -365,9 +365,13 @@ describe("resolveCaptainCards", () => {
       // No thread yet: no card carries it.
       item("loose"),
     ]);
-    expect([card("probe")?.item.id, card("probe")?.label]).toEqual(["build-first", "Needs you"]);
+    expect([card("probe")?.item.id, card("probe")?.label, card("probe")?.raisedAt]).toEqual([
+      "build-first",
+      "Needs you",
+      "2026-11-08T00:00:00.000Z",
+    ]);
     expect(card("scout")?.label).toBe("To read");
-    expect(card("answered")?.label).toBe("Replied");
+    expect([card("answered")?.label, card("answered")?.raisedAt]).toEqual(["Replied", null]);
     expect(card("loose")).toBeNull();
   });
 

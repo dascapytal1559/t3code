@@ -289,7 +289,7 @@ describe("sidebar thread cards", () => {
 });
 
 describe("FirstMate's items in the sidebar", () => {
-  it("label worker cards Needs you or To read on the right, move snoozed ones to Snoozed, and offer no hover Snooze or Settle", async () => {
+  it("label worker cards with their item's age, move snoozed ones to Snoozed, and offer no hover Snooze or Settle", async () => {
     const environmentId = EnvironmentId.make("local");
     providerState.providers = new Map();
     providerState.serverConfigs = new Map([
@@ -322,8 +322,8 @@ describe("FirstMate's items in the sidebar", () => {
       ...extra,
     });
     const decisions = [
-      item("media-archive-build", "probe"),
-      item("captain-surface-spec", "spec", { kind: "read" }),
+      item("media-archive-build", "probe", { since: "2026-11-10T00:00:00.000Z" }),
+      item("captain-surface-spec", "spec", { kind: "read", since: "2026-11-10T00:00:00.000Z" }),
       item("cap-review", "cap", {
         snoozed: { at: "2026-11-12T00:00:00.000Z", until: "2099-11-21T09:00:00.000Z" },
       }),
@@ -356,8 +356,11 @@ describe("FirstMate's items in the sidebar", () => {
       document.querySelector<HTMLElement>(`[data-sidebar-row="local:${threadId}"]`);
 
     await expect.element(screen.getByText("Media archive probe").first()).toBeInTheDocument();
-    await vi.waitFor(() => expect(row("probe")?.textContent).toContain("Needs you"));
-    expect(row("spec")?.textContent).toContain("To read");
+    // The age stands in for Needs you and To read.
+    await vi.waitFor(() => expect(row("probe")?.textContent).toMatch(/\d+d/));
+    expect(row("probe")?.textContent).not.toContain("Needs you");
+    expect(row("spec")?.textContent).toMatch(/\d+d/);
+    expect(row("spec")?.textContent).not.toContain("To read");
     // Snoozed items leave the crew for the Snoozed shelf, after its header, with no label.
     const snoozedHeader = screen.getByText("Snoozed", { exact: true }).element();
     for (const id of ["cap", "vision"]) {
