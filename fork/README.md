@@ -139,6 +139,9 @@ defaults to `["~/.t3-usage-archive"]` and can be changed in
 - Archived usage is parsed and deduplicated like live history. Live
   directories are read first, so usage that is both live and archived counts
   once and stays credited to the live source.
+- Archived folders join the live ones (`addArchivedDirs` in `UsageService.ts`)
+  before upstream decides whether a provisional read can answer from saved
+  usage, so an archived folder must be covered by a complete scan too.
 - A remote that still runs T3 and is connected would be counted again next to
   its archive copy. Archive a host after T3 is removed from it.
 
@@ -540,7 +543,8 @@ Upstream code it touches, for syncs: the `SIDEBAR_SETTLED_SHELF` switch
 context menus in `Sidebar.tsx`, and by `useThreadActionMenu.ts`; the Snoozed
 header's sticky classes and `toggleSnoozedShelfAndReveal` in `Sidebar.tsx`;
 and the drag projection in `Sidebar.drag.ts`, which leaves the pinned header
-where the browser put it.
+where the browser put it. Upstream's Settled shelf tests do not apply: the
+11/14 sync dropped "sidebar settled pagination" from `Sidebar.browser.test.tsx`.
 
 ## FirstMate's automatic turns are quiet
 
