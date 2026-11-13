@@ -811,6 +811,7 @@ function isOptimisticDropReleased(input: {
   readonly pinnedKeys: readonly string[];
   readonly activeKeys: readonly string[];
   readonly now: string;
+  readonly captainSnoozed: boolean;
 }): boolean {
   const { optimisticDrop, threads, pinnedKeys, activeKeys, now } = input;
   const canonicalByKey = new Map(
@@ -823,13 +824,14 @@ function isOptimisticDropReleased(input: {
   if (thread === undefined || thread.archivedAt !== null) {
     return true;
   }
-  const canonicalSection = effectiveSnoozed(thread, { now })
-    ? "snoozed"
-    : thread.settledOverride === "settled"
-      ? "settled"
-      : thread.pinnedAt != null
-        ? "pinned"
-        : "active";
+  const canonicalSection =
+    effectiveSnoozed(thread, { now }) || input.captainSnoozed
+      ? "snoozed"
+      : thread.settledOverride === "settled"
+        ? "settled"
+        : thread.pinnedAt != null
+          ? "pinned"
+          : "active";
   if (
     canonicalSection !== optimisticDrop.sourceSection &&
     canonicalSection !== optimisticDrop.section
@@ -1986,6 +1988,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       pinnedKeys,
       activeKeys,
       now: snoozeNow,
+      captainSnoozed: captainCards.get(optimisticDrop.key)?.snoozed != null,
     })
   ) {
     setOptimisticDrop(null);
@@ -2276,6 +2279,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       assignedKeys: new Map(assignments.map(({ id, orderKey }) => [id, orderKey])),
     };
     setOptimisticDrop(drop);
+    const snoozedCaptainCard =
+      activeSection === "snoozed" && drop.clearsSnooze ? captainCards.get(activeKey) : undefined;
     void (async () => {
       const run = async (
         operation: Promise<AtomCommandResult<unknown, unknown>>,
@@ -2296,6 +2301,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         }
         return false;
       };
+      if (
+        snoozedCaptainCard?.snoozed != null &&
+        !(await actOnCaptainItem(snoozedCaptainCard, { type: "unsnooze" }))
+      ) {
+        setOptimisticDrop((current) => (current === drop ? null : current));
+        return;
+      }
       switch (plan.kind) {
         case "settle": {
           settlingThreadKeysRef.current.add(activeKey);
