@@ -20,10 +20,15 @@ function editsText(event: KeyboardEvent) {
   return editable && event.key !== "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey;
 }
 
+// Fork: a sticky row, the pinned Snoozed header, holds its place on screen while rows move, and
+// its offsetTop follows the scroll, so it is never guarded.
 function readTops(list: HTMLElement) {
+  const view = list.ownerDocument.defaultView;
   const tops = new Map<HTMLElement, number>();
   for (const child of list.children) {
-    if (child instanceof HTMLElement) tops.set(child, child.offsetTop);
+    if (!(child instanceof HTMLElement)) continue;
+    const top = child.offsetTop;
+    if (view?.getComputedStyle(child).position !== "sticky") tops.set(child, top);
   }
   return tops;
 }

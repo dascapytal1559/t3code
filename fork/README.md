@@ -535,16 +535,25 @@ The thread menus (the card's context menu, a multi-selection's menu and the
 chat header's) leave out Settle, Un-settle and Auto-settle behavior. Upstream's
 settle paths still work: `Mod+Shift+S` settles and un-settles, a settled
 thread's chat still shows its Settled line with Un-settle, and MCP and the
-auto-settle setting still settle threads. Threads settled long enough ago that
-the shell leaves them out are not fetched, so they stay off the list.
+auto-settle setting still settle threads. The server does not offer clients
+upstream's older-settled trim (`shellOlderSettled`), so every unarchived thread
+reaches the list however many are settled; the mobile app's Settled shelf then
+lists them all too.
+
+The sidebar's shift guard, which drops a press on a row that just moved or
+appeared without the user's input, leaves the pinned header alone: it never
+slides under the pointer, and its position as the guard reads it follows the
+scroll, so a press on it after a scroll was dropped.
 
 Upstream code it touches, for syncs: the `SIDEBAR_SETTLED_SHELF` switch
 (`apps/web/src/components/sidebar/settledShelf.ts`), read by
 `partitionSidebarThreads`, the older-settled scopes, the list items and both
 context menus in `Sidebar.tsx`, and by `useThreadActionMenu.ts`; the Snoozed
 header's sticky classes and `toggleSnoozedShelfAndReveal` in `Sidebar.tsx`;
-and the drag projection in `Sidebar.drag.ts`, which leaves the pinned header
-where the browser put it. Upstream's Settled shelf tests do not apply: the
+the drag projection in `Sidebar.drag.ts`, which leaves the pinned header
+where the browser put it; `readTops` in `Sidebar.shiftGuard.ts`, which skips
+sticky rows; and the `shellOlderSettled` capability left out of the server's
+descriptor (`ServerEnvironment.ts`) and config (`ws.ts`). Upstream's Settled shelf tests do not apply: the
 11/14 sync dropped "sidebar settled pagination" from `Sidebar.browser.test.tsx`.
 
 ## FirstMate's automatic turns are quiet

@@ -163,6 +163,25 @@ describe("sidebar shift guard", () => {
     ).toBe(true);
   });
 
+  it("keeps a sticky row clickable when it appears or the list scrolls under it", async () => {
+    await using screen = await render(null);
+    const viewport = document.createElement("div");
+    viewport.style.cssText = "height: 100px; overflow-y: auto";
+    screen.container.append(viewport);
+    using list = mountList(viewport, ["A", "B", "C", "D", "E"]);
+    using _clock = fakeTimers();
+
+    list.add("Pinned");
+    list.button("Pinned").closest("li")!.style.cssText =
+      "height: 40px; position: sticky; bottom: 0";
+    list.guard.update();
+    await userEvent.click(list.button("Pinned"));
+    viewport.scrollTop = 60;
+    list.guard.update();
+    await userEvent.click(list.button("Pinned"));
+    expect(list.pressed).toEqual(["Pinned", "Pinned"]);
+  });
+
   it("ends a dropped press the browser cancels", async () => {
     await using screen = await render(null);
     using list = mountList(screen.container, ["A", "B", "C"]);
