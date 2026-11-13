@@ -493,7 +493,13 @@ function FloatingStatusLabel(props: {
         onLayout={props.onLayout}
       >
         <SymbolView
-          name={props.status.state === "settled" ? "checkmark.circle" : "clock"}
+          name={
+            props.status.state === "settled"
+              ? "checkmark.circle"
+              : props.status.state === "paused"
+                ? "pause"
+                : "clock"
+          }
           size={13}
           tintColorClassName="accent-foreground"
           type="monochrome"

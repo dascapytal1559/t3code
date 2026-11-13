@@ -266,6 +266,7 @@ describe("remote thread lifecycle commands", () => {
     ["setAutoSettle", { enabled: false }, { autoSettleDisabledAt: expect.any(Object) }],
     ["reorderPin", { orderKey: "b" }, { pinOrderKey: "b" }],
     ["reorderActive", { orderKey: "b" }, { activeOrderKey: "b" }],
+    ["liftExecutionFence", {}, { executionFence: null }],
   ] as const;
 
   it.effect.each(actions)(
@@ -287,6 +288,15 @@ describe("remote thread lifecycle commands", () => {
                 : {}),
               ...(action === "unpin" || action === "settle"
                 ? { pinnedAt: NOW, pinOrderKey: "a" }
+                : {}),
+              ...(action === "liftExecutionFence"
+                ? {
+                    executionFence: {
+                      label: "task-1",
+                      worktreePath: null,
+                      fencedAt: "2026-11-13T00:00:00.000Z",
+                    },
+                  }
                 : {}),
             },
           ],

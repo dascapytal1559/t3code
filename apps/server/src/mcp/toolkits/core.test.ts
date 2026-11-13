@@ -737,6 +737,16 @@ it.effect("a client caller targets any thread within its ceiling and cannot act 
       clientScope("auto"),
     );
     expect(declaredFailure(unlabelledFence)).toMatchObject({ code: "invalid_request" });
+    // The same command a client's Resume sends.
+    yield* call(
+      "t3_thread_organize",
+      { action: "unfence", threadId: "other-project-thread" },
+      clientScope("auto"),
+    );
+    expect(organizeCommands.at(-1)).toMatchObject({
+      type: "thread.execution-fence.lift",
+      threadId: "other-project-thread",
+    });
 
     // A client has no thread, so its note names no sender; nothing it passes can claim one.
     const note = yield* call(

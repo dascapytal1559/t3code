@@ -39,6 +39,7 @@ import { ThreadFind, ThreadFindCanvas } from "./chat/ThreadFindProvider";
 import { closeThreadFind, openThreadFind, useThreadFindOpen } from "./chat/threadFindStore";
 import { THREAD_FIND_BAR_RESERVED_HEIGHT } from "./chat/ThreadFindBar";
 import { usageLimitRecoveryBannerItem } from "./chat/UsageLimitRecoveryBanner";
+import { executionFenceBannerItem } from "./chat/ExecutionFenceBanner";
 import { resolveDraftHeroState } from "./ChatView.logic";
 import { useQueuedRunEdit } from "./chat/useQueuedRunEdit";
 import { recallCheckoutIsRepo, rememberCheckoutIsRepo } from "./ChatView.logic";
@@ -456,6 +457,9 @@ export default function ChatView(props: ChatViewProps) {
     reportFailure: false,
   });
   const canWriteSourceControl = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
+  const liftThreadExecutionFence = useOrchestrationCommand(threadEnvironment.liftExecutionFence, {
+    reportFailure: false,
+  });
   const setThreadRuntimeMode = useOrchestrationCommand(threadEnvironment.setRuntimeMode, {
     reportFailure: false,
   });
@@ -2609,6 +2613,16 @@ export default function ChatView(props: ChatViewProps) {
           },
         })
       : null;
+  const executionFenceBanner =
+    activeThreadShell?.executionFence != null
+      ? executionFenceBannerItem(async () => {
+          const result = await liftThreadExecutionFence({
+            environmentId,
+            input: { threadId: activeThreadShell.id },
+          });
+          if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        })
+      : null;
   const composerBannerItems = (() => {
     const fallbackSelection = draftFallback?.selection;
     const defaultSelection =
@@ -2655,6 +2669,7 @@ export default function ChatView(props: ChatViewProps) {
             }),
           ]
         : [];
+    const executionFenceItems = executionFenceBanner === null ? [] : [executionFenceBanner];
     const limitRecoveryItems = limitRecoveryBanner === null ? [] : [limitRecoveryBanner];
     const extensionStatusBanner = extensionStatusBannerItem(
       deriveProviderExtensionStatuses(serverProjection),
@@ -2672,6 +2687,7 @@ export default function ChatView(props: ChatViewProps) {
       return [
         ...feedbackBannerItems,
         ...fallbackItems,
+        ...executionFenceItems,
         ...limitRecoveryItems,
         ...extensionStatusItems,
         ...usageLimitsItems,
@@ -2684,6 +2700,7 @@ export default function ChatView(props: ChatViewProps) {
     return [
       ...feedbackBannerItems,
       ...fallbackItems,
+      ...executionFenceItems,
       ...limitRecoveryItems,
       ...extensionStatusItems,
       ...usageLimitsItems,
@@ -3597,6 +3614,9 @@ export default function ChatView(props: ChatViewProps) {
                     }
                   >
                     <ChildThreadApprovals threadRef={activeThreadRef} />
+                    {crewComposerHidden && executionFenceBanner !== null ? (
+                      <ComposerBannerStack items={[executionFenceBanner]} detached />
+                    ) : null}
                     {crewComposerHidden ? (
                       <CrewRunControls
                         onStop={canInterruptRunningThread ? onInterruptStable : null}

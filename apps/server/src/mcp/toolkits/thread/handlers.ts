@@ -481,18 +481,17 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
             enabled: input.action === "enable_auto_settle",
           };
           break;
-        case "fence":
-        case "unfence": {
-          const fence =
-            input.action === "unfence"
-              ? null
-              : {
-                  label: yield* required(input.fenceLabel, "fenceLabel"),
-                  expectedWorktreePath: yield* required(
-                    input.expectedWorktreePath,
-                    "expectedWorktreePath",
-                  ),
-                };
+        case "unfence":
+          command = { ...common, type: "thread.execution-fence.lift" };
+          break;
+        case "fence": {
+          const fence = {
+            label: yield* required(input.fenceLabel, "fenceLabel"),
+            expectedWorktreePath: yield* required(
+              input.expectedWorktreePath,
+              "expectedWorktreePath",
+            ),
+          };
           const result = yield* threads
             .dispatch({ ...common, type: "thread.execution-fence.set", fence })
             .pipe(Effect.mapError(dispatchFailure));

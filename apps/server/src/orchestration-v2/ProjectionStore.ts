@@ -1710,6 +1710,9 @@ export function threadShellFromProjection(
     ...(projection.thread.statusLabelSince == null
       ? {}
       : { statusLabelSince: projection.thread.statusLabelSince }),
+    ...(projection.thread.executionFence == null
+      ? {}
+      : { executionFence: projection.thread.executionFence }),
     forkedFrom: projection.thread.forkedFrom,
     activeProviderThreadId: projection.thread.activeProviderThreadId,
     ...(projection.thread.historyOrigin === undefined
@@ -2052,6 +2055,9 @@ function shellFromState(input: {
     ...(input.state.thread.statusLabelSince == null
       ? {}
       : { statusLabelSince: input.state.thread.statusLabelSince }),
+    ...(input.state.thread.executionFence == null
+      ? {}
+      : { executionFence: input.state.thread.executionFence }),
     forkedFrom: input.state.thread.forkedFrom,
     activeProviderThreadId: input.state.thread.activeProviderThreadId,
     ...(input.state.thread.historyOrigin === undefined

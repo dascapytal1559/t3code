@@ -3445,6 +3445,11 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         orchestrator.getThreadProjection(threadId),
         (projection) => projection.thread.executionFence ?? null,
       );
+      // Clients read the fence from the shell to show it and offer the lift.
+      const shellFenceOf = Effect.map(
+        orchestrator.getThreadShell(threadId),
+        (shell) => shell?.executionFence,
+      );
 
       assert.instanceOf(
         yield* fence("other-copy", "/tmp/another-copy").pipe(Effect.flip),
@@ -3485,15 +3490,16 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
         threadId,
       });
       assert.deepEqual(yield* fenceOf, fenced);
+      assert.deepEqual(yield* shellFenceOf, fenced);
       assert.lengthOf((yield* orchestrator.getThreadProjection(threadId)).runs, 0);
 
       yield* orchestrator.dispatch({
-        type: "thread.execution-fence.set",
+        type: "thread.execution-fence.lift",
         commandId: CommandId.make("runtime-layer-fence-lift"),
         threadId,
-        fence: null,
       });
       assert.isNull(yield* fenceOf);
+      assert.isNull((yield* shellFenceOf) ?? null);
       yield* send("lifted");
       assert.lengthOf((yield* orchestrator.getThreadProjection(threadId)).runs, 1);
       // A fence proves nothing runs here, so it waits for the run to end.

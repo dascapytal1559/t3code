@@ -2265,6 +2265,7 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   crewOf: OrchestrationV2AppThread.fields.crewOf,
   statusLabel: OrchestrationV2AppThread.fields.statusLabel,
   statusLabelSince: OrchestrationV2AppThread.fields.statusLabelSince,
+  executionFence: OrchestrationV2AppThread.fields.executionFence,
   forkedFrom: Schema.NullOr(OrchestrationV2AppThread.fields.forkedFrom),
   activeProviderThreadId: Schema.NullOr(ProviderThreadId),
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),
@@ -3246,6 +3247,12 @@ export const OrchestrationV2Command = Schema.Union([
     threadId: ThreadId,
     enabled: Schema.Boolean,
   }),
+  /** Lets a fenced thread run again. Only the server sets a fence. */
+  Schema.Struct({
+    type: Schema.Literal("thread.execution-fence.lift"),
+    commandId: CommandId,
+    threadId: ThreadId,
+  }),
   Schema.Struct({
     type: Schema.Literal("thread.pin"),
     commandId: CommandId,
@@ -3646,18 +3653,16 @@ const OrchestrationV2InternalCommand = Schema.Union([
     text: TrimmedNonEmptyString,
     senderThreadId: Schema.optional(ThreadId),
   }),
-  /** Set (object) or lift (null) the thread's execution fence. */
+  /** Sets the thread's execution fence; `thread.execution-fence.lift` lifts it. */
   Schema.Struct({
     type: Schema.Literal("thread.execution-fence.set"),
     commandId: CommandId,
     threadId: ThreadId,
-    fence: Schema.NullOr(
-      Schema.Struct({
-        label: OrchestrationV2ExecutionFenceLabel,
-        /** Refuse unless the thread still works here, so the fence names the copy being returned. */
-        expectedWorktreePath: Schema.NullOr(TrimmedNonEmptyString),
-      }),
-    ),
+    fence: Schema.Struct({
+      label: OrchestrationV2ExecutionFenceLabel,
+      /** Refuse unless the thread still works here, so the fence names the copy being returned. */
+      expectedWorktreePath: Schema.NullOr(TrimmedNonEmptyString),
+    }),
   }),
   // Guest share commands the server issues after checking T3 Connect and the guest token.
   Schema.Struct({

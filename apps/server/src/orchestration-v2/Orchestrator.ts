@@ -643,6 +643,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.tag.set":
     case "thread.note.append":
     case "thread.execution-fence.set":
+    case "thread.execution-fence.lift":
     case "thread.visit":
     case "thread.mark-unread":
     case "thread.metadata.update":
@@ -3959,7 +3960,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   const readLiveThread = Effect.fn("orchestrationV2.dispatch.readLiveThread")(function* (
     command: Extract<
       OrchestrationV2ServerCommand,
-      { readonly type: "thread.note.append" | "thread.execution-fence.set" }
+      {
+        readonly type:
+          | "thread.note.append"
+          | "thread.execution-fence.set"
+          | "thread.execution-fence.lift";
+      }
     >,
   ) {
     const thread = yield* projectionStore
@@ -4068,7 +4074,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     function* (
       command: Extract<
         OrchestrationV2ServerCommand,
-        { readonly type: "thread.execution-fence.set" }
+        { readonly type: "thread.execution-fence.set" | "thread.execution-fence.lift" }
       >,
       events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
     ) {
@@ -4080,7 +4086,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           cause: `Thread ${command.threadId} ${cause}`,
         });
       let executionFence: OrchestrationV2ThreadExecutionFence | null = null;
-      if (command.fence !== null) {
+      if (command.type === "thread.execution-fence.set") {
         if (command.fence.expectedWorktreePath !== thread.worktreePath) {
           return yield* refuse(
             `works in ${thread.worktreePath ?? "its project folder"}, not ${command.fence.expectedWorktreePath ?? "its project folder"}.`,
@@ -14832,6 +14838,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         yield* dispatchThreadNoteAppend(command, events);
         break;
       case "thread.execution-fence.set":
+      case "thread.execution-fence.lift":
         yield* dispatchThreadExecutionFence(command, events);
         break;
       case "thread.pull-request-watch.sync":

@@ -1128,8 +1128,18 @@ without starting another agent turn:
   open request. A fenced thread stays readable and takes notes, but sending a
   message or forking it fails, and any run that still reaches turn start fails
   there before a session or worktree is touched, whichever client or schedule
-  started it. Unarchive keeps the fence; `action: "unfence"` lifts it.
-  Fencing again with the same label keeps the first `fencedAt`.
+  started it. Unarchive keeps the fence. Fencing again with the same label
+  keeps the first `fencedAt`.
+- **Seeing and lifting a fence.** The thread shell carries `executionFence`,
+  so clients show it. Web and desktop put a "Paused by FirstMate" card with a
+  Resume button above the composer, or above a FirstMate worker's Stop and
+  Resume controls, since a worker has no composer. Mobile shows "Paused by
+  FirstMate" with Resume in the thread's floating status. Resume sends
+  `thread.execution-fence.lift`, the one client command that touches the
+  fence, and `action: "unfence"` sends the same command; setting a fence
+  stays server-only (`thread.execution-fence.set`). Resuming lets the thread
+  run in its old worktree path again, which may by then be back with its
+  owner.
 
 `t3_thread_list` items and `t3_thread_read`'s `thread` report `tags` and
 `autoSettleDisabled`; `thread` also reports `executionFence`
@@ -1137,9 +1147,10 @@ without starting another agent turn:
 these omit the fields. Clients detect the controls by the `action` enum and
 the `t3_thread_note` tool in `tools/list`. Code: `ThreadRetention.ts`,
 `appendNote` in `ThreadManagementService.ts`, the `thread.note.append` and
-`thread.execution-fence.set` handlers in `Orchestrator.ts` (all in
-`apps/server/src/orchestration-v2/`), and
-`apps/server/src/mcp/toolkits/thread/`.
+`thread.execution-fence.set`/`.lift` handlers in `Orchestrator.ts` (all in
+`apps/server/src/orchestration-v2/`), `apps/server/src/mcp/toolkits/thread/`,
+`ExecutionFenceBanner.tsx` in `apps/web/src/components/chat/`, and the
+`paused` lifecycle status in `apps/mobile/src/features/threads/`.
 
 ## FirstMate's sign-in lasts 10 years
 

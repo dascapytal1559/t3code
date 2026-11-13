@@ -471,7 +471,8 @@ function simpleThreadCommand(
     | "thread.settle"
     | "thread.pin"
     | "thread.unpin"
-    | "thread.guest-share.close",
+    | "thread.guest-share.close"
+    | "thread.execution-fence.lift",
   input: ThreadCommandInput,
 ) {
   return allocateCommandId(input).pipe(
@@ -572,6 +573,12 @@ export const setThreadAutoSettle = Effect.fn("EnvironmentCommands.setThreadAutoS
     enabled: input.enabled,
   });
 });
+
+export const liftThreadExecutionFence = Effect.fn("EnvironmentCommands.liftThreadExecutionFence")(
+  function* (input: ThreadCommandInput) {
+    return yield* simpleThreadCommand("thread.execution-fence.lift", input);
+  },
+);
 
 export const reorderPinnedThread = Effect.fn("EnvironmentCommands.reorderPinnedThread")(function* (
   input: ReorderPinnedThreadInput,
