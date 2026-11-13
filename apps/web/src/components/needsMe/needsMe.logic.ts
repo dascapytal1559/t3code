@@ -24,6 +24,8 @@ export function effectiveDecisions(
   state: Pick<DecisionsState, "decisions" | "actions">,
 ): StoredDecision[] {
   const byId = new Map(state.decisions.map((item) => [item.id, item] as const));
+  const archived = new Set<string>();
+  const threadArchived = new Set<string>();
   for (const action of state.actions) {
     const item = byId.get(action.itemId);
     if (item === undefined) continue;
@@ -37,14 +39,19 @@ export function effectiveDecisions(
         break;
       }
       case "archive":
+        archived.add(item.id);
+        break;
       case "thread-archived":
-        byId.delete(item.id);
+        threadArchived.add(item.id);
         break;
       case "thread-unarchived":
+        threadArchived.delete(item.id);
         break;
     }
   }
-  return [...byId.values()];
+  return [...byId.values()].filter(
+    (item) => !archived.has(item.id) && !threadArchived.has(item.id),
+  );
 }
 const OBJECTIVE_BULLET = /^(\s{0,3})(?:[-*+]|\d+[.)])\s+/;
 

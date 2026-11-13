@@ -389,6 +389,9 @@ describe("resolveCaptainCards", () => {
         item("tapped", { on: "tapped" }),
         item("woken", { on: "woken", snoozed: { at: "2026-11-12T00:00:00.000Z", until: null } }),
         item("archived", { on: "archived" }),
+        item("thread-archived", { on: "thread-archived" }),
+        item("restored", { on: "restored" }),
+        item("archived-then-restored", { on: "archived-then-restored" }),
         item("both", { on: "both", kind: "read" }),
         item("both-snoozed", {
           on: "both",
@@ -399,6 +402,11 @@ describe("resolveCaptainCards", () => {
         action(1, "tapped", "snooze", null),
         action(2, "woken", "unsnooze"),
         action(3, "archived", "archive"),
+        action(4, "thread-archived", "thread-archived"),
+        action(5, "restored", "thread-archived"),
+        action(6, "restored", "thread-unarchived"),
+        action(7, "archived-then-restored", "archive"),
+        action(8, "archived-then-restored", "thread-unarchived"),
       ],
     );
     expect(card("dated")?.snoozed?.until).toBe("2026-11-14T09:00:00.000Z");
@@ -406,6 +414,10 @@ describe("resolveCaptainCards", () => {
     expect(card("tapped")?.snoozed).toEqual({ at: "2026-11-13T11:00:00.000Z", until: null });
     expect(card("woken")?.snoozed).toBeNull();
     expect(card("archived")).toBeNull();
+    expect(card("thread-archived")).toBeNull();
+    // Undo on a thread archive brings its item back; the user's own Archive stays.
+    expect(card("restored")?.item.id).toBe("restored");
+    expect(card("archived-then-restored")).toBeNull();
     // A thread is snoozed only once every item on it is.
     expect([card("both")?.item.id, card("both")?.snoozed]).toEqual(["both", null]);
   });
