@@ -2647,7 +2647,7 @@ export default function ChatView(props: ChatViewProps) {
             input: { threadId: activeThreadShell.id },
           });
           if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-        })
+        }, canOperateThread)
       : null;
   const composerBannerItems = (() => {
     const fallbackSelection = draftFallback?.selection;

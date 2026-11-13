@@ -104,7 +104,7 @@ const RoutingSetTool = Tool.make("t3_routing_set", {
 const DecisionsSetTool = Tool.make("t3_decisions_set", {
   ...shared,
   description:
-    "Replace the items the user owes, shown on their `thread` card in T3's sidebar and in the Bridge tab. `decisions`: the whole list; one left out is gone, an identical list changes nothing. `kind: read` is a report to read. `snoozed.until: null` waits until brought back. Replies go to thread `replyTo`; the user's snooze and archive arrive on `t3_decisions_actions`.",
+    "Replace the items the user owes, shown on their `thread` card in T3's sidebar. `decisions`: the whole list; one left out is gone, an identical list changes nothing. `kind: read` is a report to read. `snoozed.until: null` waits until brought back. Replies go to thread `replyTo`; the user's snooze and archive arrive on `t3_decisions_actions`.",
   parameters: DecisionsSetInput,
   success: DecisionsSetResult,
 }).annotate(Tool.Destructive, true);

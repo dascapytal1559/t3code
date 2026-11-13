@@ -1985,7 +1985,6 @@ export const ServerSettingsPatch = Schema.Struct({
   objectives: Schema.optionalKey(Schema.NullOr(Objectives)),
   /** Replaced whole; null clears it. */
   modelRouting: Schema.optionalKey(Schema.NullOr(ModelRouting)),
-  /** Merged per report: a report pins or replaces that id, null unpins it. */
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 

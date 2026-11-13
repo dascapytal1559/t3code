@@ -212,7 +212,12 @@ export function KeptThreadReply(props: {
             </Menu>
           </Group>
         )}
-        <Button variant="ghost-muted" size="sm" onClick={() => void archive()}>
+        <Button
+          variant="ghost-muted"
+          size="sm"
+          disabled={!permitted}
+          onClick={() => void archive()}
+        >
           <ArchiveIcon aria-hidden />
           Archive
         </Button>
