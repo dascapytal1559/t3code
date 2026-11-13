@@ -1786,11 +1786,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const attemptUnsnooze = (threadRef: ScopedThreadRef) => {
     // Fork: a FirstMate item's snooze lives in FirstMate's list, so FirstMate brings it back.
     const captainCard = captainCards.get(scopedThreadKey(threadRef));
-    if (captainCard?.snoozed != null) {
-      void actOnCaptainItem(captainCard, { type: "unsnooze" });
-      return;
-    }
     void (async () => {
+      if (captainCard?.snoozed != null) {
+        if (!(await actOnCaptainItem(captainCard, { type: "unsnooze" }))) return;
+        const thread = readThreadShell(threadRef);
+        if (!thread || !effectiveSnoozed(thread, { now: new Date().toISOString() })) return;
+      }
       const result = await unsnoozeThread(threadRef);
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);

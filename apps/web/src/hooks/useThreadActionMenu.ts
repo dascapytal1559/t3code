@@ -246,8 +246,8 @@ export function useThreadActionMenu(input: {
           return;
         case "unsnooze":
           if (captainCard?.snoozed != null) {
-            await actOnCaptainItem(captainCard, { type: "unsnooze" });
-            return;
+            if (!(await actOnCaptainItem(captainCard, { type: "unsnooze" }))) return;
+            if (!effectiveSnoozed(thread, { now: new Date().toISOString() })) return;
           }
           await reportFailure("Failed to wake thread", () => unsnoozeThread(threadRef));
           return;
