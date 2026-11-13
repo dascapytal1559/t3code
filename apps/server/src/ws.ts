@@ -1893,7 +1893,7 @@ export const layerWsRpc = (
           shellResumeCompletionMarker: true,
           shellThreadFamilies: true,
           threadLinkMetadata: true,
-          shellOlderSettled: true,
+          // Fork: no `shellOlderSettled`; see ServerEnvironment's descriptor.
           threadResumeCompletionMarker: true,
           threadSnapshotPagination: true,
           threadFind: true,
