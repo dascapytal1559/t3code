@@ -28,7 +28,7 @@ const listed = (
   id: string,
   overrides: {
     updatedAt?: string;
-    wakeAt?: string;
+    snoozedUntil?: string | null;
     answered?: boolean;
     since?: string;
     noEntries?: boolean;
@@ -44,7 +44,9 @@ const listed = (
             ...(overrides.updatedAt === undefined ? [] : [update(overrides.updatedAt)]),
           ],
     ...(overrides.since === undefined ? {} : { since: overrides.since }),
-    ...(overrides.wakeAt === undefined ? {} : { wakeAt: overrides.wakeAt }),
+    ...(overrides.snoozedUntil === undefined
+      ? {}
+      : { snoozed: { at: at(6, 9), until: overrides.snoozedUntil } }),
     ...(overrides.answered === true
       ? { answered: { commandId: CommandId.make("reply"), at: at(6, 9) } }
       : {}),
@@ -60,12 +62,14 @@ describe("groupNeedsMeDecisions", () => {
         listed("no-entries", { noEntries: true, since: at(2, 9) }),
         listed("updated-before", { updatedAt: at(4, 9) }),
         listed("updated-last", { updatedAt: at(5, 9) }),
-        listed("back-later", { wakeAt: at(20, 9) }),
-        listed("back-soon", { wakeAt: at(19, 9) }),
+        listed("back-later", { snoozedUntil: at(20, 9) }),
+        listed("back-soon", { snoozedUntil: at(19, 9) }),
+        // Snoozed with no date: it waits until brought back, after every dated one.
+        listed("no-date", { snoozedUntil: null }),
         // A return date that has passed waits on the user again.
-        listed("returned", { wakeAt: at(7, 8), updatedAt: at(3, 9) }),
+        listed("returned", { snoozedUntil: at(7, 8), updatedAt: at(3, 9) }),
         listed("answered", { answered: true }),
-        listed("answered-then-scheduled", { answered: true, wakeAt: at(21, 9) }),
+        listed("answered-then-scheduled", { answered: true, snoozedUntil: at(21, 9) }),
       ],
       now,
     );
@@ -77,7 +81,7 @@ describe("groupNeedsMeDecisions", () => {
       "no-entries",
       "raised-only",
     ]);
-    expect(ids(groups.scheduled)).toEqual(["back-soon", "back-later"]);
+    expect(ids(groups.scheduled)).toEqual(["back-soon", "back-later", "no-date"]);
   });
 });
 
@@ -86,12 +90,15 @@ describe("needsMeRowDetail", () => {
     const decision = {
       entries: [raised(at(1, 9)), update(at(7, 10))],
       since: at(3, 9),
-      wakeAt: at(20, 9),
+      snoozed: { at: at(6, 9), until: at(20, 9) },
     };
     const nowMs = now.getTime();
     expect(needsMeRowDetail(decision, "open", nowMs)).toBe("2h ago");
     expect(needsMeRowDetail(decision, "scheduled", nowMs)).toBe(`back ${formatDay(at(20, 9))}`);
     expect(needsMeRowDetail({ entries: [] }, "open", nowMs)).toBe("");
+    expect(
+      needsMeRowDetail({ entries: [], snoozed: { at: at(6, 9), until: null } }, "scheduled", nowMs),
+    ).toBe("snoozed");
   });
 });
 

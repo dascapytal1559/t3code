@@ -5,6 +5,7 @@ import {
   decisionUpdatedAt,
   pinnedReportsNewestFirst,
   type DecisionAttachment,
+  type DecisionsState,
   type EnvironmentId,
   type PinnedReport,
   type ScopedThreadRef,
@@ -16,7 +17,44 @@ import { randomUUID } from "../../lib/utils";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 
 interface ListedDecision {
-  readonly decision: Pick<StoredDecision, "entries" | "since" | "wakeAt" | "answered">;
+  readonly decision: Pick<StoredDecision, "entries" | "since" | "snoozed" | "answered">;
+}
+
+type Snooze = NonNullable<StoredDecision["snoozed"]>;
+
+/** Whether a snooze still holds: undated until brought back, dated until its time passes. */
+export const isSnoozedAt = (snoozed: Snooze | undefined, nowMs: number): snoozed is Snooze =>
+  snoozed !== undefined && (snoozed.until === null || ms(snoozed.until) > nowMs);
+
+/**
+ * The items as the user should see them now: FirstMate's list with the user's actions it has not
+ * acknowledged applied over it, so a tap moves the item at once. Archived items are left out.
+ */
+export function effectiveDecisions(
+  state: Pick<DecisionsState, "decisions" | "actions">,
+): StoredDecision[] {
+  const byId = new Map(state.decisions.map((item) => [item.id, item] as const));
+  for (const action of state.actions) {
+    const item = byId.get(action.itemId);
+    if (item === undefined) continue;
+    switch (action.type) {
+      case "snooze":
+        byId.set(item.id, { ...item, snoozed: { at: action.at, until: action.until ?? null } });
+        break;
+      case "unsnooze": {
+        const { snoozed: _snoozed, ...awake } = item;
+        byId.set(item.id, awake);
+        break;
+      }
+      case "archive":
+      case "thread-archived":
+        byId.delete(item.id);
+        break;
+      case "thread-unarchived":
+        break;
+    }
+  }
+  return [...byId.values()];
 }
 
 export interface NeedsMeGroups<T> {
@@ -65,14 +103,14 @@ export function groupNeedsMeDecisions<T extends ListedDecision>(
   const scheduled: T[] = [];
   for (const item of decisions) {
     if (item.decision.answered !== undefined) continue;
-    (ms(item.decision.wakeAt) > nowMs ? scheduled : open).push(item);
+    (isSnoozedAt(item.decision.snoozed, nowMs) ? scheduled : open).push(item);
   }
   const updatedMs = (item: T) => ms(decisionUpdatedAt(item.decision) ?? item.decision.since);
+  // An undated snooze waits until brought back, so it sorts after every dated one.
+  const returnMs = (item: T) => ms(item.decision.snoozed?.until) || Number.POSITIVE_INFINITY;
   return {
     open: open.toSorted((left, right) => updatedMs(right) - updatedMs(left)),
-    scheduled: scheduled.toSorted(
-      (left, right) => ms(left.decision.wakeAt) - ms(right.decision.wakeAt),
-    ),
+    scheduled: scheduled.toSorted((left, right) => returnMs(left) - returnMs(right)),
   };
 }
 
@@ -94,7 +132,7 @@ export const formatDay = (iso: string) => dayLabel.format(Date.parse(iso));
 
 /** The gray detail on a row: Needs you its age, Scheduled its return day. */
 export function needsMeRowDetail(
-  decision: Pick<StoredDecision, "entries" | "since" | "wakeAt">,
+  decision: Pick<StoredDecision, "entries" | "since" | "snoozed">,
   section: keyof NeedsMeGroups<unknown>,
   nowMs: number,
 ): string {
@@ -103,8 +141,10 @@ export function needsMeRowDetail(
       const age = decisionAgeTimestamp(decision);
       return age === null ? "" : formatRelativeTimeLabel(age, nowMs);
     }
-    case "scheduled":
-      return decision.wakeAt === undefined ? "" : `back ${formatDay(decision.wakeAt)}`;
+    case "scheduled": {
+      const until = decision.snoozed?.until;
+      return until == null ? "snoozed" : `back ${formatDay(until)}`;
+    }
   }
 }
 

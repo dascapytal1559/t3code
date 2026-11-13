@@ -63,6 +63,7 @@ import {
   OrchestrationV2ThreadLaunchError,
   DecisionReplyError,
   KeptThreadReplyError,
+  DecisionActError,
   RuleAnswerError,
   type OrchestrationProjectShell,
   type OrchestrationV2ShellSnapshot,
@@ -2014,6 +2015,15 @@ export const layerWsRpc = (
           startup.enqueueCommand(decisions.replyToKeptThread(input, clientOrigin)).pipe(
             Effect.catchTags({
               ServerRuntimeStartupError: keptThreadReplyStartupError(input),
+            }),
+          ),
+        [ORCHESTRATION_V2_WS_METHODS.actOnDecision]: (input) =>
+          startup.enqueueCommand(decisions.act(input)).pipe(
+            Effect.catchTags({
+              ServerRuntimeStartupError: (cause) =>
+                Effect.fail(
+                  new DecisionActError({ decisionId: input.decisionId, reason: "failed", cause }),
+                ),
             }),
           ),
         [ORCHESTRATION_V2_WS_METHODS.answerRule]: (input) =>

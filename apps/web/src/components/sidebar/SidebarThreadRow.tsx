@@ -114,7 +114,11 @@ import {
   CrewTreeGutter,
   type CrewTreePlace,
 } from "./SidebarCrewTree";
-import { resolveCrewStatusLabel, showsCoordinatorAge } from "./coordinatorGroup.logic";
+import {
+  resolveCrewStatusLabel,
+  showsCoordinatorAge,
+  type CaptainCard,
+} from "./coordinatorGroup.logic";
 import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
@@ -538,9 +542,12 @@ type SidebarThreadRowProps = {
   variant: "card" | "slim" | "folder" | "folder-multiline";
   // The FirstMate main session: its age stands in for an idle status.
   coordinator?: boolean | undefined;
-  // Hides hover Snooze and Settle; the context menu still offers both.
+  // Hides hover Snooze and Settle; the context menu still offers both. Fork: the sidebar sets it on
+  // every row, and keeps upstream's hover code for syncs.
   hideHoverActions?: boolean | undefined;
   crewTree?: CrewTreePlace | undefined;
+  // Fork: FirstMate's item this thread's card carries.
+  captainCard?: CaptainCard | undefined;
   // The coordinator card the expanded crew hangs from, which carries the top of the guide line.
   crewTreeRoot?: boolean | undefined;
   onCrewTreeToggle?: (() => void) | undefined;
@@ -814,7 +821,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const isWokeStatus = topStatus?.icon === "woke";
   const crewStatusLabel = resolveCrewStatusLabel({
     crew: props.crewTree !== undefined,
-    statusLabel: thread.statusLabel,
+    // Fork: FirstMate's item on the thread says what it asks of the user, over FirstMate's label.
+    statusLabel: props.captainCard?.label ?? thread.statusLabel,
     status,
     isWoke,
   });
@@ -1388,7 +1396,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           timestamp={
                             variantAction === "unsettle"
                               ? resolveSettledThreadTimestamp(thread)
-                              : resolveThreadActivityTimestamp(thread)
+                              : // Fork: a FirstMate item snoozed with no date says how long it has waited.
+                                (props.captainCard?.snoozed?.at ??
+                                resolveThreadActivityTimestamp(thread))
                           }
                         />
                       </span>
@@ -1429,7 +1439,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       </TooltipTrigger>
                       <TooltipPopup side="top">Un-settle thread</TooltipPopup>
                     </Tooltip>
-                  ) : (
+                  ) : props.hideHoverActions === true ? null : (
                     <Tooltip>
                       <TooltipTrigger
                         render={
@@ -1576,7 +1586,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     )}
                   >
                     {crewStatusLabel !== null ? (
-                      <span className="inline-flex max-w-32 items-center gap-1 font-medium">
+                      <span
+                        className={cn(
+                          "inline-flex max-w-32 items-center gap-1",
+                          crewStatusLabel === "Replied" ? "font-normal" : "font-medium",
+                          crewStatusLabel === "Needs you" && "text-warning-foreground",
+                          crewStatusLabel === "To read" && "text-info-foreground",
+                        )}
+                      >
                         <span className="min-w-0 truncate">{crewStatusLabel}</span>
                         {/* FirstMate's validation run can take a while, so it counts like Working. */}
                         {crewStatusLabel === "Testing" ? (

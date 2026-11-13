@@ -234,7 +234,12 @@ import {
   OrchestrationV2RpcSchemas,
   OrchestrationV2ThreadLaunchError,
 } from "./orchestrationV2.ts";
-import { DecisionReplyError, DecisionsState, KeptThreadReplyError } from "./decisions.ts";
+import {
+  DecisionActError,
+  DecisionReplyError,
+  DecisionsState,
+  KeptThreadReplyError,
+} from "./decisions.ts";
 import { RuleAnswerError, RulesState } from "./rules.ts";
 import {
   ProjectCreateNewInput,
@@ -1912,6 +1917,12 @@ const WsOrchestrationV2ReplyToKeptThreadRpc = Rpc.make(
   },
 );
 
+const WsOrchestrationV2ActOnDecisionRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.actOnDecision, {
+  payload: OrchestrationV2RpcSchemas.actOnDecision.input,
+  success: OrchestrationV2RpcSchemas.actOnDecision.output,
+  error: Schema.Union([DecisionActError, EnvironmentAuthorizationError]),
+});
+
 const WsOrchestrationV2AnswerRuleRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.answerRule, {
   payload: OrchestrationV2RpcSchemas.answerRule.input,
   success: OrchestrationV2RpcSchemas.answerRule.output,
@@ -2336,6 +2347,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationV2ReplyToDecisionRpc,
   WsOrchestrationV2UndoDecisionReplyRpc,
   WsOrchestrationV2ReplyToKeptThreadRpc,
+  WsOrchestrationV2ActOnDecisionRpc,
   WsOrchestrationV2AnswerRuleRpc,
   WsOrchestrationV2GetTurnItemRpc,
   WsOrchestrationV2GetTurnDiffRpc,

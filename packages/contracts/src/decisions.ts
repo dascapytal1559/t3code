@@ -1,8 +1,10 @@
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import {
   CommandId,
   MessageId,
+  NonNegativeInt,
   PositiveInt,
   RunId,
   ThreadId,
@@ -60,13 +62,48 @@ const decisionFields = {
   entries: Schema.Array(DecisionEntry).check(Schema.isMaxLength(24)),
   /** FirstMate's version of the decision; a reply written against an older one is refused. */
   revision: PositiveInt,
-  /** Set: the decision waits under Scheduled until then. */
-  wakeAt: Schema.optional(DecisionTime),
+  /** `read`: a finished report with nothing to decide. Absent means a decision. */
+  kind: Schema.optional(Schema.Literals(["decision", "read"])),
+  /** The thread whose card carries the item; `finished` when its work is done. */
+  thread: Schema.optional(Schema.Struct({ id: ThreadId, finished: Schema.Boolean })),
+  /** The user put it off at `at`, until `until` or, when null, until they bring it back. */
+  snoozed: Schema.optional(Schema.Struct({ at: DecisionTime, until: Schema.NullOr(DecisionTime) })),
 };
 
-/** A decision as FirstMate sends it. */
-export const Decision = Schema.Struct(decisionFields);
+/** A decision as FirstMate sends it. An older sender's `wakeAt` is read as a snooze until then. */
+export const Decision = Schema.Struct({
+  ...decisionFields,
+  wakeAt: Schema.optional(DecisionTime),
+});
 export type Decision = typeof Decision.Type;
+
+/** The action types: the user's three, and T3's own record of an archived or restored thread. */
+export const DecisionActionType = Schema.Literals([
+  "snooze",
+  "unsnooze",
+  "archive",
+  "thread-archived",
+  "thread-unarchived",
+]);
+export type DecisionActionType = typeof DecisionActionType.Type;
+
+/**
+ * Something the user did to an item, logged until FirstMate applies it to its own records and
+ * acknowledges it. Clients show the item as if it were applied meanwhile.
+ */
+export const DecisionAction = Schema.Struct({
+  seq: PositiveInt,
+  /** A retry with the same id adds nothing. */
+  commandId: CommandId,
+  itemId: decisionFields.id,
+  /** The item's revision the user saw. */
+  revision: PositiveInt,
+  type: DecisionActionType,
+  /** For `snooze`: when the item returns, or null to wait until it is brought back. */
+  until: Schema.optional(Schema.NullOr(DecisionTime)),
+  at: DecisionTime,
+});
+export type DecisionAction = typeof DecisionAction.Type;
 
 /** A decision as T3 keeps it. `answered` is T3's own: the user replied to this version of it. */
 export const StoredDecision = Schema.Struct({
@@ -78,6 +115,14 @@ export const StoredDecision = Schema.Struct({
       at: DecisionTime,
     }),
   ),
+  /** FirstMate refused the user's last action on this version, saying why. */
+  refused: Schema.optional(
+    Schema.Struct({
+      type: DecisionActionType,
+      message: Schema.optional(DecisionText(500)),
+      at: DecisionTime,
+    }),
+  ),
 });
 export type StoredDecision = typeof StoredDecision.Type;
 
@@ -85,10 +130,19 @@ export const DecisionsState = Schema.Struct({
   /** FirstMate's chat, where replies are sent. Null until FirstMate sets a list. */
   replyTo: Schema.NullOr(ThreadId),
   decisions: Schema.Array(StoredDecision),
+  /** The user's actions FirstMate has not acknowledged yet, oldest first. */
+  actions: Schema.Array(DecisionAction).pipe(Schema.withDecodingDefaultKey(Effect.succeed([]))),
+  /** The last action's `seq`, so a new one never reuses an acknowledged one's. */
+  lastActionSeq: NonNegativeInt.pipe(Schema.withDecodingDefaultKey(Effect.succeed(0))),
 });
 export type DecisionsState = typeof DecisionsState.Type;
 
-export const EMPTY_DECISIONS_STATE: DecisionsState = { replyTo: null, decisions: [] };
+export const EMPTY_DECISIONS_STATE: DecisionsState = {
+  replyTo: null,
+  decisions: [],
+  actions: [],
+  lastActionSeq: 0,
+};
 
 const MAX_DECISIONS = 200;
 
@@ -188,6 +242,66 @@ export const DecisionUndoReplyResult = Schema.Struct({
   withdrawn: Schema.Boolean,
 });
 export type DecisionUndoReplyResult = typeof DecisionUndoReplyResult.Type;
+
+/** The user snoozes, brings back or archives an item from its card. */
+export const DecisionActInput = Schema.Struct({
+  decisionId: decisionFields.id,
+  /** A retry with the same id adds nothing. */
+  commandId: CommandId,
+  /** The revision the user saw; Archive on a newer one is refused, so the user reads it first. */
+  revision: PositiveInt,
+  action: Schema.Union([
+    Schema.Struct({ type: Schema.Literal("snooze"), until: Schema.NullOr(DecisionTime) }),
+    Schema.Struct({ type: Schema.Literal("unsnooze") }),
+    Schema.Struct({ type: Schema.Literal("archive") }),
+  ]),
+});
+export type DecisionActInput = typeof DecisionActInput.Type;
+
+export const DecisionActResult = Schema.Struct({ seq: PositiveInt });
+export type DecisionActResult = typeof DecisionActResult.Type;
+
+export class DecisionActError extends Schema.TaggedError<DecisionActError>()("DecisionActError", {
+  decisionId: decisionFields.id,
+  reason: Schema.Literals(["not-found", "updated", "failed"]),
+  cause: Schema.optional(Schema.Defect()),
+}) {
+  override get message(): string {
+    switch (this.reason) {
+      case "not-found":
+        return "This item is no longer waiting on you.";
+      case "updated":
+        return "FirstMate updated this item since you opened it. Read the update first.";
+      case "failed":
+        return "Could not save that.";
+    }
+  }
+}
+
+/** FirstMate's side: acknowledge applied actions and read, or wait for, the next ones. */
+export const DecisionActionsInput = Schema.Struct({
+  /** Return only actions with a higher `seq`. */
+  after: Schema.optional(NonNegativeInt),
+  /** With none to return, wait up to this long for one. */
+  waitMs: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 30_000 }))),
+  /** Actions applied or refused; they leave the log. A refusal's `message` is shown to the user. */
+  ack: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        seq: PositiveInt,
+        outcome: Schema.Literals(["applied", "refused"]),
+        message: Schema.optional(DecisionText(500)),
+      }),
+    ).check(Schema.isMaxLength(200)),
+  ),
+});
+export type DecisionActionsInput = typeof DecisionActionsInput.Type;
+
+export const DecisionActionsResult = Schema.Struct({
+  actions: Schema.Array(DecisionAction),
+  lastSeq: NonNegativeInt,
+});
+export type DecisionActionsResult = typeof DecisionActionsResult.Type;
 
 export class DecisionReplyError extends Schema.TaggedError<DecisionReplyError>()(
   "DecisionReplyError",

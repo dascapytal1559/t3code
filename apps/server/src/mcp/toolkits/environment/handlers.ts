@@ -147,6 +147,14 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
       };
     }),
   ),
+  t3_decisions_actions: McpToolAccess.writesEnvironment((input) =>
+    Effect.gen(function* () {
+      yield* access;
+      return yield* (yield* Decisions.Decisions)
+        .actions(input)
+        .pipe(Effect.mapError(() => unavailable()));
+    }),
+  ),
   t3_rules_set: McpToolAccess.writesEnvironment((input) =>
     Effect.gen(function* () {
       yield* access;

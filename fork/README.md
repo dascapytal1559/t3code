@@ -331,8 +331,9 @@ the user show as usual. The age is the thread's, since a `/clear` keeps the
 thread. Neither it nor anything in its tree shows a branch line, since a worker's
 branch matters little inside FirstMate; other threads and the hover card keep it
 (`isThreadMetaLineEmpty` in `apps/web/src/components/Sidebar.logic.ts`). Its crewmates hang below it as a
-tree that collapses to a count. Its decisions are not in the sidebar; see
-[Bridge](#bridge). A pinned coordinator (see below) gets this card even with
+tree that collapses to a count. What FirstMate needs from the user shows on
+those cards; see [Captain items in the sidebar](#captain-items-in-the-sidebar).
+A pinned coordinator (see below) gets this card even with
 no crew; without any coordinator the sidebar is unchanged.
 
 The main session is always titled "Firstmate", because a generated title for
@@ -347,11 +348,12 @@ every other thread. Upstream code it touches, for syncs: two guards in
 `apps/server/src/orchestration-v2/Orchestrator.ts`, on `thread.metadata.update`
 and on the initial title in `message.dispatch` (`isPrimaryCoordinator`).
 
-The FirstMate and crew cards have no hover Snooze or Settle (the context menu
-still has both, and snoozing or settling takes a thread out of the group). A
-"Waiting for captain" card closes from its own thread instead (see
-[A crewmate has no composer](#a-crewmate-has-no-composer)). The cards drag only
-as chat context. A fresh
+No card in the sidebar, crew or not, has hover Snooze or Settle; the context
+menu still has both, and snoozing or settling takes a thread out of the group.
+A card carrying FirstMate's item closes from its own thread instead (see
+[A crewmate has no composer](#a-crewmate-has-no-composer)). Upstream's hover
+code stays for syncs: the sidebar passes `hideHoverActions` to every row. The
+crew cards drag only as chat context. A fresh
 page load on the home route opens a coordinator whatever its run status,
 the most recently updated if there are several, because a restart ends every
 run. A thread's Lineage panel lists its Crew or Coordinator.
@@ -456,16 +458,65 @@ only: the server takes messages for crew as before, so FirstMate's MCP messages
 arrive unchanged, and mobile still shows the composer. Code:
 `crewComposerHidden` in `apps/web/src/components/ChatView.tsx`.
 
-A crew thread whose card reads "Waiting for captain" (FirstMate kept it open for
-the user, see [Threads kept for a reader](#threads-kept-for-a-reader)) gets a
-plain reply box with Send to FirstMate and Archive. A reply never reaches the
-worker: `orchestration.replyToKeptThread` (operate scope, like a Bridge reply)
-queues one user message in the thread's coordinator, `**Reply · <title>**`, then
-`kept-thread: <threadId>`, a blank line and the words, and the thread stays
-open. Archive is the ordinary archive, with its Undo and unarchive; FirstMate
-notices it on its own. Code: `KeptThreadReply.tsx` in
+A crew thread that carries one of FirstMate's items (see
+[Captain items in the sidebar](#captain-items-in-the-sidebar)) gets a plain
+reply box with Send to FirstMate, Snooze and Archive. A reply never reaches the
+worker: it is the item's decision reply, `needs-me-task: <id>` in FirstMate's
+chat with the revision the user read, as from the Bridge. Snooze is one tap
+with no return date; its arrow offers the environment's snooze presets and
+Custom…, which set a return time. A snoozed item shows Bring back instead.
+Archive on a card FirstMate marks finished is the ordinary thread archive, with
+its Undo and unarchive; on a worker still running it only closes the item, and
+FirstMate winds the worker down through its own cleanup. A refusal from
+FirstMate shows above the box until FirstMate changes the item.
+
+Until FirstMate sends items with threads, a crew thread whose card reads
+"Waiting for captain" (FirstMate kept it open for the user, see
+[Threads kept for a reader](#threads-kept-for-a-reader)) gets the same box with
+only Send to FirstMate and Archive: `orchestration.replyToKeptThread` (operate
+scope) queues `**Reply · <title>**`, then `kept-thread: <threadId>`, a blank
+line and the words. Code: `KeptThreadReply.tsx` in
 `apps/web/src/components/chat/` and `Decisions.replyToKeptThread` in
 `apps/server/src/decisions/Decisions.ts`.
+
+## Captain items in the sidebar
+
+FirstMate's backlog is the one record of what waits on the user; T3 shows it on
+the cards of the threads it is about. Each item FirstMate sends with a `thread`
+labels that thread's card on the right, where Working or Done would sit:
+"Needs you" for a decision, "To read" for a finished report, or a gray
+"Replied" once the user has answered this version. Busy and needs-the-user
+statuses still show over it, as with FirstMate's own labels. A thread carrying
+several items shows one: a waiting item over a snoozed one, Needs you over To
+read, then the oldest. A decision with no worker is a crew thread FirstMate
+creates, titled with the question.
+
+A snoozed item takes its card out of the crew and into the Snoozed section,
+with no label: a dated snooze shows upstream's alarm and "in 3 days", one with
+no date the time since it was snoozed ("2d"). Its wake button brings it back.
+A dated snooze returns on the minute its time passes, with no push. These
+snoozes live in FirstMate's list, not upstream's thread snooze, which needs a
+date and would be a second record; the thread itself is never snoozed. Snooze
+from the card's context menu or the chat header's menu on such a thread also
+snoozes the item.
+
+Snooze, Bring back and Archive on a running worker are actions T3 logs for
+FirstMate (`orchestration.actOnDecision`, operate scope). The card moves at
+once: clients apply every action FirstMate has not acknowledged over its list.
+FirstMate applies each to its backlog, sends the new list and then acknowledges
+it, so the card never jumps back. Archive needs the revision the user saw; a
+newer one refuses it so the user reads the update first. T3 also logs
+`thread-archived` and `thread-unarchived` when a thread an item names is
+archived or restored from anywhere, from the server's domain events.
+
+Code: `resolveCaptainCards` in
+`apps/web/src/components/sidebar/coordinatorGroup.logic.ts`,
+`effectiveDecisions` in `components/needsMe/needsMe.logic.ts`,
+`components/sidebar/useCaptainCards.ts`, `act`, `actions` and the archive watch
+in `apps/server/src/decisions/Decisions.ts`. Upstream files it touches, for
+syncs: the snoozed placement and sort in `partitionSidebarThreads` and the
+snooze and wake routing in `Sidebar.tsx`, the label and time props in
+`SidebarThreadRow.tsx`, and the snooze routing in `useThreadActionMenu.ts`.
 
 ## FirstMate's automatic turns are quiet
 
@@ -569,14 +620,15 @@ decisions waiting now, newest update first, each with its project, title and,
 in gray, the time since FirstMate's latest change (an `update` entry), else
 since the decision started waiting (`since`, else its raised entry), so an
 update an hour ago reads "1h ago" while rewording the raised context does not
-reset the age. Rows carry no New or Updated mark. A decision with a return date
-still ahead (`wakeAt`) waits under "Scheduled", soonest first, with that day
-("back 12 Nov"), and moves up to Needs you by itself when the day comes. A
-decision the captain has answered is not listed until FirstMate changes it. The
-project is the one the decision names in `projectName`; without one it is the
-project of FirstMate's chat. Nothing in the sidebar counts or lists decisions.
-The tab lists the decisions of every connected environment, and asks for them
-only while it is open.
+reset the age. Rows carry no New or Updated mark. A snoozed decision
+(`snoozed`) waits under "Scheduled": dated ones soonest first with their day
+("back 12 Nov"), moving up to Needs you by themselves when the time comes, then
+undated ones, reading "snoozed". A decision the captain has answered is not
+listed until FirstMate changes it. The project is the one the decision names in
+`projectName`; without one it is the project of FirstMate's chat. The tab lists
+the decisions of every connected environment. The sidebar shows the ones that
+name a thread on that thread's card (see
+[Captain items in the sidebar](#captain-items-in-the-sidebar)).
 
 <img src="media/bridge-decision.jpg" width="400" alt="An open decision in the Bridge tab: FirstMate's messages as sent with their file attachments, an update with its what-changed line, option chips and the reply box">
 
@@ -613,7 +665,8 @@ The records, for FirstMate's side:
   environment's caller.
 - A decision is `{ id, title, projectName?, since?, question, options[{label}],
   entries[{at, kind: raised|update, changed?, text,
-  attachments?[{kind, path, label?}]}], revision, wakeAt? }`: at most 200
+  attachments?[{kind, path, label?}]}], revision, kind?, thread?, snoozed? }`:
+  at most 200
   decisions, each `id` once; entry text at most 8,192 characters, 24 entries,
   12 options, 12 attachments per entry. `id` is FirstMate's own id for the
   decision, its task id. `projectName` (at most 200 characters) is the project
@@ -622,10 +675,27 @@ The records, for FirstMate's side:
   date-time such as `2026-10-26T06:53:24.000Z` (any string `Date.parse` reads
   is accepted; send the full UTC form); the row's age counts from it, falling
   back to the raised entry. `revision` is FirstMate's own, a positive integer
-  that grows when the captain should read the decision again. `wakeAt`, in the
-  same date form, is the return date of a deferred decision; leave it out of
-  one that waits now. An option is its button label only; FirstMate's messages
-  explain the options, and an option `detail` from an older sender is ignored.
+  that grows when the captain should read the decision again. `kind` is
+  `decision` (the default) or `read`, a finished report with nothing to decide.
+  `thread: { id, finished }` is the thread whose card carries the item;
+  `finished` says its work is done, so Archive there archives the thread.
+  `snoozed: { at, until }`, in the same date form, says the captain put it off
+  at `at`, until `until`, or with `until: null` until brought back; leave it out
+  of one that waits now. An older sender's `wakeAt` is read as
+  `snoozed: { at: since, until: wakeAt }`. An option is its button label only;
+  FirstMate's messages explain the options, and an option `detail` from an
+  older sender is ignored.
+- `t3_decisions_actions` reads the captain's actions on the items, oldest
+  first: `snooze` (with `until`, null for no date), `unsnooze`, `archive`, and
+  T3's own `thread-archived` and `thread-unarchived` for a thread an item
+  names. Each is `{ seq, commandId, itemId, revision, type, until?, at }`.
+  Input: `{ after?, waitMs?, ack?[{ seq, outcome: applied|refused, message? }] }`.
+  `ack` drops those actions from the log first; a refusal's message shows on
+  the item's card until FirstMate changes it. With nothing after `after`, the
+  call waits up to `waitMs` (at most 30 seconds) for an action. The result is
+  `{ actions[], lastSeq }`. The log is kept in `decisions.json`, so an action
+  FirstMate has not acknowledged survives a restart; a repeated `commandId`
+  adds nothing. Same access rules as `t3_decisions_set`.
 - T3 keeps the list in `decisions.json` in its data folder, beside
   `settings.json`, so it survives a restart. A file it cannot read starts as an
   empty list, which FirstMate's next call fills.
@@ -656,12 +726,12 @@ The records, for FirstMate's side:
   update.
 
 Clients read the list on the `subscribeDecisions` stream, as `{ replyTo,
-decisions[] }` where an answered decision carries `answered { commandId, at }`,
-and reply with `orchestration.replyToDecision` and
-`orchestration.undoDecisionReply`, which name the decision by `decisionId`. A
-client with no Bridge never subscribes, so it is sent nothing: there is nothing
-to hide from the App Store mobile app or app.t3.codes. Decisions raise no
-notifications. The mobile app has no Bridge screen yet.
+decisions[], actions[], lastActionSeq }` where an answered decision carries
+`answered { commandId, at }`, and reply with `orchestration.replyToDecision` and
+`orchestration.undoDecisionReply`, which name the decision by `decisionId`. The
+web and desktop sidebar subscribes while it runs; the App Store mobile app never
+subscribes, so it is sent nothing. Decisions raise no notifications. The mobile
+app shows no items yet.
 
 Decisions were once threads with no agent. FirstMate archived every one of them
 when it moved to `t3_decisions_set`, and T3 no longer knows them as decisions:
@@ -671,7 +741,7 @@ Code: `packages/contracts/src/decisions.ts`,
 `apps/server/src/decisions/Decisions.ts`, `apps/web/src/state/decisions.ts` and
 `apps/web/src/components/needsMe/`. Shared files it touches, for syncs: the
 `subscribeDecisions` stream in `rpc.ts` and `ws.ts`, with its scope in
-`RpcAuthorization.ts` and `RpcInstrumentation.ts`; the two reply RPCs in
+`RpcAuthorization.ts` and `RpcInstrumentation.ts`; the two reply RPCs and `actOnDecision` in
 `orchestrationV2.ts`, `rpc.ts` and `ws.ts`, with their scopes in
 `clientRpcPermissions.ts`, `RpcAuthorization.ts` and `RpcInstrumentation.ts`;
 the layer in `orchestration-v2/runtimeLayer.ts`; in `packages/client-runtime`,

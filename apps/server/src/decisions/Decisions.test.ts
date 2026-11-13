@@ -7,15 +7,22 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ThreadId,
+  EMPTY_DECISIONS_STATE,
+  EventId,
   type Decision,
+  type DecisionsState,
+  type OrchestrationV2DomainEvent,
 } from "@t3tools/contracts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 
 import * as ServerConfig from "../config.ts";
 import { CodexProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
@@ -105,7 +112,20 @@ const shed: Decision = {
   options: [],
   entries: [{ at: "2026-11-01T00:00:00.000Z", kind: "raised", text: "Two paints fit." }],
   revision: 1,
+  // An older FirstMate's return date, kept as a snooze since the decision began waiting.
   wakeAt: "2026-11-12T00:00:00.000Z",
+};
+const { wakeAt: _wakeAt, ...shedAsSent } = shed;
+const stored: DecisionsState = {
+  ...EMPTY_DECISIONS_STATE,
+  replyTo: coordinator,
+  decisions: [
+    camera,
+    {
+      ...shedAsSent,
+      snoozed: { at: "2026-11-01T00:00:00.000Z", until: "2026-11-12T00:00:00.000Z" },
+    },
+  ],
 };
 
 const setup = (options: { readonly coordinatorBusy: boolean }) =>
@@ -161,9 +181,9 @@ it.layer(NodeServices.layer)("Decisions", (it) => {
         yield* setup({ coordinatorBusy: false });
         yield* started((decisions) =>
           Effect.gen(function* () {
-            assert.deepEqual(yield* current(decisions), { replyTo: null, decisions: [] });
+            assert.deepEqual(yield* current(decisions), EMPTY_DECISIONS_STATE);
             const first = yield* decisions.set({ replyTo: coordinator, decisions: [camera, shed] });
-            assert.deepEqual(first, { replyTo: coordinator, decisions: [camera, shed] });
+            assert.deepEqual(first, stored);
             // FirstMate sends the list on every change of its own records; a repeat is no change.
             assert.strictEqual(
               yield* decisions.set({ replyTo: coordinator, decisions: [camera, shed] }),
@@ -176,7 +196,7 @@ it.layer(NodeServices.layer)("Decisions", (it) => {
           }),
         );
         const afterRestart = yield* started(current);
-        assert.deepEqual(afterRestart, { replyTo: coordinator, decisions: [camera, shed] });
+        assert.deepEqual(afterRestart, stored);
         // A decision left out of the next list is gone.
         const dropped = yield* started((decisions) =>
           decisions.set({ replyTo: coordinator, decisions: [shed] }),
@@ -337,8 +357,11 @@ it.layer(NodeServices.layer)("Decisions", (it) => {
             assert.equal(undone.withdrawn, false);
             assert.ok((yield* answered(decisions, camera.id)) !== undefined);
 
-            // FirstMate defers it to a date: a changed decision shows again, under Scheduled.
-            const deferred = { ...camera, wakeAt: "2026-11-17T00:00:00.000Z" };
+            // FirstMate snoozes it to a date: a changed decision shows again, under Snoozed.
+            const deferred: Decision = {
+              ...camera,
+              snoozed: { at: "2026-11-10T00:00:00.000Z", until: "2026-11-17T00:00:00.000Z" },
+            };
             yield* decisions.set({ replyTo: coordinator, decisions: [deferred] });
             assert.deepEqual((yield* current(decisions)).decisions, [deferred]);
           }),
@@ -439,5 +462,167 @@ it.layer(NodeServices.layer)("Decisions", (it) => {
           }),
         );
       }).pipe(Effect.provide(layerHome)),
+  );
+
+  it.effect(
+    "logs the user's actions until FirstMate acknowledges them, across a restart, and refuses a stale archive",
+    () =>
+      Effect.gen(function* () {
+        yield* setup({ coordinatorBusy: false });
+        const act = (
+          decisions: Decisions.Decisions["Service"],
+          commandId: string,
+          revision: number,
+          action: Parameters<Decisions.Decisions["Service"]["act"]>[0]["action"],
+        ) =>
+          decisions.act({
+            decisionId: camera.id,
+            commandId: CommandId.make(commandId),
+            revision,
+            action,
+          });
+        yield* started((decisions) =>
+          Effect.gen(function* () {
+            yield* decisions.set({ replyTo: coordinator, decisions: [{ ...camera, revision: 2 }] });
+            // Snooze is harmless, so it goes through on an older revision.
+            const snooze = { type: "snooze", until: null } as const;
+            assert.deepEqual(yield* act(decisions, "snooze", 1, snooze), { seq: 1 });
+            assert.deepEqual(yield* act(decisions, "snooze", 1, snooze), { seq: 1 });
+            const stale = yield* act(decisions, "archive:stale", 1, { type: "archive" }).pipe(
+              Effect.flip,
+            );
+            assert.equal(stale.reason, "updated");
+            assert.deepEqual(yield* act(decisions, "archive", 2, { type: "archive" }), { seq: 2 });
+            const gone = yield* decisions
+              .act({
+                decisionId: shed.id,
+                commandId: CommandId.make("gone"),
+                revision: 1,
+                action: { type: "unsnooze" },
+              })
+              .pipe(Effect.flip);
+            assert.equal(gone.reason, "not-found");
+          }),
+        );
+        yield* started((decisions) =>
+          Effect.gen(function* () {
+            const logged = yield* decisions.actions({ after: 1 });
+            assert.deepEqual(
+              logged.actions.map(({ seq, type, revision }) => ({ seq, type, revision })),
+              [{ seq: 2, type: "archive", revision: 2 }],
+            );
+            assert.equal(logged.lastSeq, 2);
+            const acked = yield* decisions.actions({
+              ack: [
+                { seq: 1, outcome: "applied" },
+                { seq: 2, outcome: "refused", message: "The worker is still running." },
+              ],
+            });
+            assert.deepEqual(acked, { actions: [], lastSeq: 2 });
+            const item = (yield* current(decisions)).decisions[0];
+            assert.equal(item?.refused?.type, "archive");
+            assert.equal(item?.refused?.message, "The worker is still running.");
+            // A new action never reuses an acknowledged one's seq, and clears the refusal.
+            assert.deepEqual(yield* act(decisions, "unsnooze", 2, { type: "unsnooze" }), {
+              seq: 3,
+            });
+            assert.equal((yield* current(decisions)).decisions[0]?.refused, undefined);
+          }),
+        );
+      }).pipe(Effect.provide(layerHome)),
+  );
+
+  it.effect("a waiting read returns as soon as the user acts, or empty when the wait ends", () =>
+    Effect.gen(function* () {
+      yield* setup({ coordinatorBusy: false });
+      yield* started((decisions) =>
+        Effect.gen(function* () {
+          yield* decisions.set({ replyTo: coordinator, decisions: [camera] });
+          const idle = yield* decisions.actions({ waitMs: 30_000 }).pipe(Effect.forkChild);
+          yield* TestClock.adjust("30 seconds");
+          assert.deepEqual(yield* Fiber.join(idle), { actions: [], lastSeq: 0 });
+
+          const waiting = yield* decisions.actions({ waitMs: 30_000 }).pipe(Effect.forkChild);
+          yield* decisions.act({
+            decisionId: camera.id,
+            commandId: CommandId.make("snooze"),
+            revision: 1,
+            action: { type: "snooze", until: "2026-11-20T09:00:00.000Z" },
+          });
+          const woken = yield* Fiber.join(waiting);
+          assert.deepEqual(
+            woken.actions.map(({ type, until }) => ({ type, until })),
+            [{ type: "snooze", until: "2026-11-20T09:00:00.000Z" }],
+          );
+        }),
+      );
+    }).pipe(Effect.provide(layerHome)),
+  );
+
+  it.effect("an archived or restored thread that carries an item is logged for FirstMate", () =>
+    Effect.gen(function* () {
+      yield* setup({ coordinatorBusy: false });
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const { thread } = yield* threads.getThreadRecords(coordinator, []);
+      const events = yield* Queue.unbounded<OrchestrationV2DomainEvent>();
+      const lifecycle = (
+        id: string,
+        type: "thread.archived" | "thread.unarchived",
+        threadId: ThreadId,
+      ) =>
+        Queue.offer(events, {
+          id: EventId.make(id),
+          type,
+          threadId,
+          occurredAt: DateTime.makeUnsafe("2026-11-13T00:00:00.000Z"),
+          payload: { ...thread, id: threadId },
+        } satisfies OrchestrationV2DomainEvent);
+      const garmin = ThreadId.make("thread:garmin");
+      yield* Decisions.Decisions.pipe(
+        Effect.flatMap((decisions) =>
+          Effect.gen(function* () {
+            yield* decisions.set({
+              replyTo: coordinator,
+              decisions: [{ ...camera, kind: "read", thread: { id: garmin, finished: true } }],
+            });
+            yield* lifecycle("event:other", "thread.archived", ThreadId.make("thread:other"));
+            yield* lifecycle("event:archived", "thread.archived", garmin);
+            yield* lifecycle("event:restored", "thread.unarchived", garmin);
+            const logged = yield* decisions.changes.pipe(
+              Stream.filter((state) => state.actions.length === 2),
+              Stream.runHead,
+              Effect.map(Option.getOrThrow),
+            );
+            assert.deepEqual(
+              logged.actions.map(({ type, itemId, commandId }) => ({ type, itemId, commandId })),
+              [
+                {
+                  type: "thread-archived",
+                  itemId: camera.id,
+                  commandId: CommandId.make(`event:archived:${camera.id}`),
+                },
+                {
+                  type: "thread-unarchived",
+                  itemId: camera.id,
+                  commandId: CommandId.make(`event:restored:${camera.id}`),
+                },
+              ],
+            );
+          }),
+        ),
+        Effect.provide(
+          Layer.fresh(
+            Decisions.layer.pipe(
+              Layer.provide(
+                Layer.succeed(ThreadManagement.ThreadManagementService, {
+                  ...threads,
+                  streamDomainEvents: Stream.fromQueue(events),
+                }),
+              ),
+            ),
+          ),
+        ),
+      );
+    }).pipe(Effect.provide(layerHome)),
   );
 });

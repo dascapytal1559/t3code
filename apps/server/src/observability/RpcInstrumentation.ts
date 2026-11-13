@@ -19,6 +19,7 @@ const RPC_AGGREGATES = {
   [ORCHESTRATION_V2_WS_METHODS.replyToDecision]: "orchestration",
   [ORCHESTRATION_V2_WS_METHODS.undoDecisionReply]: "orchestration",
   [ORCHESTRATION_V2_WS_METHODS.replyToKeptThread]: "orchestration",
+  [ORCHESTRATION_V2_WS_METHODS.actOnDecision]: "orchestration",
   [ORCHESTRATION_V2_WS_METHODS.answerRule]: "orchestration",
   [ORCHESTRATION_V2_WS_METHODS.getTurnItem]: "orchestration",
   [ORCHESTRATION_V2_WS_METHODS.getTurnDiff]: "orchestration",

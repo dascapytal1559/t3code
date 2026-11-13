@@ -16,6 +16,7 @@ import {
 import { useRouter } from "@tanstack/react-router";
 
 import { pickSnoozePreset, resolveSnoozePresets } from "../components/Sidebar.snooze";
+import { useCaptainCard, useCaptainItemAct } from "../components/sidebar/useCaptainCards";
 import {
   buildThreadActionMenuItems,
   threadActionRequiresOperate,
@@ -88,6 +89,9 @@ export function useThreadActionMenu(input: {
     markThreadUnread,
     turnThreadIntoProject,
   } = useThreadActions();
+  // Fork: a thread carrying a FirstMate item snoozes the item in FirstMate's list instead.
+  const captainCard = useCaptainCard(threadRef);
+  const actOnCaptainItem = useCaptainItemAct();
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
@@ -177,6 +181,10 @@ export function useThreadActionMenu(input: {
                 threadRef.environmentId,
               );
         if (!preset) return;
+        if (captainCard !== null) {
+          await actOnCaptainItem(captainCard, { type: "snooze", until: preset.snoozedUntil });
+          return;
+        }
         const result = await snoozeThread(threadRef, preset.snoozedUntil);
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
           failureToast("Failed to snooze thread", squashAtomCommandFailure(result));

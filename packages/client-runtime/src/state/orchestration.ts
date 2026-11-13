@@ -218,6 +218,10 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
       label: "environment-data:orchestration:reply-to-kept-thread",
       tag: ORCHESTRATION_V2_WS_METHODS.replyToKeptThread,
     }),
+    actOnDecision: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:orchestration:act-on-decision",
+      tag: ORCHESTRATION_V2_WS_METHODS.actOnDecision,
+    }),
     answerRule: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:orchestration:answer-rule",
       tag: ORCHESTRATION_V2_WS_METHODS.answerRule,

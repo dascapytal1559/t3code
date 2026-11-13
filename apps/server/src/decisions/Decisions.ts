@@ -1,13 +1,21 @@
 import {
   CommandId,
+  DecisionActError,
   DecisionReplyError,
   DecisionsState,
   EMPTY_DECISIONS_STATE,
   KeptThreadReplyError,
   MessageId,
   ThreadId,
+  decisionSince,
   formatDecisionReply,
   formatKeptThreadReply,
+  type Decision,
+  type DecisionAction,
+  type DecisionActInput,
+  type DecisionActResult,
+  type DecisionActionsInput,
+  type DecisionActionsResult,
   type DecisionReplyInput,
   type DecisionReplyResult,
   type DecisionUndoReplyInput,
@@ -24,16 +32,18 @@ import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import type * as Stream from "effect/Stream";
+import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import * as ServerConfig from "../config.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import { userFacingDispatchErrorMessage } from "../orchestration-v2/UserFacingErrors.ts";
+import { forkParked } from "../serverActivation.ts";
 
 export class DecisionsStoreError extends Schema.TaggedError<DecisionsStoreError>()(
   "DecisionsStoreError",
@@ -88,8 +98,20 @@ export class Decisions extends Context.Service<
       input: KeptThreadReplyInput,
       origin?: OrchestrationClientOrigin,
     ) => Effect.Effect<DecisionReplyResult, KeptThreadReplyError>;
+    /** Logs the user's snooze, bring back or archive for FirstMate to apply. */
+    readonly act: (input: DecisionActInput) => Effect.Effect<DecisionActResult, DecisionActError>;
+    /** FirstMate's side: drops acknowledged actions, then returns or waits for the next ones. */
+    readonly actions: (
+      input: DecisionActionsInput,
+    ) => Effect.Effect<DecisionActionsResult, DecisionsStoreError>;
   }
 >()("t3/decisions/Decisions") {}
+
+/** An older sender's `wakeAt` is a snooze until then, put off since the decision began waiting. */
+const asSent = ({ wakeAt, ...decision }: Decision) =>
+  wakeAt === undefined || decision.snoozed !== undefined
+    ? decision
+    : { ...decision, snoozed: { at: decisionSince(decision) ?? wakeAt, until: wakeAt } };
 
 const DecisionsFile = Schema.fromJsonString(DecisionsState);
 const decodeFile = Schema.decodeUnknownEffect(DecisionsFile);
@@ -188,13 +210,14 @@ const make = Effect.gen(function* () {
           return yield* new DecisionsReplyThreadError({ threadId: input.replyTo });
         }
         const previous = new Map(current.decisions.map((decision) => [decision.id, decision]));
-        const decisions = input.decisions.map((sent): StoredDecision => {
+        const decisions = input.decisions.map((received): StoredDecision => {
+          const sent = asSent(received);
           const kept = previous.get(sent.id);
           if (kept === undefined) return sent;
-          const { answered: _answered, ...asSent } = kept;
-          return Equal.equals(asSent, sent) ? kept : sent;
+          const { answered: _answered, refused: _refused, ...keptAsSent } = kept;
+          return Equal.equals(keptAsSent, sent) ? kept : sent;
         });
-        return { replyTo: input.replyTo, decisions };
+        return { ...current, replyTo: input.replyTo, decisions };
       }),
     );
   });
@@ -356,6 +379,138 @@ const make = Effect.gen(function* () {
     };
   });
 
+  // Callers hold `writeLock`. A repeated `commandId` returns the action already logged.
+  const logAction = (
+    current: DecisionsState,
+    action: Omit<DecisionAction, "seq">,
+  ): { readonly next: DecisionsState; readonly seq: number } => {
+    const logged = current.actions.find((entry) => entry.commandId === action.commandId);
+    if (logged !== undefined) return { next: current, seq: logged.seq };
+    const seq = current.lastActionSeq + 1;
+    return {
+      seq,
+      next: {
+        ...withDecision(current, action.itemId, ({ refused: _refused, ...item }) => item),
+        actions: [...current.actions, { ...action, seq }],
+        lastActionSeq: seq,
+      },
+    };
+  };
+
+  const act = Effect.fn("Decisions.act")(function* (input: DecisionActInput) {
+    const { decisionId } = input;
+    yield* Effect.annotateCurrentSpan({
+      "decision.id": decisionId,
+      "decision.action": input.action.type,
+    });
+    const at = DateTime.formatIso(yield* DateTime.now);
+    return yield* writeLock.withPermits(1)(
+      Effect.gen(function* () {
+        const current = yield* SubscriptionRef.get(state);
+        const item = current.decisions.find((candidate) => candidate.id === decisionId);
+        if (item === undefined)
+          return yield* new DecisionActError({ decisionId, reason: "not-found" });
+        // Archive closes the item, so it must be the version the user read; snooze is harmless.
+        if (input.action.type === "archive" && input.revision !== item.revision) {
+          return yield* new DecisionActError({ decisionId, reason: "updated" });
+        }
+        const { next, seq } = logAction(current, {
+          commandId: input.commandId,
+          itemId: decisionId,
+          revision: input.revision,
+          type: input.action.type,
+          ...(input.action.type === "snooze" ? { until: input.action.until } : {}),
+          at,
+        });
+        yield* save(current, next).pipe(
+          Effect.mapError((cause) => new DecisionActError({ decisionId, reason: "failed", cause })),
+        );
+        return { seq };
+      }),
+    );
+  });
+
+  const pendingAfter = (current: DecisionsState, after: number): DecisionActionsResult => ({
+    actions: current.actions.filter((action) => action.seq > after),
+    lastSeq: current.lastActionSeq,
+  });
+
+  const actions = Effect.fn("Decisions.actions")(function* (input: DecisionActionsInput) {
+    const acks = new Map((input.ack ?? []).map((ack) => [ack.seq, ack]));
+    if (acks.size > 0) {
+      const at = DateTime.formatIso(yield* DateTime.now);
+      yield* mutate((current) => {
+        let decisions = current.decisions;
+        for (const action of current.actions) {
+          const ack = acks.get(action.seq);
+          if (ack?.outcome !== "refused") continue;
+          decisions = decisions.map((item) =>
+            item.id === action.itemId && item.revision === action.revision
+              ? {
+                  ...item,
+                  refused: {
+                    type: action.type,
+                    ...(ack.message === undefined ? {} : { message: ack.message }),
+                    at,
+                  },
+                }
+              : item,
+          );
+        }
+        const remaining = current.actions.filter((action) => !acks.has(action.seq));
+        return Effect.succeed({ ...current, decisions, actions: remaining });
+      });
+    }
+    const after = input.after ?? 0;
+    const now = pendingAfter(yield* SubscriptionRef.get(state), after);
+    if (now.actions.length > 0 || (input.waitMs ?? 0) === 0) return now;
+    const next = yield* SubscriptionRef.changes(state).pipe(
+      Stream.map((current) => pendingAfter(current, after)),
+      Stream.filter((pending) => pending.actions.length > 0),
+      Stream.runHead,
+      Effect.timeoutOption(input.waitMs ?? 0),
+    );
+    return Option.isSome(next) && Option.isSome(next.value) ? next.value.value : now;
+  });
+
+  // FirstMate learns of a listed thread's archive, from its card or anywhere else, at once.
+  const noteThreadEvent = (threadId: ThreadId, eventId: string, archived: boolean) =>
+    writeLock.withPermits(1)(
+      Effect.gen(function* () {
+        const current = yield* SubscriptionRef.get(state);
+        const carried = current.decisions.filter((item) => item.thread?.id === threadId);
+        if (carried.length === 0) return;
+        const at = DateTime.formatIso(yield* DateTime.now);
+        let next = current;
+        for (const item of carried) {
+          next = logAction(next, {
+            commandId: CommandId.make(`${eventId}:${item.id}`),
+            itemId: item.id,
+            revision: item.revision,
+            type: archived ? "thread-archived" : "thread-unarchived",
+            at,
+          }).next;
+        }
+        yield* save(current, next);
+      }),
+    );
+
+  yield* forkParked(
+    Stream.runForEach(threads.streamDomainEvents, (event) =>
+      event.type === "thread.archived" || event.type === "thread.unarchived"
+        ? noteThreadEvent(event.threadId, event.id, event.type === "thread.archived").pipe(
+            Effect.catch((cause) =>
+              Effect.logWarning("Could not log a thread's archive for FirstMate.", { cause }),
+            ),
+          )
+        : Effect.void,
+    ).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("Decisions stopped watching thread archives.", { cause }),
+      ),
+    ),
+  );
+
   return Decisions.of({
     changes: SubscriptionRef.changes(state),
     replyTo: SubscriptionRef.get(state).pipe(Effect.map((current) => current.replyTo)),
@@ -363,6 +518,8 @@ const make = Effect.gen(function* () {
     reply,
     undoReply,
     replyToKeptThread,
+    act,
+    actions,
   });
 });
 

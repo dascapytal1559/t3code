@@ -1,4 +1,12 @@
-import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  CommandId,
+  EnvironmentId,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+  type DecisionsState,
+  type StoredDecision,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -6,6 +14,7 @@ import {
   crewCoordinatorOf,
   isCrewOf,
   resolveAppCoordinatorGroup,
+  resolveCaptainCards,
   resolveCoordinatorGroup,
   resolveCrewStatusLabel,
   resolveLaunchCoordinator,
@@ -299,5 +308,101 @@ describe("resolveLaunchCoordinator", () => {
     const recent = thread("recent", { status: "idle", updatedAt: "2026-10-28T12:00:00.000Z" });
     const group = resolveCoordinatorGroup([older, recent], (subject) => subject.id);
     expect(resolveLaunchCoordinator(group)).toBe(recent);
+  });
+});
+
+describe("resolveCaptainCards", () => {
+  const nowMs = Date.parse("2026-11-13T12:00:00.000Z");
+  const item = (
+    id: string,
+    overrides: Partial<StoredDecision> & { readonly on?: string } = {},
+  ): StoredDecision => {
+    const { on, ...rest } = overrides;
+    return {
+      id,
+      title: id,
+      question: `${id}?`,
+      options: [],
+      entries: [],
+      revision: 1,
+      since: "2026-11-10T00:00:00.000Z",
+      ...(on === undefined ? {} : { thread: { id: ThreadId.make(on), finished: false } }),
+      ...rest,
+    };
+  };
+  const cardsOf = (
+    decisions: ReadonlyArray<StoredDecision>,
+    actions: DecisionsState["actions"] = [],
+  ) => {
+    const cards = resolveCaptainCards([{ environmentId, state: { decisions, actions } }], nowMs);
+    return (threadId: string) => cards.get(`${environmentId}:${threadId}`) ?? null;
+  };
+  const action = (
+    seq: number,
+    itemId: string,
+    type: DecisionsState["actions"][number]["type"],
+    until?: string | null,
+  ) => ({
+    seq,
+    commandId: CommandId.make(`act:${seq}`),
+    itemId,
+    revision: 1,
+    type,
+    ...(until === undefined ? {} : { until }),
+    at: "2026-11-13T11:00:00.000Z",
+  });
+
+  it("labels each worker card with its item, Needs you over To read, then the oldest", () => {
+    const card = cardsOf([
+      item("probe-read", { on: "probe", kind: "read", since: "2026-11-01T00:00:00.000Z" }),
+      item("build-later", { on: "probe", since: "2026-11-09T00:00:00.000Z" }),
+      item("build-first", { on: "probe", since: "2026-11-08T00:00:00.000Z" }),
+      item("scout-report", { on: "scout", kind: "read" }),
+      item("replied", {
+        on: "answered",
+        answered: { commandId: CommandId.make("reply"), at: "2026-11-12T00:00:00.000Z" },
+      }),
+      // No thread yet: no card carries it.
+      item("loose"),
+    ]);
+    expect([card("probe")?.item.id, card("probe")?.label]).toEqual(["build-first", "Needs you"]);
+    expect(card("scout")?.label).toBe("To read");
+    expect(card("answered")?.label).toBe("Replied");
+    expect(card("loose")).toBeNull();
+  });
+
+  it("puts a snoozed card in Snoozed until its time, and applies the user's actions at once", () => {
+    const card = cardsOf(
+      [
+        item("dated", {
+          on: "dated",
+          snoozed: { at: "2026-11-12T00:00:00.000Z", until: "2026-11-14T09:00:00.000Z" },
+        }),
+        item("returned", {
+          on: "returned",
+          snoozed: { at: "2026-11-12T00:00:00.000Z", until: "2026-11-13T09:00:00.000Z" },
+        }),
+        item("tapped", { on: "tapped" }),
+        item("woken", { on: "woken", snoozed: { at: "2026-11-12T00:00:00.000Z", until: null } }),
+        item("archived", { on: "archived" }),
+        item("both", { on: "both", kind: "read" }),
+        item("both-snoozed", {
+          on: "both",
+          snoozed: { at: "2026-11-12T00:00:00.000Z", until: null },
+        }),
+      ],
+      [
+        action(1, "tapped", "snooze", null),
+        action(2, "woken", "unsnooze"),
+        action(3, "archived", "archive"),
+      ],
+    );
+    expect(card("dated")?.snoozed?.until).toBe("2026-11-14T09:00:00.000Z");
+    expect(card("returned")?.snoozed).toBeNull();
+    expect(card("tapped")?.snoozed).toEqual({ at: "2026-11-13T11:00:00.000Z", until: null });
+    expect(card("woken")?.snoozed).toBeNull();
+    expect(card("archived")).toBeNull();
+    // A thread is snoozed only once every item on it is.
+    expect([card("both")?.item.id, card("both")?.snoozed]).toEqual(["both", null]);
   });
 });

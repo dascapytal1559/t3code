@@ -77,6 +77,7 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [ORCHESTRATION_V2_WS_METHODS.replyToDecision]: AuthOrchestrationOperateScope,
   [ORCHESTRATION_V2_WS_METHODS.undoDecisionReply]: AuthOrchestrationOperateScope,
   [ORCHESTRATION_V2_WS_METHODS.replyToKeptThread]: AuthOrchestrationOperateScope,
+  [ORCHESTRATION_V2_WS_METHODS.actOnDecision]: AuthOrchestrationOperateScope,
   [ORCHESTRATION_V2_WS_METHODS.answerRule]: AuthOrchestrationOperateScope,
   // A guest link hands thread access to someone outside, like a pairing link.
   [WS_METHODS.guestShareCreate]: AuthAccessWriteScope,

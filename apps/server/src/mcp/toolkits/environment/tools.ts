@@ -1,6 +1,8 @@
 import {
   BackgroundActivityProfile,
   BackgroundActivityProfileSelection,
+  DecisionActionsInput,
+  DecisionActionsResult,
   DecisionsSetInput,
   DecisionsSetResult,
   ExecutionEnvironmentDescriptor,
@@ -134,10 +136,17 @@ const ReportsUnpinTool = Tool.make("t3_reports_unpin", {
 const DecisionsSetTool = Tool.make("t3_decisions_set", {
   ...shared,
   description:
-    "Replace the decisions the user owes, listed in T3's Bridge tab. `decisions`: the whole list; one left out is gone, an identical list changes nothing. Replies go to thread `replyTo`.",
+    "Replace the items the user owes, shown on their `thread` card in T3's sidebar and in the Bridge tab. `decisions`: the whole list; one left out is gone, an identical list changes nothing. `kind: read` is a report to read. `snoozed.until: null` waits until brought back. Replies go to thread `replyTo`; the user's snooze and archive arrive on `t3_decisions_actions`.",
   parameters: DecisionsSetInput,
   success: DecisionsSetResult,
 }).annotate(Tool.Destructive, true);
+const DecisionsActionsTool = Tool.make("t3_decisions_actions", {
+  ...shared,
+  description:
+    "Read the user's snooze, unsnooze and archive actions on your items, and T3's thread-archived and thread-unarchived records, oldest first. `ack` drops the ones you applied or refused (a refusal's `message` is shown to the user). With none after `after`, waits up to `waitMs` for one.",
+  parameters: DecisionActionsInput,
+  success: DecisionActionsResult,
+}).annotate(Tool.Destructive, false);
 const RulesSetTool = Tool.make("t3_rules_set", {
   ...shared,
   description:
@@ -172,6 +181,7 @@ export const EnvironmentToolkit = Toolkit.make(
   ReportsPinTool,
   ReportsUnpinTool,
   DecisionsSetTool,
+  DecisionsActionsTool,
   RulesSetTool,
   RestartRequestTool,
   RestartStatusTool,

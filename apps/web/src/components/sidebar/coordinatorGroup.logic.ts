@@ -1,5 +1,13 @@
+import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
-import type { ThreadId } from "@t3tools/contracts";
+import {
+  decisionSince,
+  type DecisionsState,
+  type EnvironmentId,
+  type StoredDecision,
+  type ThreadId,
+} from "@t3tools/contracts";
+import { effectiveDecisions, isSnoozedAt } from "../needsMe/needsMe.logic";
 import type { SidebarSection, SidebarThreadStatus } from "../Sidebar.logic";
 
 /**
@@ -79,6 +87,53 @@ export function isCrewOf<T extends CrewThread>(thread: T, coordinator: T | null)
 
 /** FirstMate's label for a thread it keeps open for the user, who replies to FirstMate or archives it. */
 export const CAPTAIN_WAIT_LABEL = "Waiting for captain";
+
+/** What FirstMate's item on a thread asks of the user, shown where a status label sits. */
+export type CaptainItemLabel = "Needs you" | "To read" | "Replied";
+
+export interface CaptainCard {
+  readonly environmentId: EnvironmentId;
+  /** The item the card's reply, Snooze and Archive act on. */
+  readonly item: StoredDecision;
+  readonly label: CaptainItemLabel;
+  /** Set while the item is put off; the card then waits in Snoozed, with no label. */
+  readonly snoozed: NonNullable<StoredDecision["snoozed"]> | null;
+}
+
+const cardRank = (item: StoredDecision, nowMs: number) =>
+  (isSnoozedAt(item.snoozed, nowMs) ? 2 : 0) + (item.kind === "read" ? 1 : 0);
+
+/**
+ * The card each thread shows for FirstMate's items, keyed by thread. A thread carrying several
+ * shows one: a waiting item over a snoozed one, Needs you over To read, then the oldest.
+ */
+export function resolveCaptainCards(
+  lists: ReadonlyArray<{
+    readonly environmentId: EnvironmentId;
+    readonly state: Pick<DecisionsState, "decisions" | "actions">;
+  }>,
+  nowMs: number,
+): ReadonlyMap<string, CaptainCard> {
+  const cards = new Map<string, CaptainCard>();
+  for (const { environmentId, state } of lists) {
+    for (const item of effectiveDecisions(state)) {
+      if (item.thread === undefined) continue;
+      const key = scopedThreadKey(scopeThreadRef(environmentId, item.thread.id));
+      const shown = cards.get(key)?.item;
+      if (shown !== undefined) {
+        const rank = cardRank(item, nowMs) - cardRank(shown, nowMs);
+        const older =
+          Date.parse(decisionSince(item) ?? "") < Date.parse(decisionSince(shown) ?? "");
+        if (rank > 0 || (rank === 0 && !older)) continue;
+      }
+      const snoozed = isSnoozedAt(item.snoozed, nowMs) ? item.snoozed : null;
+      const label =
+        item.answered !== undefined ? "Replied" : item.kind === "read" ? "To read" : "Needs you";
+      cards.set(key, { environmentId, item, label, snoozed });
+    }
+  }
+  return cards;
+}
 
 /**
  * The label a crew card shows in its status slot. It stands in for a calm status or the age only:

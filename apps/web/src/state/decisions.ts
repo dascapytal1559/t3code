@@ -1,4 +1,4 @@
-import type { EnvironmentId, StoredDecision, ThreadId } from "@t3tools/contracts";
+import type { DecisionsState, EnvironmentId, StoredDecision, ThreadId } from "@t3tools/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 import { environmentServerConfigsAtom, serverEnvironment } from "./server";
@@ -12,20 +12,28 @@ export interface BridgeDecision {
 }
 
 /**
- * Every connected environment's decisions, as the Bridge tab lists them. Each environment's list
- * is subscribed to only while something reads this, which is while a Bridge tab is open.
+ * Every connected environment's list of FirstMate's items, with the user's actions it has not
+ * applied yet. The sidebar reads it, so each environment's list is subscribed to while it runs.
  */
-export const bridgeDecisionsAtom = Atom.make((get): ReadonlyArray<BridgeDecision> => {
-  const decisions: BridgeDecision[] = [];
-  for (const environmentId of get(environmentServerConfigsAtom).keys()) {
-    const state = AsyncResult.getOrElse(
-      get(serverEnvironment.decisions({ environmentId, input: {} })),
-      () => null,
-    );
-    if (state === null) continue;
-    for (const decision of state.decisions) {
-      decisions.push({ environmentId, replyTo: state.replyTo, decision });
+export const decisionListsAtom = Atom.make(
+  (
+    get,
+  ): ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly state: DecisionsState }> => {
+    const lists = [];
+    for (const environmentId of get(environmentServerConfigsAtom).keys()) {
+      const state = AsyncResult.getOrElse(
+        get(serverEnvironment.decisions({ environmentId, input: {} })),
+        () => null,
+      );
+      if (state !== null) lists.push({ environmentId, state });
     }
-  }
-  return decisions;
-}).pipe(Atom.withLabel("web-bridge-decisions"));
+    return lists;
+  },
+).pipe(Atom.withLabel("web-decision-lists"));
+
+/** Every connected environment's decisions, as the Bridge tab lists them. */
+export const bridgeDecisionsAtom = Atom.make((get): ReadonlyArray<BridgeDecision> =>
+  get(decisionListsAtom).flatMap(({ environmentId, state }) =>
+    state.decisions.map((decision) => ({ environmentId, replyTo: state.replyTo, decision })),
+  ),
+).pipe(Atom.withLabel("web-bridge-decisions"));

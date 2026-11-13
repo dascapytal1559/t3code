@@ -192,7 +192,6 @@ import {
   resolveSidebarSweepKeys,
   resolveSidebarDropTarget,
   resolveSidebarDropVerb,
-  sidebarSectionHasHoverActions,
   resolveSidebarThreadSection,
   resolveSidebarReorderableThreadKeys,
   searchSidebarThreads,
@@ -252,8 +251,10 @@ import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrom
 import {
   coordinatorGroupSlot,
   resolveAppCoordinatorGroup,
+  type CaptainCard,
   type CoordinatorGroup,
 } from "./sidebar/coordinatorGroup.logic";
+import { useCaptainCards, useCaptainItemAct } from "./sidebar/useCaptainCards";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { TooltipProvider } from "./ui/tooltip";
 import {
@@ -364,6 +365,8 @@ interface SidebarThreadPartitionInput {
   readonly optimisticDrop: SidebarOptimisticDrop | null;
   readonly workingShelfEnabled: boolean;
   readonly coordinatorGroup: CoordinatorGroup<EnvironmentThreadShell>;
+  /** Fork: FirstMate's items by thread key; a snoozed item puts its thread in Snoozed. */
+  readonly captainCards: ReadonlyMap<string, CaptainCard>;
   /** Boring mode: folders list active threads by the user's latest message. */
   readonly sortActiveBySend: boolean;
   // Snooze wakes, the queued-turn grace and the Working shelf's exit grace depend
@@ -493,7 +496,9 @@ function useSidebarThreads(input: {
     settledTail.scopeKey === projectScopeKey ? settledTail.count : SETTLED_TAIL_INITIAL_COUNT;
 
   const coordinatorGroup = resolveAppCoordinatorGroup(threads);
+  const captainCards = useCaptainCards();
   const partition = partitionSidebarThreads({
+    captainCards,
     threads,
     scopedProjectKeys,
     delegatedUnderParent,
@@ -595,6 +600,7 @@ function useSidebarThreads(input: {
   }
   return {
     ...partition,
+    captainCards,
     threads,
     workingShelfEnabled,
     searchableThreads: [
@@ -647,6 +653,16 @@ function useSidebarThreads(input: {
     ),
   };
 }
+
+// Fork: a FirstMate item's snooze stands in for the thread's; one with no date sorts last.
+const snoozedUntilMs = (
+  thread: EnvironmentThreadShell,
+  captainCards: ReadonlyMap<string, CaptainCard>,
+) => {
+  const captain = captainCards.get(threadShellKey(thread))?.snoozed;
+  if (captain == null) return firstValidTimestampMs(thread.snoozedUntil ?? null);
+  return captain.until === null ? Number.POSITIVE_INFINITY : Date.parse(captain.until);
+};
 
 const newestFirst = (left: EnvironmentThreadShell, right: EnvironmentThreadShell) =>
   right.createdAt.localeCompare(left.createdAt);
@@ -708,7 +724,9 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
       );
     } else {
       const section = resolveSidebarThreadSection({
-        snoozed: configLoaded && effectiveSnoozed(thread, { now: preciseNow }),
+        snoozed:
+          (configLoaded && effectiveSnoozed(thread, { now: preciseNow })) ||
+          input.captainCards.get(threadKey)?.snoozed != null,
         settled: configLoaded && thread.settledOverride === "settled",
         pinned: thread.pinnedAt != null,
       });
@@ -755,8 +773,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
     workingThreads: sortWorkingThreadsBySend(working),
     snoozedThreads: snoozed.toSorted(
       (left, right) =>
-        firstValidTimestampMs(left.snoozedUntil ?? null) -
-        firstValidTimestampMs(right.snoozedUntil ?? null),
+        snoozedUntilMs(left, input.captainCards) - snoozedUntilMs(right, input.captainCards),
     ),
     settledThreads: sortSettledThreads(settled),
     visibleThreads: visible,
@@ -984,6 +1001,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     archiveThread,
     deleteThread,
   } = useThreadActions();
+  const actOnCaptainItem = useCaptainItemAct();
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
@@ -1353,6 +1371,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
 
   const {
     workingShelfEnabled,
+    captainCards,
     coordinatorThreads,
     crewThreads,
     crewShelfExpanded,
@@ -1734,6 +1753,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     })();
   };
   const attemptUnsnooze = (threadRef: ScopedThreadRef) => {
+    // Fork: a FirstMate item's snooze lives in FirstMate's list, so FirstMate brings it back.
+    const captainCard = captainCards.get(scopedThreadKey(threadRef));
+    if (captainCard?.snoozed != null) {
+      void actOnCaptainItem(captainCard, { type: "unsnooze" });
+      return;
+    }
     void (async () => {
       const result = await unsnoozeThread(threadRef);
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
@@ -2305,6 +2330,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     const threadKey = scopedThreadKey(threadRef);
     if (snoozingThreadKeysRef.current.has(threadKey)) {
       return { status: "skipped" } as const;
+    }
+    // Fork: a thread carrying a FirstMate item snoozes the item in FirstMate's list instead.
+    const captainCard = captainCards.get(threadKey);
+    if (captainCard !== undefined) {
+      const until = preset.snoozedUntil;
+      await actOnCaptainItem(captainCard, { type: "snooze", until });
+      return { status: "success" } as const;
     }
     snoozingThreadKeysRef.current.add(threadKey);
     const navigateAfterSnooze = planForwardNavigation(threadKey, opts.coSnoozingKeys);
@@ -3421,7 +3453,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             thread={thread}
                             variant={rowVariant}
                             coordinator={isCoordinator}
-                            hideHoverActions={!sidebarSectionHasHoverActions(section)}
+                            hideHoverActions
                             crewTree={
                               section !== "crew" || isCoordinator
                                 ? undefined
@@ -3464,13 +3496,15 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             sweepAction={
                               actionSweep?.keys.has(threadKey) ? actionSweep.action : null
                             }
-                            snoozeWakeLabelText={
-                              section === "snoozed" && thread.snoozedUntil != null
-                                ? snoozeWakeLabel(thread.snoozedUntil, {
-                                    now: new Date().toISOString(),
-                                  })
-                                : null
-                            }
+                            captainCard={captainCards.get(threadKey)}
+                            snoozeWakeLabelText={(() => {
+                              const captainSnooze = captainCards.get(threadKey)?.snoozed;
+                              const snoozedUntil =
+                                captainSnooze == null ? thread.snoozedUntil : captainSnooze.until;
+                              return section === "snoozed" && snoozedUntil != null
+                                ? snoozeWakeLabel(snoozedUntil, { now: new Date().toISOString() })
+                                : null;
+                            })()}
                             wokeAt={threadWokeAt(thread, { now: snoozeNow })}
                             isActive={routeRowThreadKey === threadKey}
                             revealRef={

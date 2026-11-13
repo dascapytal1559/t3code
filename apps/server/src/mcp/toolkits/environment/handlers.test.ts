@@ -87,6 +87,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Bridge tools", (
               replyTo === threadId
                 ? Effect.succeed({
                     replyTo,
+                    actions: [],
+                    lastActionSeq: 0,
                     decisions: [
                       {
                         ...answeredDecision,
