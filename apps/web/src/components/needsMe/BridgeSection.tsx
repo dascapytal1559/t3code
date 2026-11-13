@@ -6,13 +6,7 @@ import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 
-export type BridgeSectionId =
-  | "objectives"
-  | "needs-you"
-  | "scheduled"
-  | "reports"
-  | "model-routing"
-  | "rules";
+export type BridgeSectionId = "objectives" | "model-routing" | "rules";
 
 const collapsedKey = (id: BridgeSectionId) => `t3code:bridge:collapsed:${id}`;
 const OBJECTIVES_PINNED_KEY = "t3code:bridge:objectives-pinned";

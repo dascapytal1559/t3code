@@ -16,7 +16,6 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
-import * as TestClock from "effect/testing/TestClock";
 
 import * as ServerSecretStore from "../../../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../../../config.ts";
@@ -172,81 +171,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Bridge tools", (
       }
       expect(yield* saved("modelRouting")).toBeNull();
     }).pipe(Effect.provide(layerSettings.pipe(Layer.provideMerge(layerHome)))),
-  );
-
-  it.effect(
-    "t3_reports_pin and t3_reports_unpin change one report each, saved across a restart",
-    () =>
-      Effect.gen(function* () {
-        const call = (tool: "t3_reports_pin" | "t3_reports_unpin", params: object) =>
-          Effect.gen(function* () {
-            const toolkit = yield* EnvironmentToolkit;
-            const results = yield* toolkit
-              .handle(tool, params as never)
-              .pipe(Stream.unwrap, Stream.runCollect);
-            return results.at(-1)?.result;
-          });
-        const shed = {
-          id: "shed-paint",
-          title: "Shed paint survey",
-          summary: "Grey weathers best.",
-          location: "/reports/shed-paint.md",
-        };
-        const fence = {
-          ...shed,
-          id: "fence",
-          title: "Fence quotes",
-          location: "https://example.com/r",
-        };
-        yield* Effect.gen(function* () {
-          yield* call("t3_reports_pin", shed);
-          yield* TestClock.adjust("1 minute");
-          expect(yield* call("t3_reports_pin", fence)).toEqual({
-            reports: [
-              { id: "fence", title: "Fence quotes", pinnedAt: "1970-01-01T00:01:00.000Z" },
-              {
-                id: "shed-paint",
-                title: "Shed paint survey",
-                pinnedAt: "1970-01-01T00:00:00.000Z",
-              },
-            ],
-          });
-          // Pinning an id again replaces it and moves it to the top.
-          yield* TestClock.adjust("1 minute");
-          yield* call("t3_reports_pin", {
-            ...shed,
-            title: "Shed paint, final",
-            night: "2026-11-11",
-          });
-          expect(yield* call("t3_reports_unpin", { id: "fence" })).toEqual({
-            reports: [
-              {
-                id: "shed-paint",
-                title: "Shed paint, final",
-                pinnedAt: "1970-01-01T00:02:00.000Z",
-                night: "2026-11-11",
-              },
-            ],
-          });
-          expect(yield* call("t3_reports_unpin", { id: "never-pinned" })).toMatchObject({
-            reports: [{ id: "shed-paint" }],
-          });
-        }).pipe(Effect.provide(layerTools.pipe(Layer.provideMerge(Layer.fresh(layerSettings)))));
-        const pinned = yield* Settings.ServerSettingsService.pipe(
-          Effect.flatMap((settings) => settings.getSettings),
-          Effect.map((settings) => settings.pinnedReports),
-          Effect.provide(Layer.fresh(layerSettings)),
-        );
-        expect(pinned).toEqual({
-          "shed-paint": {
-            title: "Shed paint, final",
-            summary: "Grey weathers best.",
-            location: "/reports/shed-paint.md",
-            pinnedAt: "1970-01-01T00:02:00.000Z",
-            night: "2026-11-11",
-          },
-        });
-      }).pipe(Effect.provide(layerHome)),
   );
 
   it.effect("t3_decisions_set answers with what was stored, and names a missing replyTo", () =>

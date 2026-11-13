@@ -1,10 +1,8 @@
 import {
   OrchestratorMcpFailure,
-  pinnedReportsNewestFirst,
   type ServerSettings,
   type ServerSettingsPatch,
 } from "@t3tools/contracts";
-import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Decisions from "../../../decisions/Decisions.ts";
 import * as Environment from "../../../environment/ServerEnvironment.ts";
@@ -48,14 +46,6 @@ const access = Effect.gen(function* () {
       message: "This credential belongs to another environment.",
     });
   return { ...context, descriptor, settings: yield* Settings.ServerSettingsService };
-});
-const pinnedReportsResult = ({ pinnedReports }: ServerSettings) => ({
-  reports: pinnedReportsNewestFirst(pinnedReports).map(({ id, title, pinnedAt, night }) => ({
-    id,
-    title,
-    pinnedAt,
-    ...(night === undefined ? {} : { night }),
-  })),
 });
 const restartStatus = Effect.gen(function* () {
   const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -103,26 +93,6 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
     updateSettings({ modelRouting: markdown === null ? null : { markdown } }, check).pipe(
       Effect.map(({ modelRouting }) => ({ modelRouting })),
     ),
-  ),
-  t3_reports_pin: McpToolAccess.writesEnvironment(({ id, ...report }, check) =>
-    Effect.gen(function* () {
-      const { settings } = yield* access;
-      const current = yield* settings.getSettings.pipe(Effect.mapError(unavailable));
-      if (!(id in current.pinnedReports) && Object.keys(current.pinnedReports).length >= 50) {
-        return yield* new OrchestratorMcpFailure({
-          code: "invalid_request",
-          message: "50 reports are pinned already; unpin one first.",
-        });
-      }
-      const pinnedAt = DateTime.formatIso(yield* DateTime.now);
-      return yield* updateSettings(
-        { pinnedReports: { [id]: { ...report, pinnedAt } } },
-        check,
-      ).pipe(Effect.map(pinnedReportsResult));
-    }),
-  ),
-  t3_reports_unpin: McpToolAccess.writesEnvironment(({ id }, check) =>
-    updateSettings({ pinnedReports: { [id]: null } }, check).pipe(Effect.map(pinnedReportsResult)),
   ),
   t3_decisions_set: McpToolAccess.writesEnvironment((input) =>
     Effect.gen(function* () {

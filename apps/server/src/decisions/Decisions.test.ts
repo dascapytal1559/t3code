@@ -15,7 +15,6 @@ import {
 } from "@t3tools/contracts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as DateTime from "effect/DateTime";
-import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -67,33 +66,6 @@ const layerHome = Layer.mergeAll(
 const started = <A, E, R>(
   use: (decisions: Decisions.Decisions["Service"]) => Effect.Effect<A, E, R>,
 ) => Decisions.Decisions.pipe(Effect.flatMap(use), Effect.provide(Layer.fresh(Decisions.layer)));
-
-// `onCancel` runs as Undo starts cancelling the queued reply, before the cancel lands.
-const startedPausingCancel = <A, E, R>(
-  onCancel: Effect.Effect<void>,
-  use: (decisions: Decisions.Decisions["Service"]) => Effect.Effect<A, E, R>,
-) =>
-  Decisions.Decisions.pipe(
-    Effect.flatMap(use),
-    Effect.provide(
-      Layer.fresh(
-        Decisions.layer.pipe(
-          Layer.provide(
-            Layer.effect(
-              ThreadManagement.ThreadManagementService,
-              Effect.map(ThreadManagement.ThreadManagementService, (threads) => ({
-                ...threads,
-                dispatch: (command: Parameters<typeof threads.dispatch>[0]) =>
-                  command.type === "queued-run.cancel"
-                    ? Effect.andThen(onCancel, threads.dispatch(command))
-                    : threads.dispatch(command),
-              })),
-            ),
-          ),
-        ),
-      ),
-    ),
-  );
 
 const coordinator = ThreadId.make("thread:firstmate");
 const question = "Give the word to buy the first window-view camera?";
@@ -209,7 +181,7 @@ it.layer(NodeServices.layer)("Decisions", (it) => {
   );
 
   it.effect(
-    "a reply queues behind FirstMate's turn and takes the decision off the list; undo brings it back until FirstMate retires it",
+    "a reply queues behind FirstMate's turn and marks the decision answered until FirstMate changes it",
     () =>
       Effect.gen(function* () {
         yield* setup({ coordinatorBusy: true });
@@ -257,85 +229,13 @@ it.layer(NodeServices.layer)("Decisions", (it) => {
               text: "Buy it: one Reolink CX810.",
             });
             assert.equal((yield* firstmateChat).runs.length, afterSend.runs.length);
-
-            const undone = yield* decisions.undoReply({
-              decisionId: camera.id,
-              commandId: replyId,
-            });
-            assert.equal(undone.withdrawn, true);
-            assert.equal(
-              (yield* firstmateChat).runs.find((candidate) => candidate.id === sent.runId)?.status,
-              "cancelled",
-            );
-            assert.equal(yield* answered(decisions, camera.id), undefined);
-
-            // Once FirstMate retires the answered decision, undo keeps the reply queued for it.
-            const again = yield* decisions.reply({
-              decisionId: camera.id,
-              commandId: CommandId.make("reply:camera-again"),
-              text: "Buy it after all.",
-            });
-            assert.equal(again.queued, true);
-            yield* decisions.set({ replyTo: coordinator, decisions: [] });
-            const kept = yield* decisions.undoReply({
-              decisionId: camera.id,
-              commandId: CommandId.make("reply:camera-again"),
-            });
-            assert.equal(kept.withdrawn, false);
-            assert.equal(
-              (yield* firstmateChat).runs.find((candidate) => candidate.id === again.runId)?.status,
-              "queued",
-            );
           }),
         );
       }).pipe(Effect.provide(layerHome)),
   );
 
   it.effect(
-    "a list FirstMate sends while Undo is cancelling lands after the decision reopens",
-    () =>
-      Effect.gen(function* () {
-        yield* setup({ coordinatorBusy: true });
-        const cancelling = yield* Deferred.make<void>();
-        yield* startedPausingCancel(
-          Deferred.succeed(cancelling, undefined).pipe(Effect.asVoid),
-          (decisions) =>
-            Effect.gen(function* () {
-              yield* decisions.set({ replyTo: coordinator, decisions: [camera] });
-              yield* decisions.reply({
-                decisionId: camera.id,
-                commandId: replyId,
-                text: "Buy it.",
-              });
-              const history = yield* decisions.changes.pipe(
-                Stream.takeUntil((state) => state.decisions.length === 0),
-                Stream.runCollect,
-                Effect.forkChild,
-              );
-              const retired = yield* Deferred.await(cancelling).pipe(
-                Effect.andThen(decisions.set({ replyTo: coordinator, decisions: [] })),
-                Effect.forkChild,
-              );
-              const undone = yield* decisions.undoReply({
-                decisionId: camera.id,
-                commandId: replyId,
-              });
-              yield* Fiber.join(retired);
-              assert.equal(undone.withdrawn, true);
-              // FirstMate's list never applies over a reply that is half withdrawn.
-              assert.deepEqual(
-                Array.from(yield* Fiber.join(history), (state) =>
-                  state.decisions.map((decision) => decision.answered === undefined),
-                ),
-                [[false], [true], []],
-              );
-            }),
-        );
-      }).pipe(Effect.provide(layerHome)),
-  );
-
-  it.effect(
-    "a reply to an idle FirstMate starts its turn, so undo leaves it answered until FirstMate changes the decision",
+    "a reply to an idle FirstMate starts its turn, and a changed decision shows again",
     () =>
       Effect.gen(function* () {
         yield* setup({ coordinatorBusy: false });
@@ -350,13 +250,7 @@ it.layer(NodeServices.layer)("Decisions", (it) => {
             assert.equal(sent.queued, false);
             assert.ok(sent.runId !== null);
 
-            const undone = yield* decisions.undoReply({
-              decisionId: camera.id,
-              commandId: replyId,
-            });
-            assert.equal(undone.withdrawn, false);
             assert.ok((yield* answered(decisions, camera.id)) !== undefined);
-
             // FirstMate snoozes it to a date: a changed decision shows again, under Snoozed.
             const deferred: Decision = {
               ...camera,
@@ -364,78 +258,6 @@ it.layer(NodeServices.layer)("Decisions", (it) => {
             };
             yield* decisions.set({ replyTo: coordinator, decisions: [deferred] });
             assert.deepEqual((yield* current(decisions)).decisions, [deferred]);
-          }),
-        );
-      }).pipe(Effect.provide(layerHome)),
-  );
-
-  it.effect(
-    "a reply on a kept crew thread goes to its coordinator, tagged with the thread, and never to the thread",
-    () =>
-      Effect.gen(function* () {
-        yield* setup({ coordinatorBusy: true });
-        const orchestrator = yield* Orchestrator.OrchestratorV2;
-        const create = (id: string, crewOf?: ThreadId) =>
-          orchestrator.dispatch({
-            type: "thread.create",
-            commandId: CommandId.make(`create:${id}`),
-            threadId: ThreadId.make(id),
-            projectId: ProjectId.make("project:firstmate"),
-            title: "Garmin sleep export",
-            modelSelection,
-            runtimeMode: "full-access",
-            interactionMode: "default",
-            branch: null,
-            worktreePath: null,
-            createdBy: "agent",
-            creationSource: "mcp",
-            ...(crewOf === undefined ? {} : { crewOf }),
-          });
-        const kept = ThreadId.make("thread:garmin");
-        const loose = ThreadId.make("thread:loose");
-        yield* create(kept, coordinator);
-        yield* create(loose);
-        yield* started((decisions) =>
-          Effect.gen(function* () {
-            const sent = yield* decisions.replyToKeptThread({
-              threadId: kept,
-              commandId: CommandId.make("reply:garmin"),
-              text: "  Looks right; keep the CSV.  ",
-            });
-            assert.equal(sent.coordinatorThreadId, coordinator);
-            assert.equal(sent.queued, true);
-            const message = (yield* firstmateChat).messages.find(
-              (candidate) => candidate.id === sent.messageId,
-            );
-            assert.equal(
-              message?.text,
-              [
-                "**Reply · Garmin sleep export**",
-                "kept-thread: thread:garmin",
-                "",
-                "Looks right; keep the CSV.",
-              ].join("\n"),
-            );
-            const projections = yield* ProjectionStore.ProjectionStoreV2;
-            const keptChat = yield* projections.getThreadRecords(kept, ["messages", "runs"]);
-            assert.deepEqual([keptChat.messages.length, keptChat.runs.length], [0, 0]);
-
-            const noCoordinator = yield* decisions
-              .replyToKeptThread({
-                threadId: loose,
-                commandId: CommandId.make("reply:loose"),
-                text: "Hi.",
-              })
-              .pipe(Effect.flip);
-            assert.equal(noCoordinator.reason, "no-coordinator");
-            const gone = yield* decisions
-              .replyToKeptThread({
-                threadId: ThreadId.make("thread:gone"),
-                commandId: CommandId.make("reply:gone"),
-                text: "Hi.",
-              })
-              .pipe(Effect.flip);
-            assert.equal(gone.reason, "not-found");
           }),
         );
       }).pipe(Effect.provide(layerHome)),

@@ -210,14 +210,6 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
       label: "environment-data:orchestration:reply-to-decision",
       tag: ORCHESTRATION_V2_WS_METHODS.replyToDecision,
     }),
-    undoDecisionReply: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:orchestration:undo-decision-reply",
-      tag: ORCHESTRATION_V2_WS_METHODS.undoDecisionReply,
-    }),
-    replyToKeptThread: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:orchestration:reply-to-kept-thread",
-      tag: ORCHESTRATION_V2_WS_METHODS.replyToKeptThread,
-    }),
     actOnDecision: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:orchestration:act-on-decision",
       tag: ORCHESTRATION_V2_WS_METHODS.actOnDecision,

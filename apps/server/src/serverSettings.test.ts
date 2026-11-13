@@ -254,19 +254,21 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("server settings"
     }).pipe(Effect.provide(layerServerSettings())),
   );
 
-  it.effect("loads objectives saved with the retired lastReviewed day", () =>
-    Effect.gen(function* () {
-      const config = yield* ServerConfig.ServerConfig;
-      const fs = yield* FileSystem.FileSystem;
-      const service = yield* ServerSettingsModule.ServerSettingsService;
-      yield* fs.writeFileString(
-        config.settingsPath,
-        `{ "objectives": { "markdown": "- **Ship** the Bridge.", "lastReviewed": "2026-11-05" } }`,
-      );
+  it.effect(
+    "loads objectives saved with the retired lastReviewed day or beside retired pinnedReports",
+    () =>
+      Effect.gen(function* () {
+        const config = yield* ServerConfig.ServerConfig;
+        const fs = yield* FileSystem.FileSystem;
+        const service = yield* ServerSettingsModule.ServerSettingsService;
+        yield* fs.writeFileString(
+          config.settingsPath,
+          `{ "objectives": { "markdown": "- **Ship** the Bridge.", "lastReviewed": "2026-11-05" }, "pinnedReports": { "shed": { "title": "Shed", "summary": "Grey.", "location": "/r.md", "pinnedAt": "2026-11-05T00:00:00.000Z" } } }`,
+        );
 
-      const settings = yield* service.getSettings;
-      assert.deepEqual(settings.objectives, { markdown: "- **Ship** the Bridge." });
-    }).pipe(Effect.provide(layerServerSettings())),
+        const settings = yield* service.getSettings;
+        assert.deepEqual(settings.objectives, { markdown: "- **Ship** the Bridge." });
+      }).pipe(Effect.provide(layerServerSettings())),
   );
 
   it.effect("keeps an override key a newer server saved when a project setting is edited", () =>

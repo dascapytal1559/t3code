@@ -33,7 +33,7 @@ import {
   ProviderOptionSelections,
 } from "./model.ts";
 import { ModelSelection } from "./modelSelection.ts";
-import { ModelRouting, Objectives, PinnedReport, PinnedReportId } from "./objectives.ts";
+import { ModelRouting, Objectives } from "./objectives.ts";
 import { ProjectScript, type ProjectMutation } from "./project.ts";
 import { DEFAULT_RUNTIME_MODE, RuntimeMode } from "./providerPolicy.ts";
 import { BrowserProfile, BrowserProfileId, DEFAULT_BROWSER_PROFILE_ID } from "./browserProfile.ts";
@@ -1596,10 +1596,6 @@ export const ServerSettings = Schema.Struct({
   objectives: Schema.NullOr(Objectives).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   // Fork feature: set over MCP by `t3_routing_set`, like `objectives`.
   modelRouting: Schema.NullOr(ModelRouting).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
-  // Fork feature: pinned by `t3_reports_pin`, unpinned there or in the Bridge, keyed by report id.
-  pinnedReports: Schema.Record(PinnedReportId, PinnedReport).pipe(
-    Schema.withDecodingDefault(Effect.succeed({})),
-  ),
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -1986,7 +1982,6 @@ export const ServerSettingsPatch = Schema.Struct({
   /** Replaced whole; null clears it. */
   modelRouting: Schema.optionalKey(Schema.NullOr(ModelRouting)),
   /** Merged per report: a report pins or replaces that id, null unpins it. */
-  pinnedReports: Schema.optionalKey(Schema.Record(PinnedReportId, Schema.NullOr(PinnedReport))),
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 

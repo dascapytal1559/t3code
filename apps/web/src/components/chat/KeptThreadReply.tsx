@@ -3,7 +3,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { CommandId, type ScopedThreadRef } from "@t3tools/contracts";
+import type { ScopedThreadRef } from "@t3tools/contracts";
 import {
   AlarmClockIcon,
   AlarmClockOffIcon,
@@ -15,7 +15,6 @@ import { useState, type KeyboardEvent } from "react";
 
 import { useClientSettings } from "../../hooks/useSettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
-import { randomUUID } from "../../lib/utils";
 import { readLocalApi } from "../../localApi";
 import { orchestrationEnvironment } from "../../state/orchestration";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -45,22 +44,20 @@ const REFUSED_ACTION: Record<NonNullable<CaptainCard["item"]["refused"]>["type"]
 };
 
 /**
- * The composer of a crew thread that carries FirstMate's item, or that FirstMate kept open for the
- * user: the words go to FirstMate, not the worker. With an item, Snooze puts it off and Archive
- * closes it; FirstMate applies both to its own records.
+ * The composer of a crew thread that carries FirstMate's item: the words go to FirstMate, not the
+ * worker, Snooze puts the item off and Archive closes it; FirstMate applies both to its records.
  */
 export function KeptThreadReply(props: {
   readonly threadRef: ScopedThreadRef;
-  readonly captainCard: CaptainCard | null;
+  readonly captainCard: CaptainCard;
 }) {
-  const { environmentId, threadId } = props.threadRef;
+  const { environmentId } = props.threadRef;
   const card = props.captainCard;
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
-  const replyToThread = useAtomCommand(orchestrationEnvironment.replyToKeptThread);
   const replyToItem = useAtomCommand(orchestrationEnvironment.replyToDecision);
   const permitted = useAtomValue(
-    orchestrationEnvironment.replyToKeptThread.permissionAtom(environmentId),
+    orchestrationEnvironment.replyToDecision.permissionAtom(environmentId),
   );
   const act = useCaptainItemAct();
   const { archiveThread } = useThreadActions();
@@ -72,25 +69,15 @@ export function KeptThreadReply(props: {
     const trimmed = text.trim();
     if (trimmed.length === 0 || sending || !permitted) return;
     setSending(true);
-    const result =
-      card === null
-        ? await replyToThread({
-            environmentId,
-            input: {
-              threadId,
-              commandId: CommandId.make(`web:kept-reply:${randomUUID()}`),
-              text: trimmed,
-            },
-          })
-        : await replyToItem({
-            environmentId,
-            input: {
-              decisionId: card.item.id,
-              commandId: decisionReplyCommandId(),
-              text: trimmed,
-              revision: card.item.revision,
-            },
-          });
+    const result = await replyToItem({
+      environmentId,
+      input: {
+        decisionId: card.item.id,
+        commandId: decisionReplyCommandId(),
+        text: trimmed,
+        revision: card.item.revision,
+      },
+    });
     setSending(false);
     if (result._tag === "Failure") {
       if (!isAtomCommandInterrupted(result)) {
@@ -116,7 +103,7 @@ export function KeptThreadReply(props: {
       if (confirmed !== true) return;
     }
     // A worker still running is FirstMate's to wind down safely, so only the item closes here.
-    if (card !== null && card.item.thread?.finished !== true) {
+    if (card.item.thread?.finished !== true) {
       if (await act(card, { type: "archive" })) {
         toastManager.add({
           type: "success",
@@ -133,7 +120,7 @@ export function KeptThreadReply(props: {
   };
 
   const snoozeUntil = (until: string | null) => {
-    if (card !== null) void act(card, { type: "snooze", until });
+    void act(card, { type: "snooze", until });
   };
 
   const presets = snoozeMenuOpen
@@ -149,7 +136,7 @@ export function KeptThreadReply(props: {
 
   return (
     <div className="rounded-2xl border border-border bg-card shadow-xs/5 focus-within:border-ring">
-      {card?.item.refused === undefined ? null : (
+      {card.item.refused === undefined ? null : (
         <p className="px-3 pt-2.5 text-xs text-warning-foreground">
           FirstMate could not {REFUSED_ACTION[card.item.refused.type]}
           {card.item.refused.message === undefined ? "." : `: ${card.item.refused.message}`}
@@ -165,7 +152,7 @@ export function KeptThreadReply(props: {
         onKeyDown={onKeyDown}
       />
       <div className="flex flex-wrap items-center justify-end gap-2 px-3 pb-3">
-        {card === null ? null : card.snoozed !== null ? (
+        {card.snoozed !== null ? (
           <Button
             variant="ghost-muted"
             size="sm"
@@ -230,7 +217,7 @@ export function KeptThreadReply(props: {
           Archive
         </Button>
         <span className="ms-auto" />
-        {card?.label === "Replied" ? (
+        {card.label === "Replied" ? (
           <span className="text-xs text-muted-foreground">Replied</span>
         ) : null}
         <Button

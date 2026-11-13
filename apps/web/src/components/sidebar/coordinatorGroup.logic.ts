@@ -85,9 +85,6 @@ export function isCrewOf<T extends CrewThread>(thread: T, coordinator: T | null)
   return coordinator !== null && resolveAppCoordinatorGroup([thread, coordinator]).crew.has(thread);
 }
 
-/** FirstMate's label for a thread it keeps open for the user, who replies to FirstMate or archives it. */
-export const CAPTAIN_WAIT_LABEL = "Waiting for captain";
-
 /** What FirstMate's item on a thread asks of the user, shown where a status label sits. */
 export type CaptainItemLabel = "Needs you" | "To read" | "Replied";
 

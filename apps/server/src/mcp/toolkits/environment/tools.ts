@@ -10,8 +10,6 @@ import {
   Objectives,
   OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpFailure,
-  PinnedReport,
-  PinnedReportId,
   RestartRequest,
   RestartRequestStatus,
   RulesSetInput,
@@ -103,36 +101,6 @@ const RoutingSetTool = Tool.make("t3_routing_set", {
   }),
   success: Schema.Struct({ modelRouting: Schema.NullOr(ModelRouting) }),
 }).annotate(Tool.Destructive, true);
-const PinnedReportsResult = Schema.Struct({
-  reports: Schema.Array(
-    Schema.Struct({
-      id: PinnedReportId,
-      title: Schema.String,
-      pinnedAt: Schema.String,
-      night: PinnedReport.fields.night,
-    }),
-  ),
-});
-const ReportsPinTool = Tool.make("t3_reports_pin", {
-  ...shared,
-  description:
-    "Pin a finished report to the Reports section of T3's Bridge tab, grouped by evening. `id` is yours; pinning it again replaces it. `location`: absolute path to the report or an http(s) link. `night`: the evening it covers, YYYY-MM-DD; by default the pin's day, or the day before if pinned before noon. Returns every pinned report, newest first; the user may unpin.",
-  parameters: Schema.Struct({
-    id: PinnedReportId,
-    title: PinnedReport.fields.title,
-    summary: PinnedReport.fields.summary,
-    location: PinnedReport.fields.location,
-    night: PinnedReport.fields.night,
-  }),
-  success: PinnedReportsResult,
-}).annotate(Tool.Destructive, false);
-const ReportsUnpinTool = Tool.make("t3_reports_unpin", {
-  ...shared,
-  description:
-    "Unpin a report from T3's Bridge tab; an id not pinned changes nothing. Returns every pinned report, newest first.",
-  parameters: Schema.Struct({ id: PinnedReportId }),
-  success: PinnedReportsResult,
-}).annotate(Tool.Destructive, true);
 const DecisionsSetTool = Tool.make("t3_decisions_set", {
   ...shared,
   description:
@@ -178,8 +146,6 @@ export const EnvironmentToolkit = Toolkit.make(
   EnvironmentPreferencesTool,
   ObjectivesSetTool,
   RoutingSetTool,
-  ReportsPinTool,
-  ReportsUnpinTool,
   DecisionsSetTool,
   DecisionsActionsTool,
   RulesSetTool,

@@ -1,7 +1,7 @@
 import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
 import { CrewRunControls } from "./chat/CrewRunControls";
 import { KeptThreadReply } from "./chat/KeptThreadReply";
-import { CAPTAIN_WAIT_LABEL, isCrewOf } from "./sidebar/coordinatorGroup.logic";
+import { isCrewOf } from "./sidebar/coordinatorGroup.logic";
 import { useCaptainCard } from "./sidebar/useCaptainCards";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
@@ -1771,12 +1771,9 @@ export default function ChatView(props: ChatViewProps) {
   // FirstMate steers its workers, so a worker shows no composer unless it is asking the user something.
   const crewComposerHidden =
     isCrewThread && activePendingApproval === null && pendingUserInputs.length === 0;
-  // A thread carrying FirstMate's item, or one it kept open for the user, takes replies, but they
-  // go to FirstMate.
+  // A thread carrying FirstMate's item takes replies, but they go to FirstMate.
   const captainCard = useCaptainCard(activeThreadRef);
-  const keptForReader =
-    crewComposerHidden &&
-    (captainCard !== null || activeThreadShell?.statusLabel === CAPTAIN_WAIT_LABEL);
+  const captainReplyCard = crewComposerHidden ? captainCard : null;
   const providerSubagentModels = selectedProviderEntry?.models ?? EMPTY_PROVIDER_MODELS;
   // Providers can report dated model ids or aliases.
   const providerSubagentModelSlug = selectedProviderEntry
@@ -3633,11 +3630,11 @@ export default function ChatView(props: ChatViewProps) {
                           }
                           isResuming={isResuming}
                         />
-                        {keptForReader && activeThreadRef !== null ? (
+                        {captainReplyCard !== null && activeThreadRef !== null ? (
                           <KeptThreadReply
                             key={activeThreadKey}
                             threadRef={activeThreadRef}
-                            captainCard={captainCard}
+                            captainCard={captainReplyCard}
                           />
                         ) : null}
                       </div>

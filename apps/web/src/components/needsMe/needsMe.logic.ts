@@ -1,24 +1,14 @@
 import {
   CommandId,
-  decisionChangedAt,
-  decisionSince,
-  decisionUpdatedAt,
-  pinnedReportsNewestFirst,
-  type DecisionAttachment,
   type DecisionsState,
   type EnvironmentId,
-  type PinnedReport,
-  type ScopedThreadRef,
   type ServerSettings,
   type StoredDecision,
 } from "@t3tools/contracts";
 
 import { randomUUID } from "../../lib/utils";
-import { formatRelativeTimeLabel } from "../../timestampFormat";
 
-interface ListedDecision {
-  readonly decision: Pick<StoredDecision, "entries" | "since" | "snoozed" | "answered">;
-}
+const ms = (iso: string | null | undefined) => (iso == null ? 0 : Date.parse(iso) || 0);
 
 type Snooze = NonNullable<StoredDecision["snoozed"]>;
 
@@ -56,98 +46,6 @@ export function effectiveDecisions(
   }
   return [...byId.values()];
 }
-
-export interface NeedsMeGroups<T> {
-  readonly open: T[];
-  readonly scheduled: T[];
-}
-
-const ms = (iso: string | null | undefined) => (iso == null ? 0 : Date.parse(iso) || 0);
-
-/**
- * Fork: decisions name their project by title, which is not unique, so a title shared by two
- * projects in one environment resolves to no agent name.
- */
-export function agentNameByProjectTitle(
-  projects: ReadonlyArray<{
-    readonly environmentId: EnvironmentId;
-    readonly title: string;
-    readonly agentName?: string | null | undefined;
-  }>,
-): (environmentId: EnvironmentId, title: string) => string | null {
-  const byKey = new Map<string, string | null>();
-  for (const project of projects) {
-    const key = `${project.environmentId}\u0000${project.title}`;
-    byKey.set(key, byKey.has(key) ? null : (project.agentName ?? null));
-  }
-  return (environmentId, title) => byKey.get(`${environmentId}\u0000${title}`) ?? null;
-}
-
-/** One decision's key in the tab: ids are FirstMate's own, so unique per environment only. */
-export const bridgeDecisionKey = (item: {
-  readonly environmentId: EnvironmentId;
-  readonly decision: Pick<StoredDecision, "id">;
-}) => `${item.environmentId}:${item.decision.id}`;
-
-/**
- * FirstMate's decisions as the Bridge tab lists them: those waiting now newest update first, and
- * those with a return date still ahead under Scheduled, soonest first. One the user has answered
- * is not listed until FirstMate changes it.
- */
-export function groupNeedsMeDecisions<T extends ListedDecision>(
-  decisions: readonly T[],
-  now: Date,
-): NeedsMeGroups<T> {
-  const nowMs = now.getTime();
-  const open: T[] = [];
-  const scheduled: T[] = [];
-  for (const item of decisions) {
-    if (item.decision.answered !== undefined) continue;
-    (isSnoozedAt(item.decision.snoozed, nowMs) ? scheduled : open).push(item);
-  }
-  const updatedMs = (item: T) => ms(decisionUpdatedAt(item.decision) ?? item.decision.since);
-  // An undated snooze waits until brought back, so it sorts after every dated one.
-  const returnMs = (item: T) => ms(item.decision.snoozed?.until) || Number.POSITIVE_INFINITY;
-  return {
-    open: open.toSorted((left, right) => updatedMs(right) - updatedMs(left)),
-    scheduled: scheduled.toSorted((left, right) => returnMs(left) - returnMs(right)),
-  };
-}
-
-/**
- * Where a row's age counts from: FirstMate's latest real change, else when the decision began
- * waiting (its `since`, else its raised entry). Rewording the original context is neither, so it
- * keeps its age. Null for a decision with no entries and no `since`.
- */
-export function decisionAgeTimestamp(
-  decision: Pick<StoredDecision, "entries" | "since">,
-): string | null {
-  const changedAt = decisionChangedAt(decision);
-  const since = decisionSince(decision);
-  return changedAt !== null && ms(changedAt) > ms(since) ? changedAt : since;
-}
-
-const dayLabel = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short" });
-export const formatDay = (iso: string) => dayLabel.format(Date.parse(iso));
-
-/** The gray detail on a row: Needs you its age, Scheduled its return day. */
-export function needsMeRowDetail(
-  decision: Pick<StoredDecision, "entries" | "since" | "snoozed">,
-  section: keyof NeedsMeGroups<unknown>,
-  nowMs: number,
-): string {
-  switch (section) {
-    case "open": {
-      const age = decisionAgeTimestamp(decision);
-      return age === null ? "" : formatRelativeTimeLabel(age, nowMs);
-    }
-    case "scheduled": {
-      const until = decision.snoozed?.until;
-      return until == null ? "snoozed" : `back ${formatDay(until)}`;
-    }
-  }
-}
-
 const OBJECTIVE_BULLET = /^(\s{0,3})(?:[-*+]|\d+[.)])\s+/;
 
 /**
@@ -211,163 +109,6 @@ export function bridgeSetting<K extends "objectives" | "modelRouting">(
   if (host != null) return host;
   for (const config of settingsByEnvironment.values()) {
     if (config.settings[key] != null) return config.settings[key];
-  }
-  return null;
-}
-
-/**
- * How a decision's Markdown links files. A click opens the file in the panel the user is looking
- * at, the host chat's, so paths are made relative to that chat's workspace; relative links still
- * resolve against FirstMate's project, `decisionRoot`. Another environment's host cannot read its
- * files, so there the scope stays FirstMate's own chat.
- */
-export function decisionMarkdownScope(input: {
-  /** FirstMate's chat, in the decision's environment. */
-  readonly coordinatorRef: ScopedThreadRef;
-  readonly hostRef: ScopedThreadRef;
-  readonly decisionRoot: string | undefined;
-  readonly hostRoot: string | undefined;
-}): {
-  readonly threadRef: ScopedThreadRef;
-  readonly cwd: string | undefined;
-  readonly imageBaseDir: string | undefined;
-} {
-  const { decisionRoot } = input;
-  if (input.hostRef.environmentId !== input.coordinatorRef.environmentId) {
-    return { threadRef: input.coordinatorRef, cwd: decisionRoot, imageBaseDir: decisionRoot };
-  }
-  return {
-    threadRef: input.hostRef,
-    cwd: input.hostRoot ?? decisionRoot,
-    imageBaseDir: decisionRoot ?? input.hostRoot,
-  };
-}
-
-const PICTURE_PATH = /\.(?:png|jpe?g|gif|webp|avif|svg)$/i;
-
-const escapeLabel = (label: string) => label.replace(/[[\]\\]/g, "\\$&");
-
-/**
- * A decision's attachments as Markdown, so the chat's own renderer draws pictures and opens
- * reports and links the way it does in a message. Paths resolve against the project folder.
- */
-export function decisionAttachmentsMarkdown(
-  attachments: ReadonlyArray<DecisionAttachment>,
-): string | null {
-  if (attachments.length === 0) return null;
-  const pictures: string[] = [];
-  const links: string[] = [];
-  for (const attachment of attachments) {
-    const label = escapeLabel(
-      attachment.label ?? attachment.path.split("/").at(-1) ?? attachment.kind,
-    );
-    const target = markdownTarget(attachment.path);
-    if (PICTURE_PATH.test(attachment.path)) pictures.push(`![${label}](${target})`);
-    else links.push(`- [${label}](${target})`);
-  }
-  return [...pictures, ...(links.length === 0 ? [] : [links.join("\n")])].join("\n\n");
-}
-
-const markdownTarget = (path: string) => `<${path.replace(/[<>]/g, encodeURIComponent)}>`;
-
-/**
- * Where a pinned report lives as a Markdown link, which the chat's renderer opens as it would
- * there: a file by its name, a web page by its address without the scheme.
- */
-export function reportLinkMarkdown(location: PinnedReport["location"]): string {
-  const label = /^https?:\/\//.test(location)
-    ? location.replace(/^https?:\/\//, "")
-    : (location.split(/[\\/]/).at(-1) ?? location);
-  return `[${escapeLabel(label)}](${markdownTarget(location)})`;
-}
-
-/** A pin before this local hour belongs to the previous evening. */
-const NIGHT_ENDS_AT_HOUR = 12;
-
-const shiftDate = (date: string, days: number) => {
-  const day = new Date(`${date}T00:00:00Z`);
-  day.setUTCDate(day.getUTCDate() + days);
-  return day.toISOString().slice(0, 10);
-};
-
-function localDateAndHour(date: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(date);
-  const part = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((entry) => entry.type === type)?.value ?? "";
-  return { date: `${part("year")}-${part("month")}-${part("day")}`, hour: Number(part("hour")) };
-}
-
-/**
- * The evening a report covers, as YYYY-MM-DD: FirstMate's `night`, else the day it was pinned in
- * `timeZone`, where a pin before noon counts as the night before.
- */
-export function reportNight(
-  report: Pick<PinnedReport, "pinnedAt" | "night">,
-  timeZone: string,
-): string {
-  if (report.night !== undefined) return report.night;
-  const { date, hour } = localDateAndHour(new Date(report.pinnedAt), timeZone);
-  return hour < NIGHT_ENDS_AT_HOUR ? shiftDate(date, -1) : date;
-}
-
-/** Reports listed newest first, grouped by evening, latest evening first. */
-export function reportsByNight<T extends Pick<PinnedReport, "pinnedAt" | "night">>(
-  reports: ReadonlyArray<T>,
-  timeZone: string,
-): ReadonlyArray<{ readonly night: string; readonly reports: ReadonlyArray<T> }> {
-  const byNight = new Map<string, T[]>();
-  for (const report of reports) {
-    const night = reportNight(report, timeZone);
-    byNight.set(night, [...(byNight.get(night) ?? []), report]);
-  }
-  return [...byNight]
-    .map(([night, grouped]) => ({ night, reports: grouped }))
-    .toSorted((left, right) => right.night.localeCompare(left.night));
-}
-
-const nightDayLabel = new Intl.DateTimeFormat(undefined, {
-  day: "numeric",
-  month: "short",
-  timeZone: "UTC",
-});
-const nightWeekdayLabel = new Intl.DateTimeFormat(undefined, {
-  weekday: "short",
-  day: "numeric",
-  month: "short",
-  timeZone: "UTC",
-});
-
-/** A night's heading: "Tonight" or "Last night" with its date, else its weekday and date. */
-export function nightHeading(night: string, now: Date, timeZone: string): string {
-  const today = localDateAndHour(now, timeZone).date;
-  const day = Date.parse(`${night}T00:00:00Z`);
-  if (night === today) return `Tonight · ${nightDayLabel.format(day)}`;
-  if (night === shiftDate(today, -1)) return `Last night · ${nightDayLabel.format(day)}`;
-  return nightWeekdayLabel.format(day);
-}
-
-/**
- * The pinned reports the Bridge shows: the host chat's environment's, else the first connected
- * environment that has some, with that environment so an unpin reaches it.
- */
-export function bridgeReports(
-  settingsByEnvironment: ReadonlyMap<
-    EnvironmentId,
-    { readonly settings: Pick<ServerSettings, "pinnedReports"> }
-  >,
-  hostEnvironmentId: EnvironmentId,
-) {
-  for (const environmentId of [hostEnvironmentId, ...settingsByEnvironment.keys()]) {
-    const pinned = settingsByEnvironment.get(environmentId)?.settings.pinnedReports ?? {};
-    const reports = pinnedReportsNewestFirst(pinned);
-    if (reports.length > 0) return { environmentId, reports };
   }
   return null;
 }

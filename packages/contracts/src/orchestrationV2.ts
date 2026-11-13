@@ -48,9 +48,6 @@ import { ThreadGuestShare } from "./guestShare.ts";
 import {
   DecisionReplyInput,
   DecisionReplyResult,
-  DecisionUndoReplyInput,
-  DecisionUndoReplyResult,
-  KeptThreadReplyInput,
   DecisionActInput,
   DecisionActResult,
 } from "./decisions.ts";
@@ -3886,8 +3883,6 @@ export const ORCHESTRATION_V2_WS_METHODS = {
   stopWorkflow: "orchestration.stopWorkflow",
   forceStopThread: "orchestration.forceStopThread",
   replyToDecision: "orchestration.replyToDecision",
-  undoDecisionReply: "orchestration.undoDecisionReply",
-  replyToKeptThread: "orchestration.replyToKeptThread",
   actOnDecision: "orchestration.actOnDecision",
   answerRule: "orchestration.answerRule",
   getTurnItem: "orchestration.getTurnItem",
@@ -4590,14 +4585,6 @@ export const OrchestrationV2RpcSchemas = {
   },
   replyToDecision: {
     input: DecisionReplyInput,
-    output: DecisionReplyResult,
-  },
-  undoDecisionReply: {
-    input: DecisionUndoReplyInput,
-    output: DecisionUndoReplyResult,
-  },
-  replyToKeptThread: {
-    input: KeptThreadReplyInput,
     output: DecisionReplyResult,
   },
   actOnDecision: {

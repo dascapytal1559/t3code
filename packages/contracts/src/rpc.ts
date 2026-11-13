@@ -234,12 +234,7 @@ import {
   OrchestrationV2RpcSchemas,
   OrchestrationV2ThreadLaunchError,
 } from "./orchestrationV2.ts";
-import {
-  DecisionActError,
-  DecisionReplyError,
-  DecisionsState,
-  KeptThreadReplyError,
-} from "./decisions.ts";
+import { DecisionActError, DecisionReplyError, DecisionsState } from "./decisions.ts";
 import { RuleAnswerError, RulesState } from "./rules.ts";
 import {
   ProjectCreateNewInput,
@@ -1899,24 +1894,6 @@ const WsOrchestrationV2ReplyToDecisionRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS
   error: Schema.Union([DecisionReplyError, EnvironmentAuthorizationError]),
 });
 
-const WsOrchestrationV2UndoDecisionReplyRpc = Rpc.make(
-  ORCHESTRATION_V2_WS_METHODS.undoDecisionReply,
-  {
-    payload: OrchestrationV2RpcSchemas.undoDecisionReply.input,
-    success: OrchestrationV2RpcSchemas.undoDecisionReply.output,
-    error: Schema.Union([DecisionReplyError, EnvironmentAuthorizationError]),
-  },
-);
-
-const WsOrchestrationV2ReplyToKeptThreadRpc = Rpc.make(
-  ORCHESTRATION_V2_WS_METHODS.replyToKeptThread,
-  {
-    payload: OrchestrationV2RpcSchemas.replyToKeptThread.input,
-    success: OrchestrationV2RpcSchemas.replyToKeptThread.output,
-    error: Schema.Union([KeptThreadReplyError, EnvironmentAuthorizationError]),
-  },
-);
-
 const WsOrchestrationV2ActOnDecisionRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.actOnDecision, {
   payload: OrchestrationV2RpcSchemas.actOnDecision.input,
   success: OrchestrationV2RpcSchemas.actOnDecision.output,
@@ -2345,8 +2322,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationV2StopWorkflowRpc,
   WsOrchestrationV2ForceStopThreadRpc,
   WsOrchestrationV2ReplyToDecisionRpc,
-  WsOrchestrationV2UndoDecisionReplyRpc,
-  WsOrchestrationV2ReplyToKeptThreadRpc,
   WsOrchestrationV2ActOnDecisionRpc,
   WsOrchestrationV2AnswerRuleRpc,
   WsOrchestrationV2GetTurnItemRpc,

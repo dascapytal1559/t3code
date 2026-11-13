@@ -23,8 +23,8 @@ vi.mock(import("../../state/orchestration"), async (original) => {
     ...actual,
     orchestrationEnvironment: {
       ...actual.orchestrationEnvironment,
-      replyToKeptThread: {
-        ...actual.orchestrationEnvironment.replyToKeptThread,
+      replyToDecision: {
+        ...actual.orchestrationEnvironment.replyToDecision,
         permissionAtom: () => allowed,
       },
     },

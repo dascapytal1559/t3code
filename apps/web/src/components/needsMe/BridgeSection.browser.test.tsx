@@ -16,8 +16,8 @@ function Bridge() {
       >
         <p>Ship the Bridge</p>
       </BridgeSection>
-      <BridgeSection id="needs-you" title="Needs you" count={0}>
-        <p>Nothing needs you</p>
+      <BridgeSection id="rules" title="Rules" count={0}>
+        <p>No rules</p>
       </BridgeSection>
     </>
   );
@@ -33,8 +33,8 @@ it("remembers each section's collapse and the Objectives pin across reloads", as
     await expect.element(objectives).toBeDisabled();
     await expect.element(screen.getByText("Ship the Bridge")).toBeVisible();
 
-    await userEvent.click(screen.getByRole("button", { name: "Needs you · 0" }));
-    await expect.element(screen.getByText("Nothing needs you")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Rules · 0" }));
+    await expect.element(screen.getByText("No rules")).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Unpin Objectives" }));
     await userEvent.click(objectives);
@@ -43,7 +43,7 @@ it("remembers each section's collapse and the Objectives pin across reloads", as
 
   await using screen = await render(<Bridge />);
   await expect
-    .element(screen.getByRole("button", { name: "Needs you · 0" }))
+    .element(screen.getByRole("button", { name: "Rules · 0" }))
     .toHaveAttribute("aria-expanded", "false");
   await expect
     .element(screen.getByRole("button", { name: "Objectives · 1" }))

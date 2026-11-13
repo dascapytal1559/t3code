@@ -358,8 +358,8 @@ page load on the home route opens a coordinator whatever its run status,
 the most recently updated if there are several, because a restart ends every
 run. A thread's Lineage panel lists its Crew or Coordinator.
 
-A coordinator can put a short status on a crewmate's card, such as "Waiting for
-captain" or "Testing": `t3_thread_update` with `action:'set_status_label'` and
+A coordinator can put a short status on a crewmate's card, such as "Testing":
+`t3_thread_update` with `action:'set_status_label'` and
 `statusLabel` (32 characters at most), and `action:'clear_status_label'` to take
 it off. The label sits where Working, Done or the age would, so the title stays plain.
 Approval, Input, Request, Limited, Failed and Woke still show over it, because a
@@ -384,7 +384,7 @@ usually idle while it waits, so without one the card cannot say how long the
 run has taken. The thread stores when its label was first set
 (`statusLabelSince`). Setting the same label again keeps its time, and only a
 new label or clearing it resets it.
-Other labels, including "Waiting for captain", show no timer. Code: the crew
+Other labels show no timer. Code: the crew
 label slot in `apps/web/src/components/sidebar/SidebarThreadRow.tsx`.
 
 A crew thread names its coordinator at launch: `t3_thread_launch` takes an
@@ -462,22 +462,15 @@ A crew thread that carries one of FirstMate's items (see
 [Captain items in the sidebar](#captain-items-in-the-sidebar)) gets a plain
 reply box with Send to FirstMate, Snooze and Archive. A reply never reaches the
 worker: it is the item's decision reply, `needs-me-task: <id>` in FirstMate's
-chat with the revision the user read, as from the Bridge. Snooze is one tap
+chat with the revision the user read, with no Undo. Snooze is one tap
 with no return date; its arrow offers the environment's snooze presets and
 Custom…, which set a return time. A snoozed item shows Bring back instead.
 Archive on a card FirstMate marks finished is the ordinary thread archive, with
 its Undo and unarchive; on a worker still running it only closes the item, and
 FirstMate winds the worker down through its own cleanup. A refusal from
-FirstMate shows above the box until FirstMate changes the item.
-
-Until FirstMate sends items with threads, a crew thread whose card reads
-"Waiting for captain" (FirstMate kept it open for the user, see
-[Threads kept for a reader](#threads-kept-for-a-reader)) gets the same box with
-only Send to FirstMate and Archive: `orchestration.replyToKeptThread` (operate
-scope) queues `**Reply · <title>**`, then `kept-thread: <threadId>`, a blank
-line and the words. Code: `KeptThreadReply.tsx` in
-`apps/web/src/components/chat/` and `Decisions.replyToKeptThread` in
-`apps/server/src/decisions/Decisions.ts`.
+FirstMate shows above the box until FirstMate changes the item. A crew thread
+with no item keeps no composer. Code: `KeptThreadReply.tsx` in
+`apps/web/src/components/chat/`.
 
 ## Captain items in the sidebar
 
@@ -577,18 +570,17 @@ keeps upstream's behaviour. Code: `retiresBusySessions` and its two uses in
 
 ## Bridge
 
-![A chat with the Bridge tab beside it: four objectives on top, then three decisions under Needs you and two under Scheduled with their return days](media/bridge-list.jpg)
-
 The right panel's "Bridge" tab (once "Needs me") is the captain's overview
-beside any chat: their objectives on top, then what FirstMate needs from them,
-then the reports FirstMate pinned, then FirstMate's model routing table, then
-the captain's rules for FirstMate. It
+beside any chat: their objectives on top, then FirstMate's model routing table,
+then the captain's rules for FirstMate. What FirstMate needs from the captain is
+not here but on the sidebar's cards (see
+[Captain items in the sidebar](#captain-items-in-the-sidebar)). It
 opens from the panel's launcher or "+" menu (N), or "Open Bridge" in the
 command palette, which still finds it by "needs me". On phone web it opens as a
 sheet like the other right-panel tabs. Internal names (`needs-me` surface kind,
 `components/needsMe/`) keep the old name.
 
-Each section (Objectives, Needs you, Scheduled, Reports, Model routing, Rules) has a header
+Each section (Objectives, Model routing, Rules) has a header
 with a chevron and its count, where it has one, that collapses and expands it.
 Each client remembers what it collapsed in local storage
 (`t3code:bridge:collapsed:<section>`), so it survives a reload. Objectives has a
@@ -607,46 +599,18 @@ environment, else of the first connected environment that has some.
 Model routing is FirstMate's routing table (its `config/crew-dispatch.json`: a
 "when" sentence naming a kind of work, the harness, model and effort it routes
 to, and why, plus a default), pushed as a Markdown table and shown read-only
-after the decisions. A wide panel shows the table. Below 36rem (a narrow panel,
+after the objectives. A wide panel shows the table. Below 36rem (a narrow panel,
 phone web) each row stacks instead of scrolling sideways: the first cell as its
 title, the middle cells on one line joined by " · ", the last cell beneath. With
 none set the section does not show. Like objectives, it is the chat's own
 environment's, else the first connected environment's that has one.
 
-Something FirstMate needs from the captain is a decision. FirstMate sends T3
-the whole list of them (see the records below), and T3 keeps it apart from
-threads: a decision has no thread, agent or model. "Needs you" lists the
-decisions waiting now, newest update first, each with its project, title and,
-in gray, the time since FirstMate's latest change (an `update` entry), else
-since the decision started waiting (`since`, else its raised entry), so an
-update an hour ago reads "1h ago" while rewording the raised context does not
-reset the age. Rows carry no New or Updated mark. A snoozed decision
-(`snoozed`) waits under "Scheduled": dated ones soonest first with their day
-("back 12 Nov"), moving up to Needs you by themselves when the time comes, then
-undated ones, reading "snoozed". A decision the captain has answered is not
-listed until FirstMate changes it. The project is the one the decision names in
-`projectName`; without one it is the project of FirstMate's chat. The tab lists
-the decisions of every connected environment. The sidebar shows the ones that
-name a thread on that thread's card (see
-[Captain items in the sidebar](#captain-items-in-the-sidebar)).
-
-<img src="media/bridge-decision.jpg" width="400" alt="An open decision in the Bridge tab: FirstMate's messages as sent with their file attachments, an update with its what-changed line, option chips and the reply box">
-
-Opening a row shows FirstMate's messages as sent, an "Updated" divider with the
-one-line what-changed before each update, and attachments (pictures inline,
-reports and links as file chips, paths relative to FirstMate's project). A file
-chip or file link opens the file in a tab of this same panel, as a chat's file
-links do: paths are taken relative to the chat beside it, while relative links
-still resolve against FirstMate's project (`decisionMarkdownScope`). A host
-chat on another environment cannot read FirstMate's files, so there a click
-does nothing visible. Option chips and "Later" fill the reply box. "Send to
-FirstMate" puts one ordinary user message into FirstMate's chat, queued behind
-a running turn as the composer's Queue does or starting a turn when FirstMate
-is idle, and takes the decision off the list. If the chat beside the panel is
-not FirstMate's, sending switches to it and opens the Bridge beside it. The
-toast's Undo takes the message back while it is still queued and reopens the
-decision's row with your words restored; once FirstMate has started on it, or
-has already left the decision out of its list, it stays sent.
+Something FirstMate needs from the captain is an item. FirstMate sends T3 the
+whole list of them (see the records below); T3 keeps it beside the threads and
+shows each item that names a thread on that thread's card. A reply from the
+card puts one ordinary user message into FirstMate's chat, queued behind a
+running turn as the composer's Queue does or starting a turn when FirstMate is
+idle.
 
 The records, for FirstMate's side:
 
@@ -670,11 +634,11 @@ The records, for FirstMate's side:
   decisions, each `id` once; entry text at most 8,192 characters, 24 entries,
   12 options, 12 attachments per entry. `id` is FirstMate's own id for the
   decision, its task id. `projectName` (at most 200 characters) is the project
-  the decision is about, such as the backlog task's repo, which its row shows.
+  the decision is about, such as the backlog task's repo.
   `since` is when the decision started waiting on the captain, an ISO 8601
   date-time such as `2026-10-26T06:53:24.000Z` (any string `Date.parse` reads
-  is accepted; send the full UTC form); the row's age counts from it, falling
-  back to the raised entry. `revision` is FirstMate's own, a positive integer
+  is accepted; send the full UTC form). T3 keeps `since`, `entries`, `options`
+  and `projectName` but shows none of them for now. `revision` is FirstMate's own, a positive integer
   that grows when the captain should read the decision again. `kind` is
   `decision` (the default) or `read`, a finished report with nothing to decide.
   `thread: { id, finished }` is the thread whose card carries the item;
@@ -727,8 +691,8 @@ The records, for FirstMate's side:
 
 Clients read the list on the `subscribeDecisions` stream, as `{ replyTo,
 decisions[], actions[], lastActionSeq }` where an answered decision carries
-`answered { commandId, at }`, and reply with `orchestration.replyToDecision` and
-`orchestration.undoDecisionReply`, which name the decision by `decisionId`. The
+`answered { commandId, at }`, and reply and act with `orchestration.replyToDecision`
+and `orchestration.actOnDecision`, which name the decision by `decisionId`. The
 web and desktop sidebar subscribes while it runs; the App Store mobile app never
 subscribes, so it is sent nothing. Decisions raise no notifications. The mobile
 app shows no items yet.
@@ -741,7 +705,7 @@ Code: `packages/contracts/src/decisions.ts`,
 `apps/server/src/decisions/Decisions.ts`, `apps/web/src/state/decisions.ts` and
 `apps/web/src/components/needsMe/`. Shared files it touches, for syncs: the
 `subscribeDecisions` stream in `rpc.ts` and `ws.ts`, with its scope in
-`RpcAuthorization.ts` and `RpcInstrumentation.ts`; the two reply RPCs and `actOnDecision` in
+`RpcAuthorization.ts` and `RpcInstrumentation.ts`; the reply RPC and `actOnDecision` in
 `orchestrationV2.ts`, `rpc.ts` and `ws.ts`, with their scopes in
 `clientRpcPermissions.ts`, `RpcAuthorization.ts` and `RpcInstrumentation.ts`;
 the layer in `orchestration-v2/runtimeLayer.ts`; in `packages/client-runtime`,
@@ -760,51 +724,6 @@ in `mcp/toolkits/environment/`, their rows in `t3McpToolPresentation.ts` and the
 larger `agentContextBudget.json`. Collapsible sections and the pin live in
 `components/needsMe/BridgeSection.tsx`; the routing table's stacked layout is
 the `.bridge-routing` block in `apps/web/src/index.css`.
-
-### Reports
-
-![The Reports section: two pinned reports, each with its title and pin date, a one-line summary, and the report as a file chip or a web link, with an unpin button on the right](media/bridge-reports.jpg)
-
-Reports are finished reports FirstMate pins for the captain to read, newest pin
-first, after the decisions: the title with the day it was pinned, FirstMate's
-one-line summary, then the report itself. A file opens in a tab of this same
-panel, as a decision's file chips do; a web link opens as any chat link does.
-The unpin button beside a report takes it off the list for everyone. On phone
-web the section is read-only: the reports open, but there is no unpin. With
-none pinned the section does not show. Like objectives, the list is the chat's
-own environment's, else the first connected environment's that has some; a
-host chat on another environment cannot open the files, so there a file chip
-does nothing visible.
-
-The records, for FirstMate's side:
-
-- `t3_reports_pin` pins one report. Input: `{ id, title, summary, location }`.
-  `id` is FirstMate's own (at most 200 characters), such as the task id;
-  pinning an id again replaces that report and moves it to the top. `title` is
-  at most 200 characters, `summary` 500. `location` is an absolute path to the
-  report on the server's machine (`/…` or `C:\…`) or an `http(s)://` link, at
-  most 2,000 characters; anything else is refused. T3 stamps `pinnedAt`, the
-  date the row shows. At most 50 reports are pinned; a new one past that is
-  refused until one is unpinned.
-- `t3_reports_unpin` unpins one: `{ id }`. An id that is not pinned changes
-  nothing.
-- Both return `{ reports[{ id, title, pinnedAt }] }`, every report pinned now,
-  newest first, so FirstMate sees what the captain unpinned.
-- Same access rules and refusals as `t3_objectives_set`.
-- T3 keeps them as `pinnedReports` in `settings.json`, keyed by id, so they
-  survive a restart and reach every client on the settings stream. A settings
-  patch changes one id at a time (`null` unpins it), so FirstMate's pin and the
-  captain's unpin never overwrite each other. The captain unpins with an
-  ordinary settings update, which needs the settings-write scope.
-
-Code: `PinnedReport` in `packages/contracts/src/objectives.ts`,
-`components/needsMe/ReportsSection.tsx` and `bridgeReports` and
-`reportLinkMarkdown` in `needsMe.logic.ts`. Shared files it touches, for syncs:
-the `pinnedReports` fields in `ServerSettings` and `ServerSettingsPatch`
-(`settings.ts`), its per-id merge in `applyServerSettingsPatch`
-(`packages/shared/src/serverSettings.ts`), the tools in
-`mcp/toolkits/environment/`, their rows in `t3McpToolPresentation.ts`, the
-larger `agentContextBudget.json`, and the `reports` id on `BridgeSection.tsx`.
 
 ### Rules
 

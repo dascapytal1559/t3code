@@ -407,7 +407,6 @@ export function applyServerSettingsPatch(
     // Replaced whole, so `null` clears them.
     objectives,
     modelRouting,
-    pinnedReports: pinnedReportsPatch,
     ...patchForMerge
   } = patch;
   const currentBackgroundActivity = normalizeServerBackgroundActivitySettings(current);
@@ -542,9 +541,6 @@ export function applyServerSettingsPatch(
       : {}),
     ...(objectives !== undefined ? { objectives } : {}),
     ...(modelRouting !== undefined ? { modelRouting } : {}),
-    ...(pinnedReportsPatch !== undefined
-      ? { pinnedReports: mergeSettingsEntries(current.pinnedReports, pinnedReportsPatch) }
-      : {}),
     ...(patch.worktreesDirectory !== undefined &&
     patch.worktreesDirectory !== current.worktreesDirectory
       ? {

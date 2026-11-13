@@ -4,12 +4,10 @@ import {
   DecisionReplyError,
   DecisionsState,
   EMPTY_DECISIONS_STATE,
-  KeptThreadReplyError,
   MessageId,
   ThreadId,
   decisionSince,
   formatDecisionReply,
-  formatKeptThreadReply,
   type Decision,
   type DecisionAction,
   type DecisionActInput,
@@ -18,10 +16,7 @@ import {
   type DecisionActionsResult,
   type DecisionReplyInput,
   type DecisionReplyResult,
-  type DecisionUndoReplyInput,
-  type DecisionUndoReplyResult,
   type DecisionsSetInput,
-  type KeptThreadReplyInput,
   type OrchestrationClientOrigin,
   type StoredDecision,
 } from "@t3tools/contracts";
@@ -34,7 +29,6 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
@@ -68,8 +62,9 @@ export class DecisionsReplyThreadError extends Schema.TaggedError<DecisionsReply
 
 /**
  * The decisions FirstMate needs from the user, kept in one file beside the settings. FirstMate
- * replaces the whole list; the only thing kept here that it does not send is which decisions the
- * user has answered. A reply is one ordinary user message into FirstMate's chat.
+ * replaces the whole list; T3 adds which items the user has answered and a log of the user's
+ * snooze and archive actions until FirstMate applies them. A reply is one ordinary user message
+ * into FirstMate's chat.
  */
 export class Decisions extends Context.Service<
   Decisions,
@@ -89,15 +84,6 @@ export class Decisions extends Context.Service<
       input: DecisionReplyInput,
       origin?: OrchestrationClientOrigin,
     ) => Effect.Effect<DecisionReplyResult, DecisionReplyError>;
-    /** Takes a reply back while it is still queued, and shows the decision again. */
-    readonly undoReply: (
-      input: DecisionUndoReplyInput,
-    ) => Effect.Effect<DecisionUndoReplyResult, DecisionReplyError>;
-    /** Sends the user's words about a crew thread to its coordinator; the thread itself gets nothing. */
-    readonly replyToKeptThread: (
-      input: KeptThreadReplyInput,
-      origin?: OrchestrationClientOrigin,
-    ) => Effect.Effect<DecisionReplyResult, KeptThreadReplyError>;
     /** Logs the user's snooze, bring back or archive for FirstMate to apply. */
     readonly act: (input: DecisionActInput) => Effect.Effect<DecisionActResult, DecisionActError>;
     /** FirstMate's side: drops acknowledged actions, then returns or waits for the next ones. */
@@ -287,98 +273,6 @@ const make = Effect.gen(function* () {
     };
   });
 
-  const undoReply = Effect.fn("Decisions.undoReply")(function* (input: DecisionUndoReplyInput) {
-    const { decisionId } = input;
-    yield* Effect.annotateCurrentSpan({ "decision.id": decisionId });
-    return yield* writeLock.withPermits(1)(
-      Effect.gen(function* () {
-        const current = yield* SubscriptionRef.get(state);
-        const coordinatorId = current.replyTo;
-        if (coordinatorId === null) {
-          return yield* new DecisionReplyError({ decisionId, reason: "no-coordinator" });
-        }
-        const readRun = findReplyRun(coordinatorId, replyMessageId(input.commandId)).pipe(
-          Effect.mapError(failed(decisionId)),
-        );
-        const run = yield* readRun;
-        if (run === null || (run.status !== "queued" && run.status !== "cancelled")) {
-          return { withdrawn: false };
-        }
-        if (run.status === "queued") {
-          if (!current.decisions.some((decision) => decision.id === decisionId)) {
-            return { withdrawn: false };
-          }
-          const cancelled = yield* threads
-            .dispatch({
-              type: "queued-run.cancel",
-              commandId: stepCommandId(input.commandId, "undo-cancel"),
-              threadId: coordinatorId,
-              runId: run.id,
-            })
-            .pipe(Effect.result);
-          // The queue may have started it in the meantime; then it is FirstMate's now.
-          if (Result.isFailure(cancelled)) {
-            const latest = yield* readRun;
-            if (latest?.status === "queued") return yield* failed(decisionId)(cancelled.failure);
-            if (latest?.status !== "cancelled") return { withdrawn: false };
-          }
-        }
-        const reopened = withDecision(current, decisionId, (latest) => {
-          if (latest.answered?.commandId !== input.commandId) return latest;
-          const { answered: _answered, ...open } = latest;
-          return open;
-        });
-        yield* save(current, reopened).pipe(Effect.mapError(failed(decisionId)));
-        return { withdrawn: true };
-      }),
-    );
-  });
-
-  const replyToKeptThread = Effect.fn("Decisions.replyToKeptThread")(function* (
-    input: KeptThreadReplyInput,
-    origin?: OrchestrationClientOrigin,
-  ) {
-    const { threadId } = input;
-    yield* Effect.annotateCurrentSpan({ "thread.id": threadId });
-    const kept = yield* readThread(threadId);
-    if (kept === null) return yield* new KeptThreadReplyError({ threadId, reason: "not-found" });
-    const coordinatorId = kept.crewOf;
-    if (coordinatorId === undefined || (yield* readThread(coordinatorId)) === null) {
-      return yield* new KeptThreadReplyError({ threadId, reason: "no-coordinator" });
-    }
-    const keptFailed = (cause: unknown) => {
-      const detail = userFacingDispatchErrorMessage(cause);
-      return new KeptThreadReplyError({
-        threadId,
-        reason: "failed",
-        ...(detail === undefined ? {} : { detail }),
-        cause,
-      });
-    };
-    const messageId = MessageId.make(`${input.commandId}:kept-reply`);
-    yield* threads
-      .dispatch({
-        type: "message.dispatch",
-        commandId: CommandId.make(`${input.commandId}:kept-reply`),
-        threadId: coordinatorId,
-        messageId,
-        text: formatKeptThreadReply({ thread: kept, text: input.text }),
-        attachments: [],
-        dispatchMode: { type: "queue_after_active" },
-        createdBy: "user",
-        creationSource: input.creationSource ?? "web",
-        ...(origin === undefined ? {} : { origin }),
-      })
-      .pipe(Effect.mapError(keptFailed));
-    const run = yield* findReplyRun(coordinatorId, messageId).pipe(Effect.mapError(keptFailed));
-    return {
-      coordinatorThreadId: coordinatorId,
-      messageId,
-      runId: run?.id ?? null,
-      queued: run?.status === "queued",
-    };
-  });
-
   // Callers hold `writeLock`. A repeated `commandId` returns the action already logged.
   const logAction = (
     current: DecisionsState,
@@ -516,8 +410,6 @@ const make = Effect.gen(function* () {
     replyTo: SubscriptionRef.get(state).pipe(Effect.map((current) => current.replyTo)),
     set,
     reply,
-    undoReply,
-    replyToKeptThread,
     act,
     actions,
   });
