@@ -1,5 +1,5 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { ThreadId } from "@t3tools/contracts";
 import type { SidebarSection, SidebarThreadStatus } from "../Sidebar.logic";
 
 /**
@@ -70,18 +70,6 @@ export function resolveAppCoordinatorGroup<T extends CrewThread>(
   threads: readonly T[],
 ): CoordinatorGroup<T> {
   return resolveCoordinatorGroup(threads, crewCoordinatorOf);
-}
-
-/** Whether the app's coordinator group lists a thread as crew; crew stays out of notifications. */
-export function isAppCrewmate<T extends CrewThread>(
-  threads: readonly T[],
-  environmentId: EnvironmentId,
-  threadId: ThreadId,
-): boolean {
-  for (const member of resolveAppCoordinatorGroup(threads).crew) {
-    if (member.environmentId === environmentId && member.id === threadId) return true;
-  }
-  return false;
 }
 
 /** Whether a thread is crew, judged from it and the coordinator it names, as the sidebar does. */

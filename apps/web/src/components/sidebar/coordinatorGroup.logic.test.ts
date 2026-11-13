@@ -4,7 +4,6 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   coordinatorGroupSlot,
   crewCoordinatorOf,
-  isAppCrewmate,
   isCrewOf,
   resolveAppCoordinatorGroup,
   resolveCoordinatorGroup,
@@ -170,19 +169,15 @@ describe("crewCoordinatorOf", () => {
   });
 });
 
-describe("isAppCrewmate", () => {
+describe("isCrewOf", () => {
   const crewmatesOf = (threads: readonly ReturnType<typeof thread>[]) =>
     threads
-      .filter((subject) => {
-        const crew = isAppCrewmate(threads, subject.environmentId, subject.id);
-        // The composer lock reads only the thread and its coordinator; it must agree.
-        const coordinator = threads.find((other) => other.id === subject.crewOf) ?? null;
-        expect(isCrewOf(subject, coordinator)).toBe(crew);
-        return crew;
-      })
+      .filter((subject) =>
+        isCrewOf(subject, threads.find((other) => other.id === subject.crewOf) ?? null),
+      )
       .map((subject) => subject.title);
 
-  it("silences crewmates in any project and leaves the coordinator and other threads notifying", () => {
+  it("takes crewmates in any project for crew, and not the coordinator or other threads", () => {
     const main = thread("Captain's session");
     const crewInHome = thread("Fix the docs", { crewOf: "Captain's session" });
     const crewElsewhere = thread("Login fix", { crewOf: "Captain's session", projectId: appId });
@@ -206,7 +201,7 @@ describe("isAppCrewmate", () => {
     ).toEqual(["Fix the docs", "Login fix", "Secondmate", "Port the API"]);
   });
 
-  it("silences nothing when the coordinator is archived", () => {
+  it("takes nothing for crew when the coordinator is archived", () => {
     const main = thread("Captain's session", { archivedAt: "2026-10-28T11:00:00.000Z" });
     const crew = thread("Fix the docs", { crewOf: "Captain's session" });
     expect(crewmatesOf([main, crew])).toEqual([]);

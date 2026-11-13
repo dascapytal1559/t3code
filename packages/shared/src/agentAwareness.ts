@@ -68,11 +68,22 @@ function buildAgentAwarenessDeepLink(input: {
   return `/threads/${encodeURIComponent(input.environmentId)}/${encodeURIComponent(input.threadId)}`;
 }
 
-/** A stopped run, or a coordinator's supervision turn, ends without a completion alert. */
+/**
+ * A stopped run, a coordinator's supervision turn, or any turn of a thread launched as crew ends
+ * without a completion alert. Crew stay quiet however they are grouped, even once their
+ * coordinator is archived or gone.
+ */
 export function latestRunEndsQuietly(
-  thread: Pick<OrchestrationV2ThreadShell, "latestRunStopRequested" | "latestRunSupervision">,
+  thread: Pick<
+    OrchestrationV2ThreadShell,
+    "crewOf" | "latestRunStopRequested" | "latestRunSupervision"
+  >,
 ): boolean {
-  return thread.latestRunStopRequested === true || thread.latestRunSupervision === true;
+  return (
+    thread.latestRunStopRequested === true ||
+    thread.latestRunSupervision === true ||
+    thread.crewOf !== undefined
+  );
 }
 
 export interface ProjectThreadAwarenessV2Input {
@@ -81,6 +92,7 @@ export interface ProjectThreadAwarenessV2Input {
   readonly thread: Pick<
     OrchestrationV2ThreadShell,
     | "activityRunStatus"
+    | "crewOf"
     | "id"
     | "lineage"
     | "latestRunBackgroundWake"

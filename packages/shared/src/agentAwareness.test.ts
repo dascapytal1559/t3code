@@ -24,6 +24,7 @@ describe("projectThreadAwarenessV2", () => {
       Pick<
         OrchestrationV2ThreadShell,
         | "activityRunStatus"
+        | "crewOf"
         | "latestRunBackgroundWake"
         | "latestRunStopRequested"
         | "latestRunSupervision"
@@ -65,17 +66,23 @@ describe("projectThreadAwarenessV2", () => {
     ).toBeNull();
   });
 
-  it("keeps a supervision turn quiet, unlike a captain-started or alert-flagged turn", () => {
-    const completed = (latestRunSupervision?: boolean) =>
+  it("keeps supervision and crew turns quiet, unlike a captain-started or alert-flagged turn", () => {
+    const completed = (latestRunSupervision?: boolean, crewOf?: ThreadId) =>
       projectThreadAwarenessV2({
         environmentId: "env-1" as EnvironmentId,
         project,
-        thread: v2Thread({ status: "completed", latestRunSupervision }),
+        thread: v2Thread({
+          status: "completed",
+          latestRunSupervision,
+          ...(crewOf === undefined ? {} : { crewOf }),
+        }),
       })?.phase;
     // The server sets the flag false for a turn that asked to alert; absent means the user's own turn.
     expect(completed(true)).toBeUndefined();
     expect(completed(false)).toBe("completed");
     expect(completed(undefined)).toBe("completed");
+    // A crewmate's coordinator may be archived or unknown here; launched as crew is enough.
+    expect(completed(undefined, "coordinator-gone" as ThreadId)).toBeUndefined();
   });
 
   it.each([

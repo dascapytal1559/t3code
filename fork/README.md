@@ -351,7 +351,7 @@ The FirstMate and crew cards have no hover Snooze or Settle (the context menu
 still has both, and snoozing or settling takes a thread out of the group). A
 "Waiting for captain" card closes from its own thread instead (see
 [A crewmate has no composer](#a-crewmate-has-no-composer)). The cards drag only
-as chat context, and crewmate turns raise no sound or notification. A fresh
+as chat context. A fresh
 page load on the home route opens a coordinator whatever its run status,
 the most recently updated if there are several, because a restart ends every
 run. A thread's Lineage panel lists its Crew or Coordinator.
@@ -475,7 +475,7 @@ turn that a T3 notification started (background work reporting in, a delegated
 task finishing, or T3's restart note) ends without the sound, toast, desktop
 notification or the paired phone's completed alert, unless the user sent a message into it. Turns the user starts
 alert as before, and so do approval, input, request, failed and usage-limit
-states on every thread. Other threads are unchanged, and crew stay silent.
+states on every thread except crew (below). Other threads are unchanged.
 
 When such a turn needs the user, the agent calls `t3_thread_update` with
 `action: "alert_when_done"` (no `threadId` means its own thread) while the turn
@@ -496,6 +496,14 @@ Code: `isSupervisionRunForShell` and its SQL mirror `isSupervisionShellRun` in
 `apps/server/src/orchestration-v2/ProjectionStore.ts`, the `quiet` option in
 `apps/web/src/components/ThreadNotificationCoordinator.tsx`, and
 `alert_when_done` in `apps/server/src/mcp/ThreadMetadataMcpService.ts`.
+
+Crew never alert, so only the primary FirstMate thread sounds. A thread
+launched as crew (it has a `crewOf`) raises no sound, toast or desktop
+notification of any kind, and no phone completed alert, in any project and
+however it is grouped: snoozed, settled, or after its coordinator is archived
+or gone. A worker launched without a parent is an ordinary thread to T3 and
+alerts as one. Code: `latestRunEndsQuietly` (shared with the phone relay) and
+the `crewOf` check in `ThreadNotificationCoordinator.tsx`.
 
 ## A fresh start on FirstMate ends the old session
 

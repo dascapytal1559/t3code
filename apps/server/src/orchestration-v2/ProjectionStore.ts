@@ -7751,6 +7751,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               latestRunStopRequested: state.latestRunStopRequested,
               latestRunBackgroundWake: state.latestRunBackgroundWake,
               latestRunSupervision: state.latestRunSupervision,
+              ...(state.thread.crewOf === undefined ? {} : { crewOf: state.thread.crewOf }),
               pendingRuntimeRequest: state.pendingRuntimeRequest,
               pendingBackgroundTasks: state.pendingBackgroundTasks,
             })),

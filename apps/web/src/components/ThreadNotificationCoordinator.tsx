@@ -39,7 +39,6 @@ import {
   type ThreadNotificationKind,
   type ThreadNotificationObservation,
 } from "./ThreadNotificationCoordinator.logic";
-import { isAppCrewmate } from "./sidebar/coordinatorGroup.logic";
 import { toastManager } from "./ui/toast";
 
 interface NotificationState extends ThreadNotificationObservation {
@@ -231,10 +230,6 @@ export function startThreadNotifications(
     }
   };
 
-  // Crew report to their coordinator, so only the coordinator notifies.
-  const isCrewmate = (environmentId: EnvironmentId, threadId: ThreadId) =>
-    isAppCrewmate(registry.get(environmentThreadShells.threadShellsAtom), environmentId, threadId);
-
   const observeThreads = (
     environmentId: EnvironmentId,
     entry: WatchedEnvironment,
@@ -321,7 +316,8 @@ export function startThreadNotifications(
       unsubscribe: () => {},
       gate: createThreadNotificationGate<ThreadId>((threadId, kind) => {
         const state = entry.previous.get(threadId);
-        if (state && !isCrewmate(environmentId, threadId)) present(environmentId, state, kind);
+        // Crew report to their coordinator, so a thread launched as crew never notifies.
+        if (state && state.raw.crewOf === undefined) present(environmentId, state, kind);
       }),
     };
     let threads: ReadonlyArray<OrchestrationV2ThreadShell> | null = null;
