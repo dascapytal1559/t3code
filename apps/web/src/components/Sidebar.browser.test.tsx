@@ -346,10 +346,10 @@ describe("FirstMate's items in the sidebar", () => {
     vi.mocked(useProjects).mockReturnValue([home]);
     vi.mocked(useQuietThreadShells).mockReturnValue(threads);
     vi.mocked(useThreadRouteTarget).mockReturnValue({ kind: "none" } as never);
-    // The crew tree and the Snoozed shelf start collapsed.
+    // The crew tree starts open; the Snoozed shelf starts collapsed and is opened below.
     using stack = new DisposableStack();
+    localStorage.setItem("t3code:sidebar:crew-expanded", "true");
     for (const key of ["t3code:sidebar:crew-expanded", "t3code:sidebar:snoozed-expanded"]) {
-      localStorage.setItem(key, "true");
       stack.defer(() => localStorage.removeItem(key));
     }
     await using screen = await render(
@@ -367,6 +367,9 @@ describe("FirstMate's items in the sidebar", () => {
     expect(row("spec")?.textContent).toMatch(/\d+d/);
     expect(row("spec")?.textContent).not.toContain("To read");
     // Snoozed items leave the crew for the Snoozed shelf, after its header, with no label.
+    expect(row("cap")).toBeNull();
+    await screen.getByTestId("sidebar-snoozed-shelf-toggle").click();
+    await vi.waitFor(() => expect(row("cap")).not.toBeNull());
     const snoozedHeader = screen.getByText("Snoozed", { exact: true }).element();
     for (const id of ["cap", "vision"]) {
       expect(
