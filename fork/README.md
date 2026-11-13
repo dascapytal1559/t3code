@@ -254,13 +254,14 @@ of WinGet's Claude, in `packages/provider-core/src/server/maintenanceResolver.ts
 ## `~` in a provider's executable path
 
 A provider path that starts with `~` works for every provider. Upstream's Grok,
-Pi, fx, Antigravity, Kiro and ACP registry drivers use a configured path such as
-`~/.local/bin/grok` as written. Processes launch without a shell, so
-the provider shows as not installed. Here each of those drivers expands a
-leading `~` with `expandHomePath` before probing, spawning, resolving
-maintenance or reporting status, as Codex, Claude, Muse and OpenCode do upstream.
-Cursor never runs its `binaryPath`, so it is unchanged. When a sync finds upstream
-expanding `~` in these drivers, keep upstream's.
+Pi and ACP registry drivers use a configured path such as `~/.local/bin/grok`
+as written. Processes launch without a shell, so the provider shows as not
+installed. Here each of those drivers expands a leading `~` with
+`expandHomePath` before probing, spawning, resolving maintenance or reporting
+status, as Codex, Claude, Muse, OpenCode, fx, Kiro and Antigravity do upstream
+(fx, Kiro and Antigravity since upstream #35171, which replaced the fork's own
+change there). Cursor never runs its `binaryPath`, so it is unchanged. When a
+sync finds upstream expanding `~` in these drivers, keep upstream's.
 
 ## Idle agent release is a server setting
 
