@@ -1,9 +1,11 @@
 // Fork: the main window grows to the right when the right panel opens, so the
 // sidebar and chat keep their widths. Upstream lets the panel share the window.
 import type { RightPanelWindowRequest, RightPanelWindowResult } from "@t3tools/contracts";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
 import * as Electron from "electron";
 
-import { RIGHT_PANEL_WINDOW_INTERRUPTED_CHANNEL } from "../ipc/channels.ts";
+import type { PageView } from "./PanelPageView.ts";
 
 interface Rect {
   readonly x: number;
@@ -63,89 +65,120 @@ export function shrinkAfterPanel(
 
 const growthByWindow = new WeakMap<Electron.BrowserWindow, PanelGrowth>();
 
-/** The width the last request left the window at, until anything else resizes it. */
-const requestedByWindow = new WeakMap<
+/** Windows whose page is drawing at the grown size, before the window grows to show it. */
+const openingByWindow = new WeakMap<
   Electron.BrowserWindow,
-  { readonly requestId: number; readonly width: number }
+  Deferred.Deferred<RightPanelWindowResult>
 >();
-const watchedWindows = new WeakSet<Electron.BrowserWindow>();
 
 const isZoomed = (window: Electron.BrowserWindow) => window.isFullScreen() || window.isMaximized();
 
+/** `panelWidth` is in CSS pixels; window bounds are in screen points. */
+function planGrowth(window: Electron.BrowserWindow, panelWidth: number) {
+  if (isZoomed(window)) return null;
+  const bounds = window.getBounds();
+  return growForPanel(
+    bounds,
+    Electron.screen.getDisplayMatching(bounds).workArea,
+    panelWidth * window.webContents.getZoomFactor(),
+  );
+}
+
 /**
- * The renderer holds its layout until its viewport reaches the requested width, so any
- * other resize first (a hand resize, maximize, a display change) has to release it.
+ * macOS shows a grown window at once, with the page's last frame and a blank strip beside
+ * it, and Chromium does not hold the resize for the page. So the page is sized first: it
+ * lays out and draws at the grown size while the window still clips it, then the window
+ * grows over a frame that is already there.
  */
-function watchForOtherResizes(window: Electron.BrowserWindow) {
-  if (watchedWindows.has(window)) return;
-  watchedWindows.add(window);
-  window.on("resize", () => {
-    const requested = requestedByWindow.get(window);
-    if (requested === undefined || window.isDestroyed()) return;
-    if (window.getBounds().width === requested.width) return;
-    requestedByWindow.delete(window);
-    window.webContents.send(
-      RIGHT_PANEL_WINDOW_INTERRUPTED_CHANNEL,
-      requested.requestId,
-      contentWidthOf(window),
-    );
-  });
-}
-
-// The renderer measures in CSS pixels; window bounds are in screen points.
-const contentWidthOf = (window: Electron.BrowserWindow) =>
-  window.getContentBounds().width / window.webContents.getZoomFactor();
-
-function resizeTo(window: Electron.BrowserWindow, requestId: number, bounds: Rect) {
-  watchForOtherResizes(window);
-  // macOS reports this resize synchronously; it is ours, so nothing is watched yet.
-  requestedByWindow.delete(window);
-  const previousContentWidth = contentWidthOf(window);
-  window.setBounds(bounds);
-  requestedByWindow.set(window, { requestId, width: window.getBounds().width });
-  return {
-    requestId,
-    status: "resized" as const,
-    contentWidth: contentWidthOf(window),
-    previousContentWidth,
-  };
-}
-
-/** `request.width` is the width to grow by (opening) or the panel's width now (closing). */
-export function setWindowPanelOpen(
+const openPanelWindow = Effect.fn("desktop.panelWindow.open")(function* (
   window: Electron.BrowserWindow,
-  request: RightPanelWindowRequest,
-): RightPanelWindowResult {
-  const { requestId } = request;
-  if (window.isDestroyed()) return { requestId, status: "unchanged" };
-  const growth = growthByWindow.get(window);
-  const zoomFactor = window.webContents.getZoomFactor();
-  if (request.open) {
-    if (growth !== undefined) return { requestId, status: "unchanged" };
-    if (isZoomed(window)) return { requestId, status: "noRoom" };
-    const bounds = window.getBounds();
-    const next = growForPanel(
-      bounds,
-      Electron.screen.getDisplayMatching(bounds).workArea,
-      request.width * zoomFactor,
-    );
-    if (next === null) return { requestId, status: "noRoom" };
-    growthByWindow.set(window, next.growth);
-    return resizeTo(window, requestId, next.bounds);
+  panelWidth: number,
+  pageView: PageView,
+): Effect.fn.Return<RightPanelWindowResult> {
+  if (growthByWindow.has(window)) return "unchanged";
+  // A view taking over from one that just went away asks for the growth already under way.
+  const underWay = openingByWindow.get(window);
+  if (underWay !== undefined) return yield* Deferred.await(underWay);
+  const plan = planGrowth(window, panelWidth);
+  if (plan === null) return "noRoom";
+  const opening = Deferred.makeUnsafe<RightPanelWindowResult>();
+  openingByWindow.set(window, opening);
+  return yield* growOnceDrawn(window, panelWidth, plan.growth.added, pageView, opening).pipe(
+    Effect.onExit((exit) => {
+      if (openingByWindow.get(window) === opening) openingByWindow.delete(window);
+      return Deferred.done(opening, exit);
+    }),
+  );
+});
+
+const growOnceDrawn = Effect.fn("desktop.panelWindow.growOnceDrawn")(function* (
+  window: Electron.BrowserWindow,
+  panelWidth: number,
+  added: number,
+  pageView: PageView,
+  opening: Deferred.Deferred<RightPanelWindowResult>,
+): Effect.fn.Return<RightPanelWindowResult> {
+  const content = window.getContentBounds();
+  const ahead = yield* pageView.resizeAhead(window, {
+    width: content.width + added,
+    height: content.height,
+  });
+  if (ahead) yield* pageView.drawn(window);
+  // A close while the page drew took the page back to the window's size.
+  if (openingByWindow.get(window) !== opening) return "unchanged";
+  openingByWindow.delete(window);
+  if (window.isDestroyed()) return "unchanged";
+  // The window may have been moved, resized or zoomed by hand while the page drew.
+  const grown = planGrowth(window, panelWidth);
+  if (grown === null) {
+    if (ahead) yield* pageView.resizeAhead(window, window.getContentBounds());
+    return "noRoom";
   }
+  growthByWindow.set(window, grown.growth);
+  window.setBounds(grown.bounds);
+  if (!ahead) yield* pageView.drawn(window);
+  return "resized";
+});
+
+/** The window shrinks at once and clips the page, which then draws at the new size. */
+const closePanelWindow = Effect.fn("desktop.panelWindow.close")(function* (
+  window: Electron.BrowserWindow,
+  panelWidth: number,
+  pageView: PageView,
+): Effect.fn.Return<RightPanelWindowResult> {
+  if (openingByWindow.delete(window)) {
+    const sized = yield* pageView.resizeAhead(window, window.getContentBounds());
+    if (sized) yield* pageView.drawn(window);
+    return sized ? "resized" : "unchanged";
+  }
+  const growth = growthByWindow.get(window);
   // A zoomed window keeps its growth, so its normal bounds still account for it.
-  if (growth === undefined || isZoomed(window)) return { requestId, status: "unchanged" };
+  if (growth === undefined || isZoomed(window)) return "unchanged";
   growthByWindow.delete(window);
   const bounds = window.getBounds();
   const next = shrinkAfterPanel(
     bounds,
     growth,
-    request.width * zoomFactor,
+    panelWidth * window.webContents.getZoomFactor(),
     window.getMinimumSize()[0] ?? 0,
   );
-  if (next.width === bounds.width && next.x === bounds.x) return { requestId, status: "unchanged" };
-  return resizeTo(window, requestId, next);
-}
+  if (next.width === bounds.width && next.x === bounds.x) return "unchanged";
+  window.setBounds(next);
+  yield* pageView.drawn(window);
+  return "resized";
+});
+
+/** `request.width` is the width to grow by (opening) or the panel's width now (closing). */
+export const setWindowPanelOpen = (
+  window: Electron.BrowserWindow,
+  request: RightPanelWindowRequest,
+  pageView: PageView,
+): Effect.Effect<RightPanelWindowResult> => {
+  if (window.isDestroyed()) return Effect.succeed("unchanged");
+  return request.open
+    ? openPanelWindow(window, request.width, pageView)
+    : closePanelWindow(window, request.width, pageView);
+};
 
 /**
  * Saved bounds leave out the panel's width at opening, so a restart with the panel open

@@ -1,10 +1,14 @@
+import { describe, expect, it } from "@effect/vitest";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import type * as Electron from "electron";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { vi } from "vite-plus/test";
 
 vi.mock("electron", () => ({
   screen: { getDisplayMatching: () => ({ workArea: { x: 0, y: 25, width: 1800, height: 1100 } }) },
 }));
-import { RIGHT_PANEL_WINDOW_INTERRUPTED_CHANNEL } from "../ipc/channels.ts";
+import type { PageView, PageViewSize } from "./PanelPageView.ts";
 import { growForPanel, setWindowPanelOpen, shrinkAfterPanel } from "./PanelWindowGrowth.ts";
 
 const workArea = { x: 0, y: 25, width: 1800, height: 1100 };
@@ -12,13 +16,11 @@ const window = (x: number, width: number) => ({ x, y: 100, width, height: 900 })
 
 type Bounds = ReturnType<typeof window>;
 
-/** A frameless window: its content fills its bounds, and resize fires inside setBounds, as on macOS. */
+/** A frameless window: its content fills its bounds. */
 function fakeBrowserWindow(initial: Bounds, options: { zoomFactor?: number } = {}) {
   let bounds = initial;
   let maximized = false;
-  const resizeListeners: Array<() => void> = [];
-  const sent: unknown[][] = [];
-  const emitResize = () => resizeListeners.forEach((listener) => listener());
+  let resizes = 0;
   const fake = {
     isDestroyed: () => false,
     isFullScreen: () => false,
@@ -28,85 +30,165 @@ function fakeBrowserWindow(initial: Bounds, options: { zoomFactor?: number } = {
     getMinimumSize: () => [840, 620],
     setBounds: (next: Bounds) => {
       bounds = next;
-      emitResize();
+      resizes += 1;
     },
-    on: (event: string, listener: () => void) => {
-      if (event === "resize") resizeListeners.push(listener);
-    },
-    webContents: {
-      getZoomFactor: () => options.zoomFactor ?? 1,
-      send: (...message: unknown[]) => sent.push(message),
-    },
+    webContents: { getZoomFactor: () => options.zoomFactor ?? 1 },
   };
   return {
     window: fake as unknown as Electron.BrowserWindow,
-    sent,
     get bounds() {
       return bounds;
     },
-    /** Something other than a panel request resizes the window. */
-    resizeElsewhere(width: number, options: { maximize?: boolean } = {}) {
-      maximized = options.maximize ?? maximized;
+    /** How often a panel request resized the window. */
+    get resizes() {
+      return resizes;
+    },
+    maximize(width: number) {
+      maximized = true;
       bounds = { ...bounds, width };
-      emitResize();
     },
   };
 }
 
+/** A page that records the sizes its view was given, and draws a frame only when told to. */
+function fakePageView(options: { ahead?: boolean } = {}) {
+  const sizes: PageViewSize[] = [];
+  const frames: Array<Deferred.Deferred<void>> = [];
+  const pageView: PageView = {
+    resizeAhead: (_window, { width, height }) =>
+      Effect.sync(() => {
+        if (options.ahead === false) return false;
+        sizes.push({ width, height });
+        return true;
+      }),
+    drawn: () => {
+      const frame = Deferred.makeUnsafe<void>();
+      frames.push(frame);
+      return Deferred.await(frame);
+    },
+  };
+  /** Lets the oldest awaited frame through. */
+  const draw = Effect.suspend(() => Deferred.succeed(frames.shift()!, undefined));
+  return { pageView, sizes, draw };
+}
+
+const start = Effect.forkChild({ startImmediately: true });
+
 describe("setWindowPanelOpen", () => {
-  it("answers with the viewport width it resized to, in CSS pixels", () => {
-    const desktop = fakeBrowserWindow(window(100, 1000), { zoomFactor: 1.25 });
-    expect(setWindowPanelOpen(desktop.window, { requestId: 1, open: true, width: 540 })).toEqual({
-      requestId: 1,
-      status: "resized",
-      contentWidth: 1340,
-      previousContentWidth: 800,
-    });
-    expect(desktop.bounds).toEqual(window(100, 1675));
-    expect(setWindowPanelOpen(desktop.window, { requestId: 2, open: true, width: 540 })).toEqual({
-      requestId: 2,
-      status: "unchanged",
-    });
-    expect(setWindowPanelOpen(desktop.window, { requestId: 3, open: false, width: 540 })).toEqual({
-      requestId: 3,
-      status: "resized",
-      contentWidth: 800,
-      previousContentWidth: 1340,
-    });
-    expect(setWindowPanelOpen(desktop.window, { requestId: 4, open: false, width: 540 })).toEqual({
-      requestId: 4,
-      status: "unchanged",
-    });
-  });
+  it.effect("draws the page at the grown size before the window grows", () =>
+    Effect.gen(function* () {
+      const desktop = fakeBrowserWindow(window(100, 1000), { zoomFactor: 1.25 });
+      const page = fakePageView();
+      const request = (open: boolean) =>
+        setWindowPanelOpen(desktop.window, { open, width: 540 }, page.pageView);
 
-  it("says when there is no room to grow, so the renderer stops waiting", () => {
-    const full = fakeBrowserWindow(window(0, 1800));
-    expect(setWindowPanelOpen(full.window, { requestId: 1, open: true, width: 540 })).toEqual({
-      requestId: 1,
-      status: "noRoom",
-    });
-    const maximized = fakeBrowserWindow(window(100, 1000));
-    maximized.resizeElsewhere(1800, { maximize: true });
-    expect(setWindowPanelOpen(maximized.window, { requestId: 2, open: true, width: 540 })).toEqual({
-      requestId: 2,
-      status: "noRoom",
-    });
-  });
+      const opening = yield* request(true).pipe(start);
+      // 540 CSS pixels at zoom 1.25 are 675 screen points.
+      expect(page.sizes).toEqual([{ width: 1675, height: 900 }]);
+      expect(desktop.bounds).toEqual(window(100, 1000));
+      yield* page.draw;
+      expect(yield* Fiber.join(opening)).toBe("resized");
+      expect(desktop.bounds).toEqual(window(100, 1675));
+      expect(yield* request(true)).toBe("unchanged");
 
-  it("reports a resize it did not make, once, for the request it overtook", () => {
-    const desktop = fakeBrowserWindow(window(100, 1000));
-    setWindowPanelOpen(desktop.window, { requestId: 7, open: true, width: 540 });
-    // Its own resize, and a move that keeps the width, are not interruptions.
-    desktop.resizeElsewhere(1540);
-    expect(desktop.sent).toEqual([]);
+      const closing = yield* request(false).pipe(start);
+      // The window shrinks at once; the answer waits for the page's frame at that size.
+      expect(desktop.bounds).toEqual(window(100, 1000));
+      yield* page.draw;
+      expect(yield* Fiber.join(closing)).toBe("resized");
+      expect(yield* request(false)).toBe("unchanged");
+    }),
+  );
 
-    desktop.resizeElsewhere(1600);
-    desktop.resizeElsewhere(1650);
-    expect(desktop.sent).toEqual([[RIGHT_PANEL_WINDOW_INTERRUPTED_CHANNEL, 7, 1600]]);
+  it.effect("says when there is no room to grow, and leaves the page alone", () =>
+    Effect.gen(function* () {
+      const page = fakePageView();
+      const full = fakeBrowserWindow(window(0, 1800));
+      expect(
+        yield* setWindowPanelOpen(full.window, { open: true, width: 540 }, page.pageView),
+      ).toBe("noRoom");
+      const maximized = fakeBrowserWindow(window(100, 1000));
+      maximized.maximize(1800);
+      expect(
+        yield* setWindowPanelOpen(maximized.window, { open: true, width: 540 }, page.pageView),
+      ).toBe("noRoom");
+      expect(page.sizes).toEqual([]);
+    }),
+  );
 
-    setWindowPanelOpen(desktop.window, { requestId: 8, open: false, width: 650 });
-    expect(desktop.sent).toHaveLength(1);
-  });
+  it.effect("a close while the page draws takes the page back and never grows the window", () =>
+    Effect.gen(function* () {
+      const desktop = fakeBrowserWindow(window(100, 1000));
+      const page = fakePageView();
+      const request = (open: boolean) =>
+        setWindowPanelOpen(desktop.window, { open, width: 540 }, page.pageView);
+
+      const opening = yield* request(true).pipe(start);
+      const closing = yield* request(false).pipe(start);
+      expect(page.sizes).toEqual([
+        { width: 1540, height: 900 },
+        { width: 1000, height: 900 },
+      ]);
+      yield* page.draw;
+      yield* page.draw;
+      expect(yield* Fiber.join(opening)).toBe("unchanged");
+      expect(yield* Fiber.join(closing)).toBe("resized");
+      expect(desktop.resizes).toBe(0);
+
+      const reopening = yield* request(true).pipe(start);
+      yield* page.draw;
+      expect(yield* Fiber.join(reopening)).toBe("resized");
+      expect(desktop.bounds).toEqual(window(100, 1540));
+    }),
+  );
+
+  it.effect("a second request while the page draws joins the growth under way", () =>
+    Effect.gen(function* () {
+      const desktop = fakeBrowserWindow(window(100, 1000));
+      const page = fakePageView();
+      const request = setWindowPanelOpen(desktop.window, { open: true, width: 540 }, page.pageView);
+
+      const first = yield* request.pipe(start);
+      const second = yield* request.pipe(start);
+      expect(page.sizes).toHaveLength(1);
+      yield* page.draw;
+      expect([yield* Fiber.join(first), yield* Fiber.join(second)]).toEqual(["resized", "resized"]);
+      expect(desktop.resizes).toBe(1);
+    }),
+  );
+
+  it.effect("grows from where the window is once the page has drawn", () =>
+    Effect.gen(function* () {
+      const desktop = fakeBrowserWindow(window(100, 1000));
+      const page = fakePageView();
+      const opening = yield* setWindowPanelOpen(
+        desktop.window,
+        { open: true, width: 540 },
+        page.pageView,
+      ).pipe(start);
+      // Moved by hand while the page drew.
+      desktop.window.setBounds(window(40, 1000));
+      yield* page.draw;
+      expect(yield* Fiber.join(opening)).toBe("resized");
+      expect(desktop.bounds).toEqual(window(40, 1540));
+    }),
+  );
+
+  it.effect("where the page cannot be sized ahead, the window grows first", () =>
+    Effect.gen(function* () {
+      const desktop = fakeBrowserWindow(window(100, 1000));
+      const page = fakePageView({ ahead: false });
+      const opening = yield* setWindowPanelOpen(
+        desktop.window,
+        { open: true, width: 540 },
+        page.pageView,
+      ).pipe(start);
+      expect(desktop.bounds).toEqual(window(100, 1540));
+      // The answer still follows the page's frame at the new size.
+      yield* page.draw;
+      expect(yield* Fiber.join(opening)).toBe("resized");
+    }),
+  );
 });
 
 describe("growForPanel", () => {

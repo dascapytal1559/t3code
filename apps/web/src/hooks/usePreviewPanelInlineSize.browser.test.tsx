@@ -2,7 +2,11 @@ import { useState } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { act, render } from "../../test/render";
-import { resolvePreviewPanelWidth, usePreviewPanelInlineSize } from "./usePreviewPanelInlineSize";
+import {
+  keepChatColumnBeside,
+  resolvePreviewPanelWidth,
+  usePreviewPanelInlineSize,
+} from "./usePreviewPanelInlineSize";
 
 const STORAGE_KEY = "test:preview-panel-width";
 const CHAT_STORAGE_KEY = `${STORAGE_KEY}:chat-column`;
@@ -39,14 +43,14 @@ describe("resolvePreviewPanelWidth", () => {
 
 function Row({ rowWidth, enabled = true }: { rowWidth: number; enabled?: boolean }) {
   const [row, setRow] = useState<HTMLDivElement | null>(null);
-  const { width, handlers, observeRow, keepChatColumn } = usePreviewPanelInlineSize({
+  const { width, handlers, observeRow } = usePreviewPanelInlineSize({
     enabled,
     container: row,
     widthStorageKey: STORAGE_KEY,
   });
   return (
     <div ref={setRow} style={{ display: "flex", width: rowWidth }}>
-      <button style={{ flex: 1 }} onClick={keepChatColumn} />
+      <div style={{ flex: 1 }} />
       <div
         ref={(host) => (host === null ? undefined : observeRow(host))}
         data-testid="panel"
@@ -110,17 +114,16 @@ describe("usePreviewPanelInlineSize", () => {
   });
 
   it.each([
-    { name: "a full grow keeps the chat at its old width", added: 540, chat: "1000" },
-    { name: "a zoomed window squeezes the chat instead", added: 0, chat: "460" },
-  ])("desktop window growth: $name", async ({ added, chat }) => {
+    { name: "a full grow keeps the chat at its old width", rowWidth: 1540, chat: "1000" },
+    { name: "a zoomed window squeezes the chat instead", rowWidth: 1000, chat: "460" },
+  ])("desktop window growth: $name", async ({ rowWidth, chat }) => {
     await withCleanStorage(async () => {
       localStorage.setItem(CHAT_STORAGE_KEY, "600");
-      // This hook only needs browser storage and React; no navigation is involved.
-      await using screen = await render(<Row rowWidth={1000} />, { router: false });
-      await screen.rerender(<Row rowWidth={1000 + added} />);
-      await act(() => screen.container.querySelector("button")!.click());
-      await expect.element(screen.getByTestId("panel")).toHaveTextContent("540");
+      keepChatColumnBeside(STORAGE_KEY, rowWidth);
       expect(localStorage.getItem(CHAT_STORAGE_KEY)).toBe(chat);
+      // This hook only needs browser storage and React; no navigation is involved.
+      await using screen = await render(<Row rowWidth={rowWidth} />, { router: false });
+      await expect.element(screen.getByTestId("panel")).toHaveTextContent("540");
     });
   });
 

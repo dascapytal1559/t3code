@@ -1072,25 +1072,33 @@ chosen width, and opening a document used to squeeze the chat to make room.
   while the panel is open lands on the panel. Only the desktop window resizes
   itself; the browser keeps upstream's per-thread widths, and desktop keeps
   one (`t3code:preview-panel-width`).
-- While the window grows or shrinks, the row holds its width, so the chat never
-  moves: opening lays the panel out past the window's edge until the window has
-  grown, and closing keeps the panel until it has shrunk. A window narrow
-  enough for the sheet layout opens the same way, so the sheet never covers
-  the chat inside the old window; it shows only when the window cannot grow.
-- The hold ends on events, not timers: the window answers each request with the
-  content width it resized from and to (or that it could not, or had nothing to
-  do), and the hold ends once the viewport reaches that width, less the gap the
-  viewport keeps from the content (DevTools docked beside it), learned from a
-  request made at rest. Closing ends it in that resize; opening waits until a
-  frame at the new width has painted (a one-second cap covers a window that
-  draws no frames). A toggle back mid-resize
-  keeps holding toward the new state. A resize the window did not ask for (a
-  hand resize, maximize, a display change) lets go as the viewport follows it,
-  and a thread change lets go at once. Nothing animates or fades.
-- macOS shows the grown area a frame or more before the page draws there, in
-  the page root's background. Themes paint the root in their chrome colour, so
-  on desktop the root takes the panel's background instead, set all the time:
-  changing it as the panel opens repaints the whole page and delays the panel.
+- Opening draws first, then grows. macOS shows a grown window at once, with the
+  page's last frame and a blank strip beside it, and Chromium does not hold a
+  resize for the page. So the page's own view is widened past the window's
+  edge, the page lays out and draws there at the grown size while the window
+  still clips it, and only then does the window grow, over a frame that is
+  already there. Closing shrinks the window at once and the page follows.
+- The panel joins the layout in the resize that widens the page and leaves in
+  the one that narrows it, never before. The chat has no frame at another
+  width, and the panel is never laid out inside the old window. A window
+  narrow enough for the sheet layout opens the same way, inline once it has
+  grown; the sheet shows only when the window cannot grow.
+- Nothing is held, timed, animated or faded. The window answers a request once
+  it has its bounds and the page has drawn at them (a one-second cap covers a
+  page that cannot draw), and the answer settles the layout on what was asked;
+  until then the layout follows each resize, so a toggle back, a hand resize
+  or a thread change mid-way never leaves the chat at another width.
+- Electron's `BrowserWindow` keeps its page view to itself, so on macOS the
+  view is sized through the Objective-C runtime (`ffi-rs`). Where that cannot
+  be done (another platform, DevTools docked beside the page, a Chromium that
+  names the view differently) the window resizes first and the page follows,
+  which shows the blank strip for as long as the page takes to draw.
+- For the frame between the page drawing and the window growing (about 17 ms)
+  the old window already shows the grown layout: the chat header's layout
+  buttons take their open look that much early. A surface's first open after
+  launch loads its code and data only once it is mounted, as upstream's lazy
+  surfaces do, so that one time the window grows with the panel's tabs drawn
+  and its body fills in a moment later.
 - Near the screen's right edge the window moves left only as far as it must
   and moves back on close. A screen too narrow for the full width grows as far
   as it can and the chat gives way for the rest. Full screen and maximized
@@ -1104,10 +1112,12 @@ chosen width, and opening a document used to squeeze the chat to make room.
   panel at any app zoom.
 
 Code: `apps/desktop/src/window/PanelWindowGrowth.ts` (the width arithmetic and
-its tests), the `setRightPanelOpen` bridge method,
-`apps/web/src/hooks/useRightPanelWindow.ts` (the hold while the window
+the order of page and window, with its tests),
+`apps/desktop/src/window/PanelPageView.ts` (the page sized ahead of the window,
+and the frame it draws), the `setRightPanelOpen` bridge method,
+`apps/web/src/hooks/useRightPanelWindow.ts` (the layout following the page's
 resizes), and `apps/web/src/hooks/usePreviewPanelInlineSize.ts` (the kept chat
-width), each with its browser test.
+width), each web hook with its browser test.
 
 ## A closed Claude session waits for its CLI to exit
 

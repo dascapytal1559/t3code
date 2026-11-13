@@ -547,8 +547,6 @@ export const PickedThemeFileSchema = Schema.Struct({
 
 /** Fork: one request to grow the main window for the right panel, or shrink it after. */
 export const RightPanelWindowRequestSchema = Schema.Struct({
-  /** Echoed in the result and in an interruption, so a superseded answer is recognizable. */
-  requestId: Schema.Finite,
   open: Schema.Boolean,
   /** CSS pixels to grow by (opening), or the panel's width now (closing). */
   width: Schema.Finite,
@@ -556,26 +554,13 @@ export const RightPanelWindowRequestSchema = Schema.Struct({
 export type RightPanelWindowRequest = typeof RightPanelWindowRequestSchema.Type;
 
 /**
- * `resized`: the window took new bounds, from `previousContentWidth` to `contentWidth`
- * (content widths, CSS pixels). `noRoom`: opening could not grow (maximized, full screen,
- * or the work area's edge), so the chat gives way. `unchanged`: nothing to do (opening
- * found the window already grown; closing found no growth to give back).
+ * Answered once the window has its bounds and the page has drawn at them. `resized`: the
+ * page's viewport changed with the window. `noRoom`: opening could not grow (maximized,
+ * full screen, or the work area's edge), so the chat gives way. `unchanged`: nothing to do
+ * (opening found the window already grown; closing found no growth to give back).
  */
-export const RightPanelWindowResultSchema = Schema.Union([
-  Schema.Struct({
-    requestId: Schema.Finite,
-    status: Schema.Literal("resized"),
-    contentWidth: Schema.Finite,
-    previousContentWidth: Schema.Finite,
-  }),
-  Schema.Struct({ requestId: Schema.Finite, status: Schema.Literals(["noRoom", "unchanged"]) }),
-]);
+export const RightPanelWindowResultSchema = Schema.Literals(["resized", "noRoom", "unchanged"]);
 export type RightPanelWindowResult = typeof RightPanelWindowResultSchema.Type;
-
-export interface RightPanelWindowInterruption {
-  readonly requestId: number;
-  readonly contentWidth: number;
-}
 
 export interface DesktopWslDistro {
   name: string;
@@ -1099,13 +1084,6 @@ export interface DesktopBridge {
   revealWindow: () => Promise<void>;
   /** Fork: grows the main window while the right panel is open, so the chat keeps its width. */
   setRightPanelOpen: (request: RightPanelWindowRequest) => Promise<RightPanelWindowResult>;
-  /**
-   * Fork: something other than the last request (a hand resize, maximize, a display
-   * change) resized the window, to `contentWidth` CSS pixels, so its target is void.
-   */
-  onRightPanelWindowInterrupted: (
-    listener: (interruption: RightPanelWindowInterruption) => void,
-  ) => () => void;
   /**
    * The OS locale as a BCP-47 tag, which the renderer cannot read for itself:
    * the packaged app ships only the `en-US` Chromium locale pak, so

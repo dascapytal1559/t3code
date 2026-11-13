@@ -135,16 +135,6 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   revealWindow: () => ipcRenderer.invoke(IpcChannels.REVEAL_WINDOW_CHANNEL),
   setRightPanelOpen: (request) =>
     ipcRenderer.invoke(IpcChannels.SET_RIGHT_PANEL_OPEN_CHANNEL, request),
-  onRightPanelWindowInterrupted: (listener) => {
-    const handler = (_event: Electron.IpcRendererEvent, requestId: unknown, width: unknown) => {
-      if (typeof requestId === "number" && typeof width === "number") {
-        listener({ requestId, contentWidth: width });
-      }
-    };
-    ipcRenderer.on(IpcChannels.RIGHT_PANEL_WINDOW_INTERRUPTED_CHANNEL, handler);
-    return () =>
-      ipcRenderer.removeListener(IpcChannels.RIGHT_PANEL_WINDOW_INTERRUPTED_CHANNEL, handler);
-  },
   getPrimaryPasteEnabled: () => primaryPasteEnabled,
   getSystemLocale: () => {
     const result = ipcRenderer.sendSync(IpcChannels.GET_SYSTEM_LOCALE_CHANNEL);

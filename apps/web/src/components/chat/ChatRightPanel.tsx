@@ -1,7 +1,7 @@
 import { type Ref, useImperativeHandle } from "react";
 
 import {
-  type PanelChatColumn,
+  type PanelWidthHandle,
   usePreviewPanelInlineSize,
 } from "../../hooks/usePreviewPanelInlineSize";
 import { RightPanelSheet } from "../RightPanelSheet";
@@ -14,8 +14,8 @@ type ChatRightPanelProps = Omit<RightPanelTabsProps, "mode" | "inlineSize" | "ma
   readonly widthStorageKey: string;
   readonly sheetAnimationDurationMs: number;
   readonly onCloseSheet: () => void;
-  /** Fork: lets the desktop window keep the chat width as it resizes for the panel. */
-  readonly chatColumnRef?: Ref<PanelChatColumn>;
+  /** Fork: lets the desktop window take off the panel's width as it is when it closes. */
+  readonly panelWidthRef?: Ref<PanelWidthHandle>;
 };
 
 /**
@@ -32,7 +32,7 @@ export function ChatRightPanel(props: ChatRightPanelProps) {
     onCloseSheet,
     maximized,
     layoutControls,
-    chatColumnRef,
+    panelWidthRef,
     ...tabs
   } = props;
   const open = tabs.open === true;
@@ -41,11 +41,8 @@ export function ChatRightPanel(props: ChatRightPanelProps) {
     container: workspaceLayoutElement,
     widthStorageKey,
   });
-  const { keepChatColumn, keepPanelWidth } = inlineSize;
-  useImperativeHandle(chatColumnRef, () => ({ keepChatColumn, keepPanelWidth }), [
-    keepChatColumn,
-    keepPanelWidth,
-  ]);
+  const { keepPanelWidth } = inlineSize;
+  useImperativeHandle(panelWidthRef, () => ({ keepPanelWidth }), [keepPanelWidth]);
   if (!sheet) {
     return <RightPanelTabs {...tabs} mode="inline" maximized={maximized} inlineSize={inlineSize} />;
   }

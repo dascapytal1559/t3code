@@ -44,6 +44,7 @@ import * as ElectronWindow from "../../electron/ElectronWindow.ts";
 import * as Electron from "electron";
 import * as MacPermissions from "../../permissions/MacPermissions.ts";
 import { safariPermissionCheck } from "../../preview/BrowserImport/SafariPermission.ts";
+import { followingPageView, macPageView } from "../../window/PanelPageView.ts";
 import { setWindowPanelOpen } from "../../window/PanelWindowGrowth.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
@@ -477,9 +478,12 @@ export const setRightPanelOpen = DesktopIpc.makeIpcMethod({
       Option.isNone(window) ||
       window.value.webContents.id !== event.sender.id
     ) {
-      return { requestId: input.requestId, status: "unchanged" as const };
+      return "unchanged" as const;
     }
-    return setWindowPanelOpen(window.value, input);
+    const environment = yield* DesktopEnvironment.DesktopEnvironment;
+    const mainWindow = window.value;
+    const pageView = environment.platform === "darwin" ? macPageView : followingPageView;
+    return yield* setWindowPanelOpen(mainWindow, input, pageView);
   }),
 });
 

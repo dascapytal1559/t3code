@@ -12,16 +12,11 @@ export interface PreviewPanelInlineSize {
   readonly handlers: ResizableWidthHandlers;
   /** Ref-callback body for the panel host: measures the row the panel shares. */
   readonly observeRow: (host: HTMLElement) => () => void;
-  /**
-   * Fork: re-measures the row and keeps the chat column at what the panel
-   * leaves of it, when the desktop window resizes for the panel.
-   */
-  readonly keepChatColumn: () => void;
   /** Fork: remembers the panel's width as it is now for the next open, and returns it. */
   readonly keepPanelWidth: () => number;
 }
 
-export type PanelChatColumn = Pick<PreviewPanelInlineSize, "keepChatColumn" | "keepPanelWidth">;
+export type PanelWidthHandle = Pick<PreviewPanelInlineSize, "keepPanelWidth">;
 
 const PREVIEW_PANEL_WIDTH_STORAGE_KEY = "t3code:preview-panel-width";
 const PREVIEW_PANEL_MIN_WIDTH = 360;
@@ -145,13 +140,6 @@ export function usePreviewPanelInlineSize(
     };
   };
 
-  const keepChatColumn = useStableCallback(() => {
-    const row = rowRef.current?.clientWidth;
-    if (row === undefined) return;
-    setRowWidth(row);
-    keepChatColumnFor(row);
-  });
-
   const keepPanelWidth = useStableCallback(() => {
     if (enabled && width !== stored.panelWidth) {
       commit({ panelWidth: width, chatWidth: stored.chatWidth });
@@ -217,9 +205,26 @@ export function usePreviewPanelInlineSize(
       onLostPointerCapture: drag.onLostPointerCapture,
     },
     observeRow,
-    keepChatColumn,
     keepPanelWidth,
   };
+}
+
+/**
+ * Fork: before the panel mounts in a desktop window that has just resized for it, pins
+ * the chat column at what the saved panel width leaves of the row.
+ */
+export function keepChatColumnBeside(storageKey: string, rowWidth: number): void {
+  const panelWidth = resolvePreviewPanelWidth({
+    rowWidth,
+    chatWidth: null,
+    panelWidth: readPreviewPanelWidth(storageKey),
+    viewportWidth: window.innerWidth,
+  });
+  try {
+    setLocalStorageItem(chatWidthStorageKey(storageKey), rowWidth - panelWidth, WidthSchema);
+  } catch (error) {
+    console.error("Could not persist panel width.", error);
+  }
 }
 
 /** Fork: the saved width before the window caps it, which the desktop window grows by. */
