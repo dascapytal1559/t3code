@@ -114,7 +114,11 @@ import {
   CrewTreeGutter,
   type CrewTreePlace,
 } from "./SidebarCrewTree";
-import { resolveCrewStatusLabel, showsCoordinatorAge } from "./coordinatorGroup.logic";
+import {
+  CAPTAIN_WAIT_LABEL,
+  resolveCrewStatusLabel,
+  showsCoordinatorAge,
+} from "./coordinatorGroup.logic";
 import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
@@ -538,7 +542,8 @@ type SidebarThreadRowProps = {
   variant: "card" | "slim" | "folder" | "folder-multiline";
   // The FirstMate main session: its age stands in for an idle status.
   coordinator?: boolean | undefined;
-  // Hides hover Snooze and Settle; the context menu still offers both.
+  // Hides hover Snooze and Settle, except Settle on a "Waiting for captain" card; the context menu
+  // still offers both.
   hideHoverActions?: boolean | undefined;
   crewTree?: CrewTreePlace | undefined;
   // The coordinator card the expanded crew hangs from, which carries the top of the guide line.
@@ -977,7 +982,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     canOperateThread &&
     props.snoozeSupported &&
     canSnooze(thread, { now: snoozeGateNow });
-  const showSettleButton = props.hideHoverActions !== true && props.settlementSupported;
+  const showSettleButton =
+    (props.hideHoverActions !== true || crewStatusLabel === CAPTAIN_WAIT_LABEL) &&
+    props.settlementSupported;
   const hasHoverControls = showSettleButton || showSnoozeButton || hasUnsentDraft;
   // Closing here, not just masking, keeps the menu from reopening when the button returns.
   if (snoozeMenuOpenRaw && !showSnoozeButton) setSnoozeMenuOpen(false);

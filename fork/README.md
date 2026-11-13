@@ -348,8 +348,13 @@ every other thread. Upstream code it touches, for syncs: two guards in
 and on the initial title in `message.dispatch` (`isPrimaryCoordinator`).
 
 The FirstMate and crew cards have no hover Snooze or Settle (the context menu
-still has both, and snoozing or settling takes a thread out of the group). They
-drag only as chat context, and crewmate turns raise no sound or notification. A
+still has both, and snoozing or settling takes a thread out of the group). The
+exception is a crew card showing "Waiting for captain" (see
+[Threads kept for a reader](#threads-kept-for-a-reader)): it gets the ordinary
+hover Settle, and a drag from that button sweeps only other such cards. The
+thread moves to Settled, not the archive, so it stays there to reopen. The
+cards drag only as chat context, and crewmate turns raise no sound or
+notification. A
 fresh page load on the home route opens a coordinator whatever its run status,
 the most recently updated if there are several, because a restart ends every
 run. A thread's Lineage panel lists its Crew or Coordinator.

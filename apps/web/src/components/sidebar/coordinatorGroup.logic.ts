@@ -89,6 +89,9 @@ export function isCrewOf<T extends CrewThread>(thread: T, coordinator: T | null)
   return coordinator !== null && resolveAppCoordinatorGroup([thread, coordinator]).crew.has(thread);
 }
 
+/** FirstMate's label for a thread it keeps open for the user, who settles it by hand. */
+export const CAPTAIN_WAIT_LABEL = "Waiting for captain";
+
 /**
  * The label a crew card shows in its status slot. It stands in for a calm status or the age only:
  * a label is a coordinator's note and can lag, so a thread that needs the user still says so.
