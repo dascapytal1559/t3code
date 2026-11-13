@@ -62,6 +62,7 @@ import {
   OrchestrationV2GetThreadProjectionError,
   OrchestrationV2ThreadLaunchError,
   DecisionReplyError,
+  KeptThreadReplyError,
   RuleAnswerError,
   type OrchestrationProjectShell,
   type OrchestrationV2ShellSnapshot,
@@ -284,6 +285,11 @@ const decisionReplyStartupError =
   (input: { readonly decisionId: string }) =>
   (cause: ServerRuntimeStartup.ServerRuntimeStartupError) =>
     Effect.fail(new DecisionReplyError({ decisionId: input.decisionId, reason: "failed", cause }));
+
+const keptThreadReplyStartupError =
+  (input: { readonly threadId: ThreadId }) =>
+  (cause: ServerRuntimeStartup.ServerRuntimeStartupError) =>
+    Effect.fail(new KeptThreadReplyError({ threadId: input.threadId, reason: "failed", cause }));
 
 const ruleAnswerStartupError =
   (input: { readonly ruleId: string }) => (cause: ServerRuntimeStartup.ServerRuntimeStartupError) =>
@@ -2004,6 +2010,12 @@ export const layerWsRpc = (
             .pipe(
               Effect.catchTags({ ServerRuntimeStartupError: decisionReplyStartupError(input) }),
             ),
+        [ORCHESTRATION_V2_WS_METHODS.replyToKeptThread]: (input) =>
+          startup.enqueueCommand(decisions.replyToKeptThread(input, clientOrigin)).pipe(
+            Effect.catchTags({
+              ServerRuntimeStartupError: keptThreadReplyStartupError(input),
+            }),
+          ),
         [ORCHESTRATION_V2_WS_METHODS.answerRule]: (input) =>
           startup
             .enqueueCommand(rules.answer(input, clientOrigin))

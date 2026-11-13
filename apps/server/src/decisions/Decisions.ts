@@ -3,14 +3,17 @@ import {
   DecisionReplyError,
   DecisionsState,
   EMPTY_DECISIONS_STATE,
+  KeptThreadReplyError,
   MessageId,
   ThreadId,
   formatDecisionReply,
+  formatKeptThreadReply,
   type DecisionReplyInput,
   type DecisionReplyResult,
   type DecisionUndoReplyInput,
   type DecisionUndoReplyResult,
   type DecisionsSetInput,
+  type KeptThreadReplyInput,
   type OrchestrationClientOrigin,
   type StoredDecision,
 } from "@t3tools/contracts";
@@ -80,6 +83,11 @@ export class Decisions extends Context.Service<
     readonly undoReply: (
       input: DecisionUndoReplyInput,
     ) => Effect.Effect<DecisionUndoReplyResult, DecisionReplyError>;
+    /** Sends the user's words about a crew thread to its coordinator; the thread itself gets nothing. */
+    readonly replyToKeptThread: (
+      input: KeptThreadReplyInput,
+      origin?: OrchestrationClientOrigin,
+    ) => Effect.Effect<DecisionReplyResult, KeptThreadReplyError>;
   }
 >()("t3/decisions/Decisions") {}
 
@@ -303,12 +311,58 @@ const make = Effect.gen(function* () {
     );
   });
 
+  const replyToKeptThread = Effect.fn("Decisions.replyToKeptThread")(function* (
+    input: KeptThreadReplyInput,
+    origin?: OrchestrationClientOrigin,
+  ) {
+    const { threadId } = input;
+    yield* Effect.annotateCurrentSpan({ "thread.id": threadId });
+    const kept = yield* readThread(threadId);
+    if (kept === null) return yield* new KeptThreadReplyError({ threadId, reason: "not-found" });
+    const coordinatorId = kept.crewOf;
+    if (coordinatorId === undefined || (yield* readThread(coordinatorId)) === null) {
+      return yield* new KeptThreadReplyError({ threadId, reason: "no-coordinator" });
+    }
+    const keptFailed = (cause: unknown) => {
+      const detail = userFacingDispatchErrorMessage(cause);
+      return new KeptThreadReplyError({
+        threadId,
+        reason: "failed",
+        ...(detail === undefined ? {} : { detail }),
+        cause,
+      });
+    };
+    const messageId = MessageId.make(`${input.commandId}:kept-reply`);
+    yield* threads
+      .dispatch({
+        type: "message.dispatch",
+        commandId: CommandId.make(`${input.commandId}:kept-reply`),
+        threadId: coordinatorId,
+        messageId,
+        text: formatKeptThreadReply({ thread: kept, text: input.text }),
+        attachments: [],
+        dispatchMode: { type: "queue_after_active" },
+        createdBy: "user",
+        creationSource: input.creationSource ?? "web",
+        ...(origin === undefined ? {} : { origin }),
+      })
+      .pipe(Effect.mapError(keptFailed));
+    const run = yield* findReplyRun(coordinatorId, messageId).pipe(Effect.mapError(keptFailed));
+    return {
+      coordinatorThreadId: coordinatorId,
+      messageId,
+      runId: run?.id ?? null,
+      queued: run?.status === "queued",
+    };
+  });
+
   return Decisions.of({
     changes: SubscriptionRef.changes(state),
     replyTo: SubscriptionRef.get(state).pipe(Effect.map((current) => current.replyTo)),
     set,
     reply,
     undoReply,
+    replyToKeptThread,
   });
 });
 

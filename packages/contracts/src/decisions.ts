@@ -238,3 +238,52 @@ export function formatDecisionReply(input: {
     input.text.trim(),
   ].join("\n");
 }
+
+/**
+ * A reply to a crew thread FirstMate kept open for the user ("Waiting for captain"). It goes to
+ * the thread's coordinator, never the thread itself, as a decision reply does.
+ */
+export const KeptThreadReplyInput = Schema.Struct({
+  threadId: ThreadId,
+  /** A retry with the same id replays the first reply. */
+  commandId: CommandId,
+  text: DecisionText(120_000),
+  creationSource: Schema.optional(Schema.Literals(["web", "mobile"])),
+});
+export type KeptThreadReplyInput = typeof KeptThreadReplyInput.Type;
+
+export class KeptThreadReplyError extends Schema.TaggedError<KeptThreadReplyError>()(
+  "KeptThreadReplyError",
+  {
+    threadId: ThreadId,
+    reason: Schema.Literals(["not-found", "no-coordinator", "failed"]),
+    detail: Schema.optional(Schema.String),
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    switch (this.reason) {
+      case "not-found":
+        return "This thread is gone.";
+      case "no-coordinator":
+        return "FirstMate's chat, where this reply would go, is gone.";
+      case "failed":
+        return this.detail ?? "Could not send the reply.";
+    }
+  }
+}
+
+const KEPT_THREAD_LINE_PREFIX = "kept-thread: ";
+
+/** The message a kept-thread reply sends: a header naming the thread, its id for FirstMate, then the user's words. */
+export function formatKeptThreadReply(input: {
+  readonly thread: { readonly id: ThreadId; readonly title: string };
+  readonly text: string;
+}): string {
+  return [
+    `**Reply · ${input.thread.title}**`,
+    `${KEPT_THREAD_LINE_PREFIX}${input.thread.id}`,
+    "",
+    input.text.trim(),
+  ].join("\n");
+}

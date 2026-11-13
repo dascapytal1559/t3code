@@ -1,6 +1,7 @@
 import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
 import { CrewRunControls } from "./chat/CrewRunControls";
-import { isCrewOf } from "./sidebar/coordinatorGroup.logic";
+import { KeptThreadReply } from "./chat/KeptThreadReply";
+import { CAPTAIN_WAIT_LABEL, isCrewOf } from "./sidebar/coordinatorGroup.logic";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
@@ -1773,6 +1774,8 @@ export default function ChatView(props: ChatViewProps) {
   // FirstMate steers its workers, so a worker shows no composer unless it is asking the user something.
   const crewComposerHidden =
     isCrewThread && activePendingApproval === null && pendingUserInputs.length === 0;
+  // A thread FirstMate kept open for the user takes replies, but they go to FirstMate.
+  const keptForReader = crewComposerHidden && activeThreadShell?.statusLabel === CAPTAIN_WAIT_LABEL;
   const providerSubagentModels = selectedProviderEntry?.models ?? EMPTY_PROVIDER_MODELS;
   // Providers can report dated model ids or aliases.
   const providerSubagentModelSlug = selectedProviderEntry
@@ -3618,16 +3621,21 @@ export default function ChatView(props: ChatViewProps) {
                       <ComposerBannerStack items={[executionFenceBanner]} detached />
                     ) : null}
                     {crewComposerHidden ? (
-                      <CrewRunControls
-                        onStop={canInterruptRunningThread ? onInterruptStable : null}
-                        onResume={
-                          canOperateThread &&
-                          (resumableRunId !== null || (hasHeldQueuedRuns && !restartPending))
-                            ? onComposerResumeStable
-                            : null
-                        }
-                        isResuming={isResuming}
-                      />
+                      <div className="flex flex-col gap-2">
+                        <CrewRunControls
+                          onStop={canInterruptRunningThread ? onInterruptStable : null}
+                          onResume={
+                            canOperateThread &&
+                            (resumableRunId !== null || (hasHeldQueuedRuns && !restartPending))
+                              ? onComposerResumeStable
+                              : null
+                          }
+                          isResuming={isResuming}
+                        />
+                        {keptForReader && activeThreadRef !== null ? (
+                          <KeptThreadReply key={activeThreadKey} threadRef={activeThreadRef} />
+                        ) : null}
+                      </div>
                     ) : (
                       <div className="relative">
                         <ComposerSurface.Shell contextRow={showComposerContextStrip}>

@@ -364,8 +364,7 @@ export function resolveSidebarDropVerb(
   return "wake";
 }
 
-// Crew cards keep their context menu but offer no hover Snooze or Settle, bar the row's own
-// exception for a "Waiting for captain" card.
+// Crew cards keep their context menu but offer no hover Snooze or Settle.
 export function sidebarSectionHasHoverActions(section: SidebarSection): boolean {
   return section !== "crew";
 }

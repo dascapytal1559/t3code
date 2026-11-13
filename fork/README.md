@@ -348,14 +348,11 @@ every other thread. Upstream code it touches, for syncs: two guards in
 and on the initial title in `message.dispatch` (`isPrimaryCoordinator`).
 
 The FirstMate and crew cards have no hover Snooze or Settle (the context menu
-still has both, and snoozing or settling takes a thread out of the group). The
-exception is a crew card showing "Waiting for captain" (see
-[Threads kept for a reader](#threads-kept-for-a-reader)): it gets the ordinary
-hover Settle, and a drag from that button sweeps only other such cards. The
-thread moves to Settled, not the archive, so it stays there to reopen. The
-cards drag only as chat context, and crewmate turns raise no sound or
-notification. A
-fresh page load on the home route opens a coordinator whatever its run status,
+still has both, and snoozing or settling takes a thread out of the group). A
+"Waiting for captain" card closes from its own thread instead (see
+[A crewmate has no composer](#a-crewmate-has-no-composer)). The cards drag only
+as chat context, and crewmate turns raise no sound or notification. A fresh
+page load on the home route opens a coordinator whatever its run status,
 the most recently updated if there are several, because a restart ends every
 run. A thread's Lineage panel lists its Crew or Coordinator.
 
@@ -458,6 +455,17 @@ leaves the crew (its coordinator or itself archived). This is web and desktop
 only: the server takes messages for crew as before, so FirstMate's MCP messages
 arrive unchanged, and mobile still shows the composer. Code:
 `crewComposerHidden` in `apps/web/src/components/ChatView.tsx`.
+
+A crew thread whose card reads "Waiting for captain" (FirstMate kept it open for
+the user, see [Threads kept for a reader](#threads-kept-for-a-reader)) gets a
+plain reply box with Send to FirstMate and Archive. A reply never reaches the
+worker: `orchestration.replyToKeptThread` (operate scope, like a Bridge reply)
+queues one user message in the thread's coordinator, `**Reply · <title>**`, then
+`kept-thread: <threadId>`, a blank line and the words, and the thread stays
+open. Archive is the ordinary archive, with its Undo and unarchive; FirstMate
+notices it on its own. Code: `KeptThreadReply.tsx` in
+`apps/web/src/components/chat/` and `Decisions.replyToKeptThread` in
+`apps/server/src/decisions/Decisions.ts`.
 
 ## FirstMate's automatic turns are quiet
 
@@ -1121,7 +1129,8 @@ tool's `tools/list` `action` enum. Upstream main had no equivalent at
 ## Threads kept for a reader
 
 FirstMate keeps an exploration's thread open after the work ends, until the
-user closes it, and posts its own summary into it. Four MCP controls do that
+user archives it; the user replies from the thread to FirstMate (see
+[A crewmate has no composer](#a-crewmate-has-no-composer)). Four MCP controls do that
 without starting another agent turn:
 
 - **Tags.** `t3_thread_organize` `action: "tag"` or `"untag"` with `tag` (one

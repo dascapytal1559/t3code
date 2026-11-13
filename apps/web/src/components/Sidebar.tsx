@@ -250,7 +250,6 @@ import {
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import {
-  CAPTAIN_WAIT_LABEL,
   coordinatorGroupSlot,
   resolveAppCoordinatorGroup,
   type CoordinatorGroup,
@@ -1876,7 +1875,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         return (
           thread !== undefined &&
           sectionByThreadKeyRef.current.get(key) === originSection &&
-          (originSection !== "crew" || thread.statusLabel === CAPTAIN_WAIT_LABEL) &&
           serverConfigs.has(thread.environmentId)
         );
       };

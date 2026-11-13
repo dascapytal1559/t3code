@@ -347,6 +347,78 @@ it.layer(NodeServices.layer)("Decisions", (it) => {
   );
 
   it.effect(
+    "a reply on a kept crew thread goes to its coordinator, tagged with the thread, and never to the thread",
+    () =>
+      Effect.gen(function* () {
+        yield* setup({ coordinatorBusy: true });
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const create = (id: string, crewOf?: ThreadId) =>
+          orchestrator.dispatch({
+            type: "thread.create",
+            commandId: CommandId.make(`create:${id}`),
+            threadId: ThreadId.make(id),
+            projectId: ProjectId.make("project:firstmate"),
+            title: "Garmin sleep export",
+            modelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            createdBy: "agent",
+            creationSource: "mcp",
+            ...(crewOf === undefined ? {} : { crewOf }),
+          });
+        const kept = ThreadId.make("thread:garmin");
+        const loose = ThreadId.make("thread:loose");
+        yield* create(kept, coordinator);
+        yield* create(loose);
+        yield* started((decisions) =>
+          Effect.gen(function* () {
+            const sent = yield* decisions.replyToKeptThread({
+              threadId: kept,
+              commandId: CommandId.make("reply:garmin"),
+              text: "  Looks right; keep the CSV.  ",
+            });
+            assert.equal(sent.coordinatorThreadId, coordinator);
+            assert.equal(sent.queued, true);
+            const message = (yield* firstmateChat).messages.find(
+              (candidate) => candidate.id === sent.messageId,
+            );
+            assert.equal(
+              message?.text,
+              [
+                "**Reply · Garmin sleep export**",
+                "kept-thread: thread:garmin",
+                "",
+                "Looks right; keep the CSV.",
+              ].join("\n"),
+            );
+            const projections = yield* ProjectionStore.ProjectionStoreV2;
+            const keptChat = yield* projections.getThreadRecords(kept, ["messages", "runs"]);
+            assert.deepEqual([keptChat.messages.length, keptChat.runs.length], [0, 0]);
+
+            const noCoordinator = yield* decisions
+              .replyToKeptThread({
+                threadId: loose,
+                commandId: CommandId.make("reply:loose"),
+                text: "Hi.",
+              })
+              .pipe(Effect.flip);
+            assert.equal(noCoordinator.reason, "no-coordinator");
+            const gone = yield* decisions
+              .replyToKeptThread({
+                threadId: ThreadId.make("thread:gone"),
+                commandId: CommandId.make("reply:gone"),
+                text: "Hi.",
+              })
+              .pipe(Effect.flip);
+            assert.equal(gone.reason, "not-found");
+          }),
+        );
+      }).pipe(Effect.provide(layerHome)),
+  );
+
+  it.effect(
     "a reply to a decision updated since it was read, or no longer listed, sends nothing",
     () =>
       Effect.gen(function* () {

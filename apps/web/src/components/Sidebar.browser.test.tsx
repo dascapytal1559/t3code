@@ -19,7 +19,7 @@ import { makeThreadFixture } from "../test-fixtures";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { __setClientSettingsForTests, getClientSettings } from "../hooks/useSettings";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
-import { useProjects, useQuietThreadShells, useServerConfigs } from "../state/entities";
+import { useProjects, useQuietThreadShells } from "../state/entities";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import type { Project } from "../types";
 import Sidebar from "./Sidebar";
@@ -281,43 +281,5 @@ describe("sidebar thread cards", () => {
     // ProviderInstanceIcon's wrapper, which carries the account badge.
     expect(row("pa")?.querySelector(".isolate")).toBeNull();
     expect(row("garmin")?.querySelector(".isolate")).toBeNull();
-  });
-
-  it("offer hover Settle on a Waiting for captain crew card, and on no other crew card", async () => {
-    using stack = new DisposableStack();
-    localStorage.setItem("t3code:sidebar:crew-expanded", "true");
-    stack.defer(() => localStorage.removeItem("t3code:sidebar:crew-expanded"));
-    const home = project("home");
-    const scope = { environmentId: home.environmentId, projectId: home.id };
-    const coordinatorId = ThreadId.make("firstmate");
-    const crewmate = (id: string, statusLabel: string): EnvironmentThreadShell => ({
-      ...makeThreadFixture({ ...scope, id: ThreadId.make(id), title: id }),
-      crewOf: coordinatorId,
-      statusLabel,
-    });
-    vi.mocked(useServerConfigs).mockReturnValue(new Map([[home.environmentId, {} as never]]));
-    vi.mocked(useProjects).mockReturnValue([home]);
-    vi.mocked(useQuietThreadShells).mockReturnValue([
-      { ...makeThreadFixture({ ...scope, id: coordinatorId, title: "Main" }), coordinator: true },
-      crewmate("Kept", "Waiting for captain"),
-      crewmate("Validating", "Testing"),
-      makeThreadFixture({ ...scope, id: ThreadId.make("plain"), title: "Ordinary" }),
-    ]);
-    vi.mocked(useThreadRouteTarget).mockReturnValue({ kind: "none" } as never);
-    await using screen = await render(
-      <SidebarProvider>
-        <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
-      </SidebarProvider>,
-    );
-
-    const settle = (title: string) =>
-      screen
-        .getByTestId("sidebar-row-card")
-        .filter({ hasText: title })
-        .getByRole("button", { name: "Settle thread" });
-    await expect.element(settle("Kept")).toBeInTheDocument();
-    await expect.element(settle("Ordinary")).toBeInTheDocument();
-    await expect.element(settle("Main")).not.toBeInTheDocument();
-    await expect.element(settle("Validating")).not.toBeInTheDocument();
   });
 });
