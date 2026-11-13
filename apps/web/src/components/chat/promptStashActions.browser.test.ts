@@ -4,13 +4,16 @@ import { expect, it, vi } from "vite-plus/test";
 
 import { composerFileNeedsReattach } from "../../composerDraftStore";
 import { hydrateStashMedia, readStashMedia } from "../../promptStashMedia";
-import { usePromptStashStore } from "../../promptStashStore";
+import { removeLocalStorageItem } from "../../hooks/useLocalStorage";
+import { PROMPT_STASH_STORAGE_KEY, usePromptStashStore } from "../../promptStashStore";
 import { stashQueuedMessage } from "./promptStashActions";
 
 // The localStorage budget that used to drop stashed images whole.
 const OLD_ENTRY_CAP_CHARS = 2_700_000;
 
 function setup() {
+  // Stash writes start from storage, so an earlier test's saved entry would come back.
+  removeLocalStorageItem(PROMPT_STASH_STORAGE_KEY);
   usePromptStashStore.setState({ entries: [] });
 }
 
