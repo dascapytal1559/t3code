@@ -1185,6 +1185,7 @@ it.effect("access changes made while the snapshot loads reach the client after i
             sessionId: AuthSessionId.make("current"),
             subject: "current",
             method: "browser-session-cookie",
+            deviceType: "desktop",
             scopes: [],
           },
           {},

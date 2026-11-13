@@ -1875,6 +1875,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         undefined,
         undefined,
         undefined,
+        undefined,
         { ...CODEX_TEST_RUNTIME_POLICY, environment: { FM_TASK_ID: "task-1" } },
       );
       assert.deepEqual(requests, [
