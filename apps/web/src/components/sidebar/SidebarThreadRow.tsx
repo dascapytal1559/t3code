@@ -826,6 +826,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     status,
     isWoke,
   });
+  const captainItemRaisedAt =
+    props.captainCard !== undefined && crewStatusLabel === props.captainCard.label
+      ? props.captainCard.raisedAt
+      : null;
   const coordinatorShowsAge = showsCoordinatorAge({
     coordinator: props.coordinator === true,
     status,
@@ -1594,7 +1598,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           crewStatusLabel === "To read" && "text-info-foreground",
                         )}
                       >
-                        <span className="min-w-0 truncate">{crewStatusLabel}</span>
+                        <span className="min-w-0 truncate">
+                          {/* Fork: FirstMate's item shows how long it has waited, tinted by kind. */}
+                          {captainItemRaisedAt !== null ? (
+                            <RelativeTimeLabel timestamp={captainItemRaisedAt} />
+                          ) : (
+                            crewStatusLabel
+                          )}
+                        </span>
                         {/* FirstMate's validation run can take a while, so it counts like Working. */}
                         {crewStatusLabel === "Testing" ? (
                           <span aria-hidden>

@@ -693,7 +693,8 @@ describe("sidebar drag projection", () => {
       "z",
       "a",
     );
-    expect(result.get(sidebarMarkerId("snoozed-header"))).toEqual({ ...stationary, y: 83 });
+    // Fork: the sticky Snoozed header stays where the browser pinned it.
+    expect(result.get(sidebarMarkerId("snoozed-header"))).toEqual(stationary);
     expect(result.get(sidebarMarkerId("settled-header"))?.y).toBe(46);
   });
 });

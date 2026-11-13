@@ -236,6 +236,13 @@ export function createSidebarSortingStrategy(input: {
       if (index !== undefined && rect) result[index] = { ...stationary, y: top - rect.top };
       top += heights[projectedIndex]! + 1;
     }
+    // Fork: the Snoozed header is sticky, so its measured box is where the browser pinned it.
+    const snoozedHeader = items.findIndex(
+      (item) => item.kind === "marker" && item.marker === "snoozed-header",
+    );
+    if (snoozedHeader !== -1 && result[snoozedHeader] !== hidden) {
+      result[snoozedHeader] = stationary;
+    }
     result[activeIndex] = stationary;
     return result;
   }

@@ -93,6 +93,8 @@ export interface CaptainCard {
   /** The item the card's reply, Snooze and Archive act on. */
   readonly item: StoredDecision;
   readonly label: CaptainItemLabel;
+  /** When the item was raised; the card shows its age instead of Needs you or To read. */
+  readonly raisedAt: string | null;
   /** Set while the item is put off; the card then waits in Snoozed, with no label. */
   readonly snoozed: NonNullable<StoredDecision["snoozed"]> | null;
 }
@@ -126,7 +128,8 @@ export function resolveCaptainCards(
       const snoozed = isSnoozedAt(item.snoozed, nowMs) ? item.snoozed : null;
       const label =
         item.answered !== undefined ? "Replied" : item.kind === "read" ? "To read" : "Needs you";
-      cards.set(key, { environmentId, item, label, snoozed });
+      const raisedAt = label === "Replied" ? null : decisionSince(item);
+      cards.set(key, { environmentId, item, label, raisedAt, snoozed });
     }
   }
   return cards;

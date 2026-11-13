@@ -81,6 +81,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
+import { flushSync } from "react-dom";
 import { type AnyRouter, useRouter } from "@tanstack/react-router";
 
 import {
@@ -258,6 +259,7 @@ import {
   type CoordinatorGroup,
 } from "./sidebar/coordinatorGroup.logic";
 import { useCaptainCards, useCaptainItemAct } from "./sidebar/useCaptainCards";
+import { SIDEBAR_SETTLED_SHELF } from "./sidebar/settledShelf";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { TooltipProvider } from "./ui/tooltip";
 import {
@@ -525,7 +527,9 @@ function useSidebarThreads(input: {
   } = partition;
   // Older settled threads load in pages; the shelf lists them only as far as they are loaded.
   const olderSettledShelf = useOlderSettledShelf({
-    scopes: olderSettledScopes([...serverConfigs.keys()], scopedProjectKeys),
+    scopes: SIDEBAR_SETTLED_SHELF
+      ? olderSettledScopes([...serverConfigs.keys()], scopedProjectKeys)
+      : [],
     expanded: settledShelfExpanded,
     visibleCount: settledVisibleCount,
   });
@@ -730,7 +734,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
         snoozed:
           (configLoaded && effectiveSnoozed(thread, { now: preciseNow })) ||
           input.captainCards.get(threadKey)?.snoozed != null,
-        settled: configLoaded && thread.settledOverride === "settled",
+        settled: SIDEBAR_SETTLED_SHELF && configLoaded && thread.settledOverride === "settled",
         pinned: thread.pinnedAt != null,
       });
       (
@@ -1447,6 +1451,13 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       scopedProjectGroups.length > 0 || (group.pinned && !group.archived),
   });
   const toggleCrewTree = useStableCallback(toggleCrewShelf);
+  // Fork: Snoozed is the list's last section, so its opened rows sit at the very end.
+  const toggleSnoozedShelfAndReveal = () => {
+    if (snoozedShelfExpanded) return toggleSnoozedShelf();
+    flushSync(toggleSnoozedShelf);
+    const viewport = sidebarContentRef.current?.closest("[data-slot=scroll-area-viewport]");
+    viewport?.scrollTo({ top: viewport.scrollHeight });
+  };
   const lastCrewThread = visibleCrewThreads.at(-1);
   // The crew toggle, and so the guide line, follows the last coordinator card.
   const crewTreeRootThread =
@@ -2082,6 +2093,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       items.push({ kind: "marker", marker: "snoozed-header" });
       items.push(...rowsOf(visibleSnoozedThreads, "snoozed"));
     }
+    if (!SIDEBAR_SETTLED_SHELF) return items;
     items.push({ kind: "marker", marker: "settled-header" });
     const settledRows = rowsOf(renderedSettledThreads, "settled");
     items.push({ kind: "marker", marker: "settled-placeholder" });
@@ -2458,11 +2470,15 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             ...(unpinMenuItem
               ? [{ ...unpinMenuItem, disabled: !canOperateThreads(pinnedSelectedThreads) }]
               : []),
-            {
-              id: "settle",
-              label: `Settle (${count})`,
-              disabled: settlingThreads.length === 0 || !canOperateThreads(settlingThreads),
-            },
+            ...(SIDEBAR_SETTLED_SHELF
+              ? [
+                  {
+                    id: "settle",
+                    label: `Settle (${count})`,
+                    disabled: settlingThreads.length === 0 || !canOperateThreads(settlingThreads),
+                  },
+                ]
+              : []),
             ...(canSnoozeSelection
               ? [
                   {
@@ -2774,8 +2790,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               ),
               canTurnIntoProject: canTurnThreadIntoProject(threadRef),
               supports: {
-                settlement: configLoaded,
-                autoSettleOptOut: supportsAutoSettleOptOut,
+                settlement: SIDEBAR_SETTLED_SHELF && configLoaded,
+                autoSettleOptOut: SIDEBAR_SETTLED_SHELF && supportsAutoSettleOptOut,
                 snooze: configLoaded,
                 pinning: configLoaded,
                 titleRegeneration: configLoaded,
@@ -3726,12 +3742,16 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                               <SidebarSectionHeader
                                 key="snoozed-shelf-header"
                                 marker="snoozed-header"
-                                className={cn(workingThreads.length === 0 && "mt-auto")}
+                                // Fork: pinned above the usage readout however long the list grows.
+                                className={cn(
+                                  "sticky top-0 bottom-0 z-[15] mx-0 bg-sidebar px-0.5 surface-grain",
+                                  workingThreads.length === 0 && "mt-auto",
+                                )}
                                 label="Snoozed"
                                 count={snoozedThreads.length}
                                 toggle={{
                                   expanded: snoozedShelfExpanded,
-                                  onToggle: toggleSnoozedShelf,
+                                  onToggle: toggleSnoozedShelfAndReveal,
                                 }}
                               />,
                             );

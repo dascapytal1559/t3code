@@ -96,7 +96,7 @@ Both keep one order for every window row, so columns stay aligned. The rule is
 ## Usage limits in the sidebar
 
 The captain wants usage visible without opening the Usage page, so the web and
-desktop sidebar shows a small readout between the Settled row and the bottom
+desktop sidebar shows a small readout between the thread list and the bottom
 icons: one line per account the Limits view shows, with its provider's icon, a
 thin bar in the account's accent colour and the percent left in that account's
 own weekly window, or its first window when it has no weekly one. A provider
@@ -350,7 +350,7 @@ every other thread. Upstream code it touches, for syncs: two guards in
 and on the initial title in `message.dispatch` (`isPrimaryCoordinator`).
 
 No card in the sidebar, crew or not, has hover Snooze or Settle; the context
-menu still has both, and snoozing or settling takes a thread out of the group.
+menu still has Snooze, and snoozing takes a thread out of the group.
 A card carrying FirstMate's item closes from its own thread instead (see
 [A crewmate has no composer](#a-crewmate-has-no-composer)). Upstream's hover
 code stays for syncs: the sidebar passes `hideHoverActions` to every row. The
@@ -475,15 +475,19 @@ with no item keeps no composer. Code: `KeptThreadReply.tsx` in
 
 ## Captain items in the sidebar
 
+<img src="media/snoozed-pinned.jpg" width="256" alt="The sidebar: FirstMate's crew cards show each item's age on the right (5h and 22h in blue for reports, 2d, now and 4d in orange for decisions, a gray Replied), and the Snoozed row with its count stays pinned above the usage bars while the list scrolls under it">
+
 FirstMate's backlog is the one record of what waits on the user; T3 shows it on
 the cards of the threads it is about. Each item FirstMate sends with a `thread`
-labels that thread's card on the right, where Working or Done would sit:
-"Needs you" for a decision, "To read" for a finished report, or a gray
-"Replied" once the user has answered this version. Busy and needs-the-user
-statuses still show over it, as with FirstMate's own labels. A thread carrying
-several items shows one: a waiting item over a snoozed one, Needs you over To
-read, then the oldest. A decision with no worker is a crew thread FirstMate
-creates, titled with the question.
+labels that thread's card on the right, where Working or Done would sit, with
+how long ago the item was raised in T3's short form ("3d"): orange for a
+decision (Needs you), blue for a finished report (To read), and a gray
+"Replied" in place of the age once the user has answered this version. Screen
+readers still hear Needs you or To read. Busy and needs-the-user statuses
+still show over it, as with FirstMate's own labels. A thread carrying several
+items shows one: a waiting item over a snoozed one, a decision over a report,
+then the oldest. A decision with no worker is a crew thread FirstMate creates,
+titled with the question.
 
 A snoozed item takes its card out of the crew and into the Snoozed section,
 with no label: a dated snooze shows upstream's alarm and "in 3 days", one with
@@ -511,6 +515,32 @@ in `apps/server/src/decisions/Decisions.ts`. Upstream files it touches, for
 syncs: the snoozed placement and sort in `partitionSidebarThreads` and the
 snooze and wake routing in `Sidebar.tsx`, the label and time props in
 `SidebarThreadRow.tsx`, and the snooze routing in `useThreadActionMenu.ts`.
+
+## Snoozed stays at the bottom, with no Settled
+
+The sidebar is the user's tracker and archive is how a thread is put away, so
+the web and desktop sidebar has no Settled section. The Snoozed row, with its
+count and chevron, is pinned to the bottom of the thread list, just above the
+usage readout, so a long list scrolls under it instead of pushing it out of
+sight (picture under [Captain items in the
+sidebar](#captain-items-in-the-sidebar)). Opening it scrolls the list to its
+end, where the snoozed rows are; scrolled back up, the open row stays pinned.
+
+A settled thread lists among the active ones, so nothing drops out of sight.
+The thread menus (the card's context menu, a multi-selection's menu and the
+chat header's) leave out Settle, Un-settle and Auto-settle behavior. Upstream's
+settle paths still work: `Mod+Shift+S` settles and un-settles, a settled
+thread's chat still shows its Settled line with Un-settle, and MCP and the
+auto-settle setting still settle threads. Threads settled long enough ago that
+the shell leaves them out are not fetched, so they stay off the list.
+
+Upstream code it touches, for syncs: the `SIDEBAR_SETTLED_SHELF` switch
+(`apps/web/src/components/sidebar/settledShelf.ts`), read by
+`partitionSidebarThreads`, the older-settled scopes, the list items and both
+context menus in `Sidebar.tsx`, and by `useThreadActionMenu.ts`; the Snoozed
+header's sticky classes and `toggleSnoozedShelfAndReveal` in `Sidebar.tsx`;
+and the drag projection in `Sidebar.drag.ts`, which leaves the pinned header
+where the browser put it.
 
 ## FirstMate's automatic turns are quiet
 
@@ -923,8 +953,7 @@ A project can carry an agent name (**Settings → Projects → Agent name**, or
 `agentName` on `t3_project_update`; `null` clears it) for a standing agent such
 as a life log. Its thread cards on web and desktop then show the agent name as
 their heading in place of the thread title, with no project line, and the hover
-card keeps the real title and project. Settled and folder rows keep the thread
-title. In Bridge, Needs you shows it in place of the project name, matched by
+card keeps the real title and project. Folder rows keep the thread title. In Bridge, Needs you shows it in place of the project name, matched by
 project title only when that title is unique in its environment. Mobile is
 unchanged. The column (`agent_name`) is added by
 `apps/server/src/persistence/forkSchema.ts` after upstream's migrations rather

@@ -63,7 +63,13 @@ const card = (
     revision: 2,
     thread: { id: threadId, finished: overrides.finished ?? false },
   };
-  return { environmentId, item, label: "Needs you", snoozed: overrides.snoozed ?? null };
+  return {
+    environmentId,
+    item,
+    label: "Needs you",
+    raisedAt: null,
+    snoozed: overrides.snoozed ?? null,
+  };
 };
 
 const renderReply = (captainCard: CaptainCard) =>
