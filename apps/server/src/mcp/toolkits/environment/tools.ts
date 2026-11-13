@@ -103,18 +103,24 @@ const RoutingSetTool = Tool.make("t3_routing_set", {
 }).annotate(Tool.Destructive, true);
 const PinnedReportsResult = Schema.Struct({
   reports: Schema.Array(
-    Schema.Struct({ id: PinnedReportId, title: Schema.String, pinnedAt: Schema.String }),
+    Schema.Struct({
+      id: PinnedReportId,
+      title: Schema.String,
+      pinnedAt: Schema.String,
+      night: PinnedReport.fields.night,
+    }),
   ),
 });
 const ReportsPinTool = Tool.make("t3_reports_pin", {
   ...shared,
   description:
-    "Pin a finished report to the Reports section of T3's Bridge tab. `id` is yours; pinning it again replaces it. `location`: absolute path to the report or an http(s) link. Returns every pinned report, newest first; the user may unpin.",
+    "Pin a finished report to the Reports section of T3's Bridge tab, grouped by evening. `id` is yours; pinning it again replaces it. `location`: absolute path to the report or an http(s) link. `night`: the evening it covers, YYYY-MM-DD; by default the pin's day, or the day before if pinned before noon. Returns every pinned report, newest first; the user may unpin.",
   parameters: Schema.Struct({
     id: PinnedReportId,
     title: PinnedReport.fields.title,
     summary: PinnedReport.fields.summary,
     location: PinnedReport.fields.location,
+    night: PinnedReport.fields.night,
   }),
   success: PinnedReportsResult,
 }).annotate(Tool.Destructive, false);

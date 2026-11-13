@@ -241,6 +241,78 @@ export function reportLinkMarkdown(location: PinnedReport["location"]): string {
   return `[${escapeLabel(label)}](${markdownTarget(location)})`;
 }
 
+/** A pin before this local hour belongs to the previous evening. */
+const NIGHT_ENDS_AT_HOUR = 12;
+
+const shiftDate = (date: string, days: number) => {
+  const day = new Date(`${date}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() + days);
+  return day.toISOString().slice(0, 10);
+};
+
+function localDateAndHour(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((entry) => entry.type === type)?.value ?? "";
+  return { date: `${part("year")}-${part("month")}-${part("day")}`, hour: Number(part("hour")) };
+}
+
+/**
+ * The evening a report covers, as YYYY-MM-DD: FirstMate's `night`, else the day it was pinned in
+ * `timeZone`, where a pin before noon counts as the night before.
+ */
+export function reportNight(
+  report: Pick<PinnedReport, "pinnedAt" | "night">,
+  timeZone: string,
+): string {
+  if (report.night !== undefined) return report.night;
+  const { date, hour } = localDateAndHour(new Date(report.pinnedAt), timeZone);
+  return hour < NIGHT_ENDS_AT_HOUR ? shiftDate(date, -1) : date;
+}
+
+/** Reports listed newest first, grouped by evening, latest evening first. */
+export function reportsByNight<T extends Pick<PinnedReport, "pinnedAt" | "night">>(
+  reports: ReadonlyArray<T>,
+  timeZone: string,
+): ReadonlyArray<{ readonly night: string; readonly reports: ReadonlyArray<T> }> {
+  const byNight = new Map<string, T[]>();
+  for (const report of reports) {
+    const night = reportNight(report, timeZone);
+    byNight.set(night, [...(byNight.get(night) ?? []), report]);
+  }
+  return [...byNight]
+    .map(([night, grouped]) => ({ night, reports: grouped }))
+    .toSorted((left, right) => right.night.localeCompare(left.night));
+}
+
+const nightDayLabel = new Intl.DateTimeFormat(undefined, {
+  day: "numeric",
+  month: "short",
+  timeZone: "UTC",
+});
+const nightWeekdayLabel = new Intl.DateTimeFormat(undefined, {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+  timeZone: "UTC",
+});
+
+/** A night's heading: "Tonight" or "Last night" with its date, else its weekday and date. */
+export function nightHeading(night: string, now: Date, timeZone: string): string {
+  const today = localDateAndHour(now, timeZone).date;
+  const day = Date.parse(`${night}T00:00:00Z`);
+  if (night === today) return `Tonight · ${nightDayLabel.format(day)}`;
+  if (night === shiftDate(today, -1)) return `Last night · ${nightDayLabel.format(day)}`;
+  return nightWeekdayLabel.format(day);
+}
+
 /**
  * The pinned reports the Bridge shows: the host chat's environment's, else the first connected
  * environment that has some, with that environment so an unpin reaches it.

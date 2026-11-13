@@ -211,13 +211,18 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Bridge tools", (
           });
           // Pinning an id again replaces it and moves it to the top.
           yield* TestClock.adjust("1 minute");
-          yield* call("t3_reports_pin", { ...shed, title: "Shed paint, final" });
+          yield* call("t3_reports_pin", {
+            ...shed,
+            title: "Shed paint, final",
+            night: "2026-11-11",
+          });
           expect(yield* call("t3_reports_unpin", { id: "fence" })).toEqual({
             reports: [
               {
                 id: "shed-paint",
                 title: "Shed paint, final",
                 pinnedAt: "1970-01-01T00:02:00.000Z",
+                night: "2026-11-11",
               },
             ],
           });
@@ -236,6 +241,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Bridge tools", (
             summary: "Grey weathers best.",
             location: "/reports/shed-paint.md",
             pinnedAt: "1970-01-01T00:02:00.000Z",
+            night: "2026-11-11",
           },
         });
       }).pipe(Effect.provide(layerHome)),

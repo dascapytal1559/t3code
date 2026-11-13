@@ -50,10 +50,11 @@ const access = Effect.gen(function* () {
   return { ...context, descriptor, settings: yield* Settings.ServerSettingsService };
 });
 const pinnedReportsResult = ({ pinnedReports }: ServerSettings) => ({
-  reports: pinnedReportsNewestFirst(pinnedReports).map(({ id, title, pinnedAt }) => ({
+  reports: pinnedReportsNewestFirst(pinnedReports).map(({ id, title, pinnedAt, night }) => ({
     id,
     title,
     pinnedAt,
+    ...(night === undefined ? {} : { night }),
   })),
 });
 const restartStatus = Effect.gen(function* () {

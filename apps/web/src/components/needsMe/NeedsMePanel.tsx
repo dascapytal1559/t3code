@@ -87,6 +87,7 @@ export function NeedsMePanel(props: { readonly threadRef: ScopedThreadRef }) {
           environmentId={reports.environmentId}
           reports={reports.reports}
           hostRef={props.threadRef}
+          nowMs={nowMs}
         />
       )}
       {modelRouting === null ? null : (

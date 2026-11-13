@@ -41,6 +41,13 @@ export const PinnedReport = Schema.Struct({
   ),
   /** When it was pinned, an ISO 8601 date-time the server stamps. */
   pinnedAt: Schema.String,
+  /**
+   * The evening the report covers, a YYYY-MM-DD date. Without it the Bridge takes the evening from
+   * `pinnedAt` in the viewer's time zone, counting a morning pin as the night before.
+   */
+  night: Schema.optionalKey(
+    Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/, { expected: "a YYYY-MM-DD date" })),
+  ),
 });
 export type PinnedReport = typeof PinnedReport.Type;
 

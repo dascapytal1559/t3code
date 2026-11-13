@@ -10,8 +10,11 @@ import {
   formatDay,
   groupNeedsMeDecisions,
   needsMeRowDetail,
+  nightHeading,
   objectiveRow,
   parseObjective,
+  reportNight,
+  reportsByNight,
   splitObjectives,
 } from "./needsMe.logic";
 
@@ -155,6 +158,56 @@ describe("bridgeSetting", () => {
       ],
     });
     expect(bridgeReports(new Map([[host, { settings: { pinnedReports: {} } }]]), host)).toBeNull();
+  });
+});
+
+describe("reports by night", () => {
+  const sydney = "Australia/Sydney";
+  const losAngeles = "America/Los_Angeles";
+
+  it("counts a pin before local noon as the night before, unless FirstMate names the night", () => {
+    // 07:30 and 12:00 on 13 Nov in Sydney (UTC+11).
+    expect(reportNight({ pinnedAt: "2026-11-12T20:30:00.000Z" }, sydney)).toBe("2026-11-12");
+    expect(reportNight({ pinnedAt: "2026-11-13T01:00:00.000Z" }, sydney)).toBe("2026-11-13");
+    // One instant, two zones: 13:00 on 13 Nov in Sydney, 18:00 on 12 Nov in Los Angeles.
+    expect(reportNight({ pinnedAt: "2026-11-13T02:00:00.000Z" }, sydney)).toBe("2026-11-13");
+    expect(reportNight({ pinnedAt: "2026-11-13T02:00:00.000Z" }, losAngeles)).toBe("2026-11-12");
+    expect(reportNight({ pinnedAt: "2026-11-13T02:00:00.000Z", night: "2026-11-09" }, sydney)).toBe(
+      "2026-11-09",
+    );
+  });
+
+  it("groups reports by night, latest night first, keeping newest first within one", () => {
+    const report = (id: string, pinnedAt: string, night?: string) => ({
+      id,
+      pinnedAt,
+      ...(night === undefined ? {} : { night }),
+    });
+    // Sydney times: 14:00 on 13 Nov, 09:00, 06:00 and 23:00 on 12 Nov, 21:00 on 11 Nov.
+    const newestFirst = [
+      report("afternoon", "2026-11-13T03:00:00.000Z"),
+      report("catch-up", "2026-11-12T22:00:00.000Z", "2026-11-11"),
+      report("dawn", "2026-11-12T19:00:00.000Z"),
+      report("late", "2026-11-12T12:00:00.000Z"),
+      report("older", "2026-11-11T10:00:00.000Z"),
+    ];
+    expect(
+      reportsByNight(newestFirst, sydney).map(({ night, reports }) => [
+        night,
+        reports.map(({ id }) => id),
+      ]),
+    ).toEqual([
+      ["2026-11-13", ["afternoon"]],
+      ["2026-11-12", ["dawn", "late"]],
+      ["2026-11-11", ["catch-up", "older"]],
+    ]);
+  });
+
+  it("names last night and tonight in the viewer's zone, and older nights by weekday", () => {
+    const now = new Date("2026-11-13T02:00:00.000Z");
+    expect(nightHeading("2026-11-12", now, sydney)).toMatch(/^Last night · /);
+    expect(nightHeading("2026-11-12", now, losAngeles)).toMatch(/^Tonight · /);
+    expect(nightHeading("2026-11-10", now, sydney)).not.toMatch(/night/i);
   });
 });
 
