@@ -1,6 +1,6 @@
 import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
 import { useSortable } from "@dnd-kit/sortable";
-import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
+import { ChevronRightIcon } from "lucide-react";
 import { CSS } from "@dnd-kit/utilities";
 import { type ReactNode, useLayoutEffect } from "react";
 import { cn } from "~/lib/utils";
@@ -9,12 +9,7 @@ import {
   sidebarMarkerId,
   type SidebarListMarker,
 } from "../Sidebar.logic";
-import {
-  CREW_TREE_HEADER_INDENT_CLASS_NAME,
-  CrewBranchGutter,
-  crewBranchContinues,
-} from "./SidebarCrewTree";
-import { CREW_BRANCH_LABEL, type CrewBranch } from "./coordinatorGroup.logic";
+import { CREW_TREE_GUTTER_WIDTH_CLASS_NAME, CREW_TREE_TRUNK_CLASS_NAME } from "./SidebarCrewTree";
 import { SIDEBAR_SORTABLE_DRAG_DISABLED } from "./SidebarThreadRow";
 
 function SortableSidebarMarker(props: {
@@ -23,7 +18,6 @@ function SortableSidebarMarker(props: {
   children?: ReactNode;
   revealOverflow?: boolean;
   "data-testid"?: string;
-  "data-crew-branch"?: string;
 }) {
   const { node, setNodeRef, transform, transition } = useSortable({
     id: sidebarMarkerId(props.marker),
@@ -41,7 +35,6 @@ function SortableSidebarMarker(props: {
       ref={setNodeRef}
       data-thread-selection-safe
       data-testid={props["data-testid"]}
-      data-crew-branch={props["data-crew-branch"]}
       className={cn("list-none", props.className)}
       style={{
         transform: CSS.Translate.toString(transform),
@@ -120,44 +113,49 @@ export function SidebarDragBoundary(props: {
 }
 
 /**
- * One branch of the crew tree: a compact row reading "<count> <label>" that expands or collapses
- * its own crewmates. The row stays, with a zero, when the branch is empty so the tree keeps its shape.
+ * The crew's disclosure. Expanded, it is the stem joining the coordinator card to the guide line
+ * its crewmates draw; collapsed, a compact row with the crew count.
  */
-export function SidebarCrewBranchHeader(props: {
-  branch: CrewBranch;
-  first: boolean;
+export function SidebarCrewToggle(props: {
   count: number;
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const label = CREW_BRANCH_LABEL[props.branch];
-  const Chevron = props.expanded ? ChevronDownIcon : ChevronRightIcon;
   return (
     <SortableSidebarMarker
-      marker={`crew-${props.branch}-header`}
-      data-testid={`sidebar-crew-${props.branch}-header`}
-      data-crew-branch={props.branch}
-      className={cn(
-        "relative",
-        CREW_TREE_HEADER_INDENT_CLASS_NAME,
-        crewBranchContinues(props.branch) && "-mb-px",
-      )}
+      marker="crew-toggle"
+      data-testid="sidebar-crew-toggle"
+      className={cn("relative", props.expanded && "-mb-px h-0")}
     >
-      <CrewBranchGutter branch={props.branch} first={props.first} />
       <button
         type="button"
         role="treeitem"
         tabIndex={-1}
-        data-sidebar-row={`shelf:crew-${props.branch}`}
-        data-crew-tree={props.branch}
+        data-sidebar-row="shelf:crew"
         aria-expanded={props.expanded}
-        aria-label={`${props.count} ${label}`}
+        data-crew-tree={props.expanded ? "" : undefined}
+        aria-label={`Crewmates, ${props.count}`}
         onClick={props.onToggle}
-        className="flex h-6 w-full cursor-pointer items-center gap-1 rounded-md ps-1 pe-1.5 text-xs tabular-nums text-sidebar-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+        className={
+          props.expanded
+            ? cn(
+                "absolute -top-[3px] start-0 h-6 cursor-pointer outline-none",
+                CREW_TREE_GUTTER_WIDTH_CLASS_NAME,
+              )
+            : "flex h-6 cursor-pointer items-center gap-1 rounded-md ps-(--sidebar-row-content-inset) pe-1.5 text-xs tabular-nums text-sidebar-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+        }
       >
-        <Chevron aria-hidden className="size-3.5 shrink-0" />
-        <span>{props.count}</span>
-        <span>{label}</span>
+        {props.expanded ? (
+          // Bridges the list gap from the coordinator card's bottom edge to the first crewmate
+          // row; the card draws the line inside itself.
+          <span aria-hidden className={cn(CREW_TREE_TRUNK_CLASS_NAME, "top-0 h-[3px]")} />
+        ) : (
+          <>
+            {/* Centred under the coordinator's icon. */}
+            <ChevronRightIcon aria-hidden className="mx-px size-3.5 shrink-0" />
+            {props.count}
+          </>
+        )}
       </button>
     </SortableSidebarMarker>
   );

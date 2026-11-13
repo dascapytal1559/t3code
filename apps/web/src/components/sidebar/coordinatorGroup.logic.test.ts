@@ -8,13 +8,10 @@ import {
   isCrewOf,
   resolveAppCoordinatorGroup,
   resolveCoordinatorGroup,
-  resolveCrewBranch,
   resolveCrewStatusLabel,
   resolveLaunchCoordinator,
   showsCoordinatorAge,
-  splitCrewBranches,
 } from "./coordinatorGroup.logic";
-import { resolveSidebarThreadStatus, type SidebarThreadStatus } from "../Sidebar.logic";
 
 const environmentId = EnvironmentId.make("environment-local");
 const homeId = ProjectId.make("project-home");
@@ -307,67 +304,5 @@ describe("resolveLaunchCoordinator", () => {
     const recent = thread("recent", { status: "idle", updatedAt: "2026-10-28T12:00:00.000Z" });
     const group = resolveCoordinatorGroup([older, recent], (subject) => subject.id);
     expect(resolveLaunchCoordinator(group)).toBe(recent);
-  });
-});
-
-describe("splitCrewBranches", () => {
-  const runtimeOf = (
-    status: "preparing" | "running" | "idle" | "completed" | "failed",
-    lastErrorClass?: "usage_limit",
-  ) => ({
-    status,
-    activeRunId: null,
-    providerInstanceId: ProviderInstanceId.make("claude"),
-    providerName: null,
-    lastError: null,
-    ...(lastErrorClass === undefined ? {} : { lastErrorClass }),
-    updatedAt: "2026-10-28T10:00:00.000Z",
-  });
-  const quiet = { hasPendingApprovals: false, hasPendingUserInput: false, runtime: null };
-  const byStatus: Record<SidebarThreadStatus, Parameters<typeof splitCrewBranches>[0][number]> = {
-    preparing: { ...quiet, runtime: runtimeOf("preparing") },
-    working: { ...quiet, runtime: runtimeOf("running") },
-    waiting: { ...quiet, runtime: runtimeOf("running"), blockedOnThreadWait: true },
-    approval: { ...quiet, hasPendingApprovals: true, runtime: runtimeOf("running") },
-    input: { ...quiet, hasPendingUserInput: true, runtime: runtimeOf("running") },
-    request: { ...quiet, pendingGuestMessageCount: 1 },
-    failed: { ...quiet, runtime: runtimeOf("failed") },
-    limited: { ...quiet, runtime: runtimeOf("failed", "usage_limit") },
-    ready: { ...quiet, runtime: runtimeOf("completed") },
-  };
-
-  it.each([
-    ["preparing", "working"],
-    ["working", "working"],
-    ["waiting", "working"],
-    ["approval", "waiting"],
-    ["input", "waiting"],
-    ["request", "waiting"],
-    ["failed", "waiting"],
-    ["limited", "waiting"],
-    ["ready", "waiting"],
-  ] as const)("puts a %s crewmate in the %s branch", (status, branch) => {
-    expect(resolveSidebarThreadStatus(byStatus[status])).toBe(status);
-    expect(resolveCrewBranch(status)).toBe(branch);
-  });
-
-  it("splits crew by status, keeping each branch in the order given, and moves a thread live", () => {
-    const first = { ...byStatus.working, id: "first" };
-    const second = { ...byStatus.ready, id: "second" };
-    const third = { ...byStatus.working, id: "third" };
-    const ids = (threads: readonly { id: string }[]) => threads.map((member) => member.id);
-    const before = splitCrewBranches([first, second, third]);
-    expect(ids(before.working)).toEqual(["first", "third"]);
-    expect(ids(before.waiting)).toEqual(["second"]);
-
-    const finished = { ...first, runtime: runtimeOf("completed") };
-    const after = splitCrewBranches([finished, second, third]);
-    expect(ids(after.working)).toEqual(["third"]);
-    expect(ids(after.waiting)).toEqual(["first", "second"]);
-  });
-
-  it("leaves a branch empty when no crewmate belongs in it", () => {
-    expect(splitCrewBranches([])).toEqual({ working: [], waiting: [] });
-    expect(splitCrewBranches([byStatus.input]).working).toEqual([]);
   });
 });

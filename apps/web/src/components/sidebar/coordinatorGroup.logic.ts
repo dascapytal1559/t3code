@@ -1,10 +1,6 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import {
-  resolveSidebarThreadStatus,
-  type SidebarSection,
-  type SidebarThreadStatus,
-} from "../Sidebar.logic";
+import type { SidebarSection, SidebarThreadStatus } from "../Sidebar.logic";
 
 /**
  * The coordinator a thread names, if any. A coordinator is an unarchived thread pinned as its
@@ -91,38 +87,6 @@ export function isAppCrewmate<T extends CrewThread>(
 /** Whether a thread is crew, judged from it and the coordinator it names, as the sidebar does. */
 export function isCrewOf<T extends CrewThread>(thread: T, coordinator: T | null): boolean {
   return coordinator !== null && resolveAppCoordinatorGroup([thread, coordinator]).crew.has(thread);
-}
-
-/** The two branches a coordinator's crew splits into under its card. */
-export type CrewBranch = "working" | "waiting";
-
-export const CREW_BRANCHES: readonly CrewBranch[] = ["working", "waiting"];
-
-export const CREW_BRANCH_LABEL: Record<CrewBranch, string> = {
-  working: "working",
-  waiting: "waiting on captain",
-};
-
-/**
- * Which branch a crewmate sits in. Working is a thread still running, or waiting on its own
- * background work or an idle session: nothing for the user to do. Everything else needs the user to
- * look: a request, a failure or usage limit, or a finished thread kept open.
- */
-export function resolveCrewBranch(status: SidebarThreadStatus): CrewBranch {
-  return status === "preparing" || status === "working" || status === "waiting"
-    ? "working"
-    : "waiting";
-}
-
-/** Splits crew into its branches, each keeping the order it was given. */
-export function splitCrewBranches<T extends Parameters<typeof resolveSidebarThreadStatus>[0]>(
-  crew: readonly T[],
-): Record<CrewBranch, T[]> {
-  const branches: Record<CrewBranch, T[]> = { working: [], waiting: [] };
-  for (const member of crew) {
-    branches[resolveCrewBranch(resolveSidebarThreadStatus(member))].push(member);
-  }
-  return branches;
 }
 
 /**

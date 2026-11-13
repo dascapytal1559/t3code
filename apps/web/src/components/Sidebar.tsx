@@ -250,14 +250,10 @@ import {
 import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import {
-  CREW_BRANCHES,
   coordinatorGroupSlot,
   resolveAppCoordinatorGroup,
-  splitCrewBranches,
   type CoordinatorGroup,
-  type CrewBranch,
 } from "./sidebar/coordinatorGroup.logic";
-import type { CrewTreePlace } from "./sidebar/SidebarCrewTree";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { TooltipProvider } from "./ui/tooltip";
 import {
@@ -279,7 +275,7 @@ import {
   sidebarFolderRowId,
 } from "./sidebar/SidebarProjectFolderHeader";
 import {
-  SidebarCrewBranchHeader,
+  SidebarCrewToggle,
   SidebarDragBoundary,
   SidebarSectionHeader,
   SidebarSectionPlaceholder,
@@ -343,10 +339,7 @@ const SETTLED_TAIL_PAGE_COUNT = 25;
 const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar:settled-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar:snoozed-expanded";
 const WORKING_SHELF_EXPANDED_KEY = "t3code:sidebar:working-expanded";
-const CREW_BRANCH_EXPANDED_KEYS: Record<CrewBranch, string> = {
-  working: "t3code:sidebar:crew-working-expanded",
-  waiting: "t3code:sidebar:crew-waiting-expanded",
-};
+const CREW_SHELF_EXPANDED_KEY = "t3code:sidebar:crew-expanded";
 
 const inboxReturns = createInboxReturnTracker();
 
@@ -481,13 +474,8 @@ function useSidebarThreads(input: {
     false,
     Schema.Boolean,
   );
-  const [crewWorkingExpanded, setCrewWorkingExpanded] = useLocalStorage(
-    CREW_BRANCH_EXPANDED_KEYS.working,
-    false,
-    Schema.Boolean,
-  );
-  const [crewWaitingExpanded, setCrewWaitingExpanded] = useLocalStorage(
-    CREW_BRANCH_EXPANDED_KEYS.waiting,
+  const [crewShelfExpanded, setCrewShelfExpanded] = useLocalStorage(
+    CREW_SHELF_EXPANDED_KEY,
     false,
     Schema.Boolean,
   );
@@ -559,25 +547,9 @@ function useSidebarThreads(input: {
   const visibleWorkingThreads = workingShelfExpanded
     ? workingThreads
     : routeThreadOnly(workingThreads, routeRowThreadKey);
-  const crewBranchThreads = splitCrewBranches(crewThreads);
-  const crewBranchExpanded: Record<CrewBranch, boolean> = {
-    working: crewWorkingExpanded,
-    waiting: crewWaitingExpanded,
-  };
-  const visibleCrewBranchThreads = {
-    working: crewWorkingExpanded
-      ? crewBranchThreads.working
-      : routeThreadOnly(crewBranchThreads.working, routeRowThreadKey),
-    waiting: crewWaitingExpanded
-      ? crewBranchThreads.waiting
-      : routeThreadOnly(crewBranchThreads.waiting, routeRowThreadKey),
-  };
-  const visibleCrewThreads = CREW_BRANCHES.flatMap((branch) => visibleCrewBranchThreads[branch]);
-  const crewBranchByThreadKey = new Map(
-    CREW_BRANCHES.flatMap((branch) =>
-      crewBranchThreads[branch].map((thread) => [threadShellKey(thread), branch] as const),
-    ),
-  );
+  const visibleCrewThreads = crewShelfExpanded
+    ? crewThreads
+    : routeThreadOnly(crewThreads, routeRowThreadKey);
   const projectFolders =
     folderGroups === null
       ? null
@@ -649,14 +621,9 @@ function useSidebarThreads(input: {
     toggleSnoozedShelf: () => setSnoozedShelfExpanded((value) => !value),
     workingShelfExpanded,
     toggleWorkingShelf: () => setWorkingShelfExpanded((value) => !value),
-    crewBranchThreads,
-    crewBranchExpanded,
-    toggleCrewBranch: {
-      working: () => setCrewWorkingExpanded((value) => !value),
-      waiting: () => setCrewWaitingExpanded((value) => !value),
-    },
-    visibleCrewBranchThreads,
-    crewBranchByThreadKey,
+    crewShelfExpanded,
+    toggleCrewShelf: () => setCrewShelfExpanded((value) => !value),
+    visibleCrewThreads,
     projectFolders,
     toggleProjectFolder: (group: SidebarProjectSnapshot) => {
       const keys = sidebarFolderExpansionKeys(group);
@@ -1388,11 +1355,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     workingShelfEnabled,
     coordinatorThreads,
     crewThreads,
-    crewBranchThreads,
-    crewBranchExpanded,
-    toggleCrewBranch,
-    visibleCrewBranchThreads,
-    crewBranchByThreadKey,
+    crewShelfExpanded,
+    toggleCrewShelf,
+    visibleCrewThreads,
     pinnedThreads,
     draggableThreadKeys,
     activeReorderableThreadKeys,
@@ -1446,17 +1411,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     keepEmptyFolders: (group) =>
       scopedProjectGroups.length > 0 || (group.pinned && !group.archived),
   });
-  const toggleCrewWorking = useStableCallback(toggleCrewBranch.working);
-  const toggleCrewWaiting = useStableCallback(toggleCrewBranch.waiting);
-  const crewBranchToggles = { working: toggleCrewWorking, waiting: toggleCrewWaiting };
-  // The branch headers, and so the guide line, follow the last coordinator card.
-  const crewTreeRootThread = crewThreads.length > 0 ? coordinatorThreads.at(-1) : undefined;
-  const crewTreePlaceOf = (thread: EnvironmentThreadShell, branch: CrewBranch): CrewTreePlace =>
-    !crewBranchExpanded[branch]
-      ? "indent"
-      : thread === visibleCrewBranchThreads[branch].at(-1)
-        ? "last"
-        : "branch";
+  const toggleCrewTree = useStableCallback(toggleCrewShelf);
+  const lastCrewThread = visibleCrewThreads.at(-1);
+  // The crew toggle, and so the guide line, follows the last coordinator card.
+  const crewTreeRootThread =
+    crewShelfExpanded && crewThreads.length > 0 ? coordinatorThreads.at(-1) : undefined;
 
   // Ranked across environments as the palette ranks them, so one
   // environment's list does not sit above another's better matches; rows
@@ -2058,10 +2017,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     }
     const items: SidebarListItem[] = rowsOf(coordinatorThreads, "crew");
     if (crewThreads.length > 0) {
-      for (const branch of CREW_BRANCHES) {
-        items.push({ kind: "marker", marker: `crew-${branch}-header` });
-        items.push(...rowsOf(visibleCrewBranchThreads[branch], "crew"));
-      }
+      items.push({ kind: "marker", marker: "crew-toggle" });
+      items.push(...rowsOf(visibleCrewThreads, "crew"));
     }
     items.push({ kind: "marker", marker: "pinned-header" });
     const pinnedRows = rowsOf(pinnedThreads, "pinned");
@@ -3451,10 +3408,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             : "slim";
                         const isCoordinator =
                           section === "crew" && coordinatorThreads.includes(thread);
-                        const crewBranch =
-                          section === "crew" && !isCoordinator
-                            ? crewBranchByThreadKey.get(threadKey)
-                            : undefined;
                         return (
                           <SortableThreadRow
                             key={threadKey}
@@ -3470,24 +3423,24 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             coordinator={isCoordinator}
                             hideHoverActions={!sidebarSectionHasHoverActions(section)}
                             crewTree={
-                              crewBranch === undefined
+                              section !== "crew" || isCoordinator
                                 ? undefined
-                                : crewTreePlaceOf(thread, crewBranch)
+                                : !crewShelfExpanded
+                                  ? "indent"
+                                  : thread === lastCrewThread
+                                    ? "last"
+                                    : "branch"
                             }
-                            crewBranch={crewBranch}
                             crewTreeRoot={thread === crewTreeRootThread}
-                            onCrewTreeToggle={
-                              crewBranch === undefined ? undefined : crewBranchToggles[crewBranch]
-                            }
+                            onCrewTreeToggle={toggleCrewTree}
                             navigationParent={
                               folderRow ??
-                              (crewBranch !== undefined
-                                ? `shelf:crew-${crewBranch}`
-                                : section === "working" ||
-                                    section === "snoozed" ||
-                                    section === "settled"
-                                  ? `shelf:${section}`
-                                  : undefined)
+                              (section === "working" ||
+                              section === "snoozed" ||
+                              section === "settled" ||
+                              (section === "crew" && !isCoordinator)
+                                ? `shelf:${section}`
+                                : undefined)
                             }
                             variantAction={
                               section === "snoozed"
@@ -3615,22 +3568,16 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           continue;
                         }
                         switch (item.marker) {
-                          case "crew-working-header":
-                          case "crew-waiting-header": {
-                            const branch =
-                              item.marker === "crew-working-header" ? "working" : "waiting";
+                          case "crew-toggle":
                             items.push(
-                              <SidebarCrewBranchHeader
-                                key={item.marker}
-                                branch={branch}
-                                first={branch === CREW_BRANCHES[0]}
-                                count={crewBranchThreads[branch].length}
-                                expanded={crewBranchExpanded[branch]}
-                                onToggle={crewBranchToggles[branch]}
+                              <SidebarCrewToggle
+                                key="crew-toggle"
+                                count={crewThreads.length}
+                                expanded={crewShelfExpanded}
+                                onToggle={toggleCrewTree}
                               />,
                             );
                             break;
-                          }
                           case "pinned-header":
                             items.push(
                               <SidebarDragBoundary
