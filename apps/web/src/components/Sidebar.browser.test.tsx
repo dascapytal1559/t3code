@@ -342,5 +342,25 @@ describe("sidebar crew branches", () => {
     await userEvent.click(working);
     await expect.element(crewRow("Busy crewmate")).not.toBeInTheDocument();
     await expect.element(crewRow("Finished crewmate").first()).toBeInTheDocument();
+
+    expect(working.element().querySelector("svg")).toBeNull();
+    expect(waiting.element().querySelector("svg")).toBeNull();
+
+    // The tree lines have no box under test (no stylesheet), so they are clicked directly. With
+    // one branch open a line opens both; with both open it closes both. A crewmate row's line
+    // does the same as a header's, though it hangs from only one branch.
+    const treeLine = (which: "first" | "last") =>
+      screen.getByTestId("sidebar-crew-tree-line")[which]().element() as HTMLElement;
+    treeLine("first").click();
+    await expect.element(working).toHaveAttribute("aria-expanded", "true");
+    await expect.element(waiting).toHaveAttribute("aria-expanded", "true");
+    treeLine("last").click();
+    await expect.element(working).toHaveAttribute("aria-expanded", "false");
+    await expect.element(waiting).toHaveAttribute("aria-expanded", "false");
+    treeLine("first").click();
+    await expect.element(crewRow("Busy crewmate").first()).toBeInTheDocument();
+    treeLine("last").click();
+    await expect.element(crewRow("Busy crewmate")).not.toBeInTheDocument();
+    await expect.element(crewRow("Finished crewmate")).not.toBeInTheDocument();
   });
 });

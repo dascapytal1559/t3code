@@ -8,13 +8,14 @@ import { CREW_BRANCHES, type CrewBranch } from "./coordinatorGroup.logic";
 export type CrewTreePlace = "branch" | "last" | "indent";
 
 // The rows sit in one flat sortable list, so each draws its own segment. Hovering or focusing a
-// branch's toggle or guide line lights that branch's segments only, since it collapses on its own.
+// branch's toggle lights that branch's segments only, since it collapses on its own; hovering a
+// guide line (`data-crew-tree-lines`) lights every segment, since it toggles both branches.
 // The colour is opaque so the trunk and an elbow drawn over it never brighten where they meet.
 const CREW_TREE_COLOR_CLASS_NAMES: Record<CrewBranch, string> = {
   working:
-    "pointer-events-none absolute transition-colors [--crew-tree-line:color-mix(in_srgb,var(--contrast-sidebar-muted-foreground)_40%,var(--sidebar))] [[role=tree]:has([data-crew-tree=working]:hover,[data-crew-tree=working]:focus-visible)_[data-crew-branch=working]_&]:[--crew-tree-line:color-mix(in_srgb,var(--contrast-sidebar-muted-foreground)_80%,var(--sidebar))]",
+    "pointer-events-none absolute transition-colors [--crew-tree-line:color-mix(in_srgb,var(--contrast-sidebar-muted-foreground)_40%,var(--sidebar))] [[role=tree]:has([data-crew-tree=working]:hover,[data-crew-tree=working]:focus-visible)_[data-crew-branch=working]_&]:[--crew-tree-line:color-mix(in_srgb,var(--contrast-sidebar-muted-foreground)_80%,var(--sidebar))] [[role=tree]:has([data-crew-tree-lines]:hover)_&]:[--crew-tree-line:color-mix(in_srgb,var(--contrast-sidebar-muted-foreground)_80%,var(--sidebar))]",
   waiting:
-    "pointer-events-none absolute transition-colors [--crew-tree-line:color-mix(in_srgb,var(--contrast-sidebar-muted-foreground)_40%,var(--sidebar))] [[role=tree]:has([data-crew-tree=waiting]:hover,[data-crew-tree=waiting]:focus-visible)_[data-crew-branch=waiting]_&]:[--crew-tree-line:color-mix(in_srgb,var(--contrast-sidebar-muted-foreground)_80%,var(--sidebar))]",
+    "pointer-events-none absolute transition-colors [--crew-tree-line:color-mix(in_srgb,var(--contrast-sidebar-muted-foreground)_40%,var(--sidebar))] [[role=tree]:has([data-crew-tree=waiting]:hover,[data-crew-tree=waiting]:focus-visible)_[data-crew-branch=waiting]_&]:[--crew-tree-line:color-mix(in_srgb,var(--contrast-sidebar-muted-foreground)_80%,var(--sidebar))] [[role=tree]:has([data-crew-tree-lines]:hover)_&]:[--crew-tree-line:color-mix(in_srgb,var(--contrast-sidebar-muted-foreground)_80%,var(--sidebar))]",
 };
 
 // The 1px guide lines sit centred in 1rem gutters, so the gap from the coordinator card's left
@@ -48,10 +49,24 @@ function Elbow(props: { branch: CrewBranch; startClassName: string }) {
   );
 }
 
-/** The guide line beside a branch header, which hangs from the coordinator's line. */
-export function CrewBranchGutter(props: { branch: CrewBranch; first: boolean }) {
+/**
+ * The guide line beside a branch header, which hangs from the coordinator's line. Clicking it
+ * opens both branches. The mouse-only line is hidden from assistive tech; each header's own
+ * toggle is the keyboard route.
+ */
+export function CrewBranchGutter(props: {
+  branch: CrewBranch;
+  first: boolean;
+  onToggleTree: () => void;
+}) {
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-y-0 start-0 w-4">
+    <div
+      aria-hidden
+      data-crew-tree-lines
+      data-testid="sidebar-crew-tree-line"
+      className="absolute inset-y-0 start-0 w-4 cursor-pointer"
+      onClick={props.onToggleTree}
+    >
       {props.first ? (
         <span className={cn(crewTreeTrunkClassName(props.branch), "-top-[3px] h-[3px]")} />
       ) : null}
@@ -63,7 +78,7 @@ export function CrewBranchGutter(props: { branch: CrewBranch; first: boolean }) 
   );
 }
 
-/** The guide lines beside a crewmate row; clicking them collapses its branch. */
+/** The guide lines beside a crewmate row; clicking them opens or closes both branches. */
 export function CrewTreeGutter(props: {
   branch: CrewBranch;
   place: CrewTreePlace;
@@ -73,7 +88,7 @@ export function CrewTreeGutter(props: {
   return (
     <div
       aria-hidden
-      data-crew-tree={props.branch}
+      data-crew-tree-lines
       data-testid="sidebar-crew-tree-line"
       className="absolute inset-y-0 start-0 w-8 cursor-pointer"
       onClick={props.onToggle}
