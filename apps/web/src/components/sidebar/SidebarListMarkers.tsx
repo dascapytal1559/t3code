@@ -1,5 +1,6 @@
 import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
 import { useSortable } from "@dnd-kit/sortable";
+import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
 import { CSS } from "@dnd-kit/utilities";
 import { type ReactNode, useLayoutEffect } from "react";
 import { cn } from "~/lib/utils";
@@ -128,10 +129,9 @@ export function SidebarCrewBranchHeader(props: {
   count: number;
   expanded: boolean;
   onToggle: () => void;
-  /** The guide line beside the row, which opens or closes both branches. */
-  onToggleTree: () => void;
 }) {
   const label = CREW_BRANCH_LABEL[props.branch];
+  const Chevron = props.expanded ? ChevronDownIcon : ChevronRightIcon;
   return (
     <SortableSidebarMarker
       marker={`crew-${props.branch}-header`}
@@ -143,11 +143,7 @@ export function SidebarCrewBranchHeader(props: {
         crewBranchContinues(props.branch) && "-mb-px",
       )}
     >
-      <CrewBranchGutter
-        branch={props.branch}
-        first={props.first}
-        onToggleTree={props.onToggleTree}
-      />
+      <CrewBranchGutter branch={props.branch} first={props.first} />
       <button
         type="button"
         role="treeitem"
@@ -157,8 +153,9 @@ export function SidebarCrewBranchHeader(props: {
         aria-expanded={props.expanded}
         aria-label={`${props.count} ${label}`}
         onClick={props.onToggle}
-        className="flex h-6 w-full cursor-pointer items-center gap-1 rounded-md ps-5.5 pe-1.5 text-xs tabular-nums text-sidebar-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+        className="flex h-6 w-full cursor-pointer items-center gap-1 rounded-md ps-1 pe-1.5 text-xs tabular-nums text-sidebar-muted-foreground outline-none hover:bg-sidebar-row-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
       >
+        <Chevron aria-hidden className="size-3.5 shrink-0" />
         <span>{props.count}</span>
         <span>{label}</span>
       </button>

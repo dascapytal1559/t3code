@@ -655,12 +655,6 @@ function useSidebarThreads(input: {
       working: () => setCrewWorkingExpanded((value) => !value),
       waiting: () => setCrewWaitingExpanded((value) => !value),
     },
-    // The tree lines open both branches, or close both once both are open.
-    toggleCrewBranches: () => {
-      const open = !(crewWorkingExpanded && crewWaitingExpanded);
-      setCrewWorkingExpanded(open);
-      setCrewWaitingExpanded(open);
-    },
     visibleCrewBranchThreads,
     crewBranchByThreadKey,
     projectFolders,
@@ -1397,7 +1391,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     crewBranchThreads,
     crewBranchExpanded,
     toggleCrewBranch,
-    toggleCrewBranches,
     visibleCrewBranchThreads,
     crewBranchByThreadKey,
     pinnedThreads,
@@ -1456,7 +1449,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const toggleCrewWorking = useStableCallback(toggleCrewBranch.working);
   const toggleCrewWaiting = useStableCallback(toggleCrewBranch.waiting);
   const crewBranchToggles = { working: toggleCrewWorking, waiting: toggleCrewWaiting };
-  const toggleAllCrewBranches = useStableCallback(toggleCrewBranches);
   // The branch headers, and so the guide line, follow the last coordinator card.
   const crewTreeRootThread = crewThreads.length > 0 ? coordinatorThreads.at(-1) : undefined;
   const crewTreePlaceOf = (thread: EnvironmentThreadShell, branch: CrewBranch): CrewTreePlace =>
@@ -3485,7 +3477,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             crewBranch={crewBranch}
                             crewTreeRoot={thread === crewTreeRootThread}
                             onCrewTreeToggle={
-                              crewBranch === undefined ? undefined : toggleAllCrewBranches
+                              crewBranch === undefined ? undefined : crewBranchToggles[crewBranch]
                             }
                             navigationParent={
                               folderRow ??
@@ -3635,7 +3627,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 count={crewBranchThreads[branch].length}
                                 expanded={crewBranchExpanded[branch]}
                                 onToggle={crewBranchToggles[branch]}
-                                onToggleTree={toggleAllCrewBranches}
                               />,
                             );
                             break;
