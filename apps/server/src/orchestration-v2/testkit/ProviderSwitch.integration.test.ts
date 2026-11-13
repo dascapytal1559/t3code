@@ -3021,18 +3021,23 @@ describe("orchestration v2 provider switching", () => {
     ),
   );
 
-  it.live.each(["immediately", "behind a running turn"] as const)(
+  it.live.each([
+    ["immediately", { queued: false, coordinator: false }],
+    ["behind a running turn", { queued: true, coordinator: false }],
+    ["immediately on FirstMate's main thread", { queued: false, coordinator: true }],
+    ["behind a running turn on FirstMate's main thread", { queued: true, coordinator: true }],
+  ] as const)(
     "starts a fresh provider session %s and never hands earlier runs to a later provider",
-    (variant) =>
+    ([, { queued, coordinator }]) =>
       Effect.scoped(
         Effect.gen(function* () {
-          const queued = variant !== "immediately";
-          const key = queued ? "queued" : "immediate";
+          const key = `${queued ? "queued" : "immediate"}${coordinator ? "-coordinator" : ""}`;
           const cwd = yield* checkpointWorkspace(`fresh-context-${key}`);
           const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
           const closedSessions = yield* Ref.make<ReadonlyArray<string>>([]);
-          // A queued start has nobody to refuse, so a busy session must stay up.
-          const backgroundWork = yield* Ref.make(queued);
+          // A queued start has nobody to refuse, so a busy session must stay up, except on
+          // FirstMate's main thread, where the busy old session is retired.
+          const backgroundWork = yield* Ref.make(queued || coordinator);
           const started = yield* Deferred.make<void>();
           const release = yield* Deferred.make<void>();
           const layerRegistry = ProviderAdapterRegistry.layerFromAdapters([
@@ -3097,6 +3102,14 @@ describe("orchestration v2 provider switching", () => {
               branch: null,
               worktreePath: cwd,
             });
+            if (coordinator) {
+              yield* orchestrator.dispatch({
+                type: "thread.metadata.update",
+                commandId: CommandId.make(`command:fresh-context:${key}:pin`),
+                threadId: freshThreadId,
+                coordinator: true,
+              });
+            }
             // Codex keeps a native thread from before the fresh run that must not resume.
             yield* send("zero", CODEX_MODEL_SELECTION);
             yield* worker.drain();
@@ -3140,7 +3153,10 @@ describe("orchestration v2 provider switching", () => {
             yield* worker.drain();
             yield* waitForIdle(freshThreadId);
             // Claude hosts one native thread per session, so an idle old one is closed.
-            assert.deepEqual(yield* Ref.get(closedSessions), queued ? [] : [firstSession.id]);
+            assert.deepEqual(
+              yield* Ref.get(closedSessions),
+              queued && !coordinator ? [] : [firstSession.id],
+            );
             yield* Ref.set(backgroundWork, false);
             yield* send("delta", CODEX_MODEL_SELECTION);
             yield* worker.drain();

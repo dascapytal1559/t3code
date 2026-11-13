@@ -1308,6 +1308,17 @@ function sessionsReleasedByFreshContext(
   );
 }
 
+/**
+ * Fork: a fresh start on FirstMate's main thread ends the previous session even mid-work.
+ * Left running, it keeps FirstMate's session lock and goes on dispatching where nobody sees it.
+ */
+function retiresBusySessions(
+  freshContext: boolean,
+  thread: Pick<OrchestrationV2AppThread, "coordinator" | "crewOf">,
+): boolean {
+  return freshContext && isPrimaryCoordinator(thread);
+}
+
 const FRESH_CONTEXT_DETACH_REASON = "Started a fresh session.";
 
 function uniqueSessions(
@@ -2448,7 +2459,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ]);
       const busySessionIds = new Set<ProviderSessionId>();
       for (const session of releasableSessions) {
-        if (yield* sessionHasBackgroundWork(session, projection.providerThreads)) {
+        if (
+          !retiresBusySessions(freshContext, projection.thread) &&
+          (yield* sessionHasBackgroundWork(session, projection.providerThreads))
+        ) {
           busySessionIds.add(session.id);
         }
       }
@@ -7821,7 +7835,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     ]);
     const sessionsToDetach: Array<OrchestrationV2ProviderSession> = [];
     for (const detaching of releasableSessions) {
-      if (yield* sessionHasBackgroundWork(detaching, projection.providerThreads)) {
+      if (
+        !retiresBusySessions(freshContext, projection.thread) &&
+        (yield* sessionHasBackgroundWork(detaching, projection.providerThreads))
+      ) {
         // A schedule has nobody to wait or press Stop; like a queued fresh start, leave it running.
         if (freshContext && command.scheduledTaskId !== undefined) continue;
         return yield* new OrchestratorDispatchError({

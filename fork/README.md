@@ -484,6 +484,25 @@ Code: `isSupervisionRunForShell` and its SQL mirror `isSupervisionShellRun` in
 `apps/web/src/components/ThreadNotificationCoordinator.tsx`, and
 `alert_when_done` in `apps/server/src/mcp/ThreadMetadataMcpService.ts`.
 
+## A fresh start on FirstMate ends the old session
+
+Upstream closes the previous provider session on a fresh start (`/clear`, or
+`t3_thread_send` with `freshContext`) only when it has no background work, and
+leaves a busy one running: a queued fresh start leaves it up, and one sent to an
+idle thread is refused. FirstMate's main session always has background work
+(its worker monitor), so its old session kept running beside the new one. It
+held FirstMate's session lock and went on dispatching and merging, and its
+replies no longer reached the thread.
+
+On a pinned coordinator that is not crew (`isPrimaryCoordinator`), a fresh start
+now closes the previous session even when it is busy, ending its process and
+background work before the new session's first turn. FirstMate's own records
+carry anything it left mid-way to the new session. A fresh message still queues
+behind a running turn as before. Every other thread, secondmates included,
+keeps upstream's behaviour. Code: `retiresBusySessions` and its two uses in
+`apps/server/src/orchestration-v2/Orchestrator.ts` (the queued start and
+`message.dispatch`).
+
 ## Bridge
 
 ![A chat with the Bridge tab beside it: four objectives on top, then three decisions under Needs you and two under Scheduled with their return days](media/bridge-list.jpg)
