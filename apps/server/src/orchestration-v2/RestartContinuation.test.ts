@@ -20,6 +20,7 @@ import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as ServerSettings from "../serverSettings.ts";
 import { notifyCoordinators } from "./CoordinatorRestartNote.ts";
 import { restartContinuationRun, continueRestartedRun } from "./RestartContinuation.ts";
@@ -219,6 +220,7 @@ it.effect.each(["completed", "waiting", "cancelled"] as const)(
             Layer.mock(ThreadManagementService.ThreadManagementService)({
               getThreadRecords: () => Effect.succeed(projection),
               recoverDelegatedTask: () => Effect.void,
+              noteUnresumedRestartCut: () => Effect.void,
               dispatch: (command) => {
                 commands.push(command);
                 return Effect.succeed({} as never);
@@ -277,6 +279,7 @@ it.effect.each([
               runRecoveryOnce: Effect.succeed(false),
             }),
             Layer.mock(EffectOutbox.EffectOutboxV2)({
+              get: () => Effect.succeedNone,
               reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
             }),
           ),
@@ -295,6 +298,60 @@ it.effect.each([
           type: "provider-runtime.continue",
           sourceRunId: runId,
         });
+      // The resume row explains a resumed run; only an unresumed one gets the cancel notice.
+      assert.deepEqual(
+        committed!.events.flatMap((event) =>
+          event.type === "turn-item.updated" && event.payload.type === "system_notice"
+            ? [event.payload.title]
+            : [],
+        ),
+        (projectOverride ?? enabled) ? [] : ["Server restarted"],
+      );
+    }),
+);
+
+it.effect.each([true, false])(
+  "a shutdown explains a cut run unless its resume is already queued: %s",
+  (queued) =>
+    Effect.gen(function* () {
+      let committed: Parameters<EventSink.EventSinkV2["Service"]["commitCommand"]>[0] | undefined;
+      const recovery = yield* ProviderRuntimeRecovery.make.pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            ServerSettings.layerTest({ continueThreadsAfterServerUpdate: true }),
+            Layer.mock(ProjectionStore.ProjectionStoreV2)({
+              getRecoveryThreadIds: () => Effect.succeed([threadId]),
+              getRuntimeRecoveryProjection: () => Effect.succeed(makeProjection()),
+            }),
+            Layer.mock(EventSink.EventSinkV2)({
+              commitCommand: (input) => {
+                committed = input;
+                return Effect.succeed({ committed: true, cancelledEffectCount: 0 } as never);
+              },
+            }),
+            IdAllocator.layer,
+            Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({}),
+            Layer.mock(EffectOutbox.EffectOutboxV2)({
+              get: (effectId) =>
+                Effect.succeed(
+                  queued && effectId === `effect:restart-continuation:${runId}`
+                    ? Option.some({ status: "pending" } as EffectOutbox.OrchestrationEffectV2)
+                    : Option.none(),
+                ),
+              reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
+            }),
+          ),
+        ),
+      );
+      yield* recovery.reconcile("shutdown");
+      assert.deepEqual(
+        committed!.events.flatMap((event) =>
+          event.type === "turn-item.updated" && event.payload.type === "system_notice"
+            ? [event.payload.title]
+            : [],
+        ),
+        queued ? [] : ["Server shut down"],
+      );
     }),
 );
 
@@ -338,6 +395,7 @@ it.effect("lets a cut blocking delegate_task wake its parent like an async task"
           IdAllocator.layer,
           Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({}),
           Layer.mock(EffectOutbox.EffectOutboxV2)({
+            get: () => Effect.succeedNone,
             reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
           }),
         ),
@@ -403,6 +461,7 @@ it.effect.each(["running", "waiting"])(
             IdAllocator.layer,
             Layer.mock(EffectWorker.OrchestrationEffectWorkerV2)({}),
             Layer.mock(EffectOutbox.EffectOutboxV2)({
+              get: () => Effect.succeedNone,
               listByCommandId: () => Effect.succeed([]),
               reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
             }),
@@ -441,6 +500,7 @@ it.effect("does not duplicate delivery and yields to newer user work or opt-out"
     const layerThreads = Layer.mock(ThreadManagementService.ThreadManagementService)({
       getThreadRecords: () => Effect.succeed(projection),
       recoverDelegatedTask: () => Effect.void,
+      noteUnresumedRestartCut: () => Effect.void,
       dispatch: (command) => {
         commands.push(command);
         if (command.type === "message.dispatch")
@@ -658,6 +718,7 @@ it.effect.each([
                 runRecoveryOnce: Effect.succeed(false),
               }),
               Layer.mock(EffectOutbox.EffectOutboxV2)({
+                get: () => Effect.succeedNone,
                 listByCommandId: () => Effect.succeed([]),
                 reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
               }),
@@ -814,6 +875,7 @@ it.effect("does not cancel or resume a run that completes while shutdown intent 
             runRecoveryOnce: Effect.succeed(false),
           }),
           Layer.mock(EffectOutbox.EffectOutboxV2)({
+            get: () => Effect.succeedNone,
             reconcileAfterProcessLoss: Effect.succeed({ requeued: 0, cancelled: 0 }),
           }),
         ),
@@ -832,6 +894,7 @@ it.effect("does not cancel or resume a run that completes while shutdown intent 
           Layer.mock(ThreadManagementService.ThreadManagementService)({
             getThreadRecords: () => Effect.succeed(projection),
             recoverDelegatedTask: () => Effect.void,
+            noteUnresumedRestartCut: () => Effect.void,
             dispatch: () =>
               Effect.sync(() => {
                 dispatched = true;
@@ -857,6 +920,7 @@ const continuationDispatches = (
           Layer.mock(ThreadManagementService.ThreadManagementService)({
             getThreadRecords: () => Effect.succeed(projection),
             recoverDelegatedTask: () => Effect.void,
+            noteUnresumedRestartCut: () => Effect.void,
             dispatch: (command) => {
               if (command.type === "message.dispatch") dispatches.push(command);
               return Effect.succeed({} as never);
@@ -1054,6 +1118,7 @@ it.effect.each([
               getThreadRecords: (id) =>
                 Effect.succeed((id === parentThreadId ? parent : child) as never),
               recoverDelegatedTask: () => Effect.void,
+              noteUnresumedRestartCut: () => Effect.void,
               dispatch: () =>
                 Effect.sync(() => {
                   dispatched += 1;
@@ -1313,6 +1378,7 @@ const pinnedContinuationDispatches = (projection: OrchestrationV2ThreadProjectio
           } as never),
         restartContinuationPending: () => Effect.succeed(true),
         recoverDelegatedTask: () => Effect.void,
+        noteUnresumedRestartCut: () => Effect.void,
         dispatch: (command) => {
           if (command.type === "message.dispatch") dispatches.push(command);
           return Effect.succeed({} as never);

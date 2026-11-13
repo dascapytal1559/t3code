@@ -4,7 +4,6 @@ import {
   CommandId,
   isOrchestrationV2WorkActive,
   latestProviderTurnForAttempt,
-  MessageId,
   type OrchestrationV2Run,
   type RunId,
   type ThreadId,
@@ -31,14 +30,12 @@ import {
   isRestartNoteSource,
   neverStarted,
   restartCancelledBackgroundWorkNote,
+  restartContinuationMessageId,
   restartContinuationNote,
 } from "./RestartBackgroundNote.ts";
 
 const CONTINUE_PROMPT =
   "Continue where you left off. Your last turn was cut short, so a command or other action it started may have finished or may still be running. Before you repeat one that changes state, confirm it did not take effect and is not still running; if you cannot tell, say so instead of repeating it.";
-
-const continuationMessageId = (sourceRunId: RunId) =>
-  MessageId.make(`message:restart-continuation:${sourceRunId}`);
 
 const MAX_CONTINUATION_CHAIN = 3;
 const CONTINUATION_LOOP_WINDOW_MS = 5 * 60 * 1_000;
@@ -195,7 +192,7 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
     const enabled = yield* settings.getSettings.pipe(Effect.orElseSucceed(() => null));
     if (!enabled) return;
     const threads = yield* ThreadManagementService.ThreadManagementService;
-    const messageId = continuationMessageId(input.sourceRunId);
+    const messageId = restartContinuationMessageId(input.sourceRunId);
     const projection = yield* threads.getThreadRecords(
       input.threadId,
       ["messages", "runs", "providerTurns", "attempts", "runtimeRequests", "turnItems"],
@@ -365,7 +362,16 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
         }),
       ),
       Effect.andThen(
-        notifyCoordinatorUnlessResumed(input.threadId, continuationMessageId(input.sourceRunId)),
+        notifyCoordinatorUnlessResumed(
+          input.threadId,
+          restartContinuationMessageId(input.sourceRunId),
+        ),
+      ),
+      Effect.andThen(
+        Effect.gen(function* () {
+          const threads = yield* ThreadManagementService.ThreadManagementService;
+          yield* threads.noteUnresumedRestartCut(input.threadId, input.sourceRunId);
+        }),
       ),
     ),
 );

@@ -109,7 +109,13 @@ export const layerExecutor: Layer.Layer<
               Effect.tapError(() =>
                 willRetry
                   ? Effect.void
-                  : threads.recoverDelegatedTask(effect.threadId, { sourceRunId }),
+                  : threads
+                      .recoverDelegatedTask(effect.threadId, { sourceRunId })
+                      .pipe(
+                        Effect.ensuring(
+                          threads.noteUnresumedRestartCut(effect.threadId, sourceRunId),
+                        ),
+                      ),
               ),
               Effect.mapError(
                 (cause) =>

@@ -5,6 +5,7 @@ import {
   isProviderNativeSubagentThread,
   type OrchestrationV2DomainEvent,
   type ProviderThreadId,
+  type RunId,
   type OrchestrationV2RestartCancelledBackgroundWork,
   type OrchestrationV2Subagent,
   type OrchestrationV2ThreadProjection,
@@ -16,6 +17,7 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import * as EffectOutbox from "./EffectOutbox.ts";
@@ -36,6 +38,8 @@ import {
   cancelledTurnItemWork,
   mergeRestartCancelledBackgroundWork,
   neverStarted,
+  restartCutDetail,
+  restartCutNotice,
 } from "./RestartBackgroundNote.ts";
 
 export class ProviderRuntimeRecoveryError extends Schema.TaggedError<ProviderRuntimeRecoveryError>()(
@@ -277,7 +281,7 @@ export const make = Effect.gen(function* () {
           item.type === "subagent" && isAppOwnedDelegation(item) ? [item.subagentId] : [],
         ),
       ]);
-      const detail = `Cancelled because the server ${trigger === "startup" ? "restarted" : "shut down"} before the provider work completed.`;
+      const detail = restartCutDetail(trigger);
       const commandId = CommandId.make(
         `command:runtime-reconcile:${trigger}:${projection.thread.id}:${DateTime.formatIso(now)}`,
       );
@@ -530,6 +534,28 @@ export const make = Effect.gen(function* () {
           },
         });
       }
+      const continuationRun =
+        continueAfterRestart && trigger === "startup"
+          ? restartContinuationRun(
+              { ...projection, providerSessions: sessionsLiveAtStart(projection, stoppedThisPass) },
+              now,
+            )
+          : undefined;
+      // prepareForShutdown, or an earlier pass, may already have queued this run's resume.
+      const continuationQueued = (runId: RunId) =>
+        outbox.get(`effect:restart-continuation:${runId}`).pipe(
+          Effect.map(
+            Option.exists((effect) => effect.status === "pending" || effect.status === "running"),
+          ),
+          Effect.mapError(
+            (cause) =>
+              new ProviderRuntimeRecoveryError({
+                operation: "reconcile",
+                threadId: projection.thread.id,
+                cause,
+              }),
+          ),
+        );
       for (const run of runs) {
         events.push({
           id: yield* allocateEventId(),
@@ -638,33 +664,16 @@ export const make = Effect.gen(function* () {
         }
         // Queued runs and unsent resumes leave no visible turn behind, so there is nothing to explain.
         if (run.status === "queued" || unsentResumeRunIds.includes(run.id)) continue;
+        // The resume's own row explains a run T3 resumes; a declined resume writes this notice.
+        if (continuationRun?.id === run.id || (yield* continuationQueued(run.id))) continue;
         events.push({
           id: yield* allocateEventId(),
-          type: "turn-item.updated",
-          threadId: projection.thread.id,
-          runId: run.id,
-          ...(run.rootNodeId === null ? {} : { nodeId: run.rootNodeId }),
-          providerInstanceId: run.providerInstanceId,
-          occurredAt: now,
-          payload: {
+          ...restartCutNotice({
             id: ids.derive.runSignalTurnItem({ runId: run.id, signal: "server-recovery" }),
-            threadId: projection.thread.id,
-            runId: run.id,
-            nodeId: run.rootNodeId,
-            providerThreadId: run.providerThreadId,
-            providerTurnId: null,
-            nativeItemRef: null,
-            parentItemId: null,
-            // EventSink allocates the real position, after the run's existing items.
-            ordinal: 0,
-            status: "completed",
-            title: trigger === "startup" ? "Server restarted" : "Server shut down",
-            startedAt: now,
-            completedAt: now,
-            updatedAt: now,
-            type: "system_notice",
-            message: detail,
-          },
+            run,
+            trigger,
+            now,
+          }),
         });
       }
       // Blocking waits die with their turn; let child results wake the parent continuation as async tasks.
@@ -834,13 +843,6 @@ export const make = Effect.gen(function* () {
           },
         });
       }
-      const continuationRun =
-        continueAfterRestart && trigger === "startup"
-          ? restartContinuationRun(
-              { ...projection, providerSessions: sessionsLiveAtStart(projection, stoppedThisPass) },
-              now,
-            )
-          : undefined;
       const effects: Array<EffectOutbox.PendingOrchestrationEffectV2> = continuationRun
         ? [
             {

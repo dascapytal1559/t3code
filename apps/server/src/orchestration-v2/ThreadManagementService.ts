@@ -430,6 +430,7 @@ export interface ThreadManagementServiceShape {
   readonly getThreadRecords: Orchestrator.OrchestratorV2["Service"]["getThreadRecords"];
   readonly serverStartedAt: Orchestrator.OrchestratorV2["Service"]["serverStartedAt"];
   readonly restartContinuationPending: Orchestrator.OrchestratorV2["Service"]["restartContinuationPending"];
+  readonly noteUnresumedRestartCut: Orchestrator.OrchestratorV2["Service"]["noteUnresumedRestartCut"];
   readonly getThreadProjection: (
     threadId: ThreadId,
   ) => Effect.Effect<OrchestrationV2ThreadProjection, Orchestrator.OrchestratorV2Error>;
@@ -1780,6 +1781,7 @@ const make = Effect.gen(function* () {
     ),
     serverStartedAt: orchestrator.serverStartedAt,
     restartContinuationPending: orchestrator.restartContinuationPending,
+    noteUnresumedRestartCut: orchestrator.noteUnresumedRestartCut,
     getThreadProjection,
     getCheckpointContext,
     getThreadSnapshot,

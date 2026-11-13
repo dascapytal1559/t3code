@@ -1,13 +1,18 @@
-import type {
-  NodeId,
-  OrchestrationV2PendingBackgroundTask,
-  OrchestrationV2ProviderTurn,
-  OrchestrationV2RestartCancelledBackgroundWork,
-  OrchestrationV2Run,
-  OrchestrationV2RunAttempt,
-  OrchestrationV2TurnItem,
+import {
+  MessageId,
+  type NodeId,
+  type OrchestrationV2DomainEvent,
+  type OrchestrationV2PendingBackgroundTask,
+  type OrchestrationV2ProviderTurn,
+  type OrchestrationV2RestartCancelledBackgroundWork,
+  type OrchestrationV2Run,
+  type OrchestrationV2RunAttempt,
+  type OrchestrationV2TurnItem,
+  type RunId,
+  type TurnItemId,
 } from "@t3tools/contracts";
 import { latestRootProviderFailure, runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
+import type * as DateTime from "effect/DateTime";
 
 type Work = OrchestrationV2RestartCancelledBackgroundWork;
 type Attempt = Pick<OrchestrationV2RunAttempt, "id" | "runId">;
@@ -171,6 +176,52 @@ export function runOutcome(
     (run.restartCancelledBackgroundWork ?? []).some(isAwaitedWork)
     ? "interrupted"
     : run.status;
+}
+
+export const restartContinuationMessageId = (sourceRunId: RunId) =>
+  MessageId.make(`message:restart-continuation:${sourceRunId}`);
+
+export const restartCutDetail = (trigger: "startup" | "shutdown") =>
+  `Cancelled because the server ${trigger === "startup" ? "restarted" : "shut down"} before the provider work completed.`;
+
+/** Explains a run the server cut. A run T3 resumes shows the resume row instead. */
+export function restartCutNotice(input: {
+  readonly id: TurnItemId;
+  readonly run: Pick<
+    OrchestrationV2Run,
+    "id" | "threadId" | "rootNodeId" | "providerThreadId" | "providerInstanceId"
+  >;
+  readonly trigger: "startup" | "shutdown";
+  readonly now: DateTime.Utc;
+}): Omit<Extract<OrchestrationV2DomainEvent, { readonly type: "turn-item.updated" }>, "id"> {
+  const { run, now } = input;
+  return {
+    type: "turn-item.updated",
+    threadId: run.threadId,
+    runId: run.id,
+    ...(run.rootNodeId === null ? {} : { nodeId: run.rootNodeId }),
+    providerInstanceId: run.providerInstanceId,
+    occurredAt: now,
+    payload: {
+      id: input.id,
+      threadId: run.threadId,
+      runId: run.id,
+      nodeId: run.rootNodeId,
+      providerThreadId: run.providerThreadId,
+      providerTurnId: null,
+      nativeItemRef: null,
+      parentItemId: null,
+      // EventSink allocates the real position, after the run's existing items.
+      ordinal: 0,
+      status: "completed",
+      title: input.trigger === "startup" ? "Server restarted" : "Server shut down",
+      startedAt: now,
+      completedAt: now,
+      updatedAt: now,
+      type: "system_notice",
+      message: restartCutDetail(input.trigger),
+    },
+  };
 }
 
 /** Unstarted runs have no lost work to continue, except prepared continuations carrying a source run. */

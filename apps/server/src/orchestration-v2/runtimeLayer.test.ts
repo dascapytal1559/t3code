@@ -5804,6 +5804,94 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       }),
   );
 
+  it.effect.each([true, false])(
+    "explains a restart-cut run only when T3 did not resume it: resumed=%s",
+    (resumed) =>
+      Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const eventSink = yield* EventSink.EventSinkV2;
+        const threadId = ThreadId.make(`runtime-layer-restart-cut-notice-${resumed}`);
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make(`${threadId}:create`),
+          threadId,
+          projectId: ProjectId.make("restart-project"),
+          title: "Restart notice",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: "/tmp/runtime-layer-restart",
+        });
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make(`${threadId}:message`),
+          threadId,
+          messageId: MessageId.make(`${threadId}:message`),
+          text: "Original work",
+          attachments: [],
+          modelSelection,
+          dispatchMode: { type: "start_immediately" },
+        });
+        const source = (yield* orchestrator.getThreadProjection(threadId)).runs[0]!;
+        const now = yield* DateTime.now;
+        yield* eventSink.commitCommand({
+          commandId: CommandId.make(`${threadId}:cut`),
+          threadId,
+          commandType: "provider-runtime.reconcile",
+          acceptedAt: now,
+          events: [
+            {
+              id: EventId.make(`${threadId}:cut`),
+              type: "run.updated",
+              threadId,
+              runId: source.id,
+              occurredAt: now,
+              payload: { ...source, status: "cancelled", completedAt: now },
+            },
+          ],
+          effects: [],
+        });
+        if (resumed) {
+          yield* orchestrator.dispatch({
+            type: "message.dispatch",
+            createdBy: "agent",
+            creationSource: "server",
+            commandId: CommandId.make(`${threadId}:resume`),
+            threadId,
+            messageId: MessageId.make(`message:restart-continuation:${source.id}`),
+            text: "Continue where you left off.",
+            notification: {
+              source: { kind: "system" },
+              outcome: "updated",
+              summary: "T3 Code restarted and resumed this turn",
+              detail: "Continue where you left off.",
+            },
+            attachments: [],
+            modelSelection,
+            dispatchMode: { type: "start_immediately" },
+            restartContinuationOfRunId: source.id,
+          });
+        }
+        yield* orchestrator.noteUnresumedRestartCut(threadId, source.id);
+        yield* orchestrator.noteUnresumedRestartCut(threadId, source.id);
+        const sourceItems = (yield* orchestrator.getThreadProjection(threadId)).turnItems.filter(
+          (item) => item.runId === source.id,
+        );
+        const notices = sourceItems.filter((item) => item.type === "system_notice");
+        assert.deepEqual(
+          notices.map((item) => item.title),
+          resumed ? [] : ["Server restarted"],
+        );
+        if (!resumed)
+          assert.equal(notices[0]?.ordinal, Math.max(...sourceItems.map((item) => item.ordinal)));
+      }),
+  );
+
   it.effect.each([
     ["failed", "shell", false],
     ["completed", "shell", false],

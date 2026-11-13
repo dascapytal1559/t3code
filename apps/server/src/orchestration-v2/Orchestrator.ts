@@ -136,6 +136,8 @@ import {
   continuationStartRetryDelayMs,
   delegatedTaskResultRun,
   isRestartContinuationSource,
+  restartContinuationMessageId,
+  restartCutNotice,
   runOutcome,
 } from "./RestartBackgroundNote.ts";
 import {
@@ -424,6 +426,8 @@ export interface OrchestratorV2Shape {
     taskId?: NodeId,
   ) => Effect.Effect<boolean, OrchestratorProjectionError>;
   readonly restartContinuationPending: (run: OrchestrationV2Run) => Effect.Effect<boolean>;
+  /** Recovery leaves a run it expects T3 to resume unexplained; a run left unresumed gets the notice. */
+  readonly noteUnresumedRestartCut: (threadId: ThreadId, runId: RunId) => Effect.Effect<void>;
   /** Declined continuations emit no thread event; this still wakes waiters. */
   readonly awaitRestartContinuation: (run: OrchestrationV2Run) => Effect.Effect<void>;
   readonly dispatch: (
@@ -15931,6 +15935,45 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       function (run) {
         return awaitsRestartContinuation(run).pipe(Effect.orElseSucceed(() => false));
       },
+    ),
+    noteUnresumedRestartCut: Effect.fn("OrchestratorV2.noteUnresumedRestartCut")(
+      function* (threadId, runId) {
+        yield* threadDispatch.withLock(
+          threadId,
+          Effect.gen(function* () {
+            const resumeMessageId = restartContinuationMessageId(runId);
+            const noticeId = idAllocator.derive.runSignalTurnItem({
+              runId,
+              signal: "server-recovery",
+            });
+            const records = yield* projectionStore.getThreadRecords(
+              threadId,
+              ["runs", "messages", "turnItems"],
+              {
+                messageIds: [resumeMessageId],
+                turnItemRunIds: [runId],
+                turnItemTypes: ["system_notice"],
+              },
+            );
+            const run = records.runs.find((candidate) => candidate.id === runId);
+            if (
+              run?.status !== "cancelled" ||
+              records.messages.some((message) => message.id === resumeMessageId) ||
+              records.turnItems.some((item) => item.id === noticeId)
+            )
+              return;
+            yield* writeSystemEvents([
+              restartCutNotice({ id: noticeId, run, trigger: "startup", now: yield* DateTime.now }),
+            ]);
+          }),
+        );
+      },
+      (effect, threadId, runId) =>
+        effect.pipe(
+          Effect.catchCause((cause) =>
+            Effect.logWarning("Failed to explain a restart-cut run", { threadId, runId, cause }),
+          ),
+        ),
     ),
     awaitRestartContinuation: Effect.fn("OrchestratorV2.awaitRestartContinuation")(function (run) {
       return effectOutbox.awaitSettled(`effect:restart-continuation:${run.id}`).pipe(Effect.ignore);
