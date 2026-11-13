@@ -225,7 +225,9 @@ option, but the Usage page badges every row with the account's total, so a
 Fable-only reset shows on Session and Weekly too and can be redeemed from them.
 The fork badges and offers a reset only on the rows it refills: Session gets
 5-hour and full resets, Weekly gets weekly and full resets, and Weekly · Fable
-gets only Fable resets. The count, the segment's accessibility label, the
+(`seven_day_fable`) gets only Fable resets. A weekly row for any other model
+Claude scopes (`seven_day_<model>`) gets none, so a second scoped model never
+shows the Fable reset. The count, the segment's accessibility label, the
 popover's Use buttons (web) and the account screen's reset list (mobile) all
 follow it.
 

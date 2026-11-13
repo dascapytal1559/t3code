@@ -776,23 +776,22 @@ export function formatDuration(ms: number): string {
 
 const RESET_KIND_REFILLS: Record<
   ServerProviderResetCreditKind,
-  ReadonlyArray<"session" | "weekly" | "scopedWeekly">
+  ReadonlyArray<"session" | "weekly" | "fableWeekly">
 > = {
   session: ["session"],
   weekly: ["weekly"],
   full: ["session", "weekly"],
-  fable: ["scopedWeekly"],
+  fable: ["fableWeekly"],
 };
 
-// Only Claude names reset kinds; its model-scoped weekly rows are `seven_day_<model>`.
-const windowRefillTarget = (window: ServerProviderUsageWindow) =>
-  window.kind === "session"
-    ? "session"
-    : window.kind === "weekly"
-      ? window.id.startsWith("seven_day_")
-        ? "scopedWeekly"
-        : "weekly"
-      : null;
+// Only Claude names reset kinds; its model-scoped weekly rows are `seven_day_<model>`,
+// and no reset kind refills a scoped row other than Fable's.
+const windowRefillTarget = (window: ServerProviderUsageWindow) => {
+  if (window.kind === "session") return "session";
+  if (window.kind !== "weekly") return null;
+  if (window.id === "seven_day_fable") return "fableWeekly";
+  return window.id.startsWith("seven_day_") ? null : "weekly";
+};
 
 /** The banked resets that refill `window`; resets of no stated kind count on every window. */
 export function resetCreditsForWindow(

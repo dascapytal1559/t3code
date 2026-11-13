@@ -1285,6 +1285,7 @@ describe("resetCreditsForWindow", () => {
   });
   const weekly = { ...window, id: "seven_day", kind: "weekly", label: "Weekly" } as const;
   const fable = { ...weekly, id: "seven_day_fable", label: "Weekly · Fable" } as const;
+  const opus = { ...weekly, id: "seven_day_opus", label: "Weekly · Opus" } as const;
   const monthly = { ...window, id: "monthly_spend", kind: "monthly", label: "Monthly" } as const;
   const choiceIds = (found: ServerProviderResetCredits | undefined) =>
     found
@@ -1297,6 +1298,7 @@ describe("resetCreditsForWindow", () => {
     ["Session", window, 4, ["session-grant", "full-grant"]],
     ["Weekly", weekly, 6, ["weekly-grant", "full-grant"]],
     ["Weekly · Fable", fable, 2, ["fable-grant"]],
+    ["a second scoped model's Weekly", opus, undefined, []],
     ["Monthly", monthly, undefined, []],
   ] as const)("counts and offers only the resets that refill %s", (_, row, count, offered) => {
     const found = resetCreditsForWindow(
