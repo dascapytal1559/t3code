@@ -199,14 +199,12 @@ function terminalProcessLabel(count: number): string {
 function SidebarModelIcon(props: {
   entry: SidebarProviderEntry | null;
   providerEntryByInstanceId: ReadonlyMap<string, SidebarProviderEntry>;
-  // In a card's lead slot, where the project icon used to be.
-  lead?: boolean;
 }) {
   const { entry } = props;
   if (entry === null) return null;
   const showBadge = shouldShowInstanceBadge(entry, props.providerEntryByInstanceId.values());
   return (
-    <span className={cn("inline-flex shrink-0 items-center", props.lead && showBadge && "me-1")}>
+    <span className="inline-flex shrink-0 items-center">
       <ProviderInstanceIcon
         driverKind={entry.driverKind}
         displayName={entry.displayName}
@@ -216,11 +214,7 @@ function SidebarModelIcon(props: {
         showBadge={showBadge}
         accountNumber={entry.accountNumber}
         size="compact"
-        iconClassName={props.lead ? "size-4" : "opacity-60"}
-        // The compact badge's 7px digit is too small to read as the row's lead.
-        {...(props.lead
-          ? { badgeClassName: "right-[-0.3125rem] bottom-[-0.3125rem] h-3.5 min-w-3.5 text-4xs" }
-          : {})}
+        iconClassName="opacity-60"
       />
     </span>
   );
@@ -1202,9 +1196,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   // Without a branch or machine to label it, the meta line would hold only trailing
   // badges and icons, so the row moves them to the title line instead.
   const inFirstMateGroup = props.coordinator === true || props.crewTree !== undefined;
-  // Outside FirstMate a card is one line, led by the model icon where the project icon was.
-  const modelLeads = variant === "card" && !inFirstMateGroup;
-  const trailingModelIcon = modelLeads ? null : (
+  // Outside FirstMate a card is one line, led by the project icon.
+  const oneLine = variant === "card" && !inFirstMateGroup;
+  const trailingModelIcon = oneLine ? null : (
     <SidebarModelIcon
       entry={providerEntry}
       providerEntryByInstanceId={props.providerEntryByInstanceId}
@@ -1268,8 +1262,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         {trailingModelIcon}
       </span>
     ) : null;
-  // An agent name or a model-led card puts the heading on the first line, with no project line.
-  const titleOnTopLine = hasAgentName || modelLeads;
+  // An agent name or a one-line card puts the heading on the first line, with no project line.
+  const titleOnTopLine = hasAgentName || oneLine;
 
   if (variant !== "card") {
     const multiline = variant === "folder-multiline";
@@ -1537,13 +1531,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             <div className="flex h-5 min-w-0 items-center gap-1.5">
               {/* A coordinator's project icon stays first, at the card's edge. */}
               {props.coordinator ? null : draftIndicator}
-              {modelLeads && providerEntry !== null ? (
-                <SidebarModelIcon
-                  entry={providerEntry}
-                  providerEntryByInstanceId={props.providerEntryByInstanceId}
-                  lead
-                />
-              ) : props.project ? (
+              {props.project ? (
                 <ProjectFavicon project={props.project} className="size-4 shrink-0" />
               ) : null}
               {props.coordinator ? draftIndicator : null}

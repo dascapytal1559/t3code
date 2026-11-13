@@ -841,18 +841,19 @@ of `ComposerPrimaryActions.tsx`.
 
 ## One-line thread cards
 
-<img src="media/one-line-cards.png" width="256" alt="Three one-line sidebar cards: each starts with the model's icon carrying a small account number (3, 1, 2), then the title, then Done">
+<img src="media/one-line-cards.png" width="256" alt="Five one-line sidebar cards: each starts with its project's icon (a dashed speech bubble for No project, letter tiles for the others), then the title, then its age">
 
-The captain wants each top-level thread on one line, with the account it runs
-on in view rather than the project. On web and desktop, a sidebar card outside
-the FirstMate group is one line: the model's icon where upstream puts the
-project icon, then the title (or the project's agent name), then the status or
-age. Upstream's card has a project line over a title line. A card with a branch, machine
+The captain wants each top-level thread on one line. On web and desktop, a
+sidebar card outside the FirstMate group is one line: the project's icon (the
+dashed speech bubble for a No project thread), then the title (or the project's
+agent name), then the status or age. Upstream's card has a project line over a
+title line. The card shows neither the model nor the account; the hover card
+keeps both. A card with a branch, machine
 label or diff keeps that meta line under the title. Otherwise its PR and
 terminal badges sit on the title line, which truncates before them, the same
 as folder multi-line rows (`isThreadMetaLineEmpty` in
 `apps/web/src/components/Sidebar.logic.ts`). The hover card and the
-screen-reader label still name the project. FirstMate's coordinator card and its crew keep
+screen-reader label still name the project and the model. FirstMate's coordinator card and its crew keep
 the two-line layout.
 
 Every row draws only the account the thread runs on now. Upstream draws up to
@@ -871,12 +872,10 @@ accent colour still tints the badge (upstream's main way to tell accounts
 apart). Disabled accounts keep their number, but removing an account renumbers
 the ones after it, and each environment numbers its own. Screens that print the
 account's name beside its icon (the Settings › Providers card, Usage) show the
-accent dot without a number, since the name is already there. In a card's lead
-slot the badge is the default size (8px digit), since the compact badge's 7px
-digit does not read there.
+accent dot without a number, since the name is already there.
 
 Upstream code it touches, for syncs: the card branch of `SidebarThreadRow`
-(`modelLeads`, `titleOnTopLine`) and `SidebarModelIcon`, which replaces
+(`oneLine`, `titleOnTopLine`) and `SidebarModelIcon`, which replaces
 upstream's `SidebarProviderStack`, in
 `apps/web/src/components/sidebar/SidebarThreadRow.tsx`; `accountNumber` on
 `ProviderInstanceIcon`, which replaces upstream's `badgeContent`, and on

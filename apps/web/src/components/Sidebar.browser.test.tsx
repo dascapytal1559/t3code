@@ -3,8 +3,11 @@ import {
   DEFAULT_CLIENT_SETTINGS,
   EnvironmentId,
   ProjectId,
+  ProviderDriverKind,
+  ProviderInstanceId,
   ThreadId,
   type ScopedThreadRef,
+  type ServerProvider,
 } from "@t3tools/contracts";
 import { isMacPlatform } from "@t3tools/shared/keybindings";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -24,7 +27,23 @@ import { THREAD_JUMP_HINT_SHOW_DELAY_MS } from "./Sidebar.logic";
 import { SortableThreadRow } from "./sidebar/SidebarThreadRow";
 import { SidebarProvider } from "./ui/sidebar";
 
+const providerState = vi.hoisted(() => ({
+  providers: new Map<string, unknown>(),
+  serverConfigs: new Map<string, unknown>(),
+}));
 vi.mock("../state/entities", { spy: true });
+vi.mock(import("../state/presentation"), async (original) => {
+  const { Atom } = await import("effect/reactivity");
+  const real = await original();
+  return {
+    ...real,
+    environmentPresentations: {
+      ...real.environmentPresentations,
+      providersByEnvironmentAtom: Atom.make(() => providerState.providers),
+      serverConfigsAtom: Atom.make(() => providerState.serverConfigs),
+    },
+  } as never;
+});
 vi.mock("../hooks/useHandleNewThread", { spy: true });
 vi.mock("../hooks/useThreadRouteTarget", { spy: true });
 vi.mock("./sidebar/SidebarThreadRow", { spy: true });
@@ -188,5 +207,79 @@ describe("sidebar render isolation", () => {
     await userEvent.keyboard(`{/${modifier}}`);
     expect(rowRenders()).toBeGreaterThan(beforeRelease);
     expect(jumpLabelsSince(beforeRelease)).toEqual([]);
+  });
+});
+
+describe("sidebar thread cards", () => {
+  it("lead with the project icon, or the No project icon, instead of the model and account", async () => {
+    const environmentId = EnvironmentId.make("local");
+    const provider = (instanceId: string): ServerProvider => ({
+      instanceId: ProviderInstanceId.make(instanceId),
+      driver: ProviderDriverKind.make("claudeAgent"),
+      displayName: instanceId,
+      enabled: true,
+      installed: true,
+      version: "1.0.0",
+      status: "ready",
+      auth: { status: "authenticated" },
+      checkedAt: "2026-11-06T00:00:00.000Z",
+      models: [],
+      slashCommands: [],
+      skills: [],
+    });
+    // Two Claude accounts, so the thread on the second would have drawn an account badge.
+    providerState.providers = new Map([
+      [environmentId, [provider("claudeAgent"), provider("claude2")]],
+    ]);
+    providerState.serverConfigs = new Map([
+      [environmentId, { settings: { providerInstances: {} } }],
+    ]);
+    const withIcon = {
+      ...project("persistent-agents"),
+      title: "Persistent agents",
+      projectIcon: { kind: "monogram", text: "PA", color: "pink" },
+    } as const satisfies Project;
+    const scratch = {
+      ...project("scratch"),
+      title: "No project",
+      isScratch: true,
+      projectIcon: { kind: "lucide", name: "message-square-dashed", color: "gray" },
+    } as const satisfies Project;
+    const threads = [
+      makeThreadFixture({
+        environmentId,
+        id: ThreadId.make("pa"),
+        projectId: withIcon.id,
+        title: "Persistent agents",
+        providerInstanceId: ProviderInstanceId.make("claude2"),
+      }),
+      makeThreadFixture({
+        environmentId,
+        id: ThreadId.make("garmin"),
+        projectId: scratch.id,
+        title: "Garmin setup",
+        providerInstanceId: ProviderInstanceId.make("claude2"),
+      }),
+    ];
+    vi.mocked(useProjects).mockReturnValue([withIcon, scratch]);
+    vi.mocked(useQuietThreadShells).mockReturnValue(threads);
+    vi.mocked(useThreadRouteTarget).mockReturnValue({ kind: "none" } as never);
+    await using screen = await render(
+      <SidebarProvider>
+        <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
+      </SidebarProvider>,
+    );
+
+    const row = (threadId: string) =>
+      document.querySelector<HTMLElement>(`[data-sidebar-row="local:${threadId}"]`);
+    await expect.element(screen.getByText("Garmin setup").first()).toBeInTheDocument();
+    expect(row("pa")?.dataset.testid).toBe("sidebar-row-card");
+    expect(row("pa")?.querySelector("svg text")?.textContent).toBe("PA");
+    await vi.waitFor(() =>
+      expect(row("garmin")?.querySelector("svg.lucide-message-square-dashed")).not.toBeNull(),
+    );
+    // ProviderInstanceIcon's wrapper, which carries the account badge.
+    expect(row("pa")?.querySelector(".isolate")).toBeNull();
+    expect(row("garmin")?.querySelector(".isolate")).toBeNull();
   });
 });
