@@ -1,11 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as Schema from "effect/Schema";
 
-import {
-  DecisionsSetInput,
-  decisionSince,
-  formatDecisionReply,
-} from "./decisions.ts";
+import { DecisionsSetInput, decisionSince, formatDecisionReply } from "./decisions.ts";
 
 const decodeSet = Schema.decodeUnknownSync(DecisionsSetInput);
 

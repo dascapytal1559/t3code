@@ -499,7 +499,8 @@ A dated snooze returns on the minute its time passes, with no push. These
 snoozes live in FirstMate's list, not upstream's thread snooze, which needs a
 date and would be a second record; the thread itself is never snoozed. Snooze
 from the card's context menu or the chat header's menu on such a thread also
-snoozes the item.
+snoozes the item, and waking it from either menu or dragging it out of Snoozed
+brings the item back (and the thread too, if it carries its own snooze).
 
 Snooze, Bring back and Archive on a running worker are actions T3 logs for
 FirstMate (`orchestration.actOnDecision`, operate scope). The card moves at
@@ -517,7 +518,7 @@ Code: `resolveCaptainCards` in
 in `apps/server/src/decisions/Decisions.ts`. Upstream files it touches, for
 syncs: the snoozed placement and sort in `partitionSidebarThreads` and the
 snooze and wake routing in `Sidebar.tsx`, the label and time props in
-`SidebarThreadRow.tsx`, and the snooze routing in `useThreadActionMenu.ts`.
+`SidebarThreadRow.tsx`, and the snooze and wake routing in `useThreadActionMenu.ts`.
 
 ## Snoozed stays at the bottom, with no Settled
 

@@ -42,7 +42,11 @@ function ResumeAction({
     setPending(false);
   }
   return (
-    <InlineButton touchTarget="padded" disabled={!canResume || pending} onClick={() => void resume()}>
+    <InlineButton
+      touchTarget="padded"
+      disabled={!canResume || pending}
+      onClick={() => void resume()}
+    >
       {pending ? "Resuming..." : "Resume"}
     </InlineButton>
   );
