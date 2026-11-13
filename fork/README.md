@@ -969,12 +969,18 @@ chosen width, and opening a document used to squeeze the chat to make room.
   the chat inside the old window; it shows only when the window cannot grow.
 - The hold ends on events, not timers: the window answers each request with the
   content width it resized from and to (or that it could not, or had nothing to
-  do), and the hold ends in the resize that brings the viewport to that width,
-  less the gap the viewport keeps from the content (DevTools docked beside it),
-  learned from a request made at rest. A toggle back mid-resize
+  do), and the hold ends once the viewport reaches that width, less the gap the
+  viewport keeps from the content (DevTools docked beside it), learned from a
+  request made at rest. Closing ends it in that resize; opening waits until a
+  frame at the new width has painted (a one-second cap covers a window that
+  draws no frames). A toggle back mid-resize
   keeps holding toward the new state. A resize the window did not ask for (a
   hand resize, maximize, a display change) lets go as the viewport follows it,
   and a thread change lets go at once. Nothing animates or fades.
+- macOS shows the grown area a frame or more before the page draws there, in
+  the page root's background. Themes paint the root in their chrome colour, so
+  on desktop the root takes the panel's background instead, set all the time:
+  changing it as the panel opens repaints the whole page and delays the panel.
 - Near the screen's right edge the window moves left only as far as it must
   and moves back on close. A screen too narrow for the full width grows as far
   as it can and the chat gives way for the rest. Full screen and maximized

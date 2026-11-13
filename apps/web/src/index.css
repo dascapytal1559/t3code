@@ -736,6 +736,12 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   body {
     background-color: var(--app-chrome-background);
   }
+  /* Fork: until the page draws in a window grown for the right panel, macOS shows the
+     root's background there, so on desktop it is the panel's. Set ahead: changing it as the
+     panel opens repaints the whole page. Outranks the theme's inline chrome colour. */
+  html.electron {
+    background-color: var(--background) !important;
+  }
   body {
     @apply text-foreground relative;
   }

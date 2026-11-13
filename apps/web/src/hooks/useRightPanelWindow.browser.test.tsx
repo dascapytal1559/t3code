@@ -186,6 +186,13 @@ describe("useRightPanelWindow", () => {
 
       await screen.rerender(<Workspace open windowWidth={1540} />);
       await act(() => desktop.resize(1540));
+      // macOS shows the grown window before the page has drawn there: the hold lasts until a
+      // frame at the new width has been painted, which the frame after it marks.
+      expect(row.style.width).toBe("1540px");
+      await act(() => vi.advanceTimersToNextFrame());
+      expect(row.style.width).toBe("1540px");
+      expect(titlebar.getAttribute("data-open")).toBe("false");
+      await act(() => vi.advanceTimersToNextFrame());
       expect(row.style.width).toBe("");
       expect(titlebar.getAttribute("data-open")).toBe("true");
       expect(widthOf(chat)).toBe(1000);
@@ -233,7 +240,7 @@ describe("useRightPanelWindow", () => {
       // The wider window leaves the narrow layout.
       await screen.rerender(<Workspace open windowWidth={1440} />);
       await act(() => desktop.resize(1440));
-      expect(row.style.width).toBe("");
+      await vi.waitFor(() => expect(row.style.width).toBe(""));
       expect(widthOf(chat)).toBe(900);
       expect(widthOf(screen.getByTestId("panel").element())).toBe(540);
     });
@@ -326,7 +333,7 @@ describe("useRightPanelWindow", () => {
       expect(row.style.width).toBe("1540px");
       await screen.rerender(<Workspace open windowWidth={1540} />);
       await act(() => desktop.resize(1540));
-      expect(row.style.width).toBe("");
+      await vi.waitFor(() => expect(row.style.width).toBe(""));
       expect(titlebar.getAttribute("data-open")).toBe("true");
       expect(widthOf(chat)).toBe(1000);
 
@@ -379,10 +386,12 @@ describe("useRightPanelWindow", () => {
         router: false,
       });
       const chat = screen.getByTestId("chat").element();
+      const row = screen.getByTestId("row").element() as HTMLElement;
       await screen.rerender(<Workspace open windowWidth={1000} />);
       await act(() => desktop.requests[0]!.answer(1540));
       await screen.rerender(<Workspace open windowWidth={1540} />);
       await act(() => desktop.resize(1540));
+      await vi.waitFor(() => expect(row.style.width).toBe(""));
       expect(widthOf(chat)).toBe(1000);
 
       await screen.rerender(<Workspace open windowWidth={1740} />);
@@ -401,6 +410,7 @@ describe("useRightPanelWindow", () => {
       await act(() => desktop.requests[2]!.answer(1740));
       await screen.rerender(<Workspace open windowWidth={1740} />);
       await act(() => desktop.resize(1740));
+      await vi.waitFor(() => expect(row.style.width).toBe(""));
 
       // A thread without the panel unmounts it at once, and the window still sheds its width.
       await screen.rerender(<Workspace open windowWidth={1940} />);

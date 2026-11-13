@@ -10,10 +10,10 @@ type DesktopBridge = NonNullable<Window["desktopBridge"]>;
 type WindowOutcome = RightPanelWindowResult["status"] | "interrupted";
 
 /**
- * Fork: the window resizes for the right panel a frame or more after the layout changes.
- * Meanwhile the row holds its width, so the chat never moves: the panel sits inline past
- * the window's edge (never a sheet inside it) until the resize that reaches the width
- * the window reported, which ends the hold in that frame. There is no timeout.
+ * Fork: the window resizes for the right panel frames after the layout changes. Meanwhile
+ * the row holds its width, so the chat never moves and the panel sits inline past the
+ * window's edge (never a sheet inside it) until the viewport reaches the reported width.
+ * Opening holds until a frame at that width has painted; nothing else times out.
  */
 export function useRightPanelWindow(input: {
   readonly open: boolean;
@@ -162,10 +162,28 @@ function holdRowWidth(row: HTMLElement, width: number): () => void {
   };
 }
 
+/** Only for a window that draws no frames, such as a hidden one. */
+const PAINT_WAIT_CAP_MS = 1_000;
+
 /**
- * Asks the window to resize and settles once the viewport has followed the content width
- * it reported, at once when it reports no change, or as the viewport follows a resize from
- * elsewhere. Widths on the way there keep waiting. Returns a cancel function.
+ * Calls back once a frame laid out at the current viewport has been painted: a frame's
+ * callbacks run after the previous frame's paint. Returns a cancel function.
+ */
+function afterPaint(callback: () => void): () => void {
+  let frame = requestAnimationFrame(() => {
+    frame = requestAnimationFrame(callback);
+  });
+  const cap = setTimeout(callback, PAINT_WAIT_CAP_MS);
+  return () => {
+    cancelAnimationFrame(frame);
+    clearTimeout(cap);
+  };
+}
+
+/**
+ * Settles once the viewport reaches the reported width (growing: once a frame there has
+ * painted, as macOS shows the grown window before the page draws in it), at once on no
+ * change, or as the viewport follows a resize from elsewhere. Returns a cancel function.
  */
 function requestWindow(
   bridge: DesktopBridge,
@@ -178,6 +196,7 @@ function requestWindow(
   const viewportAtRequest = window.innerWidth;
   let result: RightPanelWindowResult | null = null;
   let interruption: { readonly contentWidth: number; readonly viewport: number } | null = null;
+  let stopWaitingForPaint: (() => void) | null = null;
   let done = false;
   const finish = (outcome: WindowOutcome) => {
     if (done) return;
@@ -195,7 +214,9 @@ function requestWindow(
       }
     } else if (result !== null) {
       if (result.status !== "resized") finish(result.status);
-      else if (reached(result.contentWidth)) finish("resized");
+      else if (!reached(result.contentWidth)) return;
+      else if (!open) finish("resized");
+      else stopWaitingForPaint ??= afterPaint(() => finish("resized"));
     }
   };
   // Listening starts before the request, so geometry that beats the answer is not missed.
@@ -208,6 +229,7 @@ function requestWindow(
   });
   const stop = () => {
     done = true;
+    stopWaitingForPaint?.();
     window.removeEventListener("resize", check);
     stopObserving();
     stopInterrupted();
