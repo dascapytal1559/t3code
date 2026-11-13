@@ -1,7 +1,8 @@
 # Product usage data
 
-This fork sends no product usage events and no relay connection traces unless you turn them on
-with `T3CODE_TELEMETRY_ENABLED=true` (see below). When on, the T3 Code server sends product usage
+This fork's server and desktop app send no product usage events and no relay connection traces
+unless you turn them on with `T3CODE_TELEMETRY_ENABLED=true` (see below). Browser and mobile
+clients are separate; see the sections below for what they send. When on, the T3 Code server sends product usage
 events to T3 Code's own endpoint at `ingest.t3.codes`, associated with a hashed account or installation identifier. To count how many installations one person
 uses, the server also sends hashed account identifiers: your T3 Connect account, your OpenAI and
 Claude accounts when you are signed in, and a random identifier for each device that connects. The endpoint keeps a copy of each
