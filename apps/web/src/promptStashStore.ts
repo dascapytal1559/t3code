@@ -111,6 +111,14 @@ function readPersistedEntries(): ReadonlyArray<PromptStashEntry> | null {
   }
 }
 
+/** Starts each write from storage so entries other tabs stashed or took are not overwritten. */
+function latestEntries(memory: ReadonlyArray<PromptStashEntry>): ReadonlyArray<PromptStashEntry> {
+  const stored = readPersistedEntries();
+  if (!stored) return memory;
+  const memoryById = new Map(memory.map((entry) => [entry.id, entry]));
+  return stored.map((entry) => memoryById.get(entry.id) ?? entry);
+}
+
 interface PromptStashStoreState {
   entries: ReadonlyArray<PromptStashEntry>;
   stashEntry: (entry: PromptStashEntry) => {
@@ -135,7 +143,7 @@ export const usePromptStashStore = create<PromptStashStoreState>()((set, get) =>
   pulse: () => set((state) => ({ pulseKey: state.pulseKey + 1 })),
   undoStash: (entryId, evicted) => {
     const nextEntries = [
-      ...get().entries.filter((candidate) => candidate.id !== entryId),
+      ...latestEntries(get().entries).filter((candidate) => candidate.id !== entryId),
       ...(evicted ? [evicted] : []),
     ];
     const { durable } = persistEntries(nextEntries);
@@ -143,7 +151,7 @@ export const usePromptStashStore = create<PromptStashStoreState>()((set, get) =>
     return { durable };
   },
   stashEntry: (entry) => {
-    const nextEntries = [entry, ...get().entries];
+    const nextEntries = [entry, ...latestEntries(get().entries)];
     const evicted = nextEntries.length > MAX_STASH_ENTRIES ? (nextEntries.pop() ?? null) : null;
     const { written, durable } = persistEntries(nextEntries);
     // Failed writes must not duplicate the intact composer; eviction also commits only on success.
@@ -154,7 +162,7 @@ export const usePromptStashStore = create<PromptStashStoreState>()((set, get) =>
     return { evicted, written: true, durable };
   },
   takeEntry: (entryId) => {
-    const entries = get().entries;
+    const entries = latestEntries(get().entries);
     const entry = entries.find((candidate) => candidate.id === entryId) ?? null;
     if (!entry) return { entry: null, durable: true };
     const nextEntries = entries.filter((candidate) => candidate.id !== entryId);

@@ -154,6 +154,7 @@ const replayHttpClient = (
   replayGate: ProviderReplayGate | undefined,
   onPrompt: ((input: unknown) => void) | undefined,
   onEnvironment: ((input: unknown) => void) | undefined,
+  beforeResponse: ((path: string) => Effect.Effect<void>) | undefined,
 ) =>
   HttpClient.make((request, url) =>
     Effect.tryPromise({
@@ -213,7 +214,10 @@ const replayHttpClient = (
         new HttpClientError.HttpClientError({
           reason: new HttpClientError.TransportError({ request, cause }),
         }),
-    }).pipe(Effect.map((response) => HttpClientResponse.fromWeb(request, response))),
+    }).pipe(
+      Effect.map((response) => HttpClientResponse.fromWeb(request, response)),
+      Effect.tap(() => beforeResponse?.(url.pathname) ?? Effect.void),
+    ),
   );
 
 export const replayServer = (
@@ -221,6 +225,8 @@ export const replayServer = (
   options?: {
     readonly external?: boolean;
     readonly environment?: NodeJS.ProcessEnv;
+    readonly processExit?: Effect.Effect<void>;
+    readonly beforeResponse?: (path: string) => Effect.Effect<void>;
     readonly onPrompt?: (input: unknown) => void;
     readonly onEnvironment?: (input: unknown) => void;
     readonly replayGate?: ProviderReplayGate;
@@ -243,6 +249,7 @@ export const replayServer = (
           options?.replayGate,
           options?.onPrompt,
           options?.onEnvironment,
+          options?.beforeResponse,
         ),
       ),
     );
@@ -251,6 +258,7 @@ export const replayServer = (
       url: BASE_URL,
       version: transcript.version,
       external: options?.external ?? false,
+      ...(options?.external ? {} : { processExit: options?.processExit ?? Effect.never }),
     };
     const borrowers = options?.borrowers;
     return OpenCode2Server.OpenCode2Server.of({
@@ -280,6 +288,8 @@ const makeReplayAdapter = (
   options?: {
     readonly external?: boolean;
     readonly environment?: NodeJS.ProcessEnv;
+    readonly processExit?: Effect.Effect<void>;
+    readonly beforeResponse?: (path: string) => Effect.Effect<void>;
     readonly onPrompt?: (input: unknown) => void;
     readonly onEnvironment?: (input: unknown) => void;
     readonly replayGate?: ProviderReplayGate;
@@ -335,6 +345,8 @@ export const openCode2ReplayRuntime = (
   options?: {
     readonly external?: boolean;
     readonly environment?: NodeJS.ProcessEnv;
+    readonly processExit?: Effect.Effect<void>;
+    readonly beforeResponse?: (path: string) => Effect.Effect<void>;
     readonly version?: string;
     readonly onPrompt?: (input: unknown) => void;
     readonly onEnvironment?: (input: unknown) => void;

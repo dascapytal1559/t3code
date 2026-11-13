@@ -62,6 +62,7 @@ interface MutableBucket {
   speedPremiumUsd: number;
   records: number;
   unpricedRecords: number;
+  unpricedTokens: number;
   providerReportedRecords: number;
   sessions: Set<string>;
 }
@@ -170,12 +171,18 @@ export function mergeUsageCopies(held: UsageRecord, copy: UsageRecord): UsageRec
     b.cacheCreationTokens <= a.cacheCreationTokens &&
     b.outputTokens <= a.outputTokens &&
     b.reasoningTokens <= a.reasoningTokens &&
+    (copy.cacheCreation1hTokens ?? 0) <= (held.cacheCreation1hTokens ?? 0) &&
     reportedCostUsd === held.reportedCostUsd
   ) {
     return held;
   }
+  const cacheCreation1hTokens = Math.max(
+    held.cacheCreation1hTokens ?? 0,
+    copy.cacheCreation1hTokens ?? 0,
+  );
   return {
     ...held,
+    ...(cacheCreation1hTokens > 0 ? { cacheCreation1hTokens } : {}),
     totals: {
       uncachedInputTokens: Math.max(a.uncachedInputTokens, b.uncachedInputTokens),
       cachedInputTokens: Math.max(a.cachedInputTokens, b.cachedInputTokens),
@@ -301,7 +308,14 @@ export class UsageAggregator {
       this.#options.priceOverrides,
     );
     bucket.records += 1;
-    if (priced.costSource === "unpriced") bucket.unpricedRecords += 1;
+    if (priced.costSource === "unpriced") {
+      bucket.unpricedRecords += 1;
+      bucket.unpricedTokens +=
+        record.totals.uncachedInputTokens +
+        record.totals.cachedInputTokens +
+        record.totals.cacheCreationTokens +
+        record.totals.outputTokens;
+    }
     if (priced.costSource === "providerReported") bucket.providerReportedRecords += 1;
     if (this.#originUsage !== null) {
       const key = this.#options.attributeOrigin?.(record) ?? null;
@@ -392,6 +406,7 @@ export class UsageAggregator {
         speedPremiumUsd: 0,
         records: 0,
         unpricedRecords: 0,
+        unpricedTokens: 0,
         providerReportedRecords: 0,
         sessions: new Set<string>(),
       };
@@ -439,6 +454,7 @@ export class UsageAggregator {
         costSource: resolveCostSource(bucket),
         records: bucket.records,
         unpricedRecords: bucket.unpricedRecords,
+        unpricedTokens: bucket.unpricedTokens,
         sessions: bucket.sessions.size,
       });
     }
