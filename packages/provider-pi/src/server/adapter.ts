@@ -487,12 +487,13 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
       if (!resolvedLaunchArgs.ok) {
         return yield* protocolError(resolvedLaunchArgs.message);
       }
+      const threadEnvironment = ProviderAdapter.withThreadEnvironment(
+        options.environment,
+        input.runtimePolicy,
+      );
       const launch = buildPiRpcLaunch({
         launchArgs: resolvedLaunchArgs.args,
-        environment: ProviderAdapter.withThreadEnvironment(
-          options.environment,
-          input.runtimePolicy,
-        ),
+        environment: threadEnvironment,
         mcpSession,
         extensionPath,
         runtimeMode: input.runtimePolicy.runtimeMode,
@@ -2717,7 +2718,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
       ) {
         const forkLaunch = buildPiRpcLaunch({
           launchArgs: resolvedLaunchArgs.args,
-          environment: options.environment,
+          environment: threadEnvironment,
           mcpSession: undefined,
           extensionPath: undefined,
           shortLived: true,

@@ -37,6 +37,7 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { HandoffEndpoints } from "@t3tools/client-runtime/handoff";
 import {
   IDLE_COMPACTING_LABELS,
+  resolveAgentMessageFold,
   resolveUserMessageFileCards,
   resolveUserMessagePresentation,
 } from "@t3tools/client-runtime/user-message";
@@ -1370,7 +1371,7 @@ function AgentMessageFoldHeader(props: {
   readonly senderThreadId?: ThreadId;
   /** A linked environment's sender title, for when this client cannot reach it. */
   readonly senderTitle?: string;
-  readonly summary: string;
+  readonly text: string;
   readonly expanded: boolean;
   readonly onToggle: () => void;
   readonly iconSubtleColor: ColorValue;
@@ -1378,11 +1379,20 @@ function AgentMessageFoldHeader(props: {
   const senderShell = useQuietThreadShell(
     props.senderThreadId ? scopeThreadRef(props.environmentId, props.senderThreadId) : null,
   );
-  const label = senderShell?.title.trim() || props.senderTitle?.trim() || "Agent";
+  const knownFold = resolveAgentMessageFold(props.text);
+  const label =
+    knownFold?.label || senderShell?.title.trim() || props.senderTitle?.trim() || "Agent";
+  const summary =
+    knownFold?.summary ??
+    replaceComposerContextReferences(props.text, (ref) => ref.label)
+      .split(/\r?\n/)
+      .find((line) => line.trim().length > 0)
+      ?.trim() ??
+    "";
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${label}: ${props.summary}`}
+      accessibilityLabel={`${label}: ${summary}`}
       accessibilityHint={`Double tap to ${props.expanded ? "hide" : "show"} the message.`}
       accessibilityState={{ expanded: props.expanded }}
       hitSlop={4}
@@ -1406,7 +1416,7 @@ function AgentMessageFoldHeader(props: {
         {label}
       </Text>
       <Text numberOfLines={1} className="min-w-0 shrink text-sm text-user-bubble-foreground">
-        {props.summary}
+        {summary}
       </Text>
       <ThreadDisclosureChevron
         expanded={props.expanded}
@@ -2105,12 +2115,7 @@ function renderFeedEntry(
                   environmentId={senderRef?.environmentId ?? props.environmentId}
                   senderThreadId={senderRef?.threadId}
                   {...(message.linkedSender ? { senderTitle: message.linkedSender.title } : {})}
-                  summary={
-                    replaceComposerContextReferences(presentation.text, (ref) => ref.label)
-                      .split(/\r?\n/)
-                      .find((line) => line.trim().length > 0)
-                      ?.trim() ?? ""
-                  }
+                  text={presentation.text}
                   expanded={foldExpanded}
                   onToggle={() => props.onToggleWorkRow(foldRowId, entry.id)}
                   iconSubtleColor={iconSubtleColor}

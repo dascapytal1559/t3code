@@ -531,13 +531,14 @@ const openRuntime = Effect.fnUntraced(function* (
   providerSessionId = SESSION_ID,
   forkFake?: FakePi,
   continuationRequests?: PiAdapterV2Options["continuationRequests"],
+  policy = runtimePolicy,
 ) {
   const adapter = yield* makeAdapter(fake, "", forkFake, continuationRequests);
   const runtime = yield* adapter.openSession({
     threadId,
     providerSessionId,
     modelSelection: modelSelection(model),
-    runtimePolicy,
+    runtimePolicy: policy,
   });
   const emitted = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
   yield* runtime.events.pipe(
@@ -2115,11 +2116,20 @@ describe("PiAdapterV2", () => {
       const fake = yield* makeFakePi;
       const forkFake = yield* makeFakePi;
       const forkFile = "/fake/forked-into-worktree.jsonl";
-      const { runtime } = yield* openRuntime(fake, "default", THREAD_ID, SESSION_ID, forkFake);
+      const threadPolicy = { ...runtimePolicy, environment: { PI_CODING_AGENT_DIR: "/thread/pi" } };
+      const { runtime } = yield* openRuntime(
+        fake,
+        "default",
+        THREAD_ID,
+        SESSION_ID,
+        forkFake,
+        undefined,
+        threadPolicy,
+      );
       const providerThread = yield* runtime.ensureThread({
         threadId: THREAD_ID,
         modelSelection: modelSelection("default"),
-        runtimePolicy,
+        runtimePolicy: threadPolicy,
       });
       const dir = yield* fileSystem.makeTempDirectoryScoped();
       const sessionAt = (sessionCwd: string) =>
@@ -2148,6 +2158,7 @@ describe("PiAdapterV2", () => {
       const resumed = yield* runtime.resumeThread({ providerThread: otherCwd });
       const args = forkFake.lastSpawn().args;
       assert.equal(args[args.indexOf("--fork") + 1], otherCwd.nativeThreadRef?.nativeId);
+      assert.equal(forkFake.lastSpawn().env.PI_CODING_AGENT_DIR, "/thread/pi");
       assert.equal(lastSwitch(), forkFile);
       assert.equal(resumed.nativeThreadRef?.nativeId, forkFile);
     }).pipe(Effect.scoped, Effect.provide(layerTest)),
