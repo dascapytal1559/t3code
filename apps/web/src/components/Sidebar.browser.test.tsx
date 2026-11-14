@@ -287,6 +287,43 @@ describe("sidebar thread cards", () => {
     expect(row("pa")?.querySelector(".isolate")).toBeNull();
     expect(row("garmin")?.querySelector(".isolate")).toBeNull();
   });
+
+  it("offer no hover Snooze or Settle, on FirstMate's crew or any other thread", async () => {
+    const environmentId = EnvironmentId.make("local");
+    providerState.providers = new Map();
+    providerState.serverConfigs = new Map([
+      [environmentId, { settings: { providerInstances: {} } }],
+    ]);
+    const home = project("firstmate");
+    const shell = (id: string, title: string, extra: Partial<EnvironmentThreadShell> = {}) => ({
+      ...makeThreadFixture({ environmentId, id: ThreadId.make(id), projectId: home.id, title }),
+      ...extra,
+    });
+    vi.mocked(useProjects).mockReturnValue([home]);
+    vi.mocked(useQuietThreadShells).mockReturnValue([
+      shell("firstmate", "Firstmate", { coordinator: true }),
+      shell("probe", "Media archive probe", { crewOf: ThreadId.make("firstmate") }),
+      shell("logger", "Logger"),
+    ]);
+    vi.mocked(useThreadRouteTarget).mockReturnValue({ kind: "none" } as never);
+    localStorage.setItem("t3code:sidebar:crew-expanded", "true");
+    using _crewTree = {
+      [Symbol.dispose]: () => localStorage.removeItem("t3code:sidebar:crew-expanded"),
+    };
+    await using screen = await render(
+      <SidebarProvider>
+        <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
+      </SidebarProvider>,
+    );
+
+    await expect.element(screen.getByText("Media archive probe").first()).toBeInTheDocument();
+    for (const id of ["firstmate", "probe", "logger"]) {
+      const row = document.querySelector<HTMLElement>(`[data-sidebar-row="local:${id}"]`)!;
+      await userEvent.hover(row);
+      expect(row.querySelector('[aria-label="Snooze thread"]')).toBeNull();
+      expect(row.querySelector('[aria-label="Settle thread"]')).toBeNull();
+    }
+  });
 });
 
 describe("sidebar thread rename", () => {

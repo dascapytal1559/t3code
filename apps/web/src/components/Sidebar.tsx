@@ -45,7 +45,6 @@ import { foldSearchQuery, rankMessageMatches } from "@t3tools/shared/paletteSear
 import { findForMessageMatch, openThreadFindOnQuery } from "./chat/threadFindStore";
 import {
   threadRuntimeCanArchive,
-  type EnvironmentProject,
   type EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/models";
 import {
@@ -435,7 +434,6 @@ function useSidebarThreads(input: {
   readonly threads: readonly EnvironmentThreadShell[];
   readonly delegatedUnderParent: ReadonlySet<string>;
   readonly routeRowThreadKey: string | null;
-  readonly projects: readonly EnvironmentProject[];
   // Set in boring mode: the project groups to fold active threads into, in order.
   readonly folderGroups: readonly SidebarProjectSnapshot[] | null;
   // Keeps folders with no active threads, so a project the user filtered to or pinned can start one.
@@ -1420,7 +1418,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     threads: listedThreads,
     delegatedUnderParent,
     routeRowThreadKey,
-    projects,
     folderGroups: boringSidebarEnabled
       ? scopedProjectGroups.length === 0
         ? // An archived project keeps a folder for its active threads, below the rest.
