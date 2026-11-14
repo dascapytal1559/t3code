@@ -1041,16 +1041,6 @@ Clients detect it by the field in the tool's `tools/list` input schema.
 Code: `apps/server/src/orchestration-v2/ThreadManagementService.ts`
 (`waitForThread`).
 
-## MCP can mark a thread read
-
-A thread card reads Done until the thread is opened in a client, because Done
-clears through `thread.visit`, which only a client sent. `t3_thread_organize`
-now has `action: "mark_read"`, the opposite of `mark_unread`: it dispatches
-`thread.visit` with `visitedAt` set to now, so the thread reads as seen. It does
-not count as the user opening the thread. Clients detect it by `mark_read` in the
-tool's `tools/list` `action` enum. Upstream main had no equivalent at
-`337c5858c3`. Code: `apps/server/src/mcp/toolkits/thread/handlers.ts`.
-
 ## FirstMate's sign-in lasts 10 years
 
 Upstream gives every MCP sign-in a 30-day pass, most likely so a leaked or

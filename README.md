@@ -12,7 +12,6 @@ For FirstMate:
 - [Waits end on a question](fork/README.md#waits-end-on-a-question-or-approval): FirstMate hears a question or approval the moment it appears.
 - [Per-thread settings](fork/README.md#per-thread-environment-and-instructions): each launched worker gets its own environment and instructions.
 - [Idle agents](fork/README.md#idle-agent-release-is-a-server-setting): idle release is a setting, and agents can be kept for good.
-- [Mark read](fork/README.md#mcp-can-mark-a-thread-read): FirstMate clears a worker's Done card without opening the app.
 - [Long sign-in](fork/README.md#firstmates-sign-in-lasts-10-years): FirstMate's sign-in lasts 10 years instead of 30 days, so it never needs renewing.
 - [Bridge](fork/README.md#bridge): your objectives, FirstMate's model routing and your rules for it, in the right panel's Bridge tab.
 - [Clean session close](fork/README.md#a-closed-claude-session-waits-for-its-cli-to-exit): a closed Claude session waits for its CLI to exit, so FirstMate's next one keeps its lock.
