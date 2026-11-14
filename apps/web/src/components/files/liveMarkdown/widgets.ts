@@ -1,6 +1,8 @@
 import { type EditorView, WidgetType } from "@codemirror/view";
 
 import { frontmatterRows } from "./frontmatter";
+import { clickedLink, previewConfig } from "./previewConfig";
+import { type TableCell, type TableInline, tableModel } from "./tableModel";
 
 const element = <K extends keyof HTMLElementTagNameMap>(tag: K, className: string) => {
   const node = document.createElement(tag);
@@ -168,6 +170,123 @@ export class FrontmatterWidget extends WidgetType {
       view.focus();
     });
     return card;
+  }
+  override ignoreEvent() {
+    return true;
+  }
+}
+
+/** An image where its Markdown is. Without a URL yet, or with a blocked one, its alt text stands in. */
+export class ImageWidget extends WidgetType {
+  readonly url: string | null;
+  readonly alt: string;
+  constructor(url: string | null, alt: string) {
+    super();
+    this.url = url;
+    this.alt = alt;
+  }
+  override eq(other: ImageWidget) {
+    return other.url === this.url && other.alt === this.alt;
+  }
+  toDOM(view: EditorView) {
+    const wrap = element("span", "cm-lp-image");
+    if (this.url === null) {
+      wrap.classList.add("cm-lp-image-missing");
+      wrap.textContent = this.alt || "Image";
+      return wrap;
+    }
+    const image = document.createElement("img");
+    image.src = this.url;
+    image.alt = this.alt;
+    image.draggable = false;
+    // The line is taller once the picture has loaded.
+    image.addEventListener("load", () => view.requestMeasure());
+    wrap.append(image);
+    return wrap;
+  }
+  /** A refreshed URL swaps the picture in place, so the old one shows until the new one loads. */
+  override updateDOM(dom: HTMLElement) {
+    const image = dom.querySelector("img");
+    if (!image || this.url === null) return false;
+    image.src = this.url;
+    image.alt = this.alt;
+    return true;
+  }
+}
+
+const INLINE_TAGS = { strong: "strong", emphasis: "em", strike: "del" } as const;
+
+function appendInline(parent: HTMLElement, content: readonly TableInline[]) {
+  for (const node of content) {
+    if (node.kind === "text") {
+      parent.append(node.text);
+    } else if (node.kind === "code") {
+      const code = element("code", "cm-lp-code");
+      code.textContent = node.text;
+      parent.append(code);
+    } else if (node.kind === "link") {
+      const link = element("span", "cm-lp-link");
+      link.dataset.href = node.href;
+      appendInline(link, node.children);
+      parent.append(link);
+    } else {
+      const wrapper = document.createElement(INLINE_TAGS[node.kind]);
+      appendInline(wrapper, node.children);
+      parent.append(wrapper);
+    }
+  }
+}
+
+/** A table drawn as a table. A click in a cell puts the caret at that cell in the table's source. */
+export class TableWidget extends WidgetType {
+  readonly source: string;
+  constructor(source: string) {
+    super();
+    this.source = source;
+  }
+  override eq(other: TableWidget) {
+    return other.source === this.source;
+  }
+  toDOM(view: EditorView) {
+    const wrap = element("div", "cm-lp-table-wrap");
+    const model = tableModel(this.source);
+    if (model === null) {
+      wrap.textContent = this.source;
+      return wrap;
+    }
+    const table = element("table", "cm-lp-table");
+    const row = (cells: readonly TableCell[], tag: "th" | "td") => {
+      const tr = document.createElement("tr");
+      cells.forEach((cell, column) => {
+        const td = document.createElement(tag);
+        td.dataset.offset = String(cell.offset);
+        const align = model.align[column];
+        if (align) td.style.textAlign = align;
+        appendInline(td, cell.content);
+        tr.append(td);
+      });
+      return tr;
+    };
+    const head = document.createElement("thead");
+    head.append(row(model.head, "th"));
+    const body = document.createElement("tbody");
+    body.append(...model.rows.map((cells) => row(cells, "td")));
+    table.append(head, body);
+    wrap.append(table);
+
+    wrap.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      if (clickedLink(event) !== null) return;
+      const cell = event.target instanceof Element ? event.target.closest("th,td") : null;
+      const offset = cell instanceof HTMLElement ? Number(cell.dataset.offset) : 0;
+      view.dispatch({ selection: { anchor: view.posAtDOM(wrap) + offset } });
+      view.focus();
+    });
+    wrap.addEventListener("click", (event) => {
+      const href = clickedLink(event);
+      if (href !== null) view.state.facet(previewConfig).onOpenLink(href, event);
+    });
+    return wrap;
   }
   override ignoreEvent() {
     return true;

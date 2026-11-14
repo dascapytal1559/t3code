@@ -111,6 +111,14 @@ const browserTestProject = {
     include: [
       "vite-plus/test/browser",
       "@base-ui/react/autocomplete",
+      // Fork: the live Markdown editor loads lazily.
+      "@codemirror/commands",
+      "@codemirror/lang-markdown",
+      "@codemirror/language",
+      "@codemirror/state",
+      "@codemirror/view",
+      "@lezer/highlight",
+      "@lezer/markdown",
       "saxes",
       "@betteroffice/docx/editor",
       "@betteroffice/docx/layout",

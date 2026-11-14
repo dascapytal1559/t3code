@@ -10,19 +10,30 @@ import {
   inlineDecorations,
   livePreview,
   setFocused,
+  setImageUrls,
 } from "./livePreview";
 import { liveMarkdownExtensions } from "./markdownSyntax";
+import { ImageWidget } from "./widgets";
 
-/** A focused editor on `text` with the caret where `|` is; without one the editor has no focus. */
-function editorOn(text: string): EditorState {
-  const caret = text.indexOf("|");
-  const doc = caret < 0 ? text : text.replace("|", "");
+/** Web addresses load as they are; anything else is a file the app must sign a URL for. */
+const resolveImage = (source: string) =>
+  source.startsWith("https:")
+    ? ({ kind: "url", url: source } as const)
+    : ({ kind: "asset", key: source } as const);
+
+/**
+ * A focused editor on `text` with the caret where `marker` is; without one the
+ * editor has no focus. Tables are full of `|`, so their tests mark the caret with `^`.
+ */
+function editorOn(text: string, marker = "|"): EditorState {
+  const caret = text.indexOf(marker);
+  const doc = caret < 0 ? text : text.replace(marker, "");
   const state = EditorState.create({
     doc,
     selection: { anchor: Math.max(caret, 0) },
     extensions: [
       markdown({ base: markdownLanguage, extensions: [...liveMarkdownExtensions] }),
-      livePreview(),
+      livePreview({ resolveImage, onImageNeeded: () => {}, onOpenLink: () => {} }),
     ],
   });
   const focused = state.update({ effects: setFocused.of(caret >= 0) }).state;
@@ -37,16 +48,24 @@ interface Drawn {
   readonly dimmed: string[];
   readonly widgets: string[];
   readonly lineClasses: Record<number, string>;
+  /** Text drawn as a link, with the address a click opens. */
+  readonly links: Array<readonly [text: string, href: string]>;
+  /** The address each drawn image loads, null while it has none. */
+  readonly images: Array<string | null>;
 }
 
 function summarize(state: EditorState, set: DecorationSet, into: Drawn) {
   for (const cursor = set.iter(); cursor.value !== null; cursor.next()) {
     const spec = cursor.value.spec as {
       class?: string;
+      attributes?: Record<string, string>;
       widget?: { constructor: { name: string } };
     };
     const text = state.doc.sliceString(cursor.from, cursor.to);
     if (spec.widget) into.widgets.push(spec.widget.constructor.name);
+    if (spec.widget instanceof ImageWidget) into.images.push(spec.widget.url);
+    const href = spec.attributes?.["data-href"];
+    if (href !== undefined) into.links.push([text, href]);
     if (cursor.from === cursor.to && spec.class && !spec.widget) {
       const line = state.doc.lineAt(cursor.from).number;
       into.lineClasses[line] = [into.lineClasses[line], spec.class].filter(Boolean).join(" ");
@@ -55,9 +74,16 @@ function summarize(state: EditorState, set: DecorationSet, into: Drawn) {
   }
 }
 
-function drawn(text: string): Drawn {
-  const state = editorOn(text);
-  const out: Drawn = { replaced: [], dimmed: [], widgets: [], lineClasses: {} };
+function drawn(text: string, marker?: string): Drawn {
+  const state = editorOn(text, marker);
+  const out: Drawn = {
+    replaced: [],
+    dimmed: [],
+    widgets: [],
+    lineClasses: {},
+    links: [],
+    images: [],
+  };
   summarize(state, blockDecorations(state), out);
   summarize(state, inlineDecorations(state, [{ from: 0, to: state.doc.length }]), out);
   return out;
@@ -152,5 +178,76 @@ describe("live preview", () => {
     const view = drawn("Some **bold** text.");
     expect(view.dimmed).toEqual([]);
     expect(view.replaced).toEqual(["**", "**"]);
+  });
+
+  it("draws a link as its text, and shows its address only at the caret", () => {
+    const link = "See the [season plan](../notes/plan.md) today.";
+    const away = drawn(link);
+    expect(away.links).toEqual([["season plan", "../notes/plan.md"]]);
+    expect(away.replaced).toEqual(["[", "](../notes/plan.md)"]);
+    const at = drawn("See the [season| plan](../notes/plan.md) today.");
+    expect(at.links).toEqual([["season plan", "../notes/plan.md"]]);
+    expect(at.dimmed).toEqual(["[", "](../notes/plan.md)"]);
+  });
+
+  it("makes bare addresses and autolinks clickable, and leaves reference links as written", () => {
+    const view = drawn("Go to https://t3.codes or <https://example.com>, not [here][ref].");
+    expect(view.links).toEqual([
+      ["https://t3.codes", "https://t3.codes"],
+      ["https://example.com", "https://example.com"],
+    ]);
+    expect(view.replaced).toEqual(["<", ">"]);
+  });
+
+  it("draws a wiki-link as its name or its label, with no address to open yet", () => {
+    const view = drawn("See [[station-7]] and [[station-7|the log]].", "^");
+    expect(view.replaced).toEqual(["[[", "]]", "[[station-7|", "]]"]);
+    expect(view.links).toEqual([]);
+  });
+
+  it("draws an image in place of its Markdown, and after it while the caret is on its line", () => {
+    const away = drawn("![Chart](https://t3.codes/chart.png)");
+    expect(away.images).toEqual(["https://t3.codes/chart.png"]);
+    expect(away.replaced).toEqual(["![Chart](https://t3.codes/chart.png)"]);
+    const at = drawn("![Chart](https://t3.codes/chart.png)|");
+    expect(at.images).toEqual(["https://t3.codes/chart.png"]);
+    expect(at.dimmed).toEqual(["![Chart](https://t3.codes/chart.png)"]);
+  });
+
+  it("names the image files that need a URL, and draws each once it has one", () => {
+    const state = editorOn("![Chart](media/chart.svg)");
+    const whole = [{ from: 0, to: state.doc.length }];
+    const needed: string[] = [];
+    const waiting: Drawn = { ...drawn(""), images: [] };
+    summarize(
+      state,
+      inlineDecorations(state, whole, (key) => needed.push(key)),
+      waiting,
+    );
+    expect(needed).toEqual(["media/chart.svg"]);
+    expect(waiting.images).toEqual([null]);
+
+    const signed = state.update({
+      effects: setImageUrls.of(new Map([["media/chart.svg", "/assets/signed"]])),
+    }).state;
+    const loaded: Drawn = { ...drawn(""), images: [] };
+    summarize(signed, inlineDecorations(signed, whole), loaded);
+    expect(loaded.images).toEqual(["/assets/signed"]);
+  });
+
+  it("draws a table as a table, and as its source while the caret is in it", () => {
+    const table = "Before\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\nAfter";
+    const away = drawn(table, "^");
+    expect(away.widgets).toEqual(["TableWidget"]);
+    expect(away.replaced).toEqual(["| a | b |\n|---|---|\n| 1 | 2 |"]);
+    const at = drawn("Before\n\n| a | b |\n|---|---|\n| 1 ^| 2 |\n\nAfter", "^");
+    expect(at.widgets).toEqual([]);
+    expect(at.lineClasses[5]).toBe("cm-lp-src-line");
+  });
+
+  it("leaves a table inside a list as its source", () => {
+    const view = drawn("- item\n\n  | a | b |\n  |---|---|\n  | 1 | 2 |", "^");
+    expect(view.widgets).toEqual(["BulletWidget"]);
+    expect(view.lineClasses[3]).toContain("cm-lp-src-line");
   });
 });

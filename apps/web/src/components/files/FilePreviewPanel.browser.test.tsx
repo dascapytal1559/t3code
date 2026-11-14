@@ -156,7 +156,11 @@ function markdownPreview(
   return filePreview(relativePath);
 }
 
-function filePreview(relativePath: string, workspaceMutationId: string | null = null) {
+function filePreview(
+  relativePath: string,
+  workspaceMutationId: string | null = null,
+  revealLine: number | null = null,
+) {
   return (
     <FilePreviewPanel
       environmentId={environmentId}
@@ -168,8 +172,8 @@ function filePreview(relativePath: string, workspaceMutationId: string | null = 
       keybindings={[]}
       availableEditors={[]}
       openInShortcutEnabled={false}
-      revealLine={null}
-      revealRequestId={0}
+      revealLine={revealLine}
+      revealRequestId={revealLine === null ? 0 : 1}
       onOpenFile={vi.fn()}
       onNavigateFolder={vi.fn()}
       folderTrail={undefined}
@@ -387,6 +391,10 @@ describe("live Markdown editor", () => {
       markdownPreview(false, "# Notes\n\nFirst line, from disk.\n\nLast line. More.\n", "notes.md"),
     );
     await expect.element(screen.getByText("First line, from disk.")).toBeVisible();
+    // Only the line that changed is tinted.
+    expect(
+      [...screen.container.querySelectorAll(".cm-lp-flash")].map((line) => line.textContent),
+    ).toEqual(["First line, from disk."]);
     await vi.advanceTimersByTimeAsync(500);
     expect(state.writeFile, "a change from disk was written back").toHaveBeenCalledOnce();
 
@@ -397,6 +405,35 @@ describe("live Markdown editor", () => {
     await vi.advanceTimersByTimeAsync(500);
     expect(state.writeFile).toHaveBeenLastCalledWith(
       written("# Notes\n\nFirst line, from disk.\n\nLast line.\n"),
+    );
+  });
+
+  it("opens at a linked line in the editor, where the rendered view needs the source", async () => {
+    using _settings = setup();
+    state.file = {
+      relativePath: "notes.md",
+      contents: "# Notes\n\nFirst line.\n\nLast line.\n",
+      byteLength: 33,
+      truncated: false,
+    };
+    const opened = () => filePreview("notes.md", null, 5);
+
+    // At phone width the file is view-only, and only its source can show a line.
+    await using phone = await render(opened());
+    await expect
+      .element(phone.getByRole("button", { name: "Show rendered markdown" }))
+      .toBeVisible();
+    await phone.unmount();
+
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    await page.viewport(1280, 800);
+    await using _viewport = {
+      [Symbol.asyncDispose]: () => page.viewport(viewport.width, viewport.height),
+    };
+    await using screen = await render(opened());
+    await expect.element(screen.getByRole("textbox", { name: "File contents" })).toBeVisible();
+    await vi.waitFor(() =>
+      expect(screen.container.querySelector(".cm-lp-flash")?.textContent).toBe("Last line."),
     );
   });
 });

@@ -1245,7 +1245,6 @@ export default function FilePreviewPanel({
   const revealHandled =
     revealLine === null ||
     (handledReveal?.path === relativePath && handledReveal.requestId === revealRequestId);
-  const renderMarkdown = isMarkdown && renderMarkdownPreferred && revealHandled;
   // Fork: a Markdown file that can be edited renders in the live editor. A phone stays view-only.
   const narrowViewport = useMediaQuery("max-sm");
   const coarsePointer = useMediaQuery({ pointer: "coarse" });
@@ -1256,6 +1255,8 @@ export default function FilePreviewPanel({
     canWriteFiles &&
     !narrowViewport &&
     !coarsePointer;
+  // Fork: the live editor scrolls to a linked line itself; the rendered view needs the source for it.
+  const renderMarkdown = isMarkdown && renderMarkdownPreferred && (revealHandled || liveMarkdown);
   const renderMermaid = isMermaid && renderMermaidPreferred && revealHandled;
   const renderBrowserFile = isPdf || (isHtml && renderBrowserFilePreferred && revealHandled);
   const renderTable = tableDelimiter !== null && renderTablePreferred && revealHandled;
@@ -1706,7 +1707,11 @@ export default function FilePreviewPanel({
                   cwd={cwd}
                   relativePath={relativePath}
                   hostFileThreadId={hostFileThreadId}
+                  threadRef={threadRef}
                   contents={file.data.contents}
+                  workspaceMutationId={workspaceMutationId}
+                  revealLine={revealHandled ? null : revealLine}
+                  revealRequestId={revealRequestId}
                   onPendingChange={onPendingChange}
                 />
               </Suspense>

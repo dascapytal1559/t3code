@@ -17,14 +17,17 @@ import {
 import { markdownFrontmatterLength } from "@t3tools/shared/markdownFrontmatter";
 
 import { HEADING_NODE } from "./markdownSyntax";
+import { clickedLink, type LivePreviewConfig, previewConfig } from "./previewConfig";
 import {
   BulletWidget,
   CalloutTitleWidget,
   CheckboxWidget,
   CodeLabelWidget,
   FrontmatterWidget,
+  ImageWidget,
   OrderedWidget,
   RuleWidget,
+  TableWidget,
 } from "./widgets";
 
 // The document is the file's exact text. Decorations hide syntax marks and swap
@@ -64,6 +67,16 @@ export const frontmatterField = StateField.define<number>({
   },
 });
 
+/** Gives the editor the URLs the app signed for the file's images, by asset key. */
+export const setImageUrls = StateEffect.define<ReadonlyMap<string, string>>();
+const imageUrlsField = StateField.define<ReadonlyMap<string, string>>({
+  create: () => new Map(),
+  update(value, tr) {
+    for (const effect of tr.effects) if (effect.is(setImageUrls)) return effect.value;
+    return value;
+  },
+});
+
 /** What the selection touches while the editor has focus; nothing otherwise, so all is drawn. */
 function touchOf(state: EditorState) {
   const ranges = state.field(focusField) && !state.readOnly ? state.selection.ranges : [];
@@ -80,6 +93,7 @@ function previewInputsChanged(before: EditorState, after: EditorState): boolean 
   return (
     before.field(focusField) !== after.field(focusField) ||
     before.field(frontmatterField) !== after.field(frontmatterField) ||
+    before.field(imageUrlsField) !== after.field(imageUrlsField) ||
     syntaxTree(before) !== syntaxTree(after)
   );
 }
@@ -88,10 +102,22 @@ function previewInputsChanged(before: EditorState, after: EditorState): boolean 
 // accepts from a state field. They cover the whole document, not the viewport.
 export function blockDecorations(state: EditorState): DecorationSet {
   const out: Range<Decoration>[] = [];
+  const { doc } = state;
+  const touch = touchOf(state);
   const frontmatter = state.field(frontmatterField);
-  if (frontmatter > 0 && !touchOf(state).onLines(0, frontmatter)) {
-    const widget = new FrontmatterWidget(state.doc.sliceString(0, frontmatter));
+  if (frontmatter > 0 && !touch.onLines(0, frontmatter)) {
+    const widget = new FrontmatterWidget(doc.sliceString(0, frontmatter));
     out.push(Decoration.replace({ widget, block: true }).range(0, frontmatter));
+  }
+  // Only a table at the top level is drawn; one inside a list or a quote stays as its source.
+  const top = syntaxTree(state).topNode;
+  for (let node = top.firstChild; node !== null; node = node.nextSibling) {
+    if (node.name !== "Table" || node.from < frontmatter) continue;
+    const from = doc.lineAt(node.from).from;
+    const to = doc.lineAt(node.to).to;
+    if (touch.touches(from, to)) continue;
+    const widget = new TableWidget(doc.sliceString(from, to));
+    out.push(Decoration.replace({ widget, block: true }).range(from, to));
   }
   return Decoration.set(out);
 }
@@ -115,6 +141,9 @@ const emphasisMark = Decoration.mark({ class: "cm-lp-em" });
 const strikeMark = Decoration.mark({ class: "cm-lp-strike" });
 const codeMark = Decoration.mark({ class: "cm-lp-code" });
 const indentMark = Decoration.mark({ class: "cm-lp-indent" });
+const wikiLinkMark = Decoration.mark({ class: "cm-lp-wikilink" });
+const linkMark = (href: string) =>
+  Decoration.mark({ class: "cm-lp-link", attributes: { "data-href": href } });
 
 /** Width of one column of list indentation, which `.cm-lp-indent` draws in a fixed-width font. */
 const REM_PER_INDENT_COLUMN = 0.625;
@@ -132,14 +161,20 @@ interface VisibleRange {
   readonly to: number;
 }
 
-/** Marks, hidden syntax and small widgets for the lines on screen. */
+/**
+ * Marks, hidden syntax and small widgets for the lines on screen. `onAsset`
+ * hears the key of each image there that needs a URL from the app.
+ */
 export function inlineDecorations(
   state: EditorState,
   visibleRanges: readonly VisibleRange[],
+  onAsset?: (key: string) => void,
 ): DecorationSet {
   const { doc } = state;
   const tree = syntaxTree(state);
   const touch = touchOf(state);
+  const config = state.facet(previewConfig);
+  const imageUrls = state.field(imageUrlsField);
   const frontmatter = state.field(frontmatterField);
   const out: Range<Decoration>[] = [];
   const add = (from: number, to: number, decoration: Decoration) => {
@@ -220,6 +255,64 @@ export function inlineDecorations(
         if (name === "Escape") {
           if (!touch.touches(from, to)) add(from, from + 1, hidden);
           return;
+        }
+
+        if (name === "Link") {
+          const [open, close] = ref.node.getChildren("LinkMark");
+          const url = ref.node.getChild("URL");
+          // A reference link has no address of its own, and an empty one nothing to show.
+          if (!open || !close || !url || close.from <= open.to) return;
+          add(open.to, close.from, linkMark(doc.sliceString(url.from, url.to)));
+          const shown = touch.touches(from, to);
+          add(from, open.to, shown ? syntaxMark : hidden);
+          add(close.from, to, shown ? syntaxMark : hidden);
+          return;
+        }
+        if (name === "Autolink") {
+          const shown = touch.touches(from, to);
+          for (const mark of ref.node.getChildren("LinkMark")) {
+            add(mark.from, mark.to, shown ? syntaxMark : hidden);
+          }
+          return;
+        }
+        if (name === "URL") {
+          const parent = ref.node.parent?.name;
+          if (parent !== "Link" && parent !== "Image" && parent !== "LinkReference") {
+            add(from, to, linkMark(doc.sliceString(from, to)));
+          }
+          return;
+        }
+        if (name === "WikiLink") {
+          const bar = doc.sliceString(from + 2, to - 2).indexOf("|");
+          const shown = touch.touches(from, to);
+          // `[[note|label]]` shows its label; at the caret it shows all of itself.
+          const labelFrom = shown || bar < 0 ? from + 2 : from + 2 + bar + 1;
+          add(from, labelFrom, shown ? syntaxMark : hidden);
+          add(labelFrom, to - 2, wikiLinkMark);
+          add(to - 2, to, shown ? syntaxMark : hidden);
+          return false;
+        }
+        if (name === "Image") {
+          const [open, close] = ref.node.getChildren("LinkMark");
+          const url = ref.node.getChild("URL");
+          if (!open || !close || !url) return false;
+          const source = config.resolveImage(doc.sliceString(url.from, url.to));
+          if (source.kind === "asset") onAsset?.(source.key);
+          const address =
+            source.kind === "url"
+              ? source.url
+              : source.kind === "asset"
+                ? (imageUrls.get(source.key) ?? null)
+                : null;
+          const widget = new ImageWidget(address, doc.sliceString(open.to, close.from));
+          if (touch.onLines(from, to)) {
+            // At the caret the source shows, with the picture after it.
+            add(from, to, syntaxMark);
+            out.push(Decoration.widget({ widget, side: 1 }).range(to));
+          } else {
+            add(from, to, Decoration.replace({ widget }));
+          }
+          return false;
         }
 
         if (name === "ListItem") {
@@ -373,8 +466,12 @@ export function inlineDecorations(
         }
 
         if (name === "Table") {
-          verbatim.push([from, to]);
-          eachLine(from, to, (line) => lineStyle(line, "cm-lp-src-line"));
+          // A drawn table is a block widget; this is one shown as its source.
+          const topLevel = ref.node.parent?.parent === null;
+          if (!topLevel || touch.touches(doc.lineAt(from).from, doc.lineAt(to).to)) {
+            verbatim.push([from, to]);
+            eachLine(from, to, (line) => lineStyle(line, "cm-lp-src-line"));
+          }
           return false;
         }
 
@@ -401,8 +498,10 @@ export function inlineDecorations(
 const inlinePreview = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
+    /** Asset keys already asked for, so each image is asked for once. */
+    readonly requested = new Set<string>();
     constructor(view: EditorView) {
-      this.decorations = inlineDecorations(view.state, view.visibleRanges);
+      this.decorations = this.build(view);
     }
     update(update: ViewUpdate) {
       if (
@@ -411,21 +510,49 @@ const inlinePreview = ViewPlugin.fromClass(
         update.selectionSet ||
         previewInputsChanged(update.startState, update.state)
       ) {
-        this.decorations = inlineDecorations(update.state, update.view.visibleRanges);
+        this.decorations = this.build(update.view);
       }
+    }
+    build(view: EditorView): DecorationSet {
+      const { onImageNeeded } = view.state.facet(previewConfig);
+      return inlineDecorations(view.state, view.visibleRanges, (key) => {
+        if (this.requested.has(key)) return;
+        this.requested.add(key);
+        onImageNeeded(key);
+      });
     }
   },
   { decorations: (plugin) => plugin.decorations },
 );
 
+// A plain click follows a link, as in the rendered view. The press is taken too,
+// so it does not move the caret into the link on the way.
+const linkClicks = EditorView.domEventHandlers({
+  mousedown(event) {
+    if (clickedLink(event) === null) return false;
+    event.preventDefault();
+    return true;
+  },
+  click(event, view) {
+    const href = clickedLink(event);
+    if (href === null) return false;
+    event.preventDefault();
+    view.state.facet(previewConfig).onOpenLink(href, event);
+    return true;
+  },
+});
+
 /** Draws the Markdown in place: the page stays rendered while it is edited. */
-export function livePreview(): Extension {
+export function livePreview(config?: LivePreviewConfig): Extension {
   return [
+    config ? previewConfig.of(config) : [],
     focusField,
     EditorView.focusChangeEffect.of((_state, focusing) => setFocused.of(focusing)),
     frontmatterField,
+    imageUrlsField,
     blockPreview,
     inlinePreview,
+    linkClicks,
     EditorView.editorAttributes.of({ class: "cm-live-preview" }),
   ];
 }

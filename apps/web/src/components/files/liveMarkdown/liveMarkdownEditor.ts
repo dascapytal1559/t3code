@@ -1,32 +1,24 @@
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { indentUnit, syntaxHighlighting } from "@codemirror/language";
-import {
-  Annotation,
-  Compartment,
-  EditorState,
-  type Extension,
-  Text,
-  Transaction,
-} from "@codemirror/state";
+import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { drawSelection, dropCursor, EditorView, keymap } from "@codemirror/view";
 import { markdownFrontmatterLength } from "@t3tools/shared/markdownFrontmatter";
 
 import { codeHighlightStyle, codeLanguages } from "./codeLanguages";
+import { externalChange, externalChangeSpec, flashSpans, lineFlash } from "./externalChanges";
 import { listKeymap } from "./formatting";
 import { lineChanges } from "./lineDiff";
 import { fromEditorText, type LineEnding, lineEndingOf, toEditorText } from "./lineEndings";
-import { livePreview } from "./livePreview";
+import { livePreview, setImageUrls } from "./livePreview";
 import { liveMarkdownExtensions } from "./markdownSyntax";
-
-/** Marks a change that came from the file on disk, not from typing. */
-const externalChange = Annotation.define<boolean>();
+import type { LivePreviewConfig } from "./previewConfig";
 
 // A mixed file names its separator, which keeps its carriage returns as text.
 const separatorFor = (ending: LineEnding): Extension =>
   ending === "mixed" ? EditorState.lineSeparator.of("\n") : [];
 
-export interface LiveMarkdownEditorOptions {
+export interface LiveMarkdownEditorOptions extends LivePreviewConfig {
   readonly parent: HTMLElement;
   readonly doc: string;
   /** Called with the file's new text after each edit made in the editor. */
@@ -39,6 +31,9 @@ export interface LiveMarkdownEditor {
   readonly text: () => string;
   /** Takes contents that changed outside the editor; the caret, scroll and undo history stay. */
   readonly applyExternal: (next: string) => void;
+  readonly setImageUrls: (urls: ReadonlyMap<string, string>) => void;
+  /** Scrolls to a 1-based line of the file, puts the caret there and tints it for a moment. */
+  readonly revealLine: (line: number) => void;
   readonly destroy: () => void;
 }
 
@@ -61,7 +56,8 @@ export function createLiveMarkdownEditor(options: LiveMarkdownEditorOptions): Li
       extensions: [...liveMarkdownExtensions],
     }),
     syntaxHighlighting(codeHighlightStyle),
-    livePreview(),
+    livePreview(options),
+    lineFlash,
     keymap.of([...listKeymap, ...historyKeymap, ...defaultKeymap]),
     EditorView.contentAttributes.of({
       spellcheck: "true",
@@ -106,23 +102,29 @@ export function createLiveMarkdownEditor(options: LiveMarkdownEditorOptions): Li
       const incoming = toEditorText(next, nextEnding);
       const current = view.state.doc.toString();
       if (nextEnding === ending && incoming === current) return;
-      const annotations = [Transaction.addToHistory.of(false), externalChange.of(true)];
-      if (nextEnding !== ending) {
-        ending = nextEnding;
-        view.dispatch({
-          changes: { from: 0, to: current.length, insert: Text.of(incoming.split("\n")) },
-          effects: separator.reconfigure(separatorFor(ending)),
-          annotations,
-        });
+      if (nextEnding === ending) {
+        view.dispatch(externalChangeSpec(view.state, lineChanges(current, incoming)));
         return;
       }
+      // The file changed its line endings: take it whole, under its new separator.
+      ending = nextEnding;
+      view.dispatch(
+        externalChangeSpec(
+          view.state,
+          [{ from: 0, to: current.length, insert: incoming }],
+          [separator.reconfigure(separatorFor(ending))],
+        ),
+      );
+    },
+    setImageUrls: (urls) => view.dispatch({ effects: setImageUrls.of(urls) }),
+    revealLine(number) {
+      const line = view.state.doc.line(Math.min(Math.max(1, number), view.state.doc.lines));
       view.dispatch({
-        changes: lineChanges(current, incoming).map((change) => ({
-          from: change.from,
-          to: change.to,
-          insert: Text.of(change.insert.split("\n")),
-        })),
-        annotations,
+        selection: { anchor: line.from },
+        effects: [
+          EditorView.scrollIntoView(line.from, { y: "center" }),
+          flashSpans([{ from: line.from, to: line.to }]),
+        ],
       });
     },
     destroy: () => view.destroy(),
