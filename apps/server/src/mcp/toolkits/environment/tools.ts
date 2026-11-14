@@ -4,15 +4,20 @@ import {
   ExecutionEnvironmentDescriptor,
   ModelRouting,
   Objectives,
+  OrchestrationV2CausedBy,
+  OrchestratorMcpCausedBy,
   OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpFailure,
   RestartRequest,
   RestartRequestStatus,
   ServerSettings,
   ServerSettingsPatch,
+  TrimmedNonEmptyString,
 } from "@t3tools/contracts";
+import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
+import * as UsageClaims from "../../../usage/UsageClaims.ts";
 import * as ServerEnvironment from "../../../environment/ServerEnvironment.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
@@ -94,10 +99,29 @@ const RoutingSetTool = Tool.make("t3_routing_set", {
 const RestartRequestTool = Tool.make("t3_restart_request", {
   ...shared,
   description:
-    "Ask T3 to wait for a restart (e.g. installing a build). Running turns finish; new messages queue held and send after it. T3 never restarts itself: restart it once `t3_restart_status` reports `drained`.",
-  parameters: Schema.Struct({ reason: RestartRequest.fields.reason }),
+    "Ask T3 to wait for a restart (e.g. installing a build). Running turns finish; new messages queue held and send after it. T3 never restarts itself: restart it once `t3_restart_status` reports `drained`. `causedBy`: the prompt whose work it installs.",
+  parameters: Schema.Struct({
+    reason: RestartRequest.fields.reason,
+    causedBy: Schema.optional(OrchestratorMcpCausedBy),
+  }),
   success: RestartRequestStatus,
 }).annotate(Tool.Destructive, true);
+const UsageClaimTool = Tool.make("t3_usage_claim", {
+  ...shared,
+  dependencies: [...shared.dependencies, UsageClaims.UsageClaims, Path.Path],
+  description:
+    "Count a session run outside T3 (a pipeline, a CLI run) to the prompt that caused it, on Usage. Give `sessionId` (native id) or an absolute `directory` (sessions working inside it). Claiming again replaces the cause; `causedBy: null` removes it. Your own worktree needs no claim.",
+  parameters: Schema.Struct({
+    sessionId: Schema.optional(TrimmedNonEmptyString),
+    directory: Schema.optional(TrimmedNonEmptyString),
+    causedBy: Schema.NullOr(OrchestratorMcpCausedBy),
+  }),
+  success: Schema.Struct({
+    sessionId: Schema.optional(Schema.String),
+    directory: Schema.optional(Schema.String),
+    causedBy: Schema.NullOr(OrchestrationV2CausedBy),
+  }),
+}).annotate(Tool.Destructive, false);
 const RestartStatusTool = Tool.make("t3_restart_status", {
   ...shared,
   description: "Read the pending restart. `activeTurns` counts every running turn, yours too.",
@@ -118,4 +142,5 @@ export const EnvironmentToolkit = Toolkit.make(
   RestartRequestTool,
   RestartStatusTool,
   RestartCancelTool,
+  UsageClaimTool,
 );

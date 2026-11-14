@@ -79,7 +79,10 @@ export interface AggregateOptions {
   readonly sinceTimeMs?: number;
   readonly untilTimeMs?: number;
   /** Splits kept records by origin after dedupe and filtering, so the origins partition the totals. */
-  readonly attributeOrigin?: (record: UsageRecord) => UsageOriginKey | null;
+  readonly attributeOrigin?: (
+    record: UsageRecord,
+    sourcePath: string | undefined,
+  ) => UsageOriginKey | null;
 }
 
 interface MutableOriginUsage {
@@ -318,7 +321,7 @@ export class UsageAggregator {
     }
     if (priced.costSource === "providerReported") bucket.providerReportedRecords += 1;
     if (this.#originUsage !== null) {
-      const key = this.#options.attributeOrigin?.(record) ?? null;
+      const key = this.#options.attributeOrigin?.(record, sourcePath) ?? null;
       if (key !== null) {
         const originKey = `${originKeyString(key)}\u0000${record.provider}\u0000${sourcePath ?? ""}`;
         let origin = this.#originUsage.get(originKey);

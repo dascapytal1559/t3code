@@ -73,6 +73,8 @@ describe("scan cache round trip", () => {
             speed: "fast",
             cacheCreation1hTokens: 8,
           }),
+          record({ dedupeKey: "msg_3:", cwd: "/wt/worker" }),
+          record({ dedupeKey: "msg_4:", cwd: "/wt/worker", unresolvedServiceTierTurnId: "turn" }),
         ],
       ],
       [
@@ -297,6 +299,23 @@ describe("scan cache round trip", () => {
       size: -1,
       position: { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null },
     });
+  });
+
+  it("re-parses transcripts T3 turns could have written before working folders were kept", () => {
+    const recent = Date.parse("2026-11-01T00:00:00Z");
+    const original = cacheWith([
+      ["/recent.jsonl", recent, [record()]],
+      ["/old.jsonl", Date.parse("2026-10-01T00:00:00Z"), [record()]],
+    ]);
+    const v15 = { ...parse(makeScanCacheWriter()(original, {})), version: 15 };
+
+    const restored = decodeScanCache(JSON.parse(JSON.stringify(v15)), TEST_FORMAT_MAP);
+    expect(restored.get("/recent.jsonl")).toEqual({
+      ...original.get("/recent.jsonl"),
+      size: -1,
+      position: { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null },
+    });
+    expect(restored.get("/old.jsonl")).toEqual(original.get("/old.jsonl"));
   });
 
   it("rewrites only changed entries and still restores the whole cache", () => {

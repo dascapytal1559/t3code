@@ -14,6 +14,7 @@ import {
   ThreadId,
   type OrchestrationV2Command,
   type OrchestrationV2ThreadProjection,
+  type RestartRequest,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -220,6 +221,7 @@ it.effect.each(["completed", "waiting", "cancelled"] as const)(
             Layer.mock(ThreadManagementService.ThreadManagementService)({
               getThreadRecords: () => Effect.succeed(projection),
               recoverDelegatedTask: () => Effect.void,
+              restartedFor: Effect.succeed(null),
               noteUnresumedRestartCut: () => Effect.void,
               dispatch: (command) => {
                 commands.push(command);
@@ -500,6 +502,7 @@ it.effect("does not duplicate delivery and yields to newer user work or opt-out"
     const layerThreads = Layer.mock(ThreadManagementService.ThreadManagementService)({
       getThreadRecords: () => Effect.succeed(projection),
       recoverDelegatedTask: () => Effect.void,
+      restartedFor: Effect.succeed(null),
       noteUnresumedRestartCut: () => Effect.void,
       dispatch: (command) => {
         commands.push(command);
@@ -894,6 +897,7 @@ it.effect("does not cancel or resume a run that completes while shutdown intent 
           Layer.mock(ThreadManagementService.ThreadManagementService)({
             getThreadRecords: () => Effect.succeed(projection),
             recoverDelegatedTask: () => Effect.void,
+            restartedFor: Effect.succeed(null),
             noteUnresumedRestartCut: () => Effect.void,
             dispatch: () =>
               Effect.sync(() => {
@@ -911,6 +915,7 @@ it.effect("does not cancel or resume a run that completes while shutdown intent 
 const continuationDispatches = (
   projection: OrchestrationV2ThreadProjection,
   sourceRunId: RunId = runId,
+  restartedFor: RestartRequest | null = null,
 ) =>
   Effect.gen(function* () {
     const dispatches: Array<Extract<OrchestrationV2Command, { type: "message.dispatch" }>> = [];
@@ -920,6 +925,7 @@ const continuationDispatches = (
           Layer.mock(ThreadManagementService.ThreadManagementService)({
             getThreadRecords: () => Effect.succeed(projection),
             recoverDelegatedTask: () => Effect.void,
+            restartedFor: Effect.succeed(restartedFor),
             noteUnresumedRestartCut: () => Effect.void,
             dispatch: (command) => {
               if (command.type === "message.dispatch") dispatches.push(command);
@@ -985,6 +991,64 @@ it.effect("continues a cut run past queued follow-ups, which stay held", () =>
     assert.deepEqual(texts, [
       "Continue where you left off. Your last turn was cut short, so a command or other action it started may have finished or may still be running. Before you repeat one that changes state, confirm it did not take effect and is not still running; if you cannot tell, say so instead of repeating it.",
     ]);
+  }),
+);
+
+it.effect.each([
+  ["the prompt a person typed", { createdBy: "user" }, {}, "typed"],
+  ["the cut prompt's own cause", { createdBy: "agent", causedBy: "own" }, {}, "own"],
+  ["what the restart was for", { createdBy: "agent" }, {}, "restart"],
+  [
+    "its thread's cause, which needs no stamp",
+    { createdBy: "agent" },
+    { causedBy: "thread" },
+    null,
+  ],
+] as const)("a resumed turn counts to %s", ([, message, thread, expected]) =>
+  Effect.gen(function* () {
+    const cause = (name: string) => ({
+      threadId: ThreadId.make("thread:lead"),
+      messageId: MessageId.make(`message:${name}`),
+    });
+    const cut = cutMidTurn();
+    const projection = {
+      ...cut,
+      thread: {
+        ...cut.thread,
+        ...("causedBy" in thread ? { causedBy: cause(thread.causedBy) } : {}),
+      },
+      messages: [
+        {
+          id: MessageId.make("message:user"),
+          threadId,
+          role: "user",
+          text: "build the feature",
+          attachments: [],
+          createdBy: message.createdBy,
+          ...("causedBy" in message ? { causedBy: cause(message.causedBy) } : {}),
+        },
+      ],
+    } as unknown as OrchestrationV2ThreadProjection;
+    const restartedFor = {
+      reason: "install build split",
+      requestedBy: "FirstMate",
+      requestedAt: "2026-10-03T11:59:00.000Z",
+      causedBy: cause("restart"),
+    } satisfies RestartRequest;
+    const [command] = yield* continuationDispatches(projection, runId, restartedFor);
+    assert.deepEqual(
+      command!.causedBy,
+      expected === null
+        ? undefined
+        : expected === "typed"
+          ? { threadId, runId, messageId: MessageId.make("message:user") }
+          : cause(expected),
+    );
+    // A restart nobody asked for leaves an uncaused turn without one.
+    if (expected === "restart") {
+      const [unrequested] = yield* continuationDispatches(projection, runId, null);
+      assert.isUndefined(unrequested!.causedBy);
+    }
   }),
 );
 
@@ -1118,6 +1182,7 @@ it.effect.each([
               getThreadRecords: (id) =>
                 Effect.succeed((id === parentThreadId ? parent : child) as never),
               recoverDelegatedTask: () => Effect.void,
+              restartedFor: Effect.succeed(null),
               noteUnresumedRestartCut: () => Effect.void,
               dispatch: () =>
                 Effect.sync(() => {
@@ -1378,6 +1443,7 @@ const pinnedContinuationDispatches = (projection: OrchestrationV2ThreadProjectio
           } as never),
         restartContinuationPending: () => Effect.succeed(true),
         recoverDelegatedTask: () => Effect.void,
+        restartedFor: Effect.succeed(null),
         noteUnresumedRestartCut: () => Effect.void,
         dispatch: (command) => {
           if (command.type === "message.dispatch") dispatches.push(command);

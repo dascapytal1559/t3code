@@ -1,10 +1,16 @@
+import { USAGE_ORIGINS_RECORDED_SINCE } from "@t3tools/contracts";
 import { formatPercent } from "@t3tools/shared/usageFormat";
 import type { MergedOrigins } from "@t3tools/shared/usageMerge";
 import type { CSSProperties, ReactNode } from "react";
 
 import { cn } from "../../lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { originAxes, type OriginDevice } from "./usageOriginAxes";
+import { originAxes, originNotes, type OriginDevice } from "./usageOriginAxes";
+
+const ORIGINS_RECORDED_SINCE_LABEL = new Date(USAGE_ORIGINS_RECORDED_SINCE).toLocaleDateString(
+  undefined,
+  { day: "numeric", month: "short" },
+);
 
 // Amber and blue: no provider on the Usage page uses either hue.
 const DEVICE: Record<OriginDevice, { readonly label: string; readonly color: string }> = {
@@ -45,6 +51,12 @@ export function UsageOriginBreakdown({
   });
   const traced = parts.reduce((sum, part) => sum + part.total, 0);
   if (traced <= 0) return null;
+  const notes = originNotes(origins);
+  const assumed = valueOf(notes.assumed);
+  const untraceable = [
+    { value: valueOf(notes.beforeOrigins), label: `before ${ORIGINS_RECORDED_SINCE_LABEL}` },
+    { value: valueOf(notes.archive), label: "archived from other machines" },
+  ].flatMap(({ value, label }) => (value > 0 ? [`${format(value)} ${label}`] : []));
 
   const segments = parts.flatMap((part) => [
     { part, side: "direct" as const, value: part.direct, style: SOLID },
@@ -94,9 +106,15 @@ export function UsageOriginBreakdown({
             <span className="text-muted-foreground">
               {formatPercent(part.total / traced, 0)} · {format(part.direct)} direct ·{" "}
               {format(part.coordinated)} coordinated
+              {part.key === "computer" && assumed > 0
+                ? ` · ${format(assumed)} with no recorded parent`
+                : ""}
             </span>
           </Swatch>
         ))}
+        {untraceable.length > 0 ? (
+          <span className="text-muted-foreground">Can't trace: {untraceable.join(" · ")}</span>
+        ) : null}
       </div>
     </div>
   );

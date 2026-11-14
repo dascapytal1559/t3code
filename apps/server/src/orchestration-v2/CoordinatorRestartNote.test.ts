@@ -1,5 +1,5 @@
 import { assert, it } from "@effect/vitest";
-import { ProjectId, RunId, ThreadId } from "@t3tools/contracts";
+import { MessageId, ProjectId, RunId, ThreadId, type RestartRequest } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -11,6 +11,12 @@ const now = DateTime.makeUnsafe("2026-10-03T12:00:00.000Z");
 const coordinatorId = ThreadId.make("thread:coordinator");
 const serverStartedAt = DateTime.makeUnsafe("2026-10-03T12:30:00.000Z");
 const startedAt = DateTime.formatIso(serverStartedAt);
+const installRequest = {
+  reason: "install build split",
+  requestedBy: "FirstMate",
+  requestedAt: "2026-10-03T12:20:00.000Z",
+  causedBy: { threadId: coordinatorId, messageId: MessageId.make("message:landed-task") },
+} satisfies RestartRequest;
 
 function shellThread(id: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -40,11 +46,14 @@ const restartNotes = Effect.fn(function* (
     passes = 1,
     enabled = true,
     resuming = [],
+    restartedFor = null,
   }: {
     readonly passes?: number;
     readonly enabled?: boolean;
     /** Threads whose last run has a restart continuation waiting in the outbox. */
     readonly resuming?: ReadonlyArray<string>;
+    /** The request the previous server left pending; null when nobody asked for the restart. */
+    readonly restartedFor?: RestartRequest | null;
   } = {},
 ) {
   const commands: Parameters<
@@ -53,6 +62,7 @@ const restartNotes = Effect.fn(function* (
   const layer = Layer.merge(
     Layer.mock(ThreadManagementService.ThreadManagementService)({
       serverStartedAt: Effect.succeed(serverStartedAt),
+      restartedFor: Effect.succeed(restartedFor),
       getShellSnapshot: () => Effect.succeed({ threads: shells } as never),
       getThreadRecords: (threadId) =>
         Effect.succeed({
@@ -94,7 +104,7 @@ it.effect.each([false, true])(
           crewThread("thread:crew-done"),
           crewThread("thread:crew-stopped", { status: "cancelled", latestRunStopRequested: true }),
         ],
-        { passes: 2 },
+        { passes: 2, restartedFor: installRequest },
       );
       assert.lengthOf(commands, 1);
       const command = commands[0]!;
@@ -102,8 +112,11 @@ it.effect.each([false, true])(
       if (command.type !== "message.dispatch") return;
       assert.equal(command.threadId, coordinatorId);
       assert.equal(command.commandId, `command:restart-note:${coordinatorId}:${startedAt}`);
+      // The note counts to the prompt whose work the restart installed.
+      assert.deepEqual(command.causedBy, installRequest.causedBy);
       // FirstMate matches this line against t3_restart_status's serverStartedAt.
       assert.isTrue(command.text.startsWith(`The T3 server restarted at ${startedAt}.\n`));
+      assert.notInclude(command.text, "No restart was requested");
       assert.include(command.text, "- thread:crew-cut (thread:crew-cut)");
       assert.notInclude(command.text, "thread:crew-done");
       assert.notInclude(command.text, "thread:crew-stopped");
@@ -136,6 +149,9 @@ it.effect.each([
     assert.equal(command.threadId, coordinatorId);
     assert.deepEqual(command.dispatchMode, { type: "queue_after_active" });
     assert.include(command.text, "None of your crew threads had a run interrupted.");
+    // Nobody asked for this restart, so the note says so and names no cause.
+    assert.include(command.text, "No restart was requested");
+    assert.isUndefined(command.causedBy);
   }),
 );
 

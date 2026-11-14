@@ -241,6 +241,7 @@ const makeTestRelay = Effect.fnUntraced(function* (
     getTurnItem: () => Effect.die("unused turn item read"),
     getThreadRecords: () => Effect.die("unused record read"),
     serverStartedAt: Effect.die("unused server start read"),
+    restartedFor: Effect.die("unused restart request read"),
     restartContinuationPending: unused,
     noteUnresumedRestartCut: unused,
     getThreadProjection: unused,

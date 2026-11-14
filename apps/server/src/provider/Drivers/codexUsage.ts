@@ -133,6 +133,7 @@ export const CodexScanState = Schema.Struct({
   malformedRecords: Schema.mutableKey(TokenCount),
   sawSessionMeta: Schema.mutableKey(Schema.Boolean),
   modelProvider: Schema.mutableKey(Schema.String),
+  cwd: Schema.mutableKey(Schema.optionalKey(Schema.String)),
   turnId: Schema.mutableKey(Schema.String),
   sawThreadSettings: Schema.mutableKey(Schema.Boolean),
   suppressingForkCopies: Schema.mutableKey(Schema.Boolean),
@@ -214,6 +215,9 @@ function parseCodexRecord(parsed: unknown, state: CodexScanState): readonly Usag
     if (typeof id === "string") state.sessionId = id;
     if (typeof payloadRecord["model_provider"] === "string") {
       state.modelProvider = payloadRecord["model_provider"];
+    }
+    if (typeof payloadRecord["cwd"] === "string" && payloadRecord["cwd"] !== "") {
+      state.cwd = payloadRecord["cwd"];
     }
     const metaTimestampMs = parseTimestampMs(record["timestamp"]);
     if (metaTimestampMs !== null && isForkedSessionMeta(payloadRecord)) {
@@ -422,6 +426,7 @@ function codexRequestRecord(
     timestampMs,
     model,
     sessionId: state.sessionId,
+    ...(state.cwd === undefined ? {} : { cwd: state.cwd }),
     totals,
     reportedCostUsd: null,
     speed,
@@ -451,6 +456,7 @@ export const codexUsageFormat: TranscriptUsageFormat<CodexScanState> = {
       id: true,
       session_id: true,
       model_provider: true,
+      cwd: true,
       turn_id: true,
       response_id: true,
       model: true,

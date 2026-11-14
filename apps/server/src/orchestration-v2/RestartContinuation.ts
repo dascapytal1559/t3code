@@ -4,6 +4,8 @@ import {
   CommandId,
   isOrchestrationV2WorkActive,
   latestProviderTurnForAttempt,
+  type OrchestrationV2CausedBy,
+  type OrchestrationV2ConversationMessage,
   type OrchestrationV2Run,
   type RunId,
   type ThreadId,
@@ -186,6 +188,22 @@ export function restartContinuationRun(
   return run;
 }
 
+/**
+ * A resumed turn counts where the cut turn counted: to the prompt a person typed, or to that
+ * prompt's recorded cause. Work with neither counts to its thread's cause, else to what the
+ * restart was for (undefined here, so the caller reads the request).
+ */
+function cutRunCause(
+  source: OrchestrationV2Run,
+  sourceMessage: OrchestrationV2ConversationMessage | undefined,
+): OrchestrationV2CausedBy | undefined {
+  if (sourceMessage?.causedBy !== undefined) return sourceMessage.causedBy;
+  if (sourceMessage?.createdBy === "user") {
+    return { threadId: sourceMessage.threadId, runId: source.id, messageId: sourceMessage.id };
+  }
+  return undefined;
+}
+
 export const continueRestartedRun = Effect.fn("RestartContinuation.continueRestartedRun")(
   function* (input: { readonly threadId: ThreadId; readonly sourceRunId: RunId }) {
     const settings = yield* ServerSettings.ServerSettingsService;
@@ -311,6 +329,11 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
           : `${noteText}\n\n${CONTINUE_PROMPT}`;
     const restartNote = yield* resumedCoordinatorNote(projection.thread);
     const text = restartNote === undefined ? resumeText : `${restartNote}\n\n${resumeText}`;
+    const causedBy =
+      cutRunCause(source, sourceMessage) ??
+      (projection.thread.causedBy === undefined
+        ? (yield* threads.restartedFor)?.causedBy
+        : undefined);
     yield* threads
       .dispatch({
         type: "message.dispatch",
@@ -331,6 +354,7 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
         dispatchMode: { type: "start_immediately" },
         createdBy: "agent",
         creationSource: "server",
+        ...(causedBy === undefined ? {} : { causedBy }),
         restartContinuationOfRunId: input.sourceRunId,
       })
       .pipe(

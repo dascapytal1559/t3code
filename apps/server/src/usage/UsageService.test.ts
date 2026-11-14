@@ -43,6 +43,7 @@ import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as Sqlite from "../persistence/Sqlite.ts";
 import * as CodexUsageHistory from "./CodexUsageHistory.ts";
+import * as UsageClaims from "./UsageClaims.ts";
 import * as UsageOrigins from "./UsageOrigins.ts";
 import * as CursorAccountReader from "@t3tools/provider-cursor/server/CursorAccountReader";
 import * as CursorUsageAccounts from "@t3tools/provider-cursor/server/CursorUsageAccounts";
@@ -202,6 +203,7 @@ const layerService = (input: {
     Layer.provideMerge(ProviderHostLive.layer),
     Layer.provideMerge(
       Layer.mergeAll(CodexUsageHistory.layer, UsageOrigins.layer).pipe(
+        Layer.provideMerge(UsageClaims.layer),
         Layer.provideMerge(Sqlite.layerMemory),
       ),
     ),
@@ -3010,7 +3012,7 @@ describe("UsageService", () => {
       }),
   );
 
-  it.effect.each([4, 5, 6, 7, 8, 10, 11, 12, 13, 14])(
+  it.effect.each([4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15])(
     "upgrades a v%s cache: reparses live Codex usage, keeps deleted rollouts, removes the old file",
     (version) =>
       Effect.gen(function* () {
@@ -3112,7 +3114,7 @@ describe("UsageService", () => {
             60 + 20 * (version === 4 ? 1 : 2),
           );
           yield* upgraded.awaitPersisted;
-          assert.strictEqual(SCAN_CACHE_FILE_NAME, "usage-scan-cache-v15.json");
+          assert.strictEqual(SCAN_CACHE_FILE_NAME, "usage-scan-cache-v16.json");
           assert.deepStrictEqual(
             (yield* Effect.promise(() => NodeFSP.readdir(stateDir)))
               .filter((name) => name.startsWith("usage-scan-cache"))

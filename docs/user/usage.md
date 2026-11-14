@@ -61,8 +61,11 @@ On web and desktop, **Tokens by origin** (or **Cost by origin**) splits the usag
 device between **Phone** and **Computer**, and each into **Direct** (prompts you typed) and
 **Coordinated** (prompts an agent sent on behalf of one you typed, shown hatched). A run counts
 toward the message that started it; messages sent while it runs do not split it. Phone includes
-tablets. Usage with no recorded device, such as agent work with no recorded cause, messages from
-before T3 recorded the sending device, and terminal sessions outside T3, is left out of this bar.
+tablets. Sessions an agent runs outside T3, such as a CLI run in its worktree, count with the
+agent's turn. Usage nothing recorded a parent for, such as agent work with no recorded cause or
+your own terminal sessions, counts toward **Computer**, and the legend says how much. Usage from
+before T3 recorded the sending device (7 Nov 2026) and archived history from other machines can
+never trace, so the bar leaves it out and the legend lists it under **Can't trace**.
 
 ## Set custom model prices
 

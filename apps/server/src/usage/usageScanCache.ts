@@ -10,16 +10,19 @@ import { CLAUDE_SYNTHETIC_MODEL } from "../provider/Drivers/claudeUsage.ts";
 import { mergeUsageCopies } from "./usageAggregation.ts";
 import { GUARD_LENGTH, type TranscriptParsePosition } from "./usageTranscriptReader.ts";
 
-const USAGE_SCAN_CACHE_VERSION = 15 as const;
+const USAGE_SCAN_CACHE_VERSION = 16 as const;
 const SPEED_COMPATIBLE_SINCE_VERSION = 4;
+// T3 turns began on 28 Oct 2026, so only transcripts written since can trace by working folder.
+const CWD_TRACEABLE_SINCE_MS = Date.parse("2026-10-28T00:00:00Z");
 
 /**
  * An older server sharing that directory cannot read a newer cache and would
  * replace it, dropping saved usage for deleted transcripts. Separate files keep
  * the newer one; older files are removed once it is saved.
  */
-export const SCAN_CACHE_FILE_NAME = "usage-scan-cache-v15.json";
+export const SCAN_CACHE_FILE_NAME = "usage-scan-cache-v16.json";
 export const LEGACY_SCAN_CACHE_FILE_NAMES = [
+  "usage-scan-cache-v15.json",
   "usage-scan-cache-v14.json",
   "usage-scan-cache-v13.json",
   "usage-scan-cache-v12.json",
@@ -64,6 +67,7 @@ type SerializedRecord = readonly [
   rateModelIndex?: number | null,
   unresolvedServiceTierTurnId?: string | null,
   cacheCreation1hTokens?: number,
+  cwdIndex?: number,
 ];
 
 interface SerializedFile {
@@ -83,18 +87,29 @@ interface SerializedCache {
   readonly version: number;
   readonly models: readonly string[];
   readonly sessions: readonly string[];
+  /** Absent before v16. */
+  readonly cwds?: readonly string[];
   readonly files: Readonly<Record<string, SerializedFile>>;
 }
 
 interface InternTables {
   readonly models: string[];
   readonly sessions: string[];
+  readonly cwds: string[];
   readonly modelIndex: Map<string, number>;
   readonly sessionIndex: Map<string, number>;
+  readonly cwdIndex: Map<string, number>;
 }
 
 function makeInternTables(): InternTables {
-  return { models: [], sessions: [], modelIndex: new Map(), sessionIndex: new Map() };
+  return {
+    models: [],
+    sessions: [],
+    cwds: [],
+    modelIndex: new Map(),
+    sessionIndex: new Map(),
+    cwdIndex: new Map(),
+  };
 }
 
 function intern(table: string[], index: Map<string, number>, value: string): number {
@@ -122,11 +137,17 @@ function serializeFile(entry: CachedFile, tables: InternTables): SerializedFile 
     record.rateModel === undefined
       ? null
       : intern(tables.models, tables.modelIndex, record.rateModel),
-    ...(record.cacheCreation1hTokens !== undefined
-      ? ([record.unresolvedServiceTierTurnId ?? null, record.cacheCreation1hTokens] as const)
-      : record.unresolvedServiceTierTurnId !== undefined
-        ? ([record.unresolvedServiceTierTurnId] as const)
-        : ([] as const)),
+    ...(record.cwd !== undefined
+      ? ([
+          record.unresolvedServiceTierTurnId ?? null,
+          record.cacheCreation1hTokens ?? 0,
+          intern(tables.cwds, tables.cwdIndex, record.cwd),
+        ] as const)
+      : record.cacheCreation1hTokens !== undefined
+        ? ([record.unresolvedServiceTierTurnId ?? null, record.cacheCreation1hTokens] as const)
+        : record.unresolvedServiceTierTurnId !== undefined
+          ? ([record.unresolvedServiceTierTurnId] as const)
+          : ([] as const)),
   ];
   return {
     s: entry.size,
@@ -159,6 +180,7 @@ export function makeScanCacheWriter(): (
       version: USAGE_SCAN_CACHE_VERSION,
       models: tables.models,
       sessions: tables.sessions,
+      cwds: tables.cwds,
     });
     yield `},${tail.slice(1)}`;
   }
@@ -192,8 +214,12 @@ export function decodeScanCache(
 
   if (!root.models.every((value) => typeof value === "string")) return cache;
   if (!root.sessions.every((value) => typeof value === "string")) return cache;
+  const cwdTable = root.cwds ?? [];
+  if (!isRecordArray(cwdTable) || !cwdTable.every((value) => typeof value === "string"))
+    return cache;
   const models = root.models as readonly string[];
   const sessions = root.sessions as readonly string[];
+  const cwds = cwdTable as readonly string[];
 
   // Reject entire corrupt entries; partial survivors would appear warm and hide usage until the file changes.
   const decodeRecords = (
@@ -218,8 +244,10 @@ export function decodeScanCache(
         rateModelIndex,
         unresolvedServiceTierTurnId,
         cacheCreation1h = 0,
+        cwdIndex,
       ] = row as SerializedRecord;
       const speed = typeof speedIndex === "number" ? SPEEDS[speedIndex] : undefined;
+      const cwd = typeof cwdIndex === "number" ? cwds[cwdIndex] : undefined;
 
       const model = typeof modelIndex === "number" ? models[modelIndex] : undefined;
       const rateModel = typeof rateModelIndex === "number" ? models[rateModelIndex] : undefined;
@@ -230,6 +258,7 @@ export function decodeScanCache(
         (unresolvedServiceTierTurnId != null && typeof unresolvedServiceTierTurnId !== "string") ||
         !Number.isFinite(cacheCreation1h) ||
         (rateModelIndex != null && rateModel === undefined) ||
+        (cwdIndex !== undefined && cwd === undefined) ||
         !Number.isFinite(uncached) ||
         !Number.isFinite(cached) ||
         !Number.isFinite(cacheCreation) ||
@@ -250,6 +279,7 @@ export function decodeScanCache(
         model,
         ...(rateModel === undefined ? {} : { rateModel }),
         sessionId: (typeof sessionIndex === "number" ? sessions[sessionIndex] : undefined) ?? "",
+        ...(cwd === undefined ? {} : { cwd }),
         totals: {
           uncachedInputTokens: uncached,
           cachedInputTokens: cached,
@@ -300,8 +330,12 @@ export function decodeScanCache(
     // Keep history for deleted rollouts, but re-parse incompatible reducer state.
     // v13 adds Claude 1-hour cache writes; v14 uses Codex request ledgers.
     // v15 repairs skipped Codex requests whose counters rewound; clean v14 entries stay served.
+    // v16 records each session's working folder, so files T3 turns could have written re-parse.
     const legacy =
       (entry.p === "claude" && version < 13) ||
+      ((entry.p === "claude" || entry.p === "codex") &&
+        version < 16 &&
+        entry.m >= CWD_TRACEABLE_SINCE_MS) ||
       (format.state !== undefined &&
         (version < 6 ||
           (entry.p === "codex" && (version < 14 || (version < 15 && malformedRecords > 0)))));

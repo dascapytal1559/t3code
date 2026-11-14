@@ -975,7 +975,10 @@ export const make = Effect.gen(function* () {
       ],
       { concurrency: 3 },
     );
-    const originIndex = origins === null ? null : new UsageOrigins.UsageOriginIndex(origins.turns);
+    const originIndex = origins === null ? null : new UsageOrigins.UsageOriginIndex(origins);
+    const archivedDirs = new Set(
+      scannedDirs.flatMap((scanned) => (scanned.hostId === undefined ? [] : [scanned.dir])),
+    );
 
     const aggregator = new UsageAggregator({
       timeZone: input.timeZone,
@@ -990,12 +993,19 @@ export const make = Effect.gen(function* () {
       ...(originIndex === null
         ? {}
         : {
-            attributeOrigin: (record: UsageRecord) =>
-              originIndex.lookup(record.sessionId, record.timestampMs),
+            attributeOrigin: (record: UsageRecord, sourcePath: string | undefined) =>
+              UsageOrigins.settleOrigin(
+                originIndex.lookup(record),
+                record.timestampMs,
+                sourcePath !== undefined && archivedDirs.has(sourcePath),
+              ),
           }),
     });
     for (const prompt of origins?.prompts ?? []) {
-      aggregator.countPrompt(prompt.createdAtMs, prompt.key);
+      aggregator.countPrompt(
+        prompt.createdAtMs,
+        UsageOrigins.settleOrigin(prompt.key, prompt.createdAtMs, false),
+      );
     }
 
     const sources: UsageSource[] = [];

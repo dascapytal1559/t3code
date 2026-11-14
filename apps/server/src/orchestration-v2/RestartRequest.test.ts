@@ -1,4 +1,5 @@
 import { assert, it } from "@effect/vitest";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   CommandId,
   EventId,
@@ -18,6 +19,7 @@ import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import * as ServerConfig from "../config.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
@@ -44,6 +46,7 @@ const adapter = {
 const layerServer = (
   layerDatabase: Layer.Layer<SqlClient.SqlClient, never> | typeof SqlitePersistence.layerMemory,
   providerAdapter = adapter,
+  serverConfigLayer?: Layer.Layer<ServerConfig.ServerConfig>,
 ) =>
   ThreadManagementService.layer.pipe(
     Layer.provideMerge(
@@ -55,7 +58,11 @@ const layerServer = (
         ProviderReplayHarness.layerWithRegistry(
           { name: "restart-request" },
           ProviderAdapterRegistry.layerFromAdapters([providerAdapter]),
-          { databaseLayer: layerDatabase, runEffectWorker: false },
+          {
+            databaseLayer: layerDatabase,
+            runEffectWorker: false,
+            ...(serverConfigLayer === undefined ? {} : { serverConfigLayer }),
+          },
         ),
       ),
     ),
@@ -181,7 +188,7 @@ it.effect("a pending restart queues every new turn, held, while running turns fi
     yield* composerSend(busy, "steer", { type: "steer_active", targetRunId: running.id });
     assert.deepEqual(yield* runs(busy), ["starting", "queued:restart", "queued:restart"]);
 
-    // A second request only replaces the reason.
+    // A second request only replaces the reason and cause.
     const first = yield* orchestrator.restartRequest;
     yield* orchestrator.requestRestart({ reason: "install build 0.1.9", requestedBy: "Other" });
     assert.deepEqual(yield* orchestrator.restartRequest, {
@@ -200,6 +207,15 @@ it.effect("a pending restart queues every new turn, held, while running turns fi
 it.effect("a cancel and the next server start release only the restart's holds", () =>
   Effect.gen(function* () {
     const layerSameDatabase = Layer.succeed(SqlClient.SqlClient, yield* SqlClient.SqlClient);
+    const layerSameConfig = Layer.succeed(
+      ServerConfig.ServerConfig,
+      yield* ServerConfig.ServerConfig,
+    );
+    const server = layerServer(layerSameDatabase, adapter, layerSameConfig);
+    const causedBy = {
+      threadId: ThreadId.make("thread:lead"),
+      messageId: MessageId.make("message:landed-task"),
+    };
     const stopped = ThreadId.make("thread:restart-stopped");
     const cancelled = ThreadId.make("thread:restart-cancelled");
     const restarted = ThreadId.make("thread:restart-restarted");
@@ -229,7 +245,12 @@ it.effect("a cancel and the next server start release only the restart's holds",
       assert.isNull(yield* orchestrator.restartRequest);
 
       yield* composerSend(stoppedWhilePending, "running");
-      yield* requestRestart;
+      yield* orchestrator.requestRestart({
+        reason: "install build 0.1.8",
+        requestedBy: "FirstMate",
+        causedBy,
+      });
+      assert.deepInclude(yield* orchestrator.restartStatus, { causedBy });
       yield* composerSend(restarted, "after the restart");
       // A held message can still leave the queue, as the web app's Stash does.
       yield* composerSend(restarted, "stashed instead");
@@ -256,19 +277,41 @@ it.effect("a cancel and the next server start release only the restart's holds",
       // A request holds what was already queued, too.
       assert.deepEqual(yield* runs(cancelled), ["starting", "queued:restart"]);
       assert.deepEqual(yield* runs(stoppedWhilePending), ["interrupted", "queued:held"]);
-    }).pipe(Effect.provide(layerServer(layerSameDatabase)));
+    }).pipe(Effect.provide(server));
 
-    // The next server starts with no request and releases what the old one held.
+    // The next server starts with no request, knows what the restart was for, and releases
+    // what the old one held.
     yield* Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       assert.isNull(yield* orchestrator.restartRequest);
+      assert.deepInclude(yield* orchestrator.restartedFor, {
+        reason: "install build 0.1.8",
+        requestedBy: "FirstMate",
+        causedBy,
+      });
       assert.strictEqual(yield* orchestrator.releaseRestartHolds, 2);
       assert.deepEqual(yield* runs(restarted), ["starting", "cancelled:restart"]);
       assert.deepEqual(yield* runs(cancelled), ["starting", "queued"]);
       assert.deepEqual(yield* runs(stopped), ["interrupted", "queued:held"]);
       assert.deepEqual(yield* runs(stoppedWhilePending), ["interrupted", "queued:held"]);
-    }).pipe(Effect.provide(layerServer(layerSameDatabase)));
-  }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
+      yield* requestRestart;
+      yield* orchestrator.cancelRestart;
+    }).pipe(Effect.provide(server));
+
+    // A start after a cancelled request, a crash or a manual restart was not requested.
+    yield* Effect.gen(function* () {
+      assert.isNull(yield* (yield* Orchestrator.OrchestratorV2).restartedFor);
+    }).pipe(Effect.provide(server));
+  }).pipe(
+    Effect.provide(
+      Layer.merge(
+        SqlitePersistence.layerMemory,
+        ServerConfig.layerTest(process.cwd(), { prefix: "t3-restart-request-" }).pipe(
+          Layer.provide(NodeServices.layer),
+        ),
+      ),
+    ),
+  ),
 );
 
 it.effect("a workspace launch prepares during a pending restart and waits to start", () =>

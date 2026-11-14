@@ -371,6 +371,10 @@ const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
     ["Cancel", "Cancelling", "Cancelled", "the T3 restart"],
     "environment-update",
   ),
+  t3_usage_claim: tool(
+    ["Claim", "Claiming", "Claimed", "usage for a prompt"],
+    "environment-update",
+  ),
   t3_thread_launch: tool(["Launch", "Launching", "Launched", "a project thread"], "thread-create"),
   t3_project_list: tool(["List", "Listing", "Listed", "projects"], "project-list"),
   t3_project_read: tool(["Read", "Reading", "Read", "a project"], "project-read"),

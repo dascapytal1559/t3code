@@ -6,6 +6,7 @@ import {
   type OrchestrationV2Run,
   type OrchestrationV2ThreadShell,
   type ProjectId,
+  type RestartRequest,
   type ServerSettings,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -32,6 +33,7 @@ interface Roster {
   readonly settings: ServerSettings;
   readonly nowMs: number;
   readonly startedAt: string;
+  readonly restartedFor: RestartRequest | null;
   readonly live: ReadonlyArray<OrchestrationV2ThreadShell>;
   readonly crewOf: ReadonlyMap<ThreadId | undefined, ReadonlyArray<OrchestrationV2ThreadShell>>;
   readonly pinnedProjects: ReadonlySet<ProjectId>;
@@ -50,6 +52,7 @@ const loadRoster = Effect.gen(function* () {
     settings,
     nowMs: DateTime.toEpochMillis(yield* DateTime.now),
     startedAt: DateTime.formatIso(yield* threads.serverStartedAt),
+    restartedFor: yield* threads.restartedFor,
     live,
     crewOf: Map.groupBy(
       live.filter((thread) => thread.crewOf !== undefined),
@@ -84,6 +87,9 @@ function owedNote(roster: Roster, coordinator: OrchestrationV2ThreadShell): stri
   const omitted = cutCrew.length - MAX_NOTE_CREW;
   return [
     `The T3 server restarted at ${roster.startedAt}.`,
+    ...(roster.restartedFor === null
+      ? ["No restart was requested, so it crashed or was restarted by hand."]
+      : []),
     ...(cutCrew.length === 0
       ? ["None of your crew threads had a run interrupted."]
       : [
@@ -109,6 +115,7 @@ const logNoteFailure = <A, E, R>(effect: Effect.Effect<A, E, R>, threadId: Threa
 const sendNote = Effect.fn("CoordinatorRestartNote.sendNote")(
   function* (startedAt: string, coordinatorId: ThreadId, text: string) {
     const threads = yield* ThreadManagementService.ThreadManagementService;
+    const causedBy = (yield* threads.restartedFor)?.causedBy;
     const messageId = MessageId.make(`message:restart-note:${coordinatorId}:${startedAt}`);
     const { messages } = yield* threads.getThreadRecords(coordinatorId, ["messages"], {
       messageIds: [messageId],
@@ -130,6 +137,7 @@ const sendNote = Effect.fn("CoordinatorRestartNote.sendNote")(
       dispatchMode: { type: "queue_after_active" },
       createdBy: "agent",
       creationSource: "server",
+      ...(causedBy === undefined ? {} : { causedBy }),
     });
   },
   (effect, _startedAt, threadId) => logNoteFailure(effect, threadId),

@@ -1,4 +1,9 @@
-import type { UsageOrigin, UsageOriginBasis, UsageOriginVia } from "@t3tools/contracts";
+import {
+  USAGE_ORIGINS_RECORDED_SINCE,
+  type UsageOrigin,
+  type UsageOriginBasis,
+  type UsageOriginVia,
+} from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -6,6 +11,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
+
+import * as UsageClaims from "./UsageClaims.ts";
 
 export interface UsageOriginKey {
   readonly origin: UsageOrigin;
@@ -100,9 +107,32 @@ export function resolveMessageOrigin(
 
 const NO_PROMPT: UsageOriginKey = { origin: "unknown", basis: "noPrompt" };
 
+/**
+ * Where usage counts once nothing more is recorded. By the captain's rule, usage with no recorded
+ * parent counts to the computer, as `default`. Usage from before T3 recorded devices, or copied
+ * from another machine's archive, can never trace, so it keeps an honest label instead.
+ */
+export function settleOrigin(
+  key: UsageOriginKey | null,
+  timestampMs: number,
+  archived: boolean,
+): UsageOriginKey {
+  if (key !== null && (key.origin === "phone" || key.origin === "computer")) return key;
+  if (archived) return { origin: "unknown", basis: "archive" };
+  if (timestampMs < Date.parse(USAGE_ORIGINS_RECORDED_SINCE)) {
+    return { origin: "unknown", basis: "beforeOrigins" };
+  }
+  return {
+    origin: "computer",
+    basis: "default",
+    ...(key !== null && sentByAgent(key) ? { via: key.origin } : {}),
+  };
+}
+
 /** A provider turn of one native session, keyed by the run's starting message. */
 export interface OriginTurn {
   readonly sessionId: string;
+  readonly threadId: string;
   readonly startedAtMs: number;
   readonly completedAtMs: number | null;
   readonly key: UsageOriginKey;
@@ -113,45 +143,138 @@ export interface OriginPrompt {
   readonly key: UsageOriginKey;
 }
 
+/** A T3 thread's own worktree: sessions working inside it are that thread's work. */
+export interface OriginWorktree {
+  readonly threadId: string;
+  readonly directory: string;
+}
+
+/** A session or folder an agent claimed for a prompt, keyed by where that prompt counts. */
+export interface OriginClaim {
+  readonly kind: "session" | "directory";
+  readonly target: string;
+  readonly key: UsageOriginKey;
+}
+
 export interface UsageOriginSnapshot {
   readonly turns: readonly OriginTurn[];
   readonly prompts: readonly OriginPrompt[];
+  readonly worktrees: readonly OriginWorktree[];
+  readonly claims: readonly OriginClaim[];
+}
+
+export interface OriginRecord {
+  readonly sessionId: string;
+  readonly timestampMs: number;
+  readonly cwd?: string | undefined;
 }
 
 // Records written this long after a turn ended belong to no T3 turn, such as a terminal resume.
 const LATE_RECORD_GRACE_MS = 5 * 60 * 1000;
 
-/** Matches a transcript record to the T3 turn of its native session that was running at the time. */
+/** The last turn that started at or before the time; turns are sorted by start. */
+function turnStartedBy(turns: readonly OriginTurn[], timestampMs: number): OriginTurn | undefined {
+  let low = 0;
+  let high = turns.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (turns[middle]!.startedAtMs <= timestampMs) low = middle + 1;
+    else high = middle;
+  }
+  return turns[low - 1];
+}
+
+function isWithin(cwd: string, directory: string): boolean {
+  if (!cwd.startsWith(directory)) return false;
+  const next = cwd[directory.length];
+  return next === undefined || next === "/" || next === "\\" || /[\\/]$/.test(directory);
+}
+
+type FolderOwner =
+  | { readonly kind: "session"; readonly sessionId: string }
+  | { readonly kind: "worktree"; readonly directory: string }
+  | { readonly kind: "claim"; readonly key: UsageOriginKey };
+
+const byStart = (a: OriginTurn, b: OriginTurn) => a.startedAtMs - b.startedAtMs;
+
+function appendTo<K>(index: Map<K, OriginTurn[]>, key: K, turns: readonly OriginTurn[]): void {
+  const list = index.get(key);
+  if (list === undefined) index.set(key, [...turns]);
+  else list.push(...turns);
+}
+
+/**
+ * Matches a transcript record to the T3 work it belongs to: the turn of its own native session
+ * running at the time, else a claim on its session, else its working folder. A folder inside a
+ * session's own folder (Claude names its scratchpad for the session), a thread's worktree, or a
+ * claimed folder counts to the latest turn there, or to the claim; the deepest folder wins.
+ */
 export class UsageOriginIndex {
   readonly #turnsBySession = new Map<string, OriginTurn[]>();
+  // Worktree slots are reused, so a folder holds the turns of every thread that worked there.
+  readonly #turnsByWorktree = new Map<string, OriginTurn[]>();
+  readonly #claimedSessions = new Map<string, UsageOriginKey>();
+  /** Deepest first; a claim wins a tie with a worktree. */
+  readonly #folders: { readonly directory: string; readonly owner: FolderOwner }[];
+  // Records repeat their folder thousands of times; its owner does not depend on the time.
+  readonly #ownerByCwd = new Map<string, FolderOwner | null>();
 
-  constructor(turns: readonly OriginTurn[]) {
-    for (const turn of turns) {
-      const sessionTurns = this.#turnsBySession.get(turn.sessionId) ?? [];
-      sessionTurns.push(turn);
-      this.#turnsBySession.set(turn.sessionId, sessionTurns);
+  constructor(snapshot: Pick<UsageOriginSnapshot, "turns" | "worktrees" | "claims">) {
+    const turnsByThread = new Map<string, OriginTurn[]>();
+    for (const turn of snapshot.turns) {
+      appendTo(this.#turnsBySession, turn.sessionId, [turn]);
+      appendTo(turnsByThread, turn.threadId, [turn]);
     }
-    for (const sessionTurns of this.#turnsBySession.values()) {
-      sessionTurns.sort((a, b) => a.startedAtMs - b.startedAtMs);
+    const folders: { directory: string; owner: FolderOwner }[] = [];
+    for (const claim of snapshot.claims) {
+      if (claim.kind === "session") this.#claimedSessions.set(claim.target, claim.key);
+      else folders.push({ directory: claim.target, owner: { kind: "claim", key: claim.key } });
     }
+    for (const { threadId, directory } of snapshot.worktrees) {
+      if (!this.#turnsByWorktree.has(directory)) {
+        folders.push({ directory, owner: { kind: "worktree", directory } });
+      }
+      appendTo(this.#turnsByWorktree, directory, turnsByThread.get(threadId) ?? []);
+    }
+    for (const turns of this.#turnsBySession.values()) turns.sort(byStart);
+    for (const turns of this.#turnsByWorktree.values()) turns.sort(byStart);
+    this.#folders = folders.toSorted((a, b) => b.directory.length - a.directory.length);
   }
 
-  lookup(sessionId: string, timestampMs: number): UsageOriginKey | null {
-    const turns = this.#turnsBySession.get(sessionId);
-    if (turns === undefined) return null;
-    let low = 0;
-    let high = turns.length;
-    while (low < high) {
-      const middle = (low + high) >>> 1;
-      if (turns[middle]!.startedAtMs <= timestampMs) low = middle + 1;
-      else high = middle;
+  lookup(record: OriginRecord): UsageOriginKey | null {
+    const own = this.#turnsBySession.get(record.sessionId);
+    const turn = own === undefined ? undefined : turnStartedBy(own, record.timestampMs);
+    if (
+      turn !== undefined &&
+      (turn.completedAtMs === null ||
+        record.timestampMs <= turn.completedAtMs + LATE_RECORD_GRACE_MS)
+    ) {
+      return turn.key;
     }
-    const turn = turns[low - 1];
-    if (turn === undefined) return null;
-    if (turn.completedAtMs !== null && timestampMs > turn.completedAtMs + LATE_RECORD_GRACE_MS) {
-      return null;
-    }
-    return turn.key;
+    const claimed = this.#claimedSessions.get(record.sessionId);
+    if (claimed !== undefined) return claimed;
+    // A T3 session's record outside its turns is someone resuming it elsewhere, such as a terminal.
+    if (own !== undefined || record.cwd === undefined) return null;
+    const owner = this.#ownerOf(record.cwd);
+    if (owner === null) return null;
+    if (owner.kind === "claim") return owner.key;
+    const turns =
+      owner.kind === "session"
+        ? this.#turnsBySession.get(owner.sessionId)
+        : this.#turnsByWorktree.get(owner.directory);
+    return (turns && turnStartedBy(turns, record.timestampMs)?.key) ?? null;
+  }
+
+  #ownerOf(cwd: string): FolderOwner | null {
+    const cached = this.#ownerByCwd.get(cwd);
+    if (cached !== undefined) return cached;
+    const sessionId = cwd.split(/[\\/]/).find((segment) => this.#turnsBySession.has(segment));
+    const owner: FolderOwner | null =
+      sessionId !== undefined
+        ? { kind: "session", sessionId }
+        : (this.#folders.find((folder) => isWithin(cwd, folder.directory))?.owner ?? null);
+    this.#ownerByCwd.set(cwd, owner);
+    return owner;
   }
 }
 
@@ -210,6 +333,7 @@ const TURN_LOOKBACK_MS = 2 * 24 * 60 * 60 * 1000;
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const claims = yield* UsageClaims.UsageClaims;
 
   // Columns of `message` (joined to its `thread`) that classify it and name its cause.
   const messageColumns = sql.literal(`
@@ -267,11 +391,15 @@ const make = Effect.gen(function* () {
         Omit<MessageColumns, "message_id"> & {
           readonly message_id: string | null;
           readonly session_id: string | null;
+          readonly thread_id: string;
+          readonly worktree_path: string | null;
           readonly started_at: string | null;
           readonly completed_at: string | null;
         }
       >`
       SELECT json_extract(provider_thread.payload_json, '$.nativeThreadRef.nativeId') AS session_id,
+        turn.thread_id,
+        json_extract(thread.payload_json, '$.worktreePath') AS worktree_path,
         turn.started_at,
         turn.completed_at,
         ${messageColumns}
@@ -298,20 +426,36 @@ const make = Effect.gen(function* () {
         row.message_id === null ? null : messageOf({ ...row, message_id: row.message_id }),
       );
       const promptMessages = promptRows.map(messageOf);
+      // A claim counts like an agent prompt caused by the prompt it names.
+      const claimRows = yield* claims.read;
+      const claimMessages = claimRows.map((claim): CausalMessage => ({
+        id: `usage-claim:${claim.kind}:${claim.target}`,
+        createdBy: "agent",
+        creationSource: "mcp",
+        surface: "mcp",
+        deviceType: "bot",
+        crew: false,
+        notification: false,
+        causedBy: claim.causeMessageId,
+      }));
       const causes = yield* loadCauses([
         ...turnMessages.filter((message) => message !== null),
         ...promptMessages,
+        ...claimMessages,
       ]);
       const originOf = (message: CausalMessage) =>
         resolveMessageOrigin(message, (id) => causes.get(id));
 
       const turns: OriginTurn[] = [];
+      const worktrees = new Map<string, string>();
       turnRows.forEach((row, index) => {
+        if (row.worktree_path !== null) worktrees.set(row.thread_id, row.worktree_path);
         const startedAtMs = parseMs(row.started_at);
         if (row.session_id === null || startedAtMs === null) return;
         const message = turnMessages[index] ?? null;
         turns.push({
           sessionId: row.session_id,
+          threadId: row.thread_id,
           startedAtMs,
           completedAtMs: parseMs(row.completed_at),
           key: message === null ? NO_PROMPT : originOf(message),
@@ -323,7 +467,16 @@ const make = Effect.gen(function* () {
         if (createdAtMs !== null)
           prompts.push({ createdAtMs, key: originOf(promptMessages[index]!) });
       });
-      return { turns, prompts } satisfies UsageOriginSnapshot;
+      return {
+        turns,
+        prompts,
+        worktrees: [...worktrees].map(([threadId, directory]) => ({ threadId, directory })),
+        claims: claimRows.map((claim, index) => ({
+          kind: claim.kind,
+          target: claim.target,
+          key: originOf(claimMessages[index]!),
+        })),
+      } satisfies UsageOriginSnapshot;
     },
     Effect.mapError((cause) => new UsageOriginsReadError({ cause })),
   );

@@ -19,6 +19,31 @@ const plus = (a: OriginAmount, b: OriginAmount): OriginAmount => ({
   totalTokens: a.totalTokens + b.totalTokens,
 });
 
+/**
+ * What the bar leaves out or assumes: computer usage with no recorded parent, which the server
+ * counts there by default, and history that can never trace.
+ */
+export interface OriginNotes {
+  readonly assumed: OriginAmount;
+  readonly beforeOrigins: OriginAmount;
+  readonly archive: OriginAmount;
+}
+
+export function originNotes(origins: MergedOrigins): OriginNotes {
+  let assumed = EMPTY;
+  let beforeOrigins = EMPTY;
+  let archive = EMPTY;
+  for (const row of origins.rows) {
+    for (const entry of row.bases) {
+      if (row.origin === "computer" && entry.basis === "default") assumed = plus(assumed, entry);
+      if (row.origin === "unknown" && entry.basis === "beforeOrigins")
+        beforeOrigins = plus(beforeOrigins, entry);
+      if (row.origin === "unknown" && entry.basis === "archive") archive = plus(archive, entry);
+    }
+  }
+  return { assumed, beforeOrigins, archive };
+}
+
 export function originAxes(origins: MergedOrigins): OriginAxes {
   const devices = {
     phone: { direct: EMPTY, coordinated: EMPTY },

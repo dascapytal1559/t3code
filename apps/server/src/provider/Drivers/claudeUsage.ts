@@ -63,12 +63,14 @@ function parseClaudeRecord(parsed: unknown): readonly UsageRecord[] {
     messageId === null && requestId === null ? null : `${messageId ?? ""}:${requestId ?? ""}`;
 
   const cost = record["costUSD"];
+  const cwd = typeof record["cwd"] === "string" && record["cwd"] !== "" ? record["cwd"] : undefined;
 
   const executor: UsageRecord = {
     provider: "claude",
     timestampMs,
     model,
     sessionId: typeof record["sessionId"] === "string" ? record["sessionId"] : "",
+    ...(cwd === undefined ? {} : { cwd }),
     totals: {
       uncachedInputTokens: tokenCount(usageRecord["input_tokens"]),
       cachedInputTokens: tokenCount(usageRecord["cache_read_input_tokens"]),
@@ -102,6 +104,7 @@ function parseClaudeRecord(parsed: unknown): readonly UsageRecord[] {
       timestampMs,
       model: advisorModel,
       sessionId: executor.sessionId,
+      ...(cwd === undefined ? {} : { cwd }),
       totals: {
         uncachedInputTokens: tokenCount(advisor["input_tokens"]),
         cachedInputTokens: tokenCount(advisor["cache_read_input_tokens"]),
@@ -124,6 +127,7 @@ export const claudeUsageFormat: TranscriptUsageFormat<void> = {
     timestamp: true,
     requestId: true,
     sessionId: true,
+    cwd: true,
     costUSD: true,
     message: { id: true, model: true, usage: true },
   },

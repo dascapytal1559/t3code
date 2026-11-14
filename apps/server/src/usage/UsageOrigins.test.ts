@@ -4,12 +4,17 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import { MessageId, ThreadId, USAGE_ORIGINS_RECORDED_SINCE } from "@t3tools/contracts";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+
 import * as Sqlite from "../persistence/Sqlite.ts";
+import * as UsageClaims from "./UsageClaims.ts";
 import {
   classifyMessageOrigin,
   layer as usageOriginsLayer,
   MAX_CAUSE_DEPTH,
   resolveMessageOrigin,
+  settleOrigin,
   UsageOriginIndex,
   UsageOrigins,
   type CausalMessage,
@@ -140,27 +145,127 @@ describe("UsageOriginIndex", () => {
   it("credits a record to its session's turn running at the time", () => {
     const phone = { origin: "phone", basis: "stamp" } as const;
     const agent = { origin: "agent", basis: "stamp" } as const;
-    const index = new UsageOriginIndex([
-      { sessionId: "s", startedAtMs: 2_000, completedAtMs: null, key: agent },
-      { sessionId: "s", startedAtMs: 1_000, completedAtMs: 1_500, key: phone },
-    ]);
-    assert.strictEqual(index.lookup("s", 999), null);
-    assert.deepStrictEqual(index.lookup("s", 1_000), phone);
+    const index = new UsageOriginIndex({
+      turns: [
+        { sessionId: "s", threadId: "t", startedAtMs: 2_000, completedAtMs: null, key: agent },
+        { sessionId: "s", threadId: "t", startedAtMs: 1_000, completedAtMs: 1_500, key: phone },
+      ],
+      worktrees: [],
+      claims: [],
+    });
+    const at = (sessionId: string, timestampMs: number) => index.lookup({ sessionId, timestampMs });
+    assert.strictEqual(at("s", 999), null);
+    assert.deepStrictEqual(at("s", 1_000), phone);
     // Late records within the grace still belong to the finished turn.
-    assert.deepStrictEqual(index.lookup("s", 1_900), phone);
-    assert.deepStrictEqual(index.lookup("s", 2_000), agent);
-    assert.deepStrictEqual(index.lookup("s", 10 * 60 * 1000), agent);
-    assert.strictEqual(index.lookup("other", 1_200), null);
+    assert.deepStrictEqual(at("s", 1_900), phone);
+    assert.deepStrictEqual(at("s", 2_000), agent);
+    assert.deepStrictEqual(at("s", 10 * 60 * 1000), agent);
+    assert.strictEqual(at("other", 1_200), null);
+  });
 
-    const finished = new UsageOriginIndex([
-      { sessionId: "s", startedAtMs: 0, completedAtMs: 1_000, key: phone },
-    ]);
-    // A terminal resume of the session long after the T3 turn ended is not T3's.
-    assert.strictEqual(finished.lookup("s", 1_000 + 6 * 60 * 1000), null);
+  it("credits sessions outside T3 by claim, then by the folder they ran in", () => {
+    const phone = { origin: "phone", basis: "stamp" } as const;
+    const computer = { origin: "computer", basis: "stamp" } as const;
+    const claimed = { origin: "phone", basis: "stamp", via: "agent" } as const;
+    const late = 1_000 + 6 * 60 * 1000;
+    const index = new UsageOriginIndex({
+      turns: [
+        {
+          sessionId: "lead",
+          threadId: "lead-thread",
+          startedAtMs: 0,
+          completedAtMs: 1_000,
+          key: phone,
+        },
+        { sessionId: "w1", threadId: "worker", startedAtMs: 0, completedAtMs: 1_000, key: phone },
+        {
+          sessionId: "w2",
+          threadId: "worker",
+          startedAtMs: 5_000,
+          completedAtMs: 6_000,
+          key: computer,
+        },
+        {
+          sessionId: "next",
+          threadId: "next-worker",
+          startedAtMs: 20_000,
+          completedAtMs: null,
+          key: claimed,
+        },
+      ],
+      // The slot is reused by a later worker.
+      worktrees: [
+        { threadId: "worker", directory: "/wt/worker" },
+        { threadId: "next-worker", directory: "/wt/worker" },
+      ],
+      claims: [
+        { kind: "session", target: "pipeline-session", key: claimed },
+        { kind: "directory", target: "/runs/pipeline", key: claimed },
+        { kind: "directory", target: "/wt/worker/nested", key: claimed },
+      ],
+    });
+    const at = (sessionId: string, timestampMs: number, cwd?: string) =>
+      index.lookup({ sessionId, timestampMs, cwd });
+    assert.deepStrictEqual(at("pipeline-session", 9_000), claimed);
+    assert.deepStrictEqual(at("cli", 9_000, "/runs/pipeline/review"), claimed);
+    assert.strictEqual(at("cli", 9_000, "/runs/pipeline-other"), null);
+    // A child run in a thread's worktree counts to that thread's latest turn by then.
+    assert.deepStrictEqual(at("cli", 2_000, "/wt/worker/backtest"), phone);
+    assert.deepStrictEqual(at("cli", 7_000, "/wt/worker"), computer);
+    assert.deepStrictEqual(at("cli", 21_000, "/wt/worker"), claimed);
+    assert.strictEqual(at("cli", -1, "/wt/worker"), null);
+    // The deepest folder wins.
+    assert.deepStrictEqual(at("cli", 7_000, "/wt/worker/nested/x"), claimed);
+    // Claude names a session's scratchpad folder for the session.
+    assert.deepStrictEqual(at("grok", late, "/tmp/claude-501/-proj/lead/scratchpad"), phone);
+    // A terminal resume of a T3 session long after its turn ended is not T3's, even in its worktree.
+    assert.strictEqual(at("w2", 6_000 + 6 * 60 * 1000, "/wt/worker"), null);
   });
 });
 
-const seedThread = (input: { id: string; crewOf?: string; causedBy?: Record<string, string> }) =>
+describe("settleOrigin", () => {
+  it("counts usage with no recorded parent to the computer, and labels history that can never trace", () => {
+    const recorded = Date.parse(USAGE_ORIGINS_RECORDED_SINCE);
+    const phone = { origin: "phone", basis: "stamp" } as const;
+    assert.deepStrictEqual(settleOrigin(phone, recorded - 1, false), phone);
+    assert.deepStrictEqual(settleOrigin(phone, recorded, true), phone);
+    assert.deepStrictEqual(settleOrigin(null, recorded, false), {
+      origin: "computer",
+      basis: "default",
+    });
+    // Agent work keeps who sent it, so it stays coordinated.
+    assert.deepStrictEqual(
+      settleOrigin({ origin: "crew", basis: "notification" }, recorded, false),
+      {
+        origin: "computer",
+        basis: "default",
+        via: "crew",
+      },
+    );
+    assert.deepStrictEqual(settleOrigin({ origin: "unknown", basis: "server" }, recorded, false), {
+      origin: "computer",
+      basis: "default",
+    });
+    assert.deepStrictEqual(
+      settleOrigin({ origin: "agent", basis: "sender" }, recorded - 1, false),
+      {
+        origin: "unknown",
+        basis: "beforeOrigins",
+      },
+    );
+    assert.deepStrictEqual(settleOrigin(null, recorded, true), {
+      origin: "unknown",
+      basis: "archive",
+    });
+  });
+});
+
+const seedThread = (input: {
+  id: string;
+  crewOf?: string;
+  causedBy?: Record<string, string>;
+  worktreePath?: string;
+}) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     yield* sql`INSERT INTO orchestration_v2_projection_threads ${sql.insert({
@@ -175,6 +280,7 @@ const seedThread = (input: { id: string; crewOf?: string; causedBy?: Record<stri
       payload_json: encodeJson({
         id: input.id,
         crewOf: input.crewOf ?? null,
+        worktreePath: input.worktreePath ?? null,
         ...(input.causedBy === undefined ? {} : { causedBy: input.causedBy }),
       }),
     })}`;
@@ -253,7 +359,7 @@ describe("UsageOrigins.read", () => {
   it.effect("joins each provider turn to its run's starting message and counts prompts", () =>
     Effect.gen(function* () {
       yield* seedThread({ id: "lead" });
-      yield* seedThread({ id: "worker", crewOf: "lead" });
+      yield* seedThread({ id: "worker", crewOf: "lead", worktreePath: "/wt/worker" });
       yield* seedRun({
         id: "phone",
         ordinal: 1,
@@ -335,38 +441,56 @@ describe("UsageOrigins.read", () => {
         message: { createdBy: "user", creationSource: "web" },
       });
 
+      // A pipeline the worker ran, claimed for the phone prompt; a claim made again replaces it.
+      const claims = yield* UsageClaims.UsageClaims;
+      const cause = { threadId: ThreadId.make("lead"), messageId: MessageId.make("message-phone") };
+      yield* claims.claim({
+        target: { kind: "session", sessionId: "pipeline-session" },
+        causedBy: { threadId: ThreadId.make("worker"), messageId: MessageId.make("message-brief") },
+      });
+      yield* claims.claim({
+        target: { kind: "session", sessionId: "pipeline-session" },
+        causedBy: cause,
+      });
+      yield* claims.claim({ target: { kind: "session", sessionId: "removed" }, causedBy: cause });
+      yield* claims.claim({ target: { kind: "session", sessionId: "removed" }, causedBy: null });
+
       const origins = yield* UsageOrigins;
       const snapshot = yield* origins.read(
         Date.parse("2026-08-07T00:00:00.000Z"),
         Date.parse("2026-08-08T00:00:00.000Z"),
       );
-      const index = new UsageOriginIndex(snapshot.turns);
-      assert.deepStrictEqual(index.lookup("lead-session", Date.parse("2026-08-07T01:01:00Z")), {
+      const index = new UsageOriginIndex(snapshot);
+      const at = (sessionId: string, iso: string, cwd?: string) =>
+        index.lookup({ sessionId, timestampMs: Date.parse(iso), cwd });
+      assert.deepStrictEqual(at("lead-session", "2026-08-07T01:01:00Z"), {
         origin: "phone",
         basis: "stamp",
       });
-      assert.deepStrictEqual(index.lookup("worker-session", Date.parse("2026-08-07T01:06:00Z")), {
+      assert.deepStrictEqual(at("worker-session", "2026-08-07T01:06:00Z"), {
         origin: "crew",
         basis: "stamp",
       });
       const viaCrew = { origin: "phone", basis: "stamp", via: "crew" } as const;
-      assert.deepStrictEqual(
-        index.lookup("caused-session", Date.parse("2026-08-07T01:08:00Z")),
-        viaCrew,
-      );
-      assert.deepStrictEqual(
-        index.lookup("worker-session", Date.parse("2026-08-07T01:21:00Z")),
-        viaCrew,
-      );
-      assert.deepStrictEqual(index.lookup("worker-session", Date.parse("2026-08-07T01:41:00Z")), {
+      assert.deepStrictEqual(at("caused-session", "2026-08-07T01:08:00Z"), viaCrew);
+      assert.deepStrictEqual(at("worker-session", "2026-08-07T01:21:00Z"), viaCrew);
+      assert.deepStrictEqual(at("worker-session", "2026-08-07T01:41:00Z"), {
         origin: "crew",
         basis: "notification",
       });
-      assert.deepStrictEqual(index.lookup("lead-session", Date.parse("2026-08-07T02:01:00Z")), {
+      assert.deepStrictEqual(at("lead-session", "2026-08-07T02:01:00Z"), {
         origin: "unknown",
         basis: "noPrompt",
       });
-      assert.strictEqual(index.lookup("old-session", Date.parse("2026-07-01T00:01:00Z")), null);
+      assert.strictEqual(at("old-session", "2026-07-01T00:01:00Z"), null);
+      assert.deepStrictEqual(at("pipeline-session", "2026-08-07T03:00:00Z"), {
+        origin: "phone",
+        basis: "stamp",
+        via: "agent",
+      });
+      assert.strictEqual(at("removed", "2026-08-07T03:00:00Z"), null);
+      // A CLI run inside the worker's worktree counts to the worker's turn then.
+      assert.deepStrictEqual(at("cli-session", "2026-08-07T01:25:00Z", "/wt/worker/runs"), viaCrew);
       assert.deepStrictEqual(
         snapshot.prompts
           .map(({ key }) => `${key.origin}/${key.basis}/${key.via ?? "-"}`)
@@ -379,6 +503,13 @@ describe("UsageOrigins.read", () => {
           "phone/stamp/crew",
         ],
       );
-    }).pipe(Effect.provide(usageOriginsLayer.pipe(Layer.provideMerge(Sqlite.layerMemory)))),
+    }).pipe(
+      Effect.provide(
+        usageOriginsLayer.pipe(
+          Layer.provideMerge(UsageClaims.layer),
+          Layer.provideMerge(Layer.merge(Sqlite.layerMemory, NodeServices.layer)),
+        ),
+      ),
+    ),
   );
 });

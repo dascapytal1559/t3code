@@ -81,9 +81,9 @@ export const UsageOrigin = Schema.Literals(["phone", "computer", "agent", "crew"
 export type UsageOrigin = typeof UsageOrigin.Type;
 
 /**
- * How the origin was read: `stamp` is the client stamp; unstamped messages read `nativeApp` or
- * `sender` from creation, `notification` (a background-task update), `server`, `unstamped` (sent
- * before stamps) or `noPrompt` (message gone). Older clients drop unknown bases as outside T3.
+ * How the origin was read: the client `stamp`, else creation fields (`nativeApp`, `sender`,
+ * `notification`, `server`, `unstamped`, `noPrompt`). Usage with no recorded parent is computer
+ * `default`; usage that can never trace is `beforeOrigins` or `archive`. Older clients drop unknown bases.
  */
 export const UsageOriginBasis = Schema.Literals([
   "stamp",
@@ -93,8 +93,14 @@ export const UsageOriginBasis = Schema.Literals([
   "server",
   "unstamped",
   "noPrompt",
+  "default",
+  "beforeOrigins",
+  "archive",
 ]);
 export type UsageOriginBasis = typeof UsageOriginBasis.Type;
+
+/** When this server began recording which device sent each prompt; nothing earlier can trace. */
+export const USAGE_ORIGINS_RECORDED_SINCE = "2026-11-07T10:41:00.000Z";
 
 /**
  * Who sent a prompt counted to a phone or computer through its recorded `causedBy` chain:
@@ -123,7 +129,7 @@ export const UsageOriginPrompts = Schema.Struct({
 });
 export type UsageOriginPrompts = typeof UsageOriginPrompts.Type;
 
-/** Usage records outside every T3 run (terminal sessions, archives) have no row. */
+/** Every usage record settles into a row; servers that predate settling leave records outside T3 runs without one. */
 export const UsageOrigins = Schema.Struct({
   usage: ForwardCompatibleArray(UsageOriginUsage),
   prompts: ForwardCompatibleArray(UsageOriginPrompts),

@@ -150,11 +150,11 @@ defaults to `["~/.t3-usage-archive"]` and can be changed in
 ![The Usage page's By origin table: Phone, Computer, Agent and Unknown rows with prompts, share and cost, then FirstMate crew and Outside T3 runs under "Not tied to a device"](media/usage-by-origin.png)
 
 The captain wants to see the prompts he sent from his phone and the work they
-started, so the Usage page on web and desktop has a **By origin** table: for
-each origin, the period's prompts and the tokens or cost of the runs they
-started. It is built only from what T3 already records (see
-[Messages record which client sent them](#messages-record-which-client-sent-them)):
-no new meter and no device guessing.
+started, so the Usage page on web and desktop has a **Tokens by origin** bar
+(Cost by origin): the period's usage split between phone and computer, direct
+or coordinated. It is built from what T3 records (see
+[Messages record which client sent them](#messages-record-which-client-sent-them)),
+plus one rule for usage with no recorded parent, below.
 
 - A prompt is a user-role message. A run belongs to its `userMessageId`;
   messages that steer a running turn do not split it.
@@ -173,17 +173,35 @@ no new meter and no device guessing.
   row reads "6 via FirstMate crew". Any other root (an agent acting on its
   own, a server or unstamped prompt), a missing message or a cycle leaves the
   prompt where it was.
-- Agent prompts in a FirstMate crew thread (`crewOf`) with no such chain are
-  **FirstMate crew**, shown under "Not tied to a device" with usage no T3 run
-  started (**Outside T3 runs**: terminal sessions, archives, other machines,
-  servers without origins).
 - Tokens are joined before aggregation: a transcript record's native
   `sessionId` finds the provider thread (`nativeThreadRef.nativeId`), and its
   timestamp the turn running then. A record more than five minutes after that
-  turn completed, such as a terminal resume, is outside T3. Origins split the
+  turn completed, such as a terminal resume, belongs to no T3 turn. Origins split the
   kept records after dedupe and the model filter, counting a duplicate's merged
-  copies once in upstream's `#accumulate` as its bucket does, so with Outside
-  T3 runs they add up to the page's totals.
+  copies once in upstream's `#accumulate` as its bucket does, so they add up to
+  the page's totals.
+- A record in no T3 turn of its own session traces by claim, then by folder.
+  An agent claims a session it ran outside T3 (a pipeline, a CLI run) with
+  `t3_usage_claim` `{ sessionId | directory, causedBy }` (stored in the fork
+  table `usage_claims`; claiming again replaces it, `causedBy: null` removes
+  it), and the claim counts like an agent prompt with that cause. Otherwise the
+  record's working folder (`cwd`, kept by the scanner for Claude and Codex)
+  decides: a folder named for a T3 session's native id (Claude's scratchpad),
+  a thread's worktree, or a claimed folder, deepest first. A worktree counts to
+  the latest turn started there by any thread, since slots are reused. A
+  record of a T3 session past its turn, such as a terminal resume, never
+  traces by folder.
+- Usage still without a phone or computer settles by the captain's rule
+  (`settleOrigin`): with no recorded parent it counts to the computer as basis
+  `default`, keeping `via` for agent work so it stays coordinated. Two kinds
+  can never trace and keep a label instead: anything before
+  `USAGE_ORIGINS_RECORDED_SINCE` (7 Nov 2026, when device stamps shipped) is
+  `unknown`/`beforeOrigins`, and archived history from other machines is
+  `unknown`/`archive`. The bar shows phone and computer; its legend gives the
+  computer's `default` share and lists the other two under "Can't trace".
+- The scan cache (v16) keeps each record's `cwd`. Moving from v15 re-parses
+  live Claude and Codex transcripts changed since 28 Oct 2026, when T3 turns
+  began; older files keep their saved records, which cannot trace by folder.
 
 The server sends `origins` on `UsageSummary` (optional; usage rows keyed by
 origin, basis, `via`, provider and source with no day, so the payload stays small),
@@ -407,8 +425,9 @@ crew. Code: `apps/web/src/components/sidebar/coordinatorGroup.logic.ts`.
 
 A server restart ends the coordinator's session, and nothing inside it can wake
 it again. So after each start T3 sends a coordinator one note, attributed to
-T3 Code. Its first line is `The T3 server restarted at <serverStartedAt>.`, then
-come the crew that had a run cut (or "None of your crew threads had a run
+T3 Code. Its first line is `The T3 server restarted at <serverStartedAt>.`; when
+no restart was pending (a crash or a manual restart) the next says "No restart
+was requested, so it crashed or was restarted by hand." Then come the crew that had a run cut (or "None of your crew threads had a run
 interrupted."), and then that its session ended with whatever lived only in it,
 such as background commands, waits and monitors, and to run its session-start
 steps again, check what is still running, and report. A thread pinned with
@@ -693,11 +712,13 @@ MCP tools, on the environment toolkit. Request and cancel need a full-access
 client or live full-access caller thread, and refuse a linked environment's
 caller, like `t3_objectives_set`; status needs only orchestration access.
 
-- `t3_restart_request` `{ reason }` sets the request (`reason`: trimmed, 1 to
-  500 characters, such as `install build 0.1.8`), or replaces only its reason
-  when one is pending. `requestedBy` is the caller thread's title or the MCP
-  client's label. Returns the status below.
-- `t3_restart_status` `{}` returns `{ pending, reason, requestedAt,
+- `t3_restart_request` `{ reason, causedBy? }` sets the request (`reason`:
+  trimmed, 1 to 500 characters, such as `install build 0.1.8`), or replaces
+  its reason and cause when one is pending. `causedBy` is the prompt whose work
+  the restart installs, checked like `t3_thread_launch`'s; FirstMate passes the
+  latest landed task's cause. `requestedBy` is the caller thread's title or the
+  MCP client's label. Returns the status below.
+- `t3_restart_status` `{}` returns `{ pending, reason, requestedAt, causedBy,
   activeTurns, drained, serverStartedAt }`. `activeTurns` counts threads with a
   turn in flight (preparing, starting, running or waiting on a person), in any
   project, including the caller's own; `drained` is `pending` and
@@ -709,12 +730,18 @@ caller, like `t3_objectives_set`; status needs only orchestration access.
   the status.
 
 T3 never restarts itself: the requester polls `t3_restart_status` from outside
-any turn until `drained`, then quits and relaunches T3. The request lives only
-in the server's memory, so a server start clears it, and the held runs persist
-in the projection until that start releases them.
+any turn until `drained`, then quits and relaunches T3. The pending request is
+saved to `<stateDir>/restart-request.json`, so the next server start reads what
+the restart was for (`restartedFor`) and removes the file; a cancel removes it
+too. The held runs persist in the projection until that start releases them.
+The restart note carries the request's `causedBy`. A restart continuation
+counts where the cut turn counted: to the prompt a person typed, or to that
+prompt's `causedBy`; only a turn with neither, in a thread with no cause of its
+own, takes the request's. Code: `RestartRequestFile.ts`, `cutRunCause` in
+`RestartContinuation.ts`.
 
 Clients read it on the `subscribeRestartRequest` stream (`{ request: {
-reason, requestedBy, requestedAt } | null }`) and cancel with
+reason, requestedBy, requestedAt, causedBy? } | null }`) and cancel with
 `server.cancelRestartRequest`. The web app follows only its primary
 environment. Mobile gets the server-side queueing but shows no notice yet; it
 hides Resume on a thread whose queue holds a restart-held run, and its queue
@@ -1061,6 +1088,9 @@ it acted on, `t3_thread_launch` and `t3_thread_send` take an optional
   records no cause.
   `t3_thread_send_attachments` and `delegate_task` do not take it (delegated
   tasks already record their parent run).
+- `t3_restart_request` and `t3_usage_claim` take the same checked `causedBy`:
+  a restart's note and continuations count to it, and a claimed session or
+  folder outside T3 counts to it.
 
 Usage follows these links ([Usage by origin](#usage-by-origin)). Code:
 `verifyCause` in `apps/server/src/mcp/threadAccess.ts`, `OrchestrationV2CausedBy`

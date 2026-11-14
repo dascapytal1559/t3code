@@ -204,6 +204,7 @@ import * as CursorAccountReader from "@t3tools/provider-cursor/server/CursorAcco
 import * as CursorUsageAccounts from "@t3tools/provider-cursor/server/CursorUsageAccounts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as CodexUsageHistory from "./usage/CodexUsageHistory.ts";
+import * as UsageClaims from "./usage/UsageClaims.ts";
 import * as UsageOrigins from "./usage/UsageOrigins.ts";
 import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
@@ -309,6 +310,8 @@ const layerUsage = UsageService.layer.pipe(
   ),
   Layer.provide(UsageOrigins.layer),
   Layer.provide(layerServerSettings),
+  // Merged so the MCP claim tool writes through the same service Usage reads.
+  Layer.provideMerge(UsageClaims.layer),
 );
 
 const layerResourceDiagnostics = Layer.mergeAll(

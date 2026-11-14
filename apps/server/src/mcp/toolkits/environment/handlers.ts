@@ -4,14 +4,19 @@ import {
   type ServerSettingsPatch,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Path from "effect/Path";
 import * as Environment from "../../../environment/ServerEnvironment.ts";
+import * as UsageClaims from "../../../usage/UsageClaims.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
 import * as Settings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
-import { readCaller, unavailable } from "../../threadAccess.ts";
+import { readCaller, unavailable, verifyCause } from "../../threadAccess.ts";
 import { EnvironmentToolkit } from "./tools.ts";
+
+const invalidRequest = (message: string) =>
+  new OrchestratorMcpFailure({ code: "invalid_request", message });
 
 export function preferences(settings: ServerSettings) {
   const {
@@ -93,13 +98,14 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
     ),
   ),
   // These take no thread lock: holding queues locks every thread, the caller's among them.
-  t3_restart_request: McpToolAccess.writesEnvironment(({ reason }) =>
+  t3_restart_request: McpToolAccess.writesEnvironment(({ reason, causedBy }) =>
     Effect.gen(function* () {
-      const { scope, caller } = yield* access;
+      const { scope, caller, threads } = yield* access;
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       yield* orchestrator.requestRestart({
         reason,
         requestedBy: caller?.title ?? scope.client?.label ?? "MCP",
+        causedBy: causedBy === undefined ? undefined : yield* verifyCause(threads, causedBy),
       });
       return yield* restartStatus;
     }),
@@ -110,6 +116,36 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
       yield* access;
       yield* (yield* Orchestrator.OrchestratorV2).cancelRestart;
       return yield* restartStatus;
+    }),
+  ),
+  t3_usage_claim: McpToolAccess.writesEnvironment(({ sessionId, directory, causedBy }) =>
+    Effect.gen(function* () {
+      const { threads } = yield* access;
+      const path = yield* Path.Path;
+      const target: UsageClaims.UsageClaimTarget | undefined =
+        directory === undefined
+          ? sessionId === undefined
+            ? undefined
+            : { kind: "session", sessionId }
+          : sessionId === undefined
+            ? { kind: "directory", directory }
+            : undefined;
+      if (target === undefined)
+        return yield* invalidRequest("Give exactly one of sessionId or directory.");
+      if (target.kind === "directory" && !path.isAbsolute(target.directory))
+        return yield* invalidRequest("directory must be an absolute path.");
+      const claimed = yield* (yield* UsageClaims.UsageClaims)
+        .claim({
+          target,
+          causedBy: causedBy === null ? null : yield* verifyCause(threads, causedBy),
+        })
+        .pipe(Effect.mapError(unavailable));
+      return {
+        ...(claimed.target.kind === "session"
+          ? { sessionId: claimed.target.sessionId }
+          : { directory: claimed.target.directory }),
+        causedBy: claimed.causedBy,
+      };
     }),
   ),
 });

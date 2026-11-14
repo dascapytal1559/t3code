@@ -109,7 +109,9 @@ import * as Stream from "effect/Stream";
 import * as Semaphore from "effect/Semaphore";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
+import type * as ServerConfig from "../config.ts";
 import * as ProjectStore from "./ProjectStore.ts";
+import * as RestartRequestFile from "./RestartRequestFile.ts";
 import {
   isCheckpointRestoreIsolated,
   SHARED_WORKSPACE_RESTORE_MESSAGE,
@@ -396,11 +398,14 @@ export interface OrchestratorV2Shape {
   /** The pending restart, which holds every new turn until it is cancelled or the server restarts. */
   readonly restartRequest: Effect.Effect<RestartRequest | null>;
   readonly restartRequestChanges: Stream.Stream<RestartRequest | null>;
-  /** Sets the pending restart, or replaces its reason, and holds every queued run. */
+  /** Sets the pending restart, or replaces its reason and cause, and holds every queued run. */
   readonly requestRestart: (input: {
     readonly reason: string;
     readonly requestedBy: string;
+    readonly causedBy?: OrchestrationV2CausedBy | undefined;
   }) => Effect.Effect<RestartRequest>;
+  /** The request the previous process left pending, which this start fulfils; null when unrequested. */
+  readonly restartedFor: Effect.Effect<RestartRequest | null>;
   /** Clears the pending restart and starts what it held. */
   readonly cancelRestart: Effect.Effect<void>;
   readonly restartStatus: Effect.Effect<RestartRequestStatus, OrchestratorV2Error>;
@@ -1482,7 +1487,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   const runtimePolicy = yield* RuntimePolicyV2;
   const threadForkService = yield* ThreadForkServiceV2;
   const threadDispatch = yield* ThreadCommandExecutor.ThreadCommandExecutor;
-  // In memory on purpose: a server start ends the restart it waited for.
+  // A server start ends the restart it waited for, so the pending request starts empty.
+  const restartRequestFile = yield* RestartRequestFile.open();
   const restartRequestRef = yield* SubscriptionRef.make<RestartRequest | null>(null);
   const serverStartedAt = yield* DateTime.now;
   const restartPending = Effect.map(SubscriptionRef.get(restartRequestRef), (r) => r !== null);
@@ -3296,11 +3302,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         Effect.gen(function* () {
           const requestedAt = DateTime.formatIso(yield* DateTime.now);
           const current = yield* SubscriptionRef.get(restartRequestRef);
-          const request: RestartRequest =
-            current === null
-              ? { reason: input.reason.trim(), requestedBy: input.requestedBy, requestedAt }
-              : { ...current, reason: input.reason.trim() };
+          const { causedBy: _previousCause, ...kept } = current ?? {
+            requestedBy: input.requestedBy,
+            requestedAt,
+          };
+          const request: RestartRequest = {
+            ...kept,
+            reason: input.reason.trim(),
+            ...(input.causedBy === undefined ? {} : { causedBy: input.causedBy }),
+          };
           yield* SubscriptionRef.set(restartRequestRef, request);
+          yield* restartRequestFile.save(request);
           const threadIds = yield* projectionStore.getRecoveryThreadIds("unheld-queued-runs").pipe(
             Effect.catch((cause) =>
               Effect.logWarning("Could not list queued runs to hold for a restart", {
@@ -3330,7 +3342,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
   const cancelRestart = restartLock
     .withPermits(1)(
-      SubscriptionRef.set(restartRequestRef, null).pipe(Effect.andThen(releaseRestartHolds)),
+      SubscriptionRef.set(restartRequestRef, null).pipe(
+        Effect.andThen(restartRequestFile.save(null)),
+        Effect.andThen(releaseRestartHolds),
+      ),
     )
     .pipe(Effect.asVoid, Effect.withSpan("Orchestrator.cancelRestart"));
 
@@ -3341,6 +3356,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       pending: request !== null,
       reason: request?.reason ?? null,
       requestedAt: request?.requestedAt ?? null,
+      causedBy: request?.causedBy ?? null,
       activeTurns,
       drained: request !== null && activeTurns === 0,
       serverStartedAt: DateTime.formatIso(serverStartedAt),
@@ -16017,6 +16033,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     restartRequest: SubscriptionRef.get(restartRequestRef),
     restartRequestChanges: SubscriptionRef.changes(restartRequestRef),
     requestRestart,
+    restartedFor: Effect.succeed(restartRequestFile.restartedFor),
     cancelRestart,
     restartStatus,
     serverStartedAt: Effect.succeed(serverStartedAt),
@@ -16294,6 +16311,7 @@ export const layer: Layer.Layer<
   | CheckpointServiceV2
   | FileSystem.FileSystem
   | Path.Path
+  | ServerConfig.ServerConfig
   | CommandPolicyV2
   | CommandReceiptStoreV2
   | ContextHandoffServiceV2
