@@ -13,7 +13,10 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
+import {
+  resolveAgentMessageFold,
+  resolveUserMessagePresentation,
+} from "@t3tools/client-runtime/user-message";
 import { Link } from "@tanstack/react-router";
 import { useQuietThreadShell } from "../../state/entities";
 import { useEnvironment } from "../../state/environments";
@@ -471,8 +474,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const [expanded, setExpanded] = useState(false);
   const revealFoldRef = findRevealRef(() => setExpanded(true));
   const senderShell = useQuietThreadShell(folded ? senderRef : null);
+  const knownFold = folded ? resolveAgentMessageFold(userMessage.text) : null;
   const senderLabel =
-    senderShell?.title.trim() || row.message.linkedSender?.title.trim() || "Agent";
+    knownFold?.label ||
+    senderShell?.title.trim() ||
+    row.message.linkedSender?.title.trim() ||
+    "Agent";
   // Only an environment this client is connected to can open the sender's thread there.
   const linkedSenderEnvironment = useEnvironment(row.message.linkedSender?.environmentId ?? null);
   const canOpenSender =
@@ -568,10 +575,12 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   );
   const promptLink = promptLinkFor(plainText);
   const foldSummary =
+    knownFold?.summary ??
     plainText
       .split(/\r?\n/)
       .find((line) => line.trim().length > 0)
-      ?.trim() ?? "";
+      ?.trim() ??
+    "";
   const mediaCopyRecords = mediaOnly
     ? resolvedContext.records.flatMap((record) => {
         const known = asKnownContextRecord(record);
