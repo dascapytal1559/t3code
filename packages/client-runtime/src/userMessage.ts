@@ -32,6 +32,22 @@ export const IDLE_COMPACTION_TITLES = {
 const LEGACY_AUTOMATION_PREFIX = /^\[Triggered by schedule task: [^\r\n]+\]\r?\n\r?\n/;
 const LEGACY_AUTOMATION_MESSAGE_ID = /^scheduled-task-message:(.+):\d+:(?:scheduled|manual)$/;
 
+// Firstmate's fm_task_inbox_doorbell_line (bin/fm-task-inbox-lib.sh) writes exactly this line.
+const FIRSTMATE_DOORBELL =
+  /^: Firstmate instruction waiting: list "\$FM_TASK_INBOX"\/\*\.msg in your '[^\r\n]+' steering inbox, read and act on each in numeric order, then mv each into its handled\/\.$/;
+
+/**
+ * Fork-only: FirstMate's steering doorbell folds to a short label. The agent still gets the full
+ * line, and expanding the fold shows it.
+ */
+export function resolveAgentMessageFold(
+  text: string,
+): { readonly label: string; readonly summary: string } | null {
+  return FIRSTMATE_DOORBELL.test(text.trim())
+    ? { label: "FirstMate", summary: "New instruction" }
+    : null;
+}
+
 export function resolveUserMessageFileCards(message: {
   readonly text: string;
   readonly attachments: ReadonlyArray<ChatAttachment>;

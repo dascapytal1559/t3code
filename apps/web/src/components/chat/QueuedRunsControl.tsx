@@ -12,7 +12,10 @@ import type {
   RunId,
   ThreadId,
 } from "@t3tools/contracts";
-import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
+import {
+  resolveAgentMessageFold,
+  resolveUserMessagePresentation,
+} from "@t3tools/client-runtime/user-message";
 import { Link } from "@tanstack/react-router";
 import {
   ArrowUpIcon,
@@ -526,6 +529,7 @@ function QueuedMessage(props: {
             label:
               senderShell?.title.trim() || props.message?.linkedSender?.title.trim() || "Agent",
             summary: props.previewText.split(/\r?\n/).find((line) => line.trim()) ?? "",
+            ...resolveAgentMessageFold(props.previewText),
           }
         : null;
   const bodyVisible = fold === null || expanded;

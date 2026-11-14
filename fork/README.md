@@ -589,6 +589,29 @@ or gone. A worker launched without a parent is an ordinary thread to T3 and
 alerts as one. Code: `latestRunEndsQuietly` (shared with the phone relay) and
 the `crewOf` check in `ThreadNotificationCoordinator.tsx`.
 
+## FirstMate's doorbell folds to one short line
+
+When FirstMate has a new instruction for a worker, it sends the worker one
+fixed line (`: Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg …`,
+written by `fm_task_inbox_doorbell_line` in FirstMate's
+`bin/fm-task-inbox-lib.sh`). In the worker's thread that card now reads
+**FirstMate · New instruction** instead of "Agent" and the raw line; expanding
+it shows the line as sent. The queued-runs control labels a queued doorbell the
+same way. The worker's next step, reading the inbox file, already shows the
+instruction itself.
+
+Upstream shows text another agent sent exactly as sent, folded to its first
+line under the sender's thread title or "Agent", so the user sees what the
+agent was told. The fork departs only for this one line: it is a mechanical
+pointer with the same words every time, so showing it says nothing. Only the
+display changes; the stored message and what the provider receives are
+untouched. The match is the whole line, so a message that merely mentions it
+is shown as usual. The mobile app is unchanged. Code:
+`resolveAgentMessageFold` in `packages/client-runtime/src/userMessage.ts`, used
+by `TimelineUserMessageRow.tsx` and `QueuedRunsControl.tsx` in
+`apps/web/src/components/chat/`. If FirstMate changes the line, change the
+pattern with it.
+
 ## A fresh start on FirstMate ends the old session
 
 Upstream closes the previous provider session on a fresh start (`/clear`, or

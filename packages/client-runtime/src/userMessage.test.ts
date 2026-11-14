@@ -4,6 +4,7 @@ import { ComposerContextId, GuestMessageId, ScheduledTaskId } from "@t3tools/con
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@t3tools/shared/composerContextReferences";
 
 import {
+  resolveAgentMessageFold,
   resolveUserMessageFileCards,
   resolveUserMessageGrouping,
   resolveUserMessagePresentation,
@@ -231,6 +232,27 @@ describe("resolveUserMessagePresentation", () => {
         attribution: "automation",
         scheduledTaskId: "task:daily-audit",
       });
+    }
+  });
+});
+
+describe("resolveAgentMessageFold", () => {
+  const doorbell = (inbox: string) =>
+    `: Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg in your '${inbox}' steering inbox, read and act on each in numeric order, then mv each into its handled/.`;
+
+  it("labels FirstMate's doorbell line and nothing that merely resembles it", () => {
+    for (const text of [doorbell("t3-doorbell-card.inbox"), doorbell("it'\\''s.inbox")]) {
+      expect(resolveAgentMessageFold(text)).toEqual({
+        label: "FirstMate",
+        summary: "New instruction",
+      });
+    }
+    for (const text of [
+      "Firstmate instruction waiting: please check your inbox",
+      `${doorbell("a.inbox")}\nAlso fix the tests.`,
+      `Quoting it: ${doorbell("a.inbox")}`,
+    ]) {
+      expect(resolveAgentMessageFold(text)).toBeNull();
     }
   });
 });
