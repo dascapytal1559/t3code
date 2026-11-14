@@ -3630,8 +3630,8 @@ export default function ChatView(props: ChatViewProps) {
                     }
                   >
                     <ChildThreadApprovals threadRef={activeThreadRef} />
-                    {crewComposerHidden ? (
-                      <div className="flex flex-col gap-2">
+                    {isCrewThread ? (
+                      <div hidden={!crewComposerHidden} className="flex flex-col gap-2">
                         <CrewRunControls
                           onStop={canInterruptRunningThread ? onInterruptStable : null}
                           onResume={

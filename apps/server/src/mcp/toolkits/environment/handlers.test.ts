@@ -4,6 +4,7 @@ import { expect, it } from "@effect/vitest";
 import {
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
+  MessageId,
   ProviderInstanceId,
   ThreadId,
   type OrchestrationV2ThreadShell,
@@ -25,6 +26,7 @@ import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as Settings from "../../../serverSettings.ts";
+import * as UsageClaims from "../../../usage/UsageClaims.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { liveThreadShell } from "../../McpToolAccess.testkit.ts";
@@ -205,4 +207,76 @@ it.effect("refuses a preferences update when the caller's turn ends while it wai
       ),
     );
   }),
+);
+
+it.effect(
+  "t3_usage_claim takes exactly one absolute target and a real cause, and removes a claim",
+  () =>
+    Effect.gen(function* () {
+      const claims = yield* UsageClaims.UsageClaims;
+      const toolkit = yield* EnvironmentToolkit;
+      const claim = (params: {
+        readonly sessionId?: string;
+        readonly directory?: string;
+        readonly causedBy: { readonly threadId: ThreadId; readonly messageId: MessageId } | null;
+      }) =>
+        toolkit.handle("t3_usage_claim", params).pipe(
+          Stream.unwrap,
+          Stream.runCollect,
+          Effect.map((results) => results.at(-1)?.result),
+        );
+      const madeUp = {
+        threadId: ThreadId.make("thread:made-up"),
+        messageId: MessageId.make("message:made-up"),
+      };
+
+      for (const [params, refusal] of [
+        [{ causedBy: madeUp }, "exactly one"],
+        [{ sessionId: "pipeline", directory: "/runs/one", causedBy: madeUp }, "exactly one"],
+        [{ directory: "runs/one", causedBy: madeUp }, "absolute"],
+        [{ sessionId: "pipeline", causedBy: madeUp }, "causedBy"],
+      ] as const) {
+        expect(yield* claim(params)).toMatchObject({
+          code: "invalid_request",
+          message: expect.stringContaining(refusal),
+        });
+      }
+      expect(yield* claims.read).toEqual([]);
+
+      yield* claims.claim({
+        target: { kind: "session", sessionId: "pipeline" },
+        causedBy: { threadId, messageId: MessageId.make("message:prompt") },
+      });
+      expect(yield* claim({ sessionId: "pipeline", causedBy: null })).toEqual({
+        sessionId: "pipeline",
+        causedBy: null,
+      });
+      expect(yield* claims.read).toEqual([]);
+    }).pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(EnvironmentHandlers.layer).pipe(
+          Layer.provideMerge(
+            Layer.mergeAll(
+              ThreadCommandExecutor.layer,
+              layerServerEnvironment,
+              Layer.mock(Orchestrator.OrchestratorV2)({}),
+              Layer.mock(ThreadManagement.ThreadManagementService)({
+                getThreadShell: () => Effect.succeed(null),
+              }),
+              Layer.mock(Settings.ServerSettingsService)({}),
+              Layer.succeed(McpInvocationContext.McpInvocationContext, {
+                environmentId,
+                requestNamespace: "client:firstmate",
+                thread: undefined,
+                client: { sessionId: "firstmate", label: "FirstMate", access: "full-access" },
+                capabilities: new Set(["orchestration" as const]),
+                issuedAt: 0,
+              }),
+            ),
+          ),
+          Layer.provideMerge(UsageClaims.layer),
+          Layer.provideMerge(Layer.merge(SqlitePersistence.layerMemory, NodeServices.layer)),
+        ),
+      ),
+    ),
 );

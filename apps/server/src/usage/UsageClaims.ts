@@ -51,14 +51,24 @@ const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
 
-  const resolveTarget = (target: UsageClaimTarget): Effect.Effect<UsageClaimTarget> => {
-    if (target.kind === "session") return Effect.succeed(target);
-    const resolved = path.resolve(target.directory);
-    return fs.realPath(resolved).pipe(
-      Effect.orElseSucceed(() => resolved),
-      Effect.map((directory) => ({ kind: "directory", directory })),
+  const realDirectory = (resolved: string): Effect.Effect<string> =>
+    fs.realPath(resolved).pipe(
+      Effect.catch(() => {
+        const parent = path.dirname(resolved);
+        return parent === resolved
+          ? Effect.succeed(resolved)
+          : realDirectory(parent).pipe(
+              Effect.map((real) => path.join(real, path.basename(resolved))),
+            );
+      }),
     );
-  };
+
+  const resolveTarget = (target: UsageClaimTarget): Effect.Effect<UsageClaimTarget> =>
+    target.kind === "session"
+      ? Effect.succeed(target)
+      : realDirectory(path.resolve(target.directory)).pipe(
+          Effect.map((directory) => ({ kind: "directory", directory })),
+        );
 
   const claim = Effect.fn("UsageClaims.claim")(function* (input: {
     readonly target: UsageClaimTarget;
@@ -67,7 +77,11 @@ const make = Effect.gen(function* () {
     const target = yield* resolveTarget(input.target);
     const key = target.kind === "session" ? target.sessionId : target.directory;
     if (input.causedBy === null) {
-      yield* sql`DELETE FROM usage_claims WHERE target_kind = ${target.kind} AND target = ${key}`;
+      const keys =
+        input.target.kind === "directory" ? [key, path.resolve(input.target.directory)] : [key];
+      yield* sql`
+        DELETE FROM usage_claims WHERE target_kind = ${target.kind} AND target IN ${sql.in(keys)}
+      `;
       return { target, causedBy: null };
     }
     const claimedAt = DateTime.formatIso(yield* DateTime.now);

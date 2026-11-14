@@ -147,8 +147,6 @@ defaults to `["~/.t3-usage-archive"]` and can be changed in
 
 ## Usage by origin
 
-![The Usage page's By origin table: Phone, Computer, Agent and Unknown rows with prompts, share and cost, then FirstMate crew and Outside T3 runs under "Not tied to a device"](media/usage-by-origin.png)
-
 The captain wants to see the prompts he sent from his phone and the work they
 started, so the Usage page on web and desktop has a **Tokens by origin** bar
 (Cost by origin): the period's usage split between phone and computer, direct
@@ -163,16 +161,14 @@ plus one rule for usage with no recorded parent, below.
   anything else is Unknown. Unstamped messages: `creationSource` `mobile` is
   Phone (labelled as from the phone app, before stamps); `createdBy` `agent`
   or `creationSource` `mcp`/`provider` is Agent; everything else (older web
-  messages, server-made messages) is Unknown. Each row's second line says how
-  its prompts were read.
+  messages, server-made messages) is Unknown.
 - An agent prompt (Agent or crew) follows its recorded cause (see
   [Work records the prompt that caused it](#work-records-the-prompt-that-caused-it)):
   its own `causedBy`, else its thread's. If the chain reaches a Phone or
   Computer prompt within 8 hops, the prompt and its run count there, keeping
-  the root's basis and adding `via` (`agent` or `crew`) for who sent it; the
-  row reads "6 via FirstMate crew". Any other root (an agent acting on its
-  own, a server or unstamped prompt), a missing message or a cycle leaves the
-  prompt where it was.
+  the root's basis and adding `via` (`agent` or `crew`) for who sent it. Any
+  other root (an agent acting on its own, a server or unstamped prompt), a
+  missing message or a cycle leaves the prompt where it was.
 - Tokens are joined before aggregation: a transcript record's native
   `sessionId` finds the provider thread (`nativeThreadRef.nativeId`), and its
   timestamp the turn running then. A record more than five minutes after that

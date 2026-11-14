@@ -42,7 +42,8 @@ export function CrewReply(props: {
   const startTurn = useOrchestrationCommand(threadEnvironment.startTurn, { reportFailure: false });
 
   const send = async () => {
-    if (text.trim().length === 0 || sending || props.disabled) return;
+    const sent = text;
+    if (sent.trim().length === 0 || sending || props.disabled) return;
     setSending(true);
     const result = await startTurn({
       environmentId: thread.environmentId,
@@ -51,7 +52,7 @@ export function CrewReply(props: {
         message: {
           messageId: newMessageId(),
           role: "user",
-          text: formatCrewReply({ thread, text }),
+          text: formatCrewReply({ thread, text: sent }),
           attachments: [],
         },
         runtimeMode: coordinator.runtimeMode,
@@ -71,7 +72,7 @@ export function CrewReply(props: {
       });
       return;
     }
-    setText("");
+    setText((current) => (current === sent ? "" : current));
     toastManager.add({ type: "success", title: "Sent to FirstMate" });
   };
 

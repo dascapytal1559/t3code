@@ -119,6 +119,7 @@ it("a FirstMate worker shows no composer: a box that sends to FirstMate, Stop an
       },
     });
   // An approval brings the box back, since its feedback goes through it.
+  await userEvent.fill(reply, "Unsent draft.");
   await act(() => approval(false));
   await expect.element(page.getByRole("button", { name: "Approve", exact: true })).toBeEnabled();
   await expect.element(editor).toBeVisible();
@@ -133,6 +134,7 @@ it("a FirstMate worker shows no composer: a box that sends to FirstMate, Stop an
   });
   await expect.element(editor).not.toBeInTheDocument();
   await expect.element(stop).not.toBeInTheDocument();
+  await expect.element(reply).toHaveValue("Unsent draft.");
 
   // After a Stop the server holds the queue; Resume is the way back, and the box stays hidden.
   const resume = page.getByRole("button", { name: "Resume", exact: true });
