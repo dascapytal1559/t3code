@@ -1212,6 +1212,66 @@ field in `ProjectWriteFileInput`, the `projects.writeFile` handler in
 `apps/server/src/ws.ts`, and `resolveHostWriteTarget` in
 `apps/server/src/workspace/WorkspaceFileSystem.ts`.
 
+## Live Markdown editor
+
+![A report open in the file panel as a rendered page, with the caret inside bold text whose two asterisk marks show dimmed](media/live-markdown.png)
+
+A Markdown file that can be edited opens in the file panel as a rendered page
+you type into, like Obsidian's Live Preview. Markdown marks show, dimmed, only
+where the caret is; the rest stays drawn. The editor holds the file's exact
+text and never converts it, so nothing an agent wrote is reformatted on save,
+line endings included. Upstream offers a read-only rendered view or a source
+editor, and opens Markdown as source.
+
+It draws headings, bold, italic, strikethrough, inline code, quotes, callouts,
+rules, lists and task boxes, code blocks with colours, tables, images from the
+project, links, and frontmatter as a properties card. Mermaid, maths,
+footnotes and raw HTML show as their source. A table, and the properties
+card, turn into their Markdown while the caret is in them. A line break in
+the file stays a line break, so a paragraph wrapped at 80 columns keeps its
+short lines.
+
+- The toolbar button still switches to upstream's source editor. Markdown
+  opens rendered first (`t3code.renderMarkdown` now defaults to `true`).
+- Saving is upstream's: the same save session and the same dot on the tab.
+- A change on disk, such as an agent's edit, is applied line by line and
+  stays out of the undo history. The caret, the scroll position and undo
+  stay, and the changed lines are tinted for two seconds.
+- A plain click follows a link: a file opens in the panel, a web address in
+  the browser. Option-click puts the caret in the link. `[[wiki-links]]` are
+  drawn but do not open. A link to a line (`report.md:42`) scrolls to it
+  here; the read-only view still switches to source for that.
+- The outline button lists the headings and jumps to one, also in the
+  read-only view and on a phone. Cmd+F finds and replaces. A section or a
+  block folds from the chevron beside it.
+- Keys: Cmd+I italic, Cmd+E inline code, Cmd+Option+X strikethrough, Cmd+L
+  toggles a task, Tab nests a list item. Cmd+B bolds only selected text, as
+  in the message box; with a bare caret it stays the sidebar toggle.
+  Strikethrough avoids Cmd+Shift+X, which is the workspace picker.
+- A file that cannot be edited (a read-only connection, a file outside the
+  project, a read cut off at 1 MB) and a phone (a narrow window or a touch
+  pointer) keep upstream's rendered view, which gains the properties card
+  and the outline button.
+
+It is CodeMirror 6 (MIT) with a decoration layer of the fork's own, in a
+chunk fetched when a Markdown file first opens this way. Code:
+`apps/web/src/components/files/liveMarkdown/`, one file per feature, all
+registered in `liveMarkdownEditor.ts`. `LiveMarkdownSurface.tsx` connects the
+editor to T3's save path, signed image URLs and link opening.
+
+Shared files it touches, for syncs: in `FilePreviewPanel.tsx` the lazy
+import, the `liveMarkdown` flag and the branch that mounts the editor, the
+`renderMarkdown` line (a linked line no longer forces source while the editor
+shows), the default of `t3code.renderMarkdown`, and the outline button with
+its ref; the properties card in `FileMarkdownPreview.tsx`; the selector in
+`AppSidebarLayout.tsx` that lets Cmd+B bold a selection; the
+`markdownFrontmatterLength` export in
+`packages/shared/src/markdownFrontmatter.ts`; the pre-bundled packages in
+`apps/web/vite.config.ts`; the `@codemirror/*` and `@lezer/*` entries in
+`apps/web/package.json`; and a section in `docs/user/composer.md`. If
+upstream ships its own editable rendered view, choose one of the two. The
+mobile app is unchanged.
+
 ## Version
 
 The fork keeps upstream's version number. The desktop app sets up an SSH or

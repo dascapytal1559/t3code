@@ -430,6 +430,27 @@ These files open read-only, except in FirstMate's own thread, where you can edit
 and save them. An HTML file outside the workspace cannot load scripts,
 styles, or images from neighboring files.
 
+## Markdown files
+
+On web and desktop, a Markdown file you can edit opens as a rendered page that
+you type into. Markdown markers, such as `**`, show only where your cursor is.
+The file keeps its exact text, and your edits save by themselves. When an agent
+changes the open file, the change appears in place and the changed lines are
+briefly tinted.
+
+- Select a link to follow it. Hold `Option` on macOS or `Alt` elsewhere while
+  you click to put the cursor in the link instead.
+- Click a table or the properties card to edit its Markdown. Move the cursor
+  away to see it drawn again.
+- Use the outline button in the file's header to jump to a heading, and
+  `Cmd+F` or `Ctrl+F` to find and replace.
+- With `Cmd` on macOS or `Ctrl` elsewhere: `B` bolds selected text, `I` is
+  italic, `E` is inline code, `Option+X` (`Alt+X`) is strikethrough, and `L`
+  turns a line into a task or ticks it. `Tab` nests a list item.
+- Use the view toggle in the file's header for the source view.
+
+Files you cannot edit, and phones, show the rendered page without editing.
+
 ## HTML and PDF files in the file viewer
 
 On web and desktop, HTML and PDF files open as rendered pages. Switch an HTML
