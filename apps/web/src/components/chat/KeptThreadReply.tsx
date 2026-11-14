@@ -102,15 +102,15 @@ export function KeptThreadReply(props: {
         .catch(() => false);
       if (confirmed !== true) return;
     }
+    // The logged action is FirstMate's only record that the user archived this, so it goes first.
+    if (!(await act(card, { type: "archive" }))) return;
     // A worker still running is FirstMate's to wind down safely, so only the item closes here.
     if (card.item.thread?.finished !== true) {
-      if (await act(card, { type: "archive" })) {
-        toastManager.add({
-          type: "success",
-          title: "Archived",
-          description: "FirstMate closes it and winds the worker down.",
-        });
-      }
+      toastManager.add({
+        type: "success",
+        title: "Archived",
+        description: "FirstMate closes it and winds the worker down.",
+      });
       return;
     }
     const result = await archiveThread(props.threadRef);

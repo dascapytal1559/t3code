@@ -100,13 +100,23 @@ it("snoozes with no date on a tap, picks a return time from T3's presets, and on
   expect(state.archiveThread).not.toHaveBeenCalled();
 });
 
-it("archives a finished worker's thread, and brings a snoozed item back", async () => {
+it("logs the archive for FirstMate before archiving a finished worker's thread, and brings a snoozed item back", async () => {
   setup();
+  const finished = card({ finished: true });
   {
-    await using screen = await renderReply(card({ finished: true }));
+    await using screen = await renderReply(finished);
+    state.act.mockResolvedValueOnce(false);
     await userEvent.click(screen.getByRole("button", { name: "Archive" }));
-    expect(state.archiveThread).toHaveBeenCalledWith(threadRef);
-    expect(state.act).not.toHaveBeenCalled();
+    expect(state.act).toHaveBeenLastCalledWith(finished, { type: "archive" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Archive" }));
+    await vi.waitFor(() => expect(state.archiveThread).toHaveBeenCalledWith(threadRef));
+    // The first tap's refused action archived nothing.
+    expect(state.archiveThread).toHaveBeenCalledTimes(1);
+    expect(state.act).toHaveBeenCalledTimes(2);
+    expect(state.act.mock.invocationCallOrder[1]).toBeLessThan(
+      state.archiveThread.mock.invocationCallOrder[0]!,
+    );
   }
   const snoozed = card({ snoozed: { at: "2026-11-12T00:00:00.000Z", until: null } });
   await using screen = await renderReply(snoozed);
