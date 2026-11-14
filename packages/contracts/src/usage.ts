@@ -81,14 +81,15 @@ export const UsageOrigin = Schema.Literals(["phone", "computer", "agent", "crew"
 export type UsageOrigin = typeof UsageOrigin.Type;
 
 /**
- * How the origin was read: `stamp` is the message's client stamp; for unstamped messages,
- * `nativeApp` and `sender` come from how it was created, `server` means the server made it,
- * `unstamped` means a client sent it before stamps, and `noPrompt` means the run's message is gone.
+ * How the origin was read: `stamp` is the client stamp; unstamped messages read `nativeApp` or
+ * `sender` from creation, `notification` (a background-task update), `server`, `unstamped` (sent
+ * before stamps) or `noPrompt` (message gone). Older clients drop unknown bases as outside T3.
  */
 export const UsageOriginBasis = Schema.Literals([
   "stamp",
   "nativeApp",
   "sender",
+  "notification",
   "server",
   "unstamped",
   "noPrompt",

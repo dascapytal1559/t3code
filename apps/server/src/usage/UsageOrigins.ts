@@ -22,6 +22,8 @@ export interface OriginMessage {
   readonly deviceType: string | null;
   /** The message's thread is FirstMate crew (`crewOf`). */
   readonly crew: boolean;
+  /** A provider's background-task update (`notification`), posted as a prompt. */
+  readonly notification: boolean;
 }
 
 /** A message and the prompt recorded as its cause: its own `causedBy`, else its thread's. */
@@ -48,6 +50,7 @@ function recordedOrigin(message: OriginMessage): UsageOriginKey {
     }
     return { origin: "unknown", basis: "stamp" };
   }
+  if (message.notification) return { origin: "agent", basis: "notification" };
   if (message.creationSource === "mobile") return { origin: "phone", basis: "nativeApp" };
   if (
     message.createdBy === "agent" ||
@@ -178,6 +181,7 @@ interface MessageColumns {
   readonly surface: string | null;
   readonly device_type: string | null;
   readonly crew: number;
+  readonly notification: number;
   readonly caused_by: string | null;
 }
 
@@ -188,6 +192,7 @@ const messageOf = (row: MessageColumns): CausalMessage => ({
   surface: row.surface,
   deviceType: row.device_type,
   crew: row.crew === 1,
+  notification: row.notification === 1,
   causedBy: row.caused_by,
 });
 
@@ -214,6 +219,7 @@ const make = Effect.gen(function* () {
     json_extract(message.payload_json, '$.origin.surface') AS surface,
     json_extract(message.payload_json, '$.origin.deviceType') AS device_type,
     json_extract(thread.payload_json, '$.crewOf') IS NOT NULL AS crew,
+    json_extract(message.payload_json, '$.notification') IS NOT NULL AS notification,
     coalesce(
       json_extract(message.payload_json, '$.causedBy.messageId'),
       json_extract(thread.payload_json, '$.causedBy.messageId')

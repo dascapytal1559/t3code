@@ -1,64 +1,47 @@
-import type { UsageOrigin, UsageOriginBasis, UsageOriginVia } from "@t3tools/contracts";
 import { formatCount, formatPercent, formatTokens, formatUsd } from "@t3tools/shared/usageFormat";
-import type { MergedOrigins, OriginBasisTotals } from "@t3tools/shared/usageMerge";
+import type { MergedOrigins } from "@t3tools/shared/usageMerge";
+import type { CSSProperties, ReactNode } from "react";
 
 import { cn } from "../../lib/utils";
+import {
+  originAxes,
+  type OriginAmount,
+  type OriginDevice,
+  type UnrecordedReason,
+  type UnrecordedSide,
+} from "./usageOriginAxes";
 
 const ink = (percent: number) =>
   `color-mix(in oklab, var(--foreground) ${percent}%, var(--background))`;
 
-const ORIGIN_PRESENTATION: Record<UsageOrigin, { readonly label: string; readonly color: string }> =
-  {
-    phone: { label: "Phone", color: ink(100) },
-    computer: { label: "Computer", color: ink(70) },
-    agent: { label: "Agent", color: ink(45) },
-    crew: { label: "FirstMate crew", color: ink(28) },
-    unknown: { label: "Unknown", color: ink(16) },
-  };
+// Amber and blue: no provider on the Usage page uses either hue.
+const DEVICE: Record<OriginDevice, { readonly label: string; readonly color: string }> = {
+  phone: {
+    label: "Phone",
+    color: "[--origin:oklch(0.72_0.16_65)] dark:[--origin:oklch(0.78_0.15_70)]",
+  },
+  computer: {
+    label: "Computer",
+    color: "[--origin:oklch(0.55_0.19_264)] dark:[--origin:oklch(0.66_0.17_264)]",
+  },
+};
+const DEVICES: readonly OriginDevice[] = ["phone", "computer"];
+const UNRECORDED_INK = ink(32);
+const NEUTRAL_INK = ink(70);
 
-const BASIS_LABEL: Record<UsageOriginBasis, string> = {
-  stamp: "stamped",
-  nativeApp: "from the phone app, before stamps",
-  sender: "sent by an agent, before stamps",
+const stripes = (color: string) =>
+  `repeating-linear-gradient(135deg, ${color} 0 3px, color-mix(in oklab, ${color} 35%, var(--background)) 3px 6px)`;
+const SOLID: CSSProperties = { backgroundColor: "var(--origin)" };
+const STRIPED: CSSProperties = { backgroundImage: stripes("var(--origin)") };
+
+const REASON_LABEL: Record<UnrecordedReason, string> = {
+  crew: "FirstMate crew prompts with no recorded cause",
+  notification: "background-task updates the provider sends into a thread",
+  agent: "other agent prompts with no recorded cause",
+  unstamped: "typed before devices were stamped",
   server: "made by the server",
-  unstamped: "sent before stamps",
-  noPrompt: "run's prompt is gone",
+  stampedUnknown: "stamped, device unknown",
 };
-
-const VIA_LABEL: Record<UsageOriginVia, string> = {
-  agent: "via an agent",
-  crew: "via FirstMate crew",
-};
-
-function basisLabel(origin: UsageOrigin, { basis, via }: OriginBasisTotals): string {
-  if (via !== undefined) {
-    return basis === "stamp" ? VIA_LABEL[via] : `${VIA_LABEL[via]} (${BASIS_LABEL[basis]})`;
-  }
-  return origin === "unknown" && basis === "stamp" ? "stamped, device unknown" : BASIS_LABEL[basis];
-}
-
-function basisLine(origin: UsageOrigin, bases: readonly OriginBasisTotals[]): string {
-  const parts = bases.map((entry) => {
-    const label = basisLabel(origin, entry);
-    return entry.prompts > 0 ? `${formatCount(entry.prompts)} ${label}` : label;
-  });
-  if (origin === "crew") {
-    parts.push("no recorded cause leads back to a phone or computer prompt");
-  }
-  return parts.join(" · ");
-}
-
-interface OriginRow {
-  readonly key: string;
-  readonly label: string;
-  readonly color: string;
-  readonly detail: string;
-  readonly prompts: number | null;
-  readonly costUsd: number;
-  readonly totalTokens: number;
-  /** Shown under "Not tied to a device" rather than as a device bucket. */
-  readonly gap: boolean;
-}
 
 export function UsageOriginBreakdown({
   origins,
@@ -73,118 +56,260 @@ export function UsageOriginBreakdown({
   readonly totalTokens: number;
   readonly loading: boolean;
 }) {
-  const rows: OriginRow[] = origins.rows.map((row) => ({
-    key: row.origin,
-    label: ORIGIN_PRESENTATION[row.origin].label,
-    color: ORIGIN_PRESENTATION[row.origin].color,
-    detail: basisLine(row.origin, row.bases),
-    prompts: row.prompts,
-    costUsd: row.costUsd,
-    totalTokens: row.totalTokens,
-    gap: row.origin === "crew",
-  }));
-  if (origins.unlinkedTokens > 0 || origins.unlinkedCostUsd > 0) {
-    rows.push({
-      key: "unlinked",
-      label: "Outside T3 runs",
-      color: "transparent",
-      detail: "terminal sessions, archives, other machines and servers without origins",
-      prompts: null,
-      costUsd: origins.unlinkedCostUsd,
-      totalTokens: origins.unlinkedTokens,
-      gap: true,
-    });
-  }
-  const devices = rows.filter((row) => !row.gap);
-  const gaps = rows.filter((row) => row.gap);
-  const valueOf = (row: OriginRow) => (metric === "tokens" ? row.totalTokens : row.costUsd);
-  const total = metric === "tokens" ? totalTokens : totalCostUsd;
-  const peak = rows.reduce((max, row) => Math.max(max, valueOf(row)), 0);
+  const axes = originAxes(origins);
+  const valueOf = (amount: Pick<OriginAmount, "costUsd" | "totalTokens">) =>
+    metric === "tokens" ? amount.totalTokens : amount.costUsd;
   const format = metric === "tokens" ? formatTokens : formatUsd;
-
-  const renderRow = (row: OriginRow) => {
-    const value = valueOf(row);
-    return (
-      <tr
-        key={row.key}
-        className="border-b border-border/50 text-right whitespace-nowrap text-muted-foreground tabular-nums"
-      >
-        <td className="py-2.5 pl-2 text-left whitespace-normal">
-          <span className="flex items-center gap-2 text-foreground">
-            <span
-              aria-hidden
-              className={cn(
-                "size-2 shrink-0 rounded-full",
-                row.key === "unlinked" && "border border-muted-foreground/60",
-              )}
-              style={{ backgroundColor: row.color }}
-            />
-            {row.label}
-          </span>
-          <span className="mt-0.5 block ps-4 text-xs text-muted-foreground">{row.detail}</span>
-          {value > 0 && peak > 0 ? (
-            <div aria-hidden className={cn("mt-1.5 ms-4 h-0.5 max-w-48", figureClass(loading))}>
-              <div
-                className="h-full rounded-full"
-                style={{
-                  width: `max(0.5rem, ${(value / peak) * 100}%)`,
-                  backgroundColor: row.key === "unlinked" ? ink(16) : row.color,
-                }}
-              />
-            </div>
-          ) : null}
-        </td>
-        <td className={cn("py-2.5 pl-6 align-top text-foreground", figureClass(loading))}>
-          {row.prompts === null ? "–" : formatCount(row.prompts)}
-        </td>
-        <td className={cn("hidden py-2.5 pl-6 align-top sm:table-cell", figureClass(loading))}>
-          {total > 0 ? formatPercent(value / total) : ""}
-        </td>
-        <td className={cn("py-2.5 pr-2 pl-6 align-top text-foreground", figureClass(loading))}>
-          {format(value)}
-        </td>
-      </tr>
-    );
+  const total = metric === "tokens" ? totalTokens : totalCostUsd;
+  const share = (value: number) => (total > 0 ? formatPercent(value / total) : "");
+  const device = (key: OriginDevice) => {
+    const { direct, coordinated } = axes.devices[key];
+    return { direct: valueOf(direct), coordinated: valueOf(coordinated) };
   };
+  const deviceValue = (key: OriginDevice) => device(key).direct + device(key).coordinated;
+  const traced = deviceValue("phone") + deviceValue("computer");
+  const unrecorded = valueOf(axes.unrecorded.direct) + valueOf(axes.unrecorded.coordinated);
+  const promptGone = valueOf(axes.promptGone);
+  const outside = valueOf(axes.outside);
+
+  const reasonLine = (side: UnrecordedSide) =>
+    side.reasons
+      .map((entry) => {
+        const value = valueOf(entry);
+        return value > 0
+          ? `${format(value)} ${REASON_LABEL[entry.reason]}`
+          : `${formatCount(entry.prompts)} ${REASON_LABEL[entry.reason]}`;
+      })
+      .join(" · ");
 
   return (
     <section className="flex flex-col gap-3">
       <div className="flex flex-col gap-0.5">
         <h2 className="text-sm font-medium text-foreground">By origin</h2>
         <p className="text-xs text-muted-foreground">
-          Where each prompt was sent from, and the {metric === "tokens" ? "tokens" : "cost"} of the
-          runs those prompts started. An agent&apos;s prompt counts to the phone or computer prompt
-          its recorded cause leads back to.
+          How much came from your phone or your computer, typed directly or coordinated by agents
+          that a phone or computer prompt started.
         </p>
       </div>
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border text-right text-xs text-muted-foreground">
-            <th className="w-full py-2 pl-2 text-left font-normal">Sent from</th>
-            <th className="py-2 pl-6 font-normal">Prompts</th>
-            <th className="hidden py-2 pl-6 font-normal sm:table-cell">Share</th>
-            <th className="py-2 pr-2 pl-6 font-normal">
-              {metric === "tokens" ? "Tokens" : "Cost"}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {devices.map(renderRow)}
-          {gaps.length > 0 ? (
-            <tr>
-              <th
-                colSpan={4}
-                scope="colgroup"
-                className="pt-4 pb-1 pl-2 text-left text-xs font-normal text-muted-foreground"
-              >
-                Not tied to a device
-              </th>
-            </tr>
-          ) : null}
-          {gaps.map(renderRow)}
-        </tbody>
-      </table>
+
+      <div className={cn("grid grid-cols-2 gap-4", figureClass(loading))}>
+        {DEVICES.map((key) => (
+          <div key={key} className={cn("flex min-w-0 flex-col", DEVICE[key].color)}>
+            <span className="flex items-center gap-2 text-sm text-foreground">
+              <span aria-hidden className="size-2 shrink-0 rounded-full" style={SOLID} />
+              {DEVICE[key].label}
+              {traced > 0 ? (
+                <span className="text-xs text-muted-foreground">
+                  {formatPercent(deviceValue(key) / traced, 0)} of traced
+                </span>
+              ) : null}
+            </span>
+            <span className="text-3xl leading-tight font-medium text-foreground tabular-nums">
+              {format(deviceValue(key))}
+            </span>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {format(device(key).direct)} direct · {format(device(key).coordinated)} coordinated
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {traced > 0 ? (
+        <div className={cn("flex flex-col gap-2", figureClass(loading))}>
+          <div aria-hidden className="flex h-2.5 gap-0.5 overflow-hidden rounded-sm">
+            {DEVICES.flatMap((key) => [
+              <Segment
+                key={`${key}-direct`}
+                value={device(key).direct}
+                className={DEVICE[key].color}
+                style={SOLID}
+              />,
+              <Segment
+                key={`${key}-coordinated`}
+                value={device(key).coordinated}
+                className={DEVICE[key].color}
+                style={STRIPED}
+              />,
+            ])}
+          </div>
+          <Legend>
+            <Swatch style={{ backgroundColor: NEUTRAL_INK }}>Direct</Swatch>
+            <Swatch style={{ backgroundImage: stripes(NEUTRAL_INK) }}>Coordinated</Swatch>
+          </Legend>
+        </div>
+      ) : null}
+
+      <div className={cn("mt-1 flex flex-col gap-2", figureClass(loading))}>
+        <p className="text-xs text-muted-foreground tabular-nums">
+          Traced to a device: {format(traced)} of {format(total)}
+          {total > 0 ? ` (${formatPercent(traced / total)})` : ""}
+        </p>
+        <div aria-hidden className="flex h-1.5 gap-0.5 overflow-hidden rounded-sm">
+          {DEVICES.map((key) => (
+            <Segment
+              key={key}
+              value={deviceValue(key)}
+              className={DEVICE[key].color}
+              style={SOLID}
+            />
+          ))}
+          <Segment value={unrecorded + promptGone} style={{ backgroundColor: UNRECORDED_INK }} />
+          <Segment
+            value={outside}
+            className="rounded-xs border border-muted-foreground/50"
+            style={{}}
+          />
+        </div>
+        <Legend>
+          {DEVICES.map((key) => (
+            <Swatch key={key} className={DEVICE[key].color} style={SOLID}>
+              {DEVICE[key].label} {share(deviceValue(key))}
+            </Swatch>
+          ))}
+          <Swatch style={{ backgroundColor: UNRECORDED_INK }}>
+            Device not recorded {share(unrecorded + promptGone)}
+          </Swatch>
+          <Swatch className="border border-muted-foreground" style={{}}>
+            Outside T3 runs {share(outside)}
+          </Swatch>
+        </Legend>
+      </div>
+
+      <div className="mt-1 flex flex-col">
+        <h3 className="pb-1 text-xs font-normal text-muted-foreground">Not traced to a device</h3>
+        <LeftoverRow
+          label="Device not recorded, direct"
+          detail={reasonLine(axes.unrecorded.direct)}
+          value={valueOf(axes.unrecorded.direct)}
+          format={format}
+          share={share}
+          loading={loading}
+        />
+        <LeftoverRow
+          label="Device not recorded, coordinated"
+          detail={reasonLine(axes.unrecorded.coordinated)}
+          value={valueOf(axes.unrecorded.coordinated)}
+          format={format}
+          share={share}
+          loading={loading}
+        />
+        {promptGone > 0 ? (
+          <LeftoverRow
+            label="Run's prompt is gone"
+            detail="T3 runs whose starting message was deleted"
+            value={promptGone}
+            format={format}
+            share={share}
+            loading={loading}
+          />
+        ) : null}
+        {outside > 0 ? (
+          <LeftoverRow
+            label="Outside T3 runs"
+            detail="terminal sessions, archives, other machines and servers without origins"
+            value={outside}
+            format={format}
+            share={share}
+            loading={loading}
+            outlined
+          />
+        ) : null}
+      </div>
     </section>
+  );
+}
+
+function Segment({
+  value,
+  className,
+  style,
+}: {
+  readonly value: number;
+  readonly className?: string;
+  readonly style: CSSProperties;
+}) {
+  if (value <= 0) return null;
+  return (
+    <span
+      className={cn("block h-full min-w-0.5", className)}
+      style={{ ...style, flex: `${value} 0 0` }}
+    />
+  );
+}
+
+function Legend({ children }: { readonly children: ReactNode }) {
+  return (
+    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground tabular-nums">
+      {children}
+    </div>
+  );
+}
+
+function Swatch({
+  children,
+  className,
+  style,
+}: {
+  readonly children: ReactNode;
+  readonly className?: string;
+  readonly style: CSSProperties;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <i aria-hidden className={cn("inline-block size-2.5 rounded-xs", className)} style={style} />
+      {children}
+    </span>
+  );
+}
+
+function LeftoverRow({
+  label,
+  detail,
+  value,
+  format,
+  share,
+  loading,
+  outlined = false,
+}: {
+  readonly label: string;
+  readonly detail: string;
+  readonly value: number;
+  readonly format: (value: number) => string;
+  readonly share: (value: number) => string;
+  readonly loading: boolean;
+  readonly outlined?: boolean;
+}) {
+  if (value <= 0 && detail === "") return null;
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 border-b border-border/50 px-2 py-2.5 text-sm">
+      <div className="min-w-0">
+        <span className="flex items-center gap-2 text-foreground">
+          <span
+            aria-hidden
+            className={cn(
+              "size-2 shrink-0 rounded-full",
+              outlined && "border border-muted-foreground/60",
+            )}
+            style={outlined ? undefined : { backgroundColor: UNRECORDED_INK }}
+          />
+          {label}
+        </span>
+        {detail ? (
+          <span className="mt-0.5 block ps-4 text-xs text-muted-foreground">{detail}</span>
+        ) : null}
+      </div>
+      <span className={cn("text-right text-foreground tabular-nums", figureClass(loading))}>
+        {format(value)}
+      </span>
+      <span
+        className={cn(
+          "hidden w-12 text-right text-muted-foreground tabular-nums sm:block",
+          figureClass(loading),
+        )}
+      >
+        {share(value)}
+      </span>
+    </div>
   );
 }
 

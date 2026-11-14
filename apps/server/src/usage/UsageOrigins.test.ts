@@ -24,6 +24,7 @@ const message = (overrides: Partial<OriginMessage>): OriginMessage => ({
   surface: null,
   deviceType: null,
   crew: false,
+  notification: false,
   ...overrides,
 });
 
@@ -55,6 +56,13 @@ describe("classifyMessageOrigin", () => {
       [{ createdBy: "agent", creationSource: "mcp" }, "agent/sender"],
       [{ createdBy: "agent", creationSource: "provider" }, "agent/sender"],
       [{ createdBy: "agent", creationSource: "server" }, "agent/sender"],
+      // Background-task updates the provider posts never carry a stamp.
+      [
+        { createdBy: "agent", creationSource: "provider", notification: true },
+        "agent/notification",
+      ],
+      [{ createdBy: "agent", creationSource: "server", notification: true }, "agent/notification"],
+      [{ crew: true, createdBy: "agent", notification: true }, "crew/notification"],
       [{ creationSource: "web" }, "unknown/unstamped"],
       [{ creationSource: "server" }, "unknown/server"],
       [{ createdBy: null, creationSource: null }, "unknown/unstamped"],
@@ -300,6 +308,18 @@ describe("UsageOrigins.read", () => {
         },
       });
       yield* seedRun({
+        id: "task-update",
+        ordinal: 3,
+        threadId: "worker",
+        sessionId: "worker-session",
+        startedAt: "2026-08-07T01:40:00.000Z",
+        message: {
+          createdBy: "agent",
+          creationSource: "provider",
+          notification: { source: { kind: "background_task" }, outcome: "updated" },
+        },
+      });
+      yield* seedRun({
         id: "gone",
         ordinal: 2,
         threadId: "lead",
@@ -355,6 +375,10 @@ describe("UsageOrigins.read", () => {
         index.lookup("worker-session", Date.parse("2026-08-07T01:21:00Z")),
         viaCrew,
       );
+      assert.deepStrictEqual(index.lookup("worker-session", Date.parse("2026-08-07T01:41:00Z")), {
+        origin: "crew",
+        basis: "notification",
+      });
       assert.deepStrictEqual(index.lookup("lead-session", Date.parse("2026-08-07T02:01:00Z")), {
         origin: "unknown",
         basis: "noPrompt",
@@ -364,7 +388,13 @@ describe("UsageOrigins.read", () => {
         snapshot.prompts
           .map(({ key }) => `${key.origin}/${key.basis}/${key.via ?? "-"}`)
           .toSorted(),
-        ["crew/stamp/-", "phone/stamp/-", "phone/stamp/crew", "phone/stamp/crew"],
+        [
+          "crew/notification/-",
+          "crew/stamp/-",
+          "phone/stamp/-",
+          "phone/stamp/crew",
+          "phone/stamp/crew",
+        ],
       );
     }).pipe(Effect.provide(usageOriginsLayer.pipe(Layer.provideMerge(Sqlite.layerMemory)))),
   );
