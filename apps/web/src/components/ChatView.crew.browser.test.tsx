@@ -3,7 +3,7 @@ import { NodeId, ProviderSessionId, RuntimeRequestId, type ThreadId } from "@t3t
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import type * as Context from "effect/Context";
 import { expect, it, vi } from "vite-plus/test";
-import { page } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 
 import { AppRoot } from "~/AppRoot";
 // The route loads ChatView lazily, and its first transform takes seconds; keep it out of the test.
@@ -12,6 +12,7 @@ import { __setClientSettingsForTests } from "~/hooks/useSettings";
 import { getRouter } from "~/router";
 import {
   ENVIRONMENT_ID,
+  dispatchedCommands,
   emitThreadEvent,
   installFakeEnvironment,
   runningRun,
@@ -38,7 +39,7 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
 // Desktop-sized, so the sidebar shows beside the chat.
 await page.viewport(1400, 900);
 
-it("a FirstMate worker shows no composer, only Stop and Resume and its approvals", async () => {
+it("a FirstMate worker shows no composer: a box that sends to FirstMate, Stop and Resume, and its approvals", async () => {
   const coordinator = threadWithHistory("crew-coordinator", 1);
   const crew = { ...threadWithHistory("crew-member", 1), crewOf: coordinator.id };
   const plain = threadWithHistory("plain-thread", 1);
@@ -70,6 +71,22 @@ it("a FirstMate worker shows no composer, only Stop and Resume and its approvals
   await expect.element(page.getByText(`Answer 0 for ${crew.id}.`)).toBeVisible();
   await expect.element(editor).not.toBeInTheDocument();
   await expect.element(stop).not.toBeInTheDocument();
+
+  // The worker's box sends its coordinator one message naming the worker; the worker gets none.
+  const reply = page.getByRole("textbox", { name: "Reply to FirstMate about this thread" });
+  await userEvent.fill(reply, "Go with green.");
+  await userEvent.keyboard("{Enter}");
+  await vi.waitFor(() =>
+    expect(
+      dispatchedCommands().filter((command) => command.type === "message.dispatch"),
+    ).toMatchObject([
+      {
+        threadId: coordinator.id,
+        text: `**Reply · ${crew.title}**\nkept-thread: ${crew.id}\n\nGo with green.`,
+        dispatchMode: { type: "queue_after_active" },
+      },
+    ]),
+  );
 
   // Every fixture records branch "main"; only the card outside FirstMate's group shows it.
   const cardText = (threadId: ThreadId) =>
@@ -105,6 +122,7 @@ it("a FirstMate worker shows no composer, only Stop and Resume and its approvals
   await act(() => approval(false));
   await expect.element(page.getByRole("button", { name: "Approve", exact: true })).toBeEnabled();
   await expect.element(editor).toBeVisible();
+  await expect.element(reply).not.toBeInTheDocument();
 
   await act(async () => {
     await approval(true);
