@@ -1,6 +1,11 @@
 const LEADING_FRONTMATTER =
   /^\uFEFF?---[ \t]*(?:\r\n|\r|\n)(?:[\s\S]*?(?:\r\n|\r|\n))?(?:---|\.\.\.)[ \t]*(?=\r\n|\r|\n|$)/;
 
+/** Length of the leading YAML frontmatter block, or 0 when the document has none. */
+export function markdownFrontmatterLength(markdown: string): number {
+  return LEADING_FRONTMATTER.exec(markdown)?.[0].length ?? 0;
+}
+
 /**
  * Blanks a leading YAML frontmatter block so rendered previews skip it instead
  * of showing a rule and a setext heading. Masked characters become spaces and

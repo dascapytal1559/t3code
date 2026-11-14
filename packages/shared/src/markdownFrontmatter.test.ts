@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { maskMarkdownFrontmatter } from "./markdownFrontmatter.ts";
+import { markdownFrontmatterLength, maskMarkdownFrontmatter } from "./markdownFrontmatter.ts";
 
 describe("maskMarkdownFrontmatter", () => {
   it("blanks leading frontmatter without moving later offsets", () => {
@@ -9,6 +9,9 @@ describe("maskMarkdownFrontmatter", () => {
 
     expect(masked).toBe("   \r\n           \r\n   \r\n# Skill\n- [ ] item\n");
     expect(masked.indexOf("[ ]")).toBe(markdown.indexOf("[ ]"));
+    expect(markdown.slice(0, markdownFrontmatterLength(markdown))).toBe(
+      "---\r\nname: skill\r\n---",
+    );
   });
 
   it("handles a byte order mark, CR line endings, and a ... closing fence", () => {
@@ -21,5 +24,7 @@ describe("maskMarkdownFrontmatter", () => {
     expect(maskMarkdownFrontmatter("---\na: 1\n")).toBe("---\na: 1\n");
     expect(maskMarkdownFrontmatter("# A\n---\nb\n---\n")).toBe("# A\n---\nb\n---\n");
     expect(maskMarkdownFrontmatter("---\na: 1\n----\n")).toBe("---\na: 1\n----\n");
+    expect(markdownFrontmatterLength("---\na: 1\n")).toBe(0);
+    expect(markdownFrontmatterLength("# A\n---\nb\n---\n")).toBe(0);
   });
 });

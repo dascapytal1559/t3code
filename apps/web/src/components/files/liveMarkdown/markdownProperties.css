@@ -1,0 +1,30 @@
+/* The frontmatter block as a card: in the live editor and above the read-only rendered view. */
+[data-markdown-properties] {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.125rem 0.875rem;
+  border: 1px solid var(--contrast-border);
+  border-radius: 0.5rem;
+  background: var(--muted);
+  padding: 0.5rem 0.75rem;
+  font-family: var(--font-sans);
+  font-size: 0.78125rem;
+  line-height: 1.5;
+}
+
+[data-markdown-properties] > [data-head] {
+  grid-column: 1 / -1;
+  color: var(--contrast-muted-foreground);
+  font-size: 0.65625rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+[data-markdown-properties] [data-key] {
+  color: var(--contrast-muted-foreground);
+}
+
+[data-markdown-properties] [data-value] {
+  overflow-wrap: anywhere;
+}

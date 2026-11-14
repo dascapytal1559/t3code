@@ -3,7 +3,7 @@ import { EnvironmentId, ThreadId, type ProjectReadFileResult } from "@t3tools/co
 import { AsyncResult } from "effect/reactivity";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 import { act, fakeTimers, render } from "../../../test/render";
 import appCss from "~/index.css?inline";
 import { isMacPlatform } from "~/lib/utils";
@@ -348,6 +348,56 @@ describe("rendered Markdown task saves", () => {
     await act(async () => checkbox.click());
     await vi.advanceTimersByTimeAsync(500);
     expect(state.writeFile).not.toHaveBeenCalled();
+  });
+});
+
+// Fork: at desktop width a Markdown file that can be edited opens in the live editor.
+// The tests above run at the default phone width, where the rendered view stays.
+describe("live Markdown editor", () => {
+  it("edits the file in place, saves what was typed, and takes a change made on disk", async () => {
+    using _settings = setup();
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    await page.viewport(1280, 800);
+    await using _viewport = {
+      [Symbol.asyncDispose]: () => page.viewport(viewport.width, viewport.height),
+    };
+    const written = (contents: string) => ({
+      environmentId,
+      input: { cwd: "/workspace", relativePath: "notes.md", contents },
+    });
+    await using screen = await render(
+      markdownPreview(false, "# Notes\n\nFirst line.\n\nLast line.\n", "notes.md"),
+    );
+    const editor = screen.getByRole("textbox", { name: "File contents" });
+    await expect.element(screen.getByText("Last line.")).toBeVisible();
+    // The heading is drawn, so its mark is not on the page.
+    expect(editor.element().textContent).not.toContain("#");
+
+    using _timers = fakeTimers();
+    await userEvent.click(screen.getByText("Last line."));
+    await userEvent.keyboard("{End} More.");
+    await vi.advanceTimersByTimeAsync(500);
+    expect(state.writeFile).toHaveBeenCalledExactlyOnceWith(
+      written("# Notes\n\nFirst line.\n\nLast line. More.\n"),
+    );
+
+    // The save settled and an agent then rewrote another line of the file.
+    state.optimistic = null;
+    await screen.rerender(
+      markdownPreview(false, "# Notes\n\nFirst line, from disk.\n\nLast line. More.\n", "notes.md"),
+    );
+    await expect.element(screen.getByText("First line, from disk.")).toBeVisible();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(state.writeFile, "a change from disk was written back").toHaveBeenCalledOnce();
+
+    // Undo takes back the typing and leaves the change from disk alone.
+    await userEvent.keyboard(
+      isMacPlatform(navigator.platform) ? "{Meta>}z{/Meta}" : "{Control>}z{/Control}",
+    );
+    await vi.advanceTimersByTimeAsync(500);
+    expect(state.writeFile).toHaveBeenLastCalledWith(
+      written("# Notes\n\nFirst line, from disk.\n\nLast line.\n"),
+    );
   });
 });
 

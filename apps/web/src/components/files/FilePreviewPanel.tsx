@@ -66,6 +66,7 @@ import { MediaActions, type MediaActionSource } from "~/components/media/MediaAc
 import { useRemoteOpenState } from "~/remoteOpen";
 import { useClientSettings } from "~/hooks/useSettings";
 import { useTheme } from "~/hooks/useTheme";
+import { useMediaQuery } from "~/hooks/useMediaQuery";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { getLocalStorageItem, setLocalStorageItem, useLocalStorage } from "~/hooks/useLocalStorage";
 import { resolveDiffThemeName } from "~/lib/diffRendering";
@@ -170,6 +171,8 @@ interface FilePreviewPanelProps {
 const MermaidFilePreview = lazy(() =>
   import("./MermaidFilePreview").then((module) => ({ default: module.MermaidFilePreview })),
 );
+// Fork: the live Markdown editor and CodeMirror load when a Markdown file first opens in it.
+const LiveMarkdownSurface = lazy(() => import("./liveMarkdown/LiveMarkdownSurface"));
 
 const FILE_EXPLORER_STORAGE_KEY = "t3code.fileExplorerOpen";
 const RENDER_MARKDOWN_STORAGE_KEY = "t3code.renderMarkdown";
@@ -1209,9 +1212,10 @@ export default function FilePreviewPanel({
     explorerOpen,
     attachmentOpen: attachment !== undefined,
   });
+  // Fork: Markdown opens rendered; upstream opens it as source.
   const [renderMarkdownPreferred, setRenderMarkdownPreferred] = useLocalStorage(
     RENDER_MARKDOWN_STORAGE_KEY,
-    false,
+    true,
     Schema.Boolean,
   );
   const [renderBrowserFilePreferred, setRenderBrowserFilePreferred] = useLocalStorage(
@@ -1242,6 +1246,16 @@ export default function FilePreviewPanel({
     revealLine === null ||
     (handledReveal?.path === relativePath && handledReveal.requestId === revealRequestId);
   const renderMarkdown = isMarkdown && renderMarkdownPreferred && revealHandled;
+  // Fork: a Markdown file that can be edited renders in the live editor. A phone stays view-only.
+  const narrowViewport = useMediaQuery("max-sm");
+  const coarsePointer = useMediaQuery({ pointer: "coarse" });
+  const liveMarkdown =
+    file.data !== null &&
+    !file.data.truncated &&
+    !readOnlyHostFile &&
+    canWriteFiles &&
+    !narrowViewport &&
+    !coarsePointer;
   const renderMermaid = isMermaid && renderMermaidPreferred && revealHandled;
   const renderBrowserFile = isPdf || (isHtml && renderBrowserFilePreferred && revealHandled);
   const renderTable = tableDelimiter !== null && renderTablePreferred && revealHandled;
@@ -1683,6 +1697,18 @@ export default function FilePreviewPanel({
             renderMermaid ? (
               <Suspense fallback={<FileSurfaceLoading />}>
                 <MermaidFilePreview text={file.data.contents} />
+              </Suspense>
+            ) : isMarkdown && renderMarkdown && liveMarkdown ? (
+              <Suspense fallback={<FileSurfaceLoading />}>
+                <LiveMarkdownSurface
+                  key={relativePath}
+                  environmentId={environmentId}
+                  cwd={cwd}
+                  relativePath={relativePath}
+                  hostFileThreadId={hostFileThreadId}
+                  contents={file.data.contents}
+                  onPendingChange={onPendingChange}
+                />
               </Suspense>
             ) : isMarkdown && renderMarkdown ? (
               <RenderedMarkdownSurface
