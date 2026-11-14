@@ -199,9 +199,12 @@ plus one rule for usage with no recorded parent, below.
   `unknown`/`beforeOrigins`, and archived history from other machines is
   `unknown`/`archive`. The bar shows phone and computer; its legend gives the
   computer's `default` share and lists the other two under "Can't trace".
-- The scan cache (v16) keeps each record's `cwd`. Moving from v15 re-parses
-  live Claude and Codex transcripts changed since 28 Oct 2026, when T3 turns
-  began; older files keep their saved records, which cannot trace by folder.
+- The scan cache keeps each record's `cwd` from the fork's v16. Moving from v15
+  re-parses live Claude and Codex transcripts changed since 28 Oct 2026, when T3
+  turns began; older files keep their saved records, which cannot trace by
+  folder. Upstream's own v16 (Codex baseline time) arrived the next night, so
+  the fork reads it as v17 and a fork v16 Codex file re-parses once. On syncs, an
+  upstream cache bump becomes the fork's next number, never upstream's.
 
 The server sends `origins` on `UsageSummary` (optional; usage rows keyed by
 origin, basis, `via`, provider and source with no day, so the payload stays small),
@@ -1120,7 +1123,9 @@ menu rows read context chips by their label rather than their link markup. Code:
 `apps/web/src/promptStashMedia.ts`, `stashQueuedMessage` in
 `apps/web/src/components/chat/promptStashActions.ts`, and the Stash button in
 `QueuedRunsControl.tsx`. On syncs, upstream changes to `compressImageForStash`
-or the stash entry schema need merging onto this model.
+or the stash entry schema need merging onto this model. Upstream fixes to its
+async step (`finalizeEntryImages`, `pendingImageCount`, orphaned counts after a
+reload, cross-tab finalize) have nothing to land on here and are dropped.
 
 ## Telemetry off by default
 

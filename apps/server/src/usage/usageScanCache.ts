@@ -10,7 +10,7 @@ import { CLAUDE_SYNTHETIC_MODEL } from "../provider/Drivers/claudeUsage.ts";
 import { mergeUsageCopies } from "./usageAggregation.ts";
 import { GUARD_LENGTH, type TranscriptParsePosition } from "./usageTranscriptReader.ts";
 
-const USAGE_SCAN_CACHE_VERSION = 16 as const;
+const USAGE_SCAN_CACHE_VERSION = 17 as const;
 const SPEED_COMPATIBLE_SINCE_VERSION = 4;
 // T3 turns began on 28 Oct 2026, so only transcripts written since can trace by working folder.
 const CWD_TRACEABLE_SINCE_MS = Date.parse("2026-10-28T00:00:00Z");
@@ -20,8 +20,9 @@ const CWD_TRACEABLE_SINCE_MS = Date.parse("2026-10-28T00:00:00Z");
  * replace it, dropping saved usage for deleted transcripts. Separate files keep
  * the newer one; older files are removed once it is saved.
  */
-export const SCAN_CACHE_FILE_NAME = "usage-scan-cache-v16.json";
+export const SCAN_CACHE_FILE_NAME = "usage-scan-cache-v17.json";
 export const LEGACY_SCAN_CACHE_FILE_NAMES = [
+  "usage-scan-cache-v16.json",
   "usage-scan-cache-v15.json",
   "usage-scan-cache-v14.json",
   "usage-scan-cache-v13.json",
@@ -327,10 +328,9 @@ export function decodeScanCache(
     ) {
       continue;
     }
-    // Keep history for deleted rollouts, but re-parse incompatible reducer state.
-    // v13 adds Claude 1-hour cache writes; v14 uses Codex request ledgers.
-    // v15 repairs skipped Codex requests whose counters rewound; clean v14 entries stay served.
-    // v16 records each session's working folder, so files T3 turns could have written re-parse.
+    // Re-parse incompatible state: v13 Claude 1-hour cache writes; v14 Codex request ledgers;
+    // v15 repairs rewound Codex counters (clean v14 entries stay served); the fork's v16 records
+    // working folders, so files T3 turns could have written re-parse; v17 is upstream's v16.
     const legacy =
       (entry.p === "claude" && version < 13) ||
       ((entry.p === "claude" || entry.p === "codex") &&
@@ -342,10 +342,10 @@ export function decodeScanCache(
     // A corrupt state disqualifies the entry: resuming with it would attach
     // appended usage to the wrong model or replay fork-copied history.
     if (!legacy && !isValidState.get(entry.p)?.(entry.cs)) continue;
-    // Before v16 a Codex baseline can lack the time of its latest move, or carry an older one,
+    // Before v17 a Codex baseline can lack the time of its latest move, or carry an older one,
     // and that time keeps a re-emitted older snapshot from billing twice. A grown file re-parses
     // whole instead of resuming.
-    const resumable = !legacy && !(entry.p === "codex" && version < 16);
+    const resumable = !legacy && !(entry.p === "codex" && version < 17);
 
     const provider = entry.p;
     const records = decodeRecords(entry.r, provider);

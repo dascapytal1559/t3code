@@ -293,7 +293,8 @@ describe("scan cache round trip", () => {
     );
   });
 
-  it("restarts a grown v15 Codex entry, whose baseline time can be older than its totals", () => {
+  // The fork's v16 kept working folders before upstream's v16 added this baseline time.
+  it("restarts a grown v15 or fork v16 Codex entry, whose baseline time can be older than its totals", () => {
     const request = {
       input_tokens: 100,
       cached_input_tokens: 0,
@@ -320,12 +321,11 @@ describe("scan cache round trip", () => {
     };
     const current = parse(makeScanCacheWriter()(new Map([["/codex.jsonl", entry]]), {}));
 
-    expect(
-      decodeScanCache({ ...current, version: 15 }, TEST_FORMAT_MAP).get("/codex.jsonl"),
-    ).toEqual({
-      ...entry,
-      position: { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null },
-    });
+    for (const version of [15, 16]) {
+      expect(decodeScanCache({ ...current, version }, TEST_FORMAT_MAP).get("/codex.jsonl")).toEqual(
+        { ...entry, position: { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null } },
+      );
+    }
     expect(decodeScanCache(current, TEST_FORMAT_MAP).get("/codex.jsonl")).toEqual(entry);
   });
 
