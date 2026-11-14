@@ -57,15 +57,12 @@ saved totals first, then updates them when Cursor's API responds.
 If recent work is missing or a new model shows no cost, refresh to rescan session history and
 update model pricing.
 
-On web and desktop, **By origin** shows where the period's prompts were sent from (**Phone**,
-**Computer**, **Agent** or **Unknown**) and the tokens and cost of the runs they started. A run
-counts toward the message that started it; messages sent while it runs do not split it. Phone
-includes tablets. Messages from before T3 recorded the sending device are Unknown, except those
-sent from the mobile app, which count as Phone. When an agent records which prompt led it to start
-or message a thread, its prompts count toward that prompt's device, labelled "via an agent" or
-"via FirstMate crew". **FirstMate crew** is work an agent started in a FirstMate crew thread with
-no such record.
-**Outside T3 runs** is usage no T3 prompt started, such as terminal sessions and archived history.
+On web and desktop, **Tokens by origin** (or **Cost by origin**) splits the usage traced to a
+device between **Phone** and **Computer**, and each into **Direct** (prompts you typed) and
+**Coordinated** (prompts an agent sent on behalf of one you typed, shown hatched). A run counts
+toward the message that started it; messages sent while it runs do not split it. Phone includes
+tablets. Usage with no recorded device, such as agent work with no recorded cause, messages from
+before T3 recorded the sending device, and terminal sessions outside T3, is left out of this bar.
 
 ## Set custom model prices
 

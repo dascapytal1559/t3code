@@ -888,17 +888,15 @@ function UsageOverview({
               ) : null}
             </>
           )}
+          {merged.origins !== null ? (
+            <UsageOriginBreakdown
+              label={metric === "tokens" ? "Tokens by origin" : "Cost by origin"}
+              origins={merged.origins}
+              valueOf={(amount) => (metric === "tokens" ? amount.totalTokens : amount.costUsd)}
+              format={metric === "tokens" ? formatTokens : formatUsd}
+            />
+          ) : null}
         </section>
-      ) : null}
-
-      {merged.origins !== null && (merged.origins.rows.length > 0 || merged.totalTokens > 0) ? (
-        <UsageOriginBreakdown
-          origins={merged.origins}
-          metric={metric}
-          totalCostUsd={merged.costUsd}
-          totalTokens={merged.totalTokens}
-          loading={loadingPartial}
-        />
       ) : null}
 
       <section className="flex flex-col gap-3">
