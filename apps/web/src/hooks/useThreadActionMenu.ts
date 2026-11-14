@@ -17,7 +17,6 @@ import { useRouter } from "@tanstack/react-router";
 
 import { SIDEBAR_SETTLED_SHELF } from "../components/sidebar/settledShelf";
 import { pickSnoozePreset, resolveSnoozePresets } from "../components/Sidebar.snooze";
-import { useCaptainCard, useCaptainItemAct } from "../components/sidebar/useCaptainCards";
 import {
   buildThreadActionMenuItems,
   threadActionRequiresOperate,
@@ -91,9 +90,6 @@ export function useThreadActionMenu(input: {
     markThreadUnread,
     turnThreadIntoProject,
   } = useThreadActions();
-  // Fork: a thread carrying a FirstMate item snoozes the item in FirstMate's list instead.
-  const captainCard = useCaptainCard(threadRef);
-  const actOnCaptainItem = useCaptainItemAct();
   const regenerateThreadTitle = useOrchestrationCommand(threadEnvironment.regenerateTitle, {
     reportFailure: false,
   });
@@ -151,9 +147,7 @@ export function useThreadActionMenu(input: {
         isPinned: thread.pinnedAt != null,
         isSettled: supports.settlement && thread.settledOverride === "settled",
         autoSettleEnabled: thread.autoSettleDisabledAt == null,
-        isSnoozed:
-          supports.snooze &&
-          (captainCard?.snoozed != null || effectiveSnoozed(thread, { now: now.toISOString() })),
+        isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
         canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
         isRegeneratingTitle,
         isRunning: !threadRuntimeCanArchive(thread.runtime),
@@ -186,10 +180,6 @@ export function useThreadActionMenu(input: {
                 threadRef.environmentId,
               );
         if (!preset) return;
-        if (captainCard !== null) {
-          await actOnCaptainItem(captainCard, { type: "snooze", until: preset.snoozedUntil });
-          return;
-        }
         const result = await snoozeThread(threadRef, preset.snoozedUntil);
         if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
           failureToast("Failed to snooze thread", squashAtomCommandFailure(result));
@@ -245,10 +235,6 @@ export function useThreadActionMenu(input: {
           await reportFailure("Failed to un-settle thread", () => unsettleThread(threadRef));
           return;
         case "unsnooze":
-          if (captainCard?.snoozed != null) {
-            if (!(await actOnCaptainItem(captainCard, { type: "unsnooze" }))) return;
-            if (!effectiveSnoozed(thread, { now: new Date().toISOString() })) return;
-          }
           await reportFailure("Failed to wake thread", () => unsnoozeThread(threadRef));
           return;
         case "pin":

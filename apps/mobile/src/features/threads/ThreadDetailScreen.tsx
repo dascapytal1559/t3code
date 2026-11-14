@@ -595,9 +595,6 @@ function ThreadDetailBody(
   const unsettleThread = useAtomCommand(threadEnvironment.unsettle, { reportFailure: false });
   const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata, { reportFailure: false });
   const visitThread = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
-  const liftExecutionFence = useAtomCommand(threadEnvironment.liftExecutionFence, {
-    reportFailure: false,
-  });
   const anyRunStop = useAtomValue(
     props.selectedThreadDetailRef === null
       ? NO_RUN_STOP_ATOM
@@ -691,7 +688,7 @@ function ThreadDetailBody(
     lastVisitedAt: props.selectedThread.lastVisitedAt,
     latestRunCompletedAt: props.selectedThread.latestRun?.completedAt ?? null,
   });
-  const runStatusAction = async (action: "stop" | "wake" | "unsettle" | "dismiss" | "resume") => {
+  const runStatusAction = async (action: "stop" | "wake" | "unsettle" | "dismiss") => {
     if (statusPending || !props.canOperateThread) return;
     const request: BackgroundWorkStopRequest = {
       threadKey: selectedThreadKey,
@@ -731,12 +728,10 @@ function ThreadDetailBody(
             : await unsnoozeThread({ ...target, input: { ...target.input, reason: "user" } })
           : action === "unsettle"
             ? await unsettleThread({ ...target, input: { ...target.input, reason: "user" } })
-            : action === "resume"
-              ? await liftExecutionFence(target)
-              : await visitThread({
-                  ...target,
-                  input: { ...target.input, visitedAt: wokeAt ?? lifecycleNow },
-                });
+            : await visitThread({
+                ...target,
+                input: { ...target.input, visitedAt: wokeAt ?? lifecycleNow },
+              });
     props.setStatusRequests((current) =>
       current[request.threadKey] !== request
         ? current
@@ -856,20 +851,6 @@ function ThreadDetailBody(
           accessibilityLabel: "Stop background work",
           disabled: !props.canOperateThread || statusPending,
           onPress: () => void runStatusAction("stop"),
-        },
-      };
-    }
-    // Ahead of the other lifecycle states: it is the one that refuses a send.
-    if (contentPresentationKind === "ready" && props.selectedThread.executionFence != null) {
-      return {
-        kind: "lifecycle",
-        state: "paused",
-        label: "Paused by FirstMate",
-        action: {
-          label: statusPending ? "Resuming..." : "Resume",
-          accessibilityLabel: "Resume",
-          disabled: !props.canOperateThread || statusPending,
-          onPress: () => void runStatusAction("resume"),
         },
       };
     }

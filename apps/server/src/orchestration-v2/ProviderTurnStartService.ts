@@ -51,7 +51,6 @@ import {
   latestNativeContextUsage,
 } from "@t3tools/provider-core/server/handoffBudget";
 import { deliverContextHandoffs, withInlineContext } from "./ContextHandoffDelivery.ts";
-import { executionFencedCause, pendingNotesContext } from "./ThreadRetention.ts";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -480,15 +479,6 @@ export const layer: Layer.Layer<
           });
         },
       );
-      // Every start path ends here, so a run queued or retried before the fence still cannot run.
-      if (projection.thread.executionFence != null) {
-        yield* settleStartFailure({
-          signal: "execution-fenced",
-          title: "Thread is retired from running",
-          error: new Error(executionFencedCause(projection.thread.id)),
-        });
-        return;
-      }
       if (message.attachments.length === 0 && message.text.trimStart().startsWith("/")) {
         const isEmptyCompaction =
           message.text.trim().toLowerCase() === "/compact" && !projection.hasConversation;
@@ -775,33 +765,25 @@ export const layer: Layer.Layer<
         projection.providerTurns,
         projection.attempts,
       );
-      const compactionMessageIds = new Set(
-        projection.messages
-          .filter(
-            (candidate) =>
-              isCompactionCommandMessage(candidate) ||
-              (goalDriver && parseGoalCommand(candidate) !== null),
-          )
-          .map((candidate) => candidate.id),
-      );
       const restartCancelledWork = pendingRestartCancelledBackgroundWork({
         runs: projection.runs,
         providerTurns: projection.providerTurns,
-        compactionMessageIds,
+        compactionMessageIds: new Set(
+          projection.messages
+            .filter(
+              (candidate) =>
+                isCompactionCommandMessage(candidate) ||
+                (goalDriver && parseGoalCommand(candidate) !== null),
+            )
+            .map((candidate) => candidate.id),
+        ),
         run,
         attempts: projection.attempts,
       });
-      // Compaction and /goal prompts go verbatim, so notes wait for the next prompt.
-      const turnNotes = [
+      const restartNote =
         restartCancelledWork.length === 0
           ? ""
-          : restartCancelledBackgroundWorkNote(restartCancelledWork),
-        compactionMessageIds.has(message.id)
-          ? ""
-          : pendingNotesContext({ ...projection, deferredMessageIds: compactionMessageIds }),
-      ]
-        .filter((part) => part !== "")
-        .join("\n\n");
+          : restartCancelledBackgroundWorkNote(restartCancelledWork);
       const tokenCap = yield* handoffTokenCapConfig.pipe(
         Effect.orElseSucceed(() => DEFAULT_HANDOFF_TOKEN_CAP),
       );
@@ -947,7 +929,7 @@ export const layer: Layer.Layer<
             return handoffBudget({
               tokenCap,
               modelContextWindow,
-              userText: turnNotes === "" ? userText : `${turnNotes}\n\n${userText}`,
+              userText: restartNote === "" ? userText : `${restartNote}\n\n${userText}`,
               attachments: message.attachments,
               providerThread: budgetProviderThread,
               nativeContextEstimate:
@@ -1653,7 +1635,7 @@ export const layer: Layer.Layer<
             sideChatHandoff === undefined || compact || goalCommand
               ? ""
               : sideChatHandoff.summaryText;
-          const context = [delivery.context, sideChatContext, turnNotes]
+          const context = [delivery.context, sideChatContext, restartNote]
             .filter((part) => part !== "")
             .join("\n\n");
           const { restartContinuationOfRunId: _resumedRunId, ...promptedInput } = turnInput;
@@ -1720,7 +1702,7 @@ export const layer: Layer.Layer<
         effectiveHandoffs.length === 0 &&
         retryHandoff.length === 0 &&
         sideChatHandoff === undefined &&
-        turnNotes === "" &&
+        restartNote === "" &&
         !noteContinuation
           ? session
           : makeDeliverySession(session, startWithHandoffs);

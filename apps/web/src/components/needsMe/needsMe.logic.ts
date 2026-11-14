@@ -1,58 +1,5 @@
-import {
-  CommandId,
-  type DecisionsState,
-  type EnvironmentId,
-  type ServerSettings,
-  type StoredDecision,
-} from "@t3tools/contracts";
+import type { EnvironmentId, ServerSettings } from "@t3tools/contracts";
 
-import { randomUUID } from "../../lib/utils";
-
-const ms = (iso: string | null | undefined) => (iso == null ? 0 : Date.parse(iso) || 0);
-
-type Snooze = NonNullable<StoredDecision["snoozed"]>;
-
-/** Whether a snooze still holds: undated until brought back, dated until its time passes. */
-export const isSnoozedAt = (snoozed: Snooze | undefined, nowMs: number): snoozed is Snooze =>
-  snoozed !== undefined && (snoozed.until === null || ms(snoozed.until) > nowMs);
-
-/**
- * The items as the user should see them now: FirstMate's list with the user's actions it has not
- * acknowledged applied over it, so a tap moves the item at once. Archived items are left out.
- */
-export function effectiveDecisions(
-  state: Pick<DecisionsState, "decisions" | "actions">,
-): StoredDecision[] {
-  const byId = new Map(state.decisions.map((item) => [item.id, item] as const));
-  const archived = new Set<string>();
-  const threadArchived = new Set<string>();
-  for (const action of state.actions) {
-    const item = byId.get(action.itemId);
-    if (item === undefined) continue;
-    switch (action.type) {
-      case "snooze":
-        byId.set(item.id, { ...item, snoozed: { at: action.at, until: action.until ?? null } });
-        break;
-      case "unsnooze": {
-        const { snoozed: _snoozed, ...awake } = item;
-        byId.set(item.id, awake);
-        break;
-      }
-      case "archive":
-        archived.add(item.id);
-        break;
-      case "thread-archived":
-        threadArchived.add(item.id);
-        break;
-      case "thread-unarchived":
-        threadArchived.delete(item.id);
-        break;
-    }
-  }
-  return [...byId.values()].filter(
-    (item) => !archived.has(item.id) && !threadArchived.has(item.id),
-  );
-}
 const OBJECTIVE_BULLET = /^(\s{0,3})(?:[-*+]|\d+[.)])\s+/;
 
 /**
@@ -118,8 +65,4 @@ export function bridgeSetting<K extends "objectives" | "modelRouting">(
     if (config.settings[key] != null) return config.settings[key];
   }
   return null;
-}
-
-export function decisionReplyCommandId(): CommandId {
-  return CommandId.make(`web:decision-reply:${randomUUID()}`);
 }

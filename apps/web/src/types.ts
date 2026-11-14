@@ -84,7 +84,6 @@ export interface ChatMessage {
   readonly creationSource?: OrchestrationV2CreationSource;
   readonly scheduledTaskId?: ScheduledTaskId;
   readonly senderThreadId?: ThreadId;
-  readonly note?: boolean;
   readonly linkedSender?: OrchestrationV2LinkedSender;
   readonly idleCompaction?: import("@t3tools/contracts").OrchestrationV2IdleCompaction;
   readonly createdAt: string;

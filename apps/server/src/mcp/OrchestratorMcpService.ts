@@ -820,12 +820,6 @@ function threadSnooze(
   };
 }
 
-function threadKeep(
-  thread: Pick<OrchestrationV2ThreadShell, "tags" | "autoSettleDisabledAt">,
-): Pick<OrchestratorMcpThreadListItem, "tags" | "autoSettleDisabled"> {
-  return { tags: thread.tags ?? [], autoSettleDisabled: thread.autoSettleDisabledAt != null };
-}
-
 // Provider-internal links (parentTaskId, providerInstanceId) stay out of agent results.
 function threadBackgroundWork(
   thread: Pick<OrchestrationV2ThreadShell, "blockedOnThreadWait" | "pendingBackgroundTasks">,
@@ -901,7 +895,6 @@ function listItemFromShell(
     ...mcpLineage(shell),
     coordinator: shell.coordinator === true,
     ...(shell.statusLabel == null ? {} : { statusLabel: shell.statusLabel }),
-    ...threadKeep(shell),
     itemCount: shell.visibleItemCount,
     createdAt: DateTime.formatIso(shell.createdAt),
     updatedAt: DateTime.formatIso(shell.updatedAt),
@@ -968,10 +961,6 @@ function threadDetail(
     ...(projection.thread.statusLabel == null
       ? {}
       : { statusLabel: projection.thread.statusLabel }),
-    ...threadKeep(projection.thread),
-    ...(projection.thread.executionFence == null
-      ? {}
-      : { executionFence: projection.thread.executionFence }),
     ...(projection.thread.causedBy === undefined ? {} : { causedBy: projection.thread.causedBy }),
     runCount: projection.runs.length,
     itemCount,

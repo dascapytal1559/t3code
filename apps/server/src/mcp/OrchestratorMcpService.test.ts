@@ -4045,11 +4045,7 @@ describe("OrchestratorMcpService thread list", () => {
       : [],
   });
   const shells = [
-    {
-      ...shell("thread:a-snoozed", "project:a", true),
-      tags: ["waiting for captain"],
-      autoSettleDisabledAt: DateTime.makeUnsafe("2026-01-01T00:00:00Z"),
-    },
+    shell("thread:a-snoozed", "project:a", true),
     shell("thread:a-awake", "project:a", false),
     shell("thread:b-snoozed", "project:b", true, true),
     {
@@ -4110,25 +4106,10 @@ describe("OrchestratorMcpService thread list", () => {
       });
       assert.equal(listed.projectId, null);
       assert.deepStrictEqual(
-        listed.threads.map(({ threadId, projectId, tags, autoSettleDisabled }) => ({
-          threadId: String(threadId),
-          projectId: String(projectId),
-          tags,
-          autoSettleDisabled,
-        })),
+        listed.threads.map((thread) => [thread.threadId, thread.projectId]),
         [
-          {
-            threadId: "thread:a-snoozed",
-            projectId: "project:a",
-            tags: ["waiting for captain"],
-            autoSettleDisabled: true,
-          },
-          {
-            threadId: "thread:b-snoozed",
-            projectId: "project:b",
-            tags: [],
-            autoSettleDisabled: false,
-          },
+          ["thread:a-snoozed", "project:a"],
+          ["thread:b-snoozed", "project:b"],
         ],
       );
       assert.deepStrictEqual(

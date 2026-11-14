@@ -8,7 +8,6 @@ import {
   ThreadId,
   type ScopedThreadRef,
   type ServerProvider,
-  type StoredDecision,
 } from "@t3tools/contracts";
 import { isMacPlatform } from "@t3tools/shared/keybindings";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -28,15 +27,12 @@ import type { Project } from "../types";
 import Sidebar from "./Sidebar";
 import { THREAD_JUMP_HINT_SHOW_DELAY_MS } from "./Sidebar.logic";
 import { SortableThreadRow } from "./sidebar/SidebarThreadRow";
-import { resolveCaptainCards } from "./sidebar/coordinatorGroup.logic";
-import { useCaptainCards } from "./sidebar/useCaptainCards";
 import { SidebarProvider } from "./ui/sidebar";
 
 const providerState = vi.hoisted(() => ({
   providers: new Map<string, unknown>(),
   serverConfigs: new Map<string, unknown>(),
 }));
-vi.mock("./sidebar/useCaptainCards", { spy: true });
 vi.mock("../state/entities", { spy: true });
 vi.mock(import("../state/presentation"), async (original) => {
   const { Atom } = await import("effect/reactivity");
@@ -290,100 +286,6 @@ describe("sidebar thread cards", () => {
     // ProviderInstanceIcon's wrapper, which carries the account badge.
     expect(row("pa")?.querySelector(".isolate")).toBeNull();
     expect(row("garmin")?.querySelector(".isolate")).toBeNull();
-  });
-});
-
-describe("FirstMate's items in the sidebar", () => {
-  it("label worker cards with their item's age, move snoozed ones to Snoozed, and offer no hover Snooze or Settle", async () => {
-    const environmentId = EnvironmentId.make("local");
-    providerState.providers = new Map();
-    providerState.serverConfigs = new Map([
-      [environmentId, { settings: { providerInstances: {} } }],
-    ]);
-    const home = project("firstmate");
-    const shell = (id: string, title: string, extra: Partial<EnvironmentThreadShell> = {}) => ({
-      ...makeThreadFixture({ environmentId, id: ThreadId.make(id), projectId: home.id, title }),
-      ...extra,
-    });
-    const firstmate = ThreadId.make("firstmate");
-    const crew = { crewOf: firstmate };
-    const threads = [
-      shell("firstmate", "Firstmate", { coordinator: true }),
-      shell("probe", "Media archive probe", crew),
-      shell("spec", "Captain surface spec", crew),
-      shell("cap", "File size cap review", crew),
-      shell("vision", "Agent messaging vision", crew),
-      // A standing agent: an ordinary thread in its own project.
-      shell("logger", "Logger"),
-    ];
-    const item = (id: string, threadId: string, extra: Partial<StoredDecision> = {}) => ({
-      id,
-      title: id,
-      question: `${id}?`,
-      options: [],
-      entries: [],
-      revision: 1,
-      thread: { id: ThreadId.make(threadId), finished: false },
-      ...extra,
-    });
-    const decisions = [
-      item("media-archive-build", "probe", { since: "2026-11-10T00:00:00.000Z" }),
-      item("captain-surface-spec", "spec", { kind: "read", since: "2026-11-10T00:00:00.000Z" }),
-      item("cap-review", "cap", {
-        snoozed: { at: "2026-11-12T00:00:00.000Z", until: "2099-11-21T09:00:00.000Z" },
-      }),
-      item("vision-read", "vision", {
-        kind: "read",
-        snoozed: { at: "2026-11-11T00:00:00.000Z", until: null },
-      }),
-    ];
-    vi.mocked(useCaptainCards).mockReturnValue(
-      resolveCaptainCards(
-        [{ environmentId, state: { decisions, actions: [] } }],
-        Date.parse("2026-11-13T12:00:00.000Z"),
-      ),
-    );
-    vi.mocked(useProjects).mockReturnValue([home]);
-    vi.mocked(useQuietThreadShells).mockReturnValue(threads);
-    vi.mocked(useThreadRouteTarget).mockReturnValue({ kind: "none" } as never);
-    // The crew tree starts open; the Snoozed shelf starts collapsed and is opened below.
-    using stack = new DisposableStack();
-    localStorage.setItem("t3code:sidebar:crew-expanded", "true");
-    for (const key of ["t3code:sidebar:crew-expanded", "t3code:sidebar:snoozed-expanded"]) {
-      stack.defer(() => localStorage.removeItem(key));
-    }
-    await using screen = await render(
-      <SidebarProvider>
-        <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
-      </SidebarProvider>,
-    );
-    const row = (threadId: string) =>
-      document.querySelector<HTMLElement>(`[data-sidebar-row="local:${threadId}"]`);
-
-    await expect.element(screen.getByText("Media archive probe").first()).toBeInTheDocument();
-    // The age stands in for Needs you and To read.
-    await vi.waitFor(() => expect(row("probe")?.textContent).toMatch(/\d+d/));
-    expect(row("probe")?.textContent).not.toContain("Needs you");
-    expect(row("spec")?.textContent).toMatch(/\d+d/);
-    expect(row("spec")?.textContent).not.toContain("To read");
-    // Snoozed items leave the crew for the Snoozed shelf, after its header, with no label.
-    expect(row("cap")).toBeNull();
-    await screen.getByTestId("sidebar-snoozed-shelf-toggle").click();
-    await vi.waitFor(() => expect(row("cap")).not.toBeNull());
-    const snoozedHeader = screen.getByText("Snoozed", { exact: true }).element();
-    for (const id of ["cap", "vision"]) {
-      expect(
-        snoozedHeader.compareDocumentPosition(row(id)!) & Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy();
-    }
-    expect(row("cap")?.textContent).toMatch(/in \d/);
-    expect(row("vision")?.textContent).not.toContain("To read");
-
-    for (const id of ["probe", "logger"]) {
-      await userEvent.hover(row(id)!);
-      expect(row(id)?.querySelector('[aria-label="Snooze thread"]')).toBeNull();
-      expect(row(id)?.querySelector('[aria-label="Settle thread"]')).toBeNull();
-    }
   });
 });
 

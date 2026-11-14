@@ -50,7 +50,6 @@ import {
   reorderPinnedThread,
   reorderActiveThread,
   setThreadAutoSettle,
-  liftThreadExecutionFence,
   settleThread,
   snoozeThread,
   startThreadTurn,
@@ -242,12 +241,6 @@ export function createThreadEnvironmentAtoms<R, E>(
     setAutoSettle: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:set-auto-settle",
       execute: setThreadAutoSettle,
-      scheduler,
-      concurrency,
-    }),
-    liftExecutionFence: createEnvironmentCommand(runtime, {
-      label: "environment-data:commands:thread:lift-execution-fence",
-      execute: liftThreadExecutionFence,
       scheduler,
       concurrency,
     }),
@@ -523,10 +516,6 @@ export function createThreadEnvironmentAtoms<R, E>(
     setAutoSettle: optimistic.wrap(commands.setAutoSettle, (thread, input, now) => ({
       ...thread,
       autoSettleDisabledAt: input.enabled ? null : (thread.autoSettleDisabledAt ?? now),
-    })),
-    liftExecutionFence: optimistic.wrap(commands.liftExecutionFence, (thread) => ({
-      ...thread,
-      executionFence: null,
     })),
     pin: optimistic.wrap(commands.pin, (thread, input, now) => ({
       ...thread,

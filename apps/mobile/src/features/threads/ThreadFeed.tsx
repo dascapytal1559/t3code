@@ -37,7 +37,6 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { HandoffEndpoints } from "@t3tools/client-runtime/handoff";
 import {
   IDLE_COMPACTING_LABELS,
-  resolveAgentMessageFold,
   resolveUserMessageFileCards,
   resolveUserMessagePresentation,
 } from "@t3tools/client-runtime/user-message";
@@ -1342,7 +1341,6 @@ function useMarkdownStyles(): MarkdownStyleSets {
 function AgentMessageFoldHeader(props: {
   readonly environmentId: EnvironmentId;
   readonly senderThreadId?: ThreadId;
-  readonly note: boolean;
   /** A linked environment's sender title, for when this client cannot reach it. */
   readonly senderTitle?: string;
   readonly summary: string;
@@ -1353,10 +1351,7 @@ function AgentMessageFoldHeader(props: {
   const senderShell = useQuietThreadShell(
     props.senderThreadId ? scopeThreadRef(props.environmentId, props.senderThreadId) : null,
   );
-  const { label } = resolveAgentMessageFold(
-    { note: props.note },
-    senderShell?.title.trim() || props.senderTitle,
-  );
+  const label = senderShell?.title.trim() || props.senderTitle?.trim() || "Agent";
   return (
     <Pressable
       accessibilityRole="button"
@@ -1371,7 +1366,7 @@ function AgentMessageFoldHeader(props: {
       }}
     >
       <SymbolView
-        name={props.note ? "doc.text" : "bubble.left.and.bubble.right"}
+        name="bubble.left.and.bubble.right"
         size={14}
         weight="medium"
         tintColorClassName="accent-user-bubble-foreground-muted"
@@ -1384,8 +1379,7 @@ function AgentMessageFoldHeader(props: {
         {label}
       </Text>
       <Text numberOfLines={1} className="min-w-0 shrink text-sm text-user-bubble-foreground">
-        {/* An open note's body starts with the same line, already rendered. */}
-        {props.note && props.expanded ? "" : props.summary}
+        {props.summary}
       </Text>
       <ThreadDisclosureChevron
         expanded={props.expanded}
@@ -1936,22 +1930,14 @@ function renderFeedEntry(
     }
     if (isUser) {
       const enterAnimated = isFreshTimestamp(message.createdAt);
-      const isNote = message.note === true;
-      // A note starts open, so its toggled row state records that it was closed.
-      const foldRowId =
-        presentation.attribution !== "agent"
-          ? null
-          : isNote
-            ? `note-closed:${message.id}`
-            : `agent:${message.id}`;
-      const foldToggled = foldRowId !== null && (props.expandedWorkRows[foldRowId] ?? false);
-      const foldExpanded = foldRowId !== null && foldToggled !== isNote;
+      const foldRowId = presentation.attribution === "agent" ? `agent:${message.id}` : null;
       // A linked environment's agent sent it from a thread there.
       const senderRef =
         message.linkedSender ??
         (message.senderThreadId
           ? scopeThreadRef(props.environmentId, message.senderThreadId)
           : null);
+      const foldExpanded = foldRowId !== null && (props.expandedWorkRows[foldRowId] ?? false);
       const bubbleBodyVisible = foldRowId === null || foldExpanded;
       const intentBadge = props.userMessageGrouping.continuesSteer
         ? null
@@ -2074,7 +2060,6 @@ function renderFeedEntry(
                   environmentId={senderRef?.environmentId ?? props.environmentId}
                   senderThreadId={senderRef?.threadId}
                   {...(message.linkedSender ? { senderTitle: message.linkedSender.title } : {})}
-                  note={isNote}
                   summary={
                     replaceComposerContextReferences(presentation.text, (ref) => ref.label)
                       .split(/\r?\n/)
@@ -3791,7 +3776,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
                 return "message:assistant-progress";
               }
               const { attribution } = resolveUserMessagePresentation(entry.message);
-              if (attribution === "agent" && entry.message.note === true) return "message:note";
               return attribution === "automation" || attribution === "agent"
                 ? `message:${attribution}`
                 : `message:${entry.message.role}`;

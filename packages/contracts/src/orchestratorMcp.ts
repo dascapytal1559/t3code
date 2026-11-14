@@ -45,7 +45,6 @@ import {
   OrchestrationV2CreationSource,
   OrchestrationV2CausedBy,
   OrchestrationV2RunStatus,
-  OrchestrationV2ThreadExecutionFence,
   OrchestrationV2TurnItemStatus,
   ThreadStatusLabel,
 } from "./orchestrationV2.ts";
@@ -370,14 +369,6 @@ export const OrchestratorMcpThreadPullRequest = Schema.Struct({
 });
 export type OrchestratorMcpThreadPullRequest = typeof OrchestratorMcpThreadPullRequest.Type;
 
-/** What keeps a thread around for a reader. Linked servers without them omit them. */
-const OrchestratorMcpThreadKeepFields = {
-  /** Exact-case tags, in the order they were added. */
-  tags: Schema.optional(Schema.Array(Schema.String)),
-  /** Automatic settlement skips it; manual settle and snooze still work. */
-  autoSettleDisabled: Schema.optional(Schema.Boolean),
-} as const;
-
 /** Background work still open on the thread, as its provider reported it. */
 export const OrchestratorMcpThreadBackgroundTask = Schema.Struct({
   taskId: TrimmedNonEmptyString,
@@ -420,7 +411,6 @@ export const OrchestratorMcpThreadListItem = Schema.Struct({
   coordinator: Schema.optional(Schema.Boolean),
   /** Its crew card's label, when it has one. Linked servers without it omit it. */
   statusLabel: Schema.optional(ThreadStatusLabel),
-  ...OrchestratorMcpThreadKeepFields,
   itemCount: NonNegativeInt,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -495,9 +485,6 @@ export const OrchestratorMcpThreadDetail = Schema.Struct({
   coordinator: Schema.optional(Schema.Boolean),
   /** Its crew card's label, when it has one. Linked servers without it omit it. */
   statusLabel: Schema.optional(ThreadStatusLabel),
-  ...OrchestratorMcpThreadKeepFields,
-  /** Set while no run may start here. Linked servers without it omit it. */
-  executionFence: Schema.optional(OrchestrationV2ThreadExecutionFence),
   /** The prompt recorded as this thread's cause at launch. Linked servers without causes omit it. */
   causedBy: Schema.optional(OrchestrationV2CausedBy),
   runCount: NonNegativeInt,

@@ -1,8 +1,6 @@
 import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
 import { CrewRunControls } from "./chat/CrewRunControls";
-import { KeptThreadReply } from "./chat/KeptThreadReply";
 import { isCrewOf } from "./sidebar/coordinatorGroup.logic";
-import { useCaptainCard } from "./sidebar/useCaptainCards";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
@@ -41,7 +39,6 @@ import { ThreadFind, ThreadFindCanvas } from "./chat/ThreadFindProvider";
 import { closeThreadFind, openThreadFind, useThreadFindOpen } from "./chat/threadFindStore";
 import { THREAD_FIND_BAR_RESERVED_HEIGHT } from "./chat/ThreadFindBar";
 import { usageLimitRecoveryBannerItem } from "./chat/UsageLimitRecoveryBanner";
-import { executionFenceBannerItem } from "./chat/ExecutionFenceBanner";
 import { isThreadEnvironmentLocked, resolveDraftHeroState } from "./ChatView.logic";
 import { useQueuedRunEdit } from "./chat/useQueuedRunEdit";
 import { recallCheckoutIsRepo, rememberCheckoutIsRepo } from "./ChatView.logic";
@@ -463,9 +460,6 @@ export default function ChatView(props: ChatViewProps) {
     reportFailure: false,
   });
   const canWriteSourceControl = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
-  const liftThreadExecutionFence = useOrchestrationCommand(threadEnvironment.liftExecutionFence, {
-    reportFailure: false,
-  });
   const setThreadRuntimeMode = useOrchestrationCommand(threadEnvironment.setRuntimeMode, {
     reportFailure: false,
   });
@@ -1784,9 +1778,6 @@ export default function ChatView(props: ChatViewProps) {
   // FirstMate steers its workers, so a worker shows no composer unless it is asking the user something.
   const crewComposerHidden =
     isCrewThread && activePendingApproval === null && pendingUserInputs.length === 0;
-  // A thread carrying FirstMate's item takes replies, but they go to FirstMate.
-  const captainCard = useCaptainCard(activeThreadRef);
-  const captainReplyCard = crewComposerHidden ? captainCard : null;
   const providerSubagentModels = selectedProviderEntry?.models ?? EMPTY_PROVIDER_MODELS;
   // Providers can report dated model ids or aliases.
   const providerSubagentModelSlug = selectedProviderEntry
@@ -2639,16 +2630,6 @@ export default function ChatView(props: ChatViewProps) {
           },
         })
       : null;
-  const executionFenceBanner =
-    activeThreadShell?.executionFence != null
-      ? executionFenceBannerItem(async () => {
-          const result = await liftThreadExecutionFence({
-            environmentId,
-            input: { threadId: activeThreadShell.id },
-          });
-          if (result._tag === "Failure") throw squashAtomCommandFailure(result);
-        }, canOperateThread)
-      : null;
   const composerBannerItems = (() => {
     const fallbackSelection = draftFallback?.selection;
     const defaultSelection =
@@ -2695,7 +2676,6 @@ export default function ChatView(props: ChatViewProps) {
             }),
           ]
         : [];
-    const executionFenceItems = executionFenceBanner === null ? [] : [executionFenceBanner];
     const limitRecoveryItems = limitRecoveryBanner === null ? [] : [limitRecoveryBanner];
     const extensionStatusBanner = extensionStatusBannerItem(
       deriveProviderExtensionStatuses(serverProjection),
@@ -2713,7 +2693,6 @@ export default function ChatView(props: ChatViewProps) {
       return [
         ...feedbackBannerItems,
         ...fallbackItems,
-        ...executionFenceItems,
         ...limitRecoveryItems,
         ...extensionStatusItems,
         ...usageLimitsItems,
@@ -2726,7 +2705,6 @@ export default function ChatView(props: ChatViewProps) {
     return [
       ...feedbackBannerItems,
       ...fallbackItems,
-      ...executionFenceItems,
       ...limitRecoveryItems,
       ...extensionStatusItems,
       ...usageLimitsItems,
@@ -3634,34 +3612,22 @@ export default function ChatView(props: ChatViewProps) {
                     }
                   >
                     <ChildThreadApprovals threadRef={activeThreadRef} />
-                    {crewComposerHidden && executionFenceBanner !== null ? (
-                      <ComposerBannerStack items={[executionFenceBanner]} detached />
-                    ) : null}
                     {crewComposerHidden ? (
-                      <div className="flex flex-col gap-2">
-                        <CrewRunControls
-                          onStop={canInterruptRunningThread ? onInterruptStable : null}
-                          onResume={
-                            canOperateThread &&
-                            serverProjection !== null &&
-                            canResumeThread(
-                              serverProjection,
-                              resumableRunId,
-                              hasHeldQueuedRuns && !restartPending,
-                            )
-                              ? onComposerResumeStable
-                              : null
-                          }
-                          isResuming={isResuming}
-                        />
-                        {captainReplyCard !== null && activeThreadRef !== null ? (
-                          <KeptThreadReply
-                            key={activeThreadKey}
-                            threadRef={activeThreadRef}
-                            captainCard={captainReplyCard}
-                          />
-                        ) : null}
-                      </div>
+                      <CrewRunControls
+                        onStop={canInterruptRunningThread ? onInterruptStable : null}
+                        onResume={
+                          canOperateThread &&
+                          serverProjection !== null &&
+                          canResumeThread(
+                            serverProjection,
+                            resumableRunId,
+                            hasHeldQueuedRuns && !restartPending,
+                          )
+                            ? onComposerResumeStable
+                            : null
+                        }
+                        isResuming={isResuming}
+                      />
                     ) : (
                       <div className="relative">
                         <ComposerSurface.Shell contextRow={showComposerContextStrip}>

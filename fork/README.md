@@ -462,64 +462,6 @@ only: the server takes messages for crew as before, so FirstMate's MCP messages
 arrive unchanged, and mobile still shows the composer. Code:
 `crewComposerHidden` in `apps/web/src/components/ChatView.tsx`.
 
-A crew thread that carries one of FirstMate's items (see
-[Captain items in the sidebar](#captain-items-in-the-sidebar)) gets a plain
-reply box with Send to FirstMate, Snooze and Archive. A reply never reaches the
-worker: it is the item's decision reply, `needs-me-task: <id>` in FirstMate's
-chat with the revision the user read, with no Undo. Snooze is one tap
-with no return date; its arrow offers the environment's snooze presets and
-Custom…, which set a return time. A snoozed item shows Bring back instead.
-Archive on a card FirstMate marks finished is the ordinary thread archive, with
-its Undo and unarchive; on a worker still running it only closes the item, and
-FirstMate winds the worker down through its own cleanup. A refusal from
-FirstMate shows above the box until FirstMate changes the item. A crew thread
-with no item keeps no composer. Code: `KeptThreadReply.tsx` in
-`apps/web/src/components/chat/`.
-
-## Captain items in the sidebar
-
-<img src="media/snoozed-pinned.jpg" width="256" alt="The sidebar: FirstMate's crew cards show each item's age on the right (5h and 22h in blue for reports, 2d, now and 4d in orange for decisions, a gray Replied), and the Snoozed row with its count stays pinned above the usage bars while the list scrolls under it">
-
-FirstMate's backlog is the one record of what waits on the user; T3 shows it on
-the cards of the threads it is about. Each item FirstMate sends with a `thread`
-labels that thread's card on the right, where Working or Done would sit, with
-how long ago the item was raised in T3's short form ("3d"): orange for a
-decision (Needs you), blue for a finished report (To read), and a gray
-"Replied" in place of the age once the user has answered this version. Screen
-readers still hear Needs you or To read. Busy and needs-the-user statuses
-still show over it, as with FirstMate's own labels. A thread carrying several
-items shows one: a waiting item over a snoozed one, a decision over a report,
-then the oldest. A decision with no worker is a crew thread FirstMate creates,
-titled with the question.
-
-A snoozed item takes its card out of the crew and into the Snoozed section,
-with no label: a dated snooze shows upstream's alarm and "in 3 days", one with
-no date the time since it was snoozed ("2d"). Its wake button brings it back.
-A dated snooze returns on the minute its time passes, with no push. These
-snoozes live in FirstMate's list, not upstream's thread snooze, which needs a
-date and would be a second record; the thread itself is never snoozed. Snooze
-from the card's context menu or the chat header's menu on such a thread also
-snoozes the item, and waking it from either menu or dragging it out of Snoozed
-brings the item back (and the thread too, if it carries its own snooze).
-
-Snooze, Bring back and Archive on a running worker are actions T3 logs for
-FirstMate (`orchestration.actOnDecision`, operate scope). The card moves at
-once: clients apply every action FirstMate has not acknowledged over its list.
-FirstMate applies each to its backlog, sends the new list and then acknowledges
-it, so the card never jumps back. Archive needs the revision the user saw; a
-newer one refuses it so the user reads the update first. T3 also logs
-`thread-archived` and `thread-unarchived` when a thread an item names is
-archived or restored from anywhere, from the server's domain events.
-
-Code: `resolveCaptainCards` in
-`apps/web/src/components/sidebar/coordinatorGroup.logic.ts`,
-`effectiveDecisions` in `components/needsMe/needsMe.logic.ts`,
-`components/sidebar/useCaptainCards.ts`, `act`, `actions` and the archive watch
-in `apps/server/src/decisions/Decisions.ts`. Upstream files it touches, for
-syncs: the snoozed placement and sort in `partitionSidebarThreads` and the
-snooze and wake routing in `Sidebar.tsx`, the label and time props in
-`SidebarThreadRow.tsx`, and the snooze and wake routing in `useThreadActionMenu.ts`.
-
 ## Snoozed stays at the bottom, with no Settled
 
 The sidebar is the user's tracker and archive is how a thread is put away, so
@@ -1108,70 +1050,6 @@ now has `action: "mark_read"`, the opposite of `mark_unread`: it dispatches
 not count as the user opening the thread. Clients detect it by `mark_read` in the
 tool's `tools/list` `action` enum. Upstream main had no equivalent at
 `337c5858c3`. Code: `apps/server/src/mcp/toolkits/thread/handlers.ts`.
-
-## Threads kept for a reader
-
-FirstMate keeps an exploration's thread open after the work ends, until the
-user archives it; the user replies from the thread to FirstMate (see
-[A crewmate has no composer](#a-crewmate-has-no-composer)). Four MCP controls do that
-without starting another agent turn:
-
-- **Tags.** `t3_thread_organize` `action: "tag"` or `"untag"` with `tag` (one
-  line, up to 64 characters, matched by exact case after trimming) sends the
-  existing `thread.tag.set`. Repeating either is a no-op.
-- **No automatic settlement.** `action: "disable_auto_settle"` or
-  `"enable_auto_settle"` sends the existing `thread.auto-settle.set`. Manual
-  settle and snooze still work; an archived thread refuses both actions. While
-  it is disabled, idle compaction before the prompt cache expires skips the
-  thread too (`IdleCompaction.ts`), so a kept thread stays as its reader left
-  it; compaction when the user sends is unchanged.
-- **Notes.** `t3_thread_note` `{ threadId, text, clientRequestId }` posts
-  `text` (up to 120,000 characters) as a message with no run, no queue entry,
-  no provider turn and no wake. The thread and `clientRequestId` name the note:
-  a retry, from any session and after a restart, returns the same `messageId`
-  with `created: false`; the same id with different text fails
-  `invalid_request`. It returns `{ threadId, messageId, sequence, created }`.
-  An archived or deleted thread refuses a new note, though a retry of one
-  already posted still succeeds. In web, desktop and mobile a note opens
-  expanded (other agent messages stay folded to one line), labelled
-  "FirstMate note", or "Note from <thread>" when an agent thread sent it, with
-  its Markdown rendered; a long one uses the usual "show more" collapse
-  (`resolveAgentMessageFold` in `packages/client-runtime/src/userMessage.ts`).
-  It also shows in `t3_thread_read`'s `messages` and
-  `activity` views, after the latest run's rows. The thread's agent gets every
-  note posted since its last prompted turn ahead of its next prompt;
-  compaction and `/goal` prompts carry none and wait for the next.
-- **Execution fence.** `action: "fence"` with `fenceLabel` (up to 256
-  characters, for example a task incarnation) and `expectedWorktreePath` (the
-  thread's current worktree path, or `null` for the project folder) marks the
-  thread retired from running once its workspace goes back to its owner. It
-  refuses a thread that works elsewhere or still has a run, queued message or
-  open request. A fenced thread stays readable and takes notes, but sending a
-  message or forking it fails, and any run that still reaches turn start fails
-  there before a session or worktree is touched, whichever client or schedule
-  started it. Unarchive keeps the fence. Fencing again with the same label
-  keeps the first `fencedAt`.
-- **Seeing and lifting a fence.** The thread shell carries `executionFence`,
-  so clients show it. Web and desktop put a "Paused by FirstMate" card with a
-  Resume button above the composer, or above a FirstMate worker's Stop and
-  Resume controls, since a worker has no composer. Mobile shows "Paused by
-  FirstMate" with Resume in the thread's floating status. Resume sends
-  `thread.execution-fence.lift`, the one client command that touches the
-  fence, and `action: "unfence"` sends the same command; setting a fence
-  stays server-only (`thread.execution-fence.set`). Resuming lets the thread
-  run in its old worktree path again, which may by then be back with its
-  owner.
-
-`t3_thread_list` items and `t3_thread_read`'s `thread` report `tags` and
-`autoSettleDisabled`; `thread` also reports `executionFence`
-`{ label, worktreePath, fencedAt }` while one is set. Linked servers without
-these omit the fields. Clients detect the controls by the `action` enum and
-the `t3_thread_note` tool in `tools/list`. Code: `ThreadRetention.ts`,
-`appendNote` in `ThreadManagementService.ts`, the `thread.note.append` and
-`thread.execution-fence.set`/`.lift` handlers in `Orchestrator.ts` (all in
-`apps/server/src/orchestration-v2/`), `apps/server/src/mcp/toolkits/thread/`,
-`ExecutionFenceBanner.tsx` in `apps/web/src/components/chat/`, and the
-`paused` lifecycle status in `apps/mobile/src/features/threads/`.
 
 ## FirstMate's sign-in lasts 10 years
 

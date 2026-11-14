@@ -1,10 +1,6 @@
 import {
   BackgroundActivityProfile,
   BackgroundActivityProfileSelection,
-  DecisionActionsInput,
-  DecisionActionsResult,
-  DecisionsSetInput,
-  DecisionsSetResult,
   ExecutionEnvironmentDescriptor,
   ModelRouting,
   Objectives,
@@ -17,7 +13,6 @@ import {
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
-import * as Decisions from "../../../decisions/Decisions.ts";
 import * as ServerEnvironment from "../../../environment/ServerEnvironment.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
@@ -47,7 +42,6 @@ const shared = {
     Settings.ServerSettingsService,
     ThreadCommandExecutor.ThreadCommandExecutor,
     Orchestrator.OrchestratorV2,
-    Decisions.Decisions,
   ],
 };
 const EnvironmentReadTool = Tool.make("t3_environment_read", {
@@ -97,20 +91,6 @@ const RoutingSetTool = Tool.make("t3_routing_set", {
   }),
   success: Schema.Struct({ modelRouting: Schema.NullOr(ModelRouting) }),
 }).annotate(Tool.Destructive, true);
-const DecisionsSetTool = Tool.make("t3_decisions_set", {
-  ...shared,
-  description:
-    "Replace the items the user owes, shown on their `thread` card in T3's sidebar. `decisions`: the whole list; one left out is gone, an identical list changes nothing. `kind: read` is a report to read. `snoozed.until: null` waits until brought back. Replies go to thread `replyTo`; the user's snooze and archive arrive on `t3_decisions_actions`.",
-  parameters: DecisionsSetInput,
-  success: DecisionsSetResult,
-}).annotate(Tool.Destructive, true);
-const DecisionsActionsTool = Tool.make("t3_decisions_actions", {
-  ...shared,
-  description:
-    "Read the user's snooze, unsnooze and archive actions on your items, and T3's thread-archived and thread-unarchived records, oldest first. `ack` drops the ones you applied or refused (a refusal's `message` is shown to the user). With none after `after`, waits up to `waitMs` for one.",
-  parameters: DecisionActionsInput,
-  success: DecisionActionsResult,
-}).annotate(Tool.Destructive, false);
 const RestartRequestTool = Tool.make("t3_restart_request", {
   ...shared,
   description:
@@ -135,8 +115,6 @@ export const EnvironmentToolkit = Toolkit.make(
   EnvironmentPreferencesTool,
   ObjectivesSetTool,
   RoutingSetTool,
-  DecisionsSetTool,
-  DecisionsActionsTool,
   RestartRequestTool,
   RestartStatusTool,
   RestartCancelTool,

@@ -161,13 +161,6 @@ it("readThread preserves caller access errors and prefers activity-run status ov
       }),
       coordinator: true,
       crewOf: crewCoordinatorId,
-      tags: ["waiting for captain"],
-      autoSettleDisabledAt: now,
-      executionFence: {
-        label: "task-1",
-        worktreePath: "/work/copy-3",
-        fencedAt: "2026-08-04T12:00:00.000Z",
-      },
       pullRequests: [pullRequestLink(1, "merged", false), pullRequestLink(2, "open", true)],
     },
     runs: [
@@ -253,12 +246,6 @@ it("readThread preserves caller access errors and prefers activity-run status ov
     // FirstMate reads crew from MCP lineage, though threads carry it outside `lineage`.
     expect(result.thread.parentThreadId).toBe(crewCoordinatorId);
     expect(result.thread.relationshipToParent).toBe("crew");
-    // FirstMate proves a retained thread by reading these back.
-    expect(result.thread).toMatchObject({
-      tags: ["waiting for captain"],
-      autoSettleDisabled: true,
-      executionFence: { label: "task-1", worktreePath: "/work/copy-3" },
-    });
     expect(result.thread.blockedOnThreadWait).toBe(true);
     expect(result.thread.pendingBackgroundTasks).toEqual([
       { taskId: "task-subagent", kind: "subagent", childThreadId },

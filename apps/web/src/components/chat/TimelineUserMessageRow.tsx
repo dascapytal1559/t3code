@@ -12,11 +12,8 @@ import {
   type ServerProviderSkill,
   ThreadId,
 } from "@t3tools/contracts";
-import {
-  resolveAgentMessageFold,
-  resolveUserMessagePresentation,
-} from "@t3tools/client-runtime/user-message";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
 import { Link } from "@tanstack/react-router";
 import { useQuietThreadShell } from "../../state/entities";
 import { useEnvironment } from "../../state/environments";
@@ -42,7 +39,6 @@ import {
   EyeIcon,
   type LucideIcon,
   MessagesSquareIcon,
-  NotebookTextIcon,
   Redo2Icon,
   PencilIcon,
   LinkIcon,
@@ -471,14 +467,11 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
   const userMessage = resolveUserMessagePresentation(row.message);
   // Messages from other agents fold to one line so the user's own messages stay easy to find.
   const folded = userMessage.attribution === "agent";
-  const senderShell = useQuietThreadShell(folded ? senderRef : null);
-  const fold = resolveAgentMessageFold(
-    row.message,
-    senderShell?.title.trim() || row.message.linkedSender?.title,
-  );
-  const [expanded, setExpanded] = useState(fold.initiallyExpanded);
+  const [expanded, setExpanded] = useState(false);
   const revealFoldRef = findRevealRef(() => setExpanded(true));
-  const senderLabel = fold.label;
+  const senderShell = useQuietThreadShell(folded ? senderRef : null);
+  const senderLabel =
+    senderShell?.title.trim() || row.message.linkedSender?.title.trim() || "Agent";
   // Only an environment this client is connected to can open the sender's thread there.
   const linkedSenderEnvironment = useEnvironment(row.message.linkedSender?.environmentId ?? null);
   const canOpenSender =
@@ -908,10 +901,9 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         )}
         {folded ? (
           <FoldedMessageHeader
-            icon={fold.note ? NotebookTextIcon : MessagesSquareIcon}
+            icon={MessagesSquareIcon}
             label={senderLabel}
-            // An open note's body starts with the same line, already rendered.
-            summary={fold.note && expanded ? "" : foldSummary}
+            summary={foldSummary}
             expanded={expanded}
             onToggle={() => setExpanded((value) => !value)}
           />
@@ -924,7 +916,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             dir={markdownProseDirection(resolvedContext.text)}
             className={cn(
               folded && "px-3 pb-3",
-              folded && !fold.note && !ctx.findActive && "max-h-96 overflow-auto",
+              folded && !ctx.findActive && "max-h-96 overflow-auto",
             )}
           >
             {!mediaAboveText && mediaBlock}
@@ -1040,8 +1032,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                   renderContextReference={renderContextReference}
                   skills={ctx.skills}
                   markdownCwd={ctx.markdownCwd}
-                  // A note is read in place, so a long one uses the bubble's own collapse.
-                  collapsible={!folded || fold.note}
+                  collapsible={!folded}
                 />
               </div>
             )}

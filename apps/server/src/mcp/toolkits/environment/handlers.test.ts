@@ -2,7 +2,6 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import {
-  CommandId,
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   ProviderInstanceId,
@@ -19,7 +18,6 @@ import * as Stream from "effect/Stream";
 
 import * as ServerSecretStore from "../../../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../../../config.ts";
-import * as Decisions from "../../../decisions/Decisions.ts";
 import * as Environment from "../../../environment/ServerEnvironment.ts";
 import * as SqlitePersistence from "../../../persistence/Sqlite.ts";
 import * as ManagedPolicy from "../../../policy/ManagedPolicy.ts";
@@ -56,14 +54,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Bridge tools", (
     Layer.fresh(SqlitePersistence.layerMemory),
     Layer.fresh(ServerConfig.layerTest(process.cwd(), { prefix: "t3-objectives-test-" })),
   );
-  const answeredDecision = {
-    id: "garden-shed-paint",
-    title: "Garden shed: which paint?",
-    question: "Green or grey for the shed?",
-    options: [],
-    entries: [],
-    revision: 3,
-  };
   const firstMate: McpInvocationContext.McpInvocationContext["Service"] = {
     environmentId,
     requestNamespace: "client:firstmate",
@@ -80,25 +70,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Bridge tools", (
           layerServerEnvironment,
           Layer.mock(Orchestrator.OrchestratorV2)({}),
           Layer.mock(ThreadManagement.ThreadManagementService)({}),
-          Layer.mock(Decisions.Decisions)({
-            set: ({ replyTo }) =>
-              replyTo === threadId
-                ? Effect.succeed({
-                    replyTo,
-                    actions: [],
-                    lastActionSeq: 0,
-                    decisions: [
-                      {
-                        ...answeredDecision,
-                        answered: {
-                          commandId: CommandId.make("reply"),
-                          at: "2026-11-09T00:00:00Z",
-                        },
-                      },
-                    ],
-                  })
-                : Effect.fail(new Decisions.DecisionsReplyThreadError({ threadId: replyTo })),
-          }),
           Layer.succeed(McpInvocationContext.McpInvocationContext, caller),
         ),
       ),
@@ -171,32 +142,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Bridge tools", (
       expect(yield* saved("modelRouting")).toBeNull();
     }).pipe(Effect.provide(layerSettings.pipe(Layer.provideMerge(layerHome)))),
   );
-
-  it.effect("t3_decisions_set answers with what was stored, and names a missing replyTo", () =>
-    Effect.gen(function* () {
-      const setDecisions = (replyTo: ThreadId) =>
-        Effect.gen(function* () {
-          const toolkit = yield* EnvironmentToolkit;
-          const results = yield* toolkit
-            .handle("t3_decisions_set", { replyTo, decisions: [answeredDecision] })
-            .pipe(Stream.unwrap, Stream.runCollect);
-          return results.at(-1)?.result;
-        });
-      // FirstMate checks ids and revisions against what it sent; `answered` is T3's own.
-      expect(yield* setDecisions(threadId)).toEqual({
-        replyTo: threadId,
-        decisions: [{ id: "garden-shed-paint", revision: 3, answered: true }],
-      });
-      expect(yield* setDecisions(ThreadId.make("thread:gone"))).toMatchObject({
-        code: "invalid_request",
-        message: "replyTo thread thread:gone was not found.",
-      });
-    }).pipe(
-      Effect.provide(
-        layerTools.pipe(Layer.provideMerge(layerSettings), Layer.provideMerge(layerHome)),
-      ),
-    ),
-  );
 });
 
 it.effect("refuses a preferences update when the caller's turn ends while it waits", () =>
@@ -207,7 +152,6 @@ it.effect("refuses a preferences update when the caller's turn ends while it wai
     const layerDependencies = Layer.mergeAll(
       ThreadCommandExecutor.layer,
       Layer.mock(Orchestrator.OrchestratorV2)({}),
-      Layer.mock(Decisions.Decisions)({}),
       Layer.succeed(McpInvocationContext.McpInvocationContext, {
         environmentId,
         requestNamespace: "provider:preferences",

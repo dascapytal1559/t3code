@@ -114,11 +114,7 @@ import {
   CrewTreeGutter,
   type CrewTreePlace,
 } from "./SidebarCrewTree";
-import {
-  resolveCrewStatusLabel,
-  showsCoordinatorAge,
-  type CaptainCard,
-} from "./coordinatorGroup.logic";
+import { resolveCrewStatusLabel, showsCoordinatorAge } from "./coordinatorGroup.logic";
 import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
@@ -546,8 +542,6 @@ type SidebarThreadRowProps = {
   // every row, and keeps upstream's hover code for syncs.
   hideHoverActions?: boolean | undefined;
   crewTree?: CrewTreePlace | undefined;
-  // Fork: FirstMate's item this thread's card carries.
-  captainCard?: CaptainCard | undefined;
   // The coordinator card the expanded crew hangs from, which carries the top of the guide line.
   crewTreeRoot?: boolean | undefined;
   onCrewTreeToggle?: (() => void) | undefined;
@@ -821,15 +815,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   const isWokeStatus = topStatus?.icon === "woke";
   const crewStatusLabel = resolveCrewStatusLabel({
     crew: props.crewTree !== undefined,
-    // Fork: FirstMate's item on the thread says what it asks of the user, over FirstMate's label.
-    statusLabel: props.captainCard?.label ?? thread.statusLabel,
+    statusLabel: thread.statusLabel,
     status,
     isWoke,
   });
-  const captainItemRaisedAt =
-    props.captainCard !== undefined && crewStatusLabel === props.captainCard.label
-      ? props.captainCard.raisedAt
-      : null;
   const coordinatorShowsAge = showsCoordinatorAge({
     coordinator: props.coordinator === true,
     status,
@@ -1362,9 +1351,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       <span className="inline-flex items-center gap-1 text-xs text-info-foreground tabular-nums">
                         {/* The clock tells a wake time from an age at a glance. */}
                         <AlarmClockIcon aria-hidden className="size-3" />
-                        {props.snoozeWakeLabelText === "now"
-                          ? "now"
-                          : `in ${props.snoozeWakeLabelText}`}
+                        {props.snoozeWakeLabelText}
                       </span>
                     ) : (inFolder ? isWokeStatus : isWoke) ? (
                       <Tooltip>
@@ -1400,9 +1387,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           timestamp={
                             variantAction === "unsettle"
                               ? resolveSettledThreadTimestamp(thread)
-                              : // Fork: a FirstMate item snoozed with no date says how long it has waited.
-                                (props.captainCard?.snoozed?.at ??
-                                resolveThreadActivityTimestamp(thread))
+                              : resolveThreadActivityTimestamp(thread)
                           }
                         />
                       </span>
@@ -1590,22 +1575,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     )}
                   >
                     {crewStatusLabel !== null ? (
-                      <span
-                        className={cn(
-                          "inline-flex max-w-32 items-center gap-1",
-                          crewStatusLabel === "Replied" ? "font-normal" : "font-medium",
-                          crewStatusLabel === "Needs you" && "text-warning-foreground",
-                          crewStatusLabel === "To read" && "text-info-foreground",
-                        )}
-                      >
-                        <span className="min-w-0 truncate">
-                          {/* Fork: FirstMate's item shows how long it has waited, tinted by kind. */}
-                          {captainItemRaisedAt !== null ? (
-                            <RelativeTimeLabel timestamp={captainItemRaisedAt} />
-                          ) : (
-                            crewStatusLabel
-                          )}
-                        </span>
+                      <span className="inline-flex max-w-32 items-center gap-1 font-medium">
+                        <span className="min-w-0 truncate">{crewStatusLabel}</span>
                         {/* FirstMate's validation run can take a while, so it counts like Working. */}
                         {crewStatusLabel === "Testing" ? (
                           <span aria-hidden>

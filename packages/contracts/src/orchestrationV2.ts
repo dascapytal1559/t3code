@@ -45,12 +45,6 @@ import { AuthMcpClientAccess } from "./auth.ts";
 import { OrchestrationClientOrigin } from "./applicationEvent.ts";
 import { ChatAttachment } from "./chatAttachment.ts";
 import { ThreadGuestShare } from "./guestShare.ts";
-import {
-  DecisionReplyInput,
-  DecisionReplyResult,
-  DecisionActInput,
-  DecisionActResult,
-} from "./decisions.ts";
 import { StoredThreadTags, ThreadTag } from "./threadTags.ts";
 import { ThreadTitleRegenerationOutcome } from "./threadTitle.ts";
 import {
@@ -536,22 +530,6 @@ const LenientThreadOpens = Schema.NullOr(OrchestrationV2ThreadOpens).pipe(
   Schema.catchDecoding(() => Effect.succeedSome(null)),
 );
 
-/** Names whoever retired a thread's workspace, such as a task incarnation; opaque to T3. */
-export const OrchestrationV2ExecutionFenceLabel = TrimmedNonEmptyString.check(
-  Schema.isMaxLength(256),
-);
-
-/**
- * The thread's workspace was handed back to its external owner, so no run may start here: a
- * reopened thread stays readable but cannot execute. Unarchive keeps it.
- */
-export const OrchestrationV2ThreadExecutionFence = Schema.Struct({
-  label: OrchestrationV2ExecutionFenceLabel,
-  worktreePath: Schema.NullOr(TrimmedNonEmptyString),
-  fencedAt: IsoDateTime,
-});
-export type OrchestrationV2ThreadExecutionFence = typeof OrchestrationV2ThreadExecutionFence.Type;
-
 export const ThreadStatusLabel = TrimmedNonEmptyString.check(Schema.isMaxLength(32));
 
 const OrchestrationV2LastTitleRegeneration = Schema.Struct({
@@ -596,7 +574,6 @@ export const OrchestrationV2AppThread = Schema.Struct({
   statusLabelSince: Schema.optional(Schema.NullOr(Schema.DateTimeUtc)),
   /** The run whose end alerts the user although it is a coordinator's supervision run. */
   alertRunId: Schema.optional(RunId),
-  executionFence: Schema.optional(Schema.NullOr(OrchestrationV2ThreadExecutionFence)),
   lineage: OrchestrationV2AppThreadLineage,
   forkedFrom: Schema.NullOr(
     Schema.Union([
@@ -1490,8 +1467,6 @@ export const OrchestrationV2ConversationMessage = Schema.Struct({
    * the workflow's opening instead and keep the script behind a disclosure.
    */
   workflowScript: Schema.optional(Schema.Boolean),
-  /** Posted without a run; the agent reads it ahead of its next turn's prompt. */
-  note: Schema.optional(Schema.Boolean),
   id: MessageId,
   threadId: ThreadId,
   runId: Schema.NullOr(RunId),
@@ -1808,7 +1783,6 @@ export const OrchestrationV2TurnItem = Schema.Union([
     linkedSender: Schema.optional(OrchestrationV2LinkedSender),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
-    note: OrchestrationV2ConversationMessage.fields.note,
     freshContext: OrchestrationV2Run.fields.freshContext,
     inputIntent: OrchestrationV2UserMessageInputIntent,
     text: Schema.String,
@@ -2299,7 +2273,6 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   crewOf: OrchestrationV2AppThread.fields.crewOf,
   statusLabel: OrchestrationV2AppThread.fields.statusLabel,
   statusLabelSince: OrchestrationV2AppThread.fields.statusLabelSince,
-  executionFence: OrchestrationV2AppThread.fields.executionFence,
   forkedFrom: Schema.NullOr(OrchestrationV2AppThread.fields.forkedFrom),
   activeProviderThreadId: Schema.NullOr(ProviderThreadId),
   historyOrigin: Schema.optional(OrchestrationV2ThreadHistoryOrigin),
@@ -2737,7 +2710,6 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     linkedSender: Schema.optional(OrchestrationV2LinkedSender),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
-    note: OrchestrationV2ConversationMessage.fields.note,
     freshContext: OrchestrationV2Run.fields.freshContext,
     inputIntent: OrchestrationV2UserMessageInputIntent,
     text: Schema.String,
@@ -3314,12 +3286,6 @@ export const OrchestrationV2Command = Schema.Union([
     threadId: ThreadId,
     enabled: Schema.Boolean,
   }),
-  /** Lets a fenced thread run again. Only the server sets a fence. */
-  Schema.Struct({
-    type: Schema.Literal("thread.execution-fence.lift"),
-    commandId: CommandId,
-    threadId: ThreadId,
-  }),
   Schema.Struct({
     type: Schema.Literal("thread.pin"),
     commandId: CommandId,
@@ -3712,26 +3678,6 @@ export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
 
 // Excluded from dispatchCommand so only the server can send these.
 const OrchestrationV2InternalCommand = Schema.Union([
-  /** A message for the thread's reader and its next turn that starts no run. */
-  Schema.Struct({
-    type: Schema.Literal("thread.note.append"),
-    commandId: CommandId,
-    threadId: ThreadId,
-    messageId: MessageId,
-    text: TrimmedNonEmptyString,
-    senderThreadId: Schema.optional(ThreadId),
-  }),
-  /** Sets the thread's execution fence; `thread.execution-fence.lift` lifts it. */
-  Schema.Struct({
-    type: Schema.Literal("thread.execution-fence.set"),
-    commandId: CommandId,
-    threadId: ThreadId,
-    fence: Schema.Struct({
-      label: OrchestrationV2ExecutionFenceLabel,
-      /** Refuse unless the thread still works here, so the fence names the copy being returned. */
-      expectedWorktreePath: Schema.NullOr(TrimmedNonEmptyString),
-    }),
-  }),
   // Guest share commands the server issues after checking T3 Connect and the guest token.
   Schema.Struct({
     type: Schema.Literal("thread.guest-share.open"),
@@ -3979,8 +3925,6 @@ export const ORCHESTRATION_V2_WS_METHODS = {
   getNativeChildWork: "orchestration.getNativeChildWork",
   stopWorkflow: "orchestration.stopWorkflow",
   forceStopThread: "orchestration.forceStopThread",
-  replyToDecision: "orchestration.replyToDecision",
-  actOnDecision: "orchestration.actOnDecision",
   getTurnItem: "orchestration.getTurnItem",
   launchThread: "orchestration.launchThread",
   subscribeShell: "orchestration.subscribeShell",
@@ -4683,14 +4627,6 @@ export const OrchestrationV2RpcSchemas = {
   forceStopThread: {
     input: OrchestrationV2ForceStopThreadInput,
     output: OrchestrationV2ForceStopThreadResult,
-  },
-  replyToDecision: {
-    input: DecisionReplyInput,
-    output: DecisionReplyResult,
-  },
-  actOnDecision: {
-    input: DecisionActInput,
-    output: DecisionActResult,
   },
   getWorkflowScript: {
     input: OrchestrationV2GetWorkflowScriptInput,

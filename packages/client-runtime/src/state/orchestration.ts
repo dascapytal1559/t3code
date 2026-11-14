@@ -206,14 +206,6 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
       label: "environment-data:orchestration:force-stop-thread",
       tag: ORCHESTRATION_V2_WS_METHODS.forceStopThread,
     }),
-    replyToDecision: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:orchestration:reply-to-decision",
-      tag: ORCHESTRATION_V2_WS_METHODS.replyToDecision,
-    }),
-    actOnDecision: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:orchestration:act-on-decision",
-      tag: ORCHESTRATION_V2_WS_METHODS.actOnDecision,
-    }),
     turnItem: (target: {
       readonly environmentId: EnvironmentId;
       readonly input: OrchestrationV2GetTurnItemInput;

@@ -221,7 +221,6 @@ export interface FakeThread {
   readonly crewOf?: ThreadId;
   /** Makes this an older settled thread the shell leaves out; only its family read returns it. */
   readonly olderSettled?: true;
-  readonly executionFence?: OrchestrationV2ThreadShell["executionFence"];
   readonly id: ThreadId;
   readonly title: string;
   /** Defaults to GPT-5.4 on Codex. */
@@ -281,7 +280,6 @@ function shellOf(thread: FakeThread): OrchestrationV2ThreadShell {
     },
     forkedFrom: null,
     ...(thread.crewOf ? { crewOf: thread.crewOf } : {}),
-    ...(thread.executionFence ? { executionFence: thread.executionFence } : {}),
     createdBy: "user",
     creationSource: "web",
     latestRunId: latest?.id ?? null,
