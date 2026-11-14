@@ -84,8 +84,12 @@ export default function LiveMarkdownSurface({
   const latestContents = useEffectEvent(
     () => getOptimisticProjectFileQueryData(environmentId, cwd, relativePath)?.contents ?? contents,
   );
+  // The editor's own last edit comes back as `contents`. It is the same string, so
+  // telling it apart costs nothing, where diffing the whole file on every key would.
+  const lastEdit = useRef<string | null>(null);
   const saveEdit = useEffectEvent((text: string) => {
     if (text === latestContents()) return;
+    lastEdit.current = text;
     setProjectFileQueryData(environmentId, cwd, relativePath, text);
     changeFileSaveSession(saveTarget, text);
   });
@@ -180,9 +184,12 @@ export default function LiveMarkdownSurface({
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- hands contents that changed on disk to the editor, which keeps its own document
   useEffect(() => {
-    editorRef.current?.applyExternal(
-      getOptimisticProjectFileQueryData(environmentId, cwd, relativePath)?.contents ?? contents,
-    );
+    const latest =
+      getOptimisticProjectFileQueryData(environmentId, cwd, relativePath)?.contents ?? contents;
+    if (latest === lastEdit.current) return;
+    // Anything else is the file's word; the editor's last edit no longer describes it.
+    lastEdit.current = null;
+    editorRef.current?.applyExternal(latest);
   }, [contents, cwd, environmentId, relativePath]);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- hands newly signed image URLs to the editor, which draws the images
