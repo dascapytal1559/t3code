@@ -4,30 +4,31 @@ import {
   LanguageSupport,
   StreamLanguage,
 } from "@codemirror/language";
+import { css } from "@codemirror/lang-css";
+import { html } from "@codemirror/lang-html";
+import { javascript } from "@codemirror/lang-javascript";
 import { tags } from "@lezer/highlight";
 
 const language = (name: string, alias: string[], load: () => Promise<LanguageSupport>) =>
   LanguageDescription.of({ name, alias, load });
+const bundled = (name: string, alias: string[], support: LanguageSupport) =>
+  LanguageDescription.of({ name, alias, support });
 
-/** Grammars for fenced code. Each is its own chunk, fetched the first time a fence names it. */
+/**
+ * Grammars for fenced code. HTML, CSS and JavaScript arrive with the Markdown
+ * language, which reads inline HTML with them. Every other grammar is its own
+ * chunk, fetched the first time a fence names it.
+ */
 export const codeLanguages: readonly LanguageDescription[] = [
-  language("TypeScript", ["ts", "tsx", "typescript"], () =>
-    import("@codemirror/lang-javascript").then((module) =>
-      module.javascript({ typescript: true, jsx: true }),
-    ),
-  ),
-  language("JavaScript", ["js", "jsx", "javascript", "mjs", "cjs"], () =>
-    import("@codemirror/lang-javascript").then((module) => module.javascript({ jsx: true })),
-  ),
+  bundled("TypeScript", ["ts", "tsx", "typescript"], javascript({ typescript: true, jsx: true })),
+  bundled("JavaScript", ["js", "jsx", "javascript", "mjs", "cjs"], javascript({ jsx: true })),
+  bundled("CSS", ["css"], css()),
+  bundled("HTML", ["html", "xml", "svg"], html()),
   language("JSON", ["json", "jsonc", "json5"], () =>
     import("@codemirror/lang-json").then((module) => module.json()),
   ),
   language("Python", ["py", "python"], () =>
     import("@codemirror/lang-python").then((module) => module.python()),
-  ),
-  language("CSS", ["css"], () => import("@codemirror/lang-css").then((module) => module.css())),
-  language("HTML", ["html", "xml", "svg"], () =>
-    import("@codemirror/lang-html").then((module) => module.html()),
   ),
   language("YAML", ["yaml", "yml"], () =>
     import("@codemirror/lang-yaml").then((module) => module.yaml()),
