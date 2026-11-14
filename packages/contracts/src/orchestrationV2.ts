@@ -2317,8 +2317,8 @@ export const OrchestrationV2ThreadShell = Schema.Struct({
   /** The latest run answers a background-work progress wake, like a Monitor line, not a terminal one. Absent from older servers. */
   latestRunBackgroundWake: Schema.optional(Schema.Boolean),
   /**
-   * Fork: the latest run is a coordinator's supervision: a notification started it, the user did
-   * not steer into it, and its agent did not ask to alert. Its end stays quiet. Absent from older servers.
+   * Fork: the latest run is a coordinator's supervision: the user's own message neither started
+   * it nor was steered into it, and its agent did not ask to alert. Its end stays quiet. Absent from older servers.
    */
   latestRunSupervision: Schema.optional(Schema.Boolean),
   activeRunId: Schema.NullOr(RunId),

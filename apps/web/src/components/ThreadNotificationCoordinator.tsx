@@ -7,7 +7,7 @@ import { isShownUnderParent } from "@t3tools/client-runtime/state/threads";
 import type { AnyRouter } from "@tanstack/react-router";
 import { threadKey } from "@t3tools/client-runtime/state/entities";
 import type { EnvironmentId, OrchestrationV2ThreadShell, ThreadId } from "@t3tools/contracts";
-import { latestRunEndsQuietly } from "@t3tools/shared/agentAwareness";
+import { isTopLevelThread, latestRunEndsQuietly } from "@t3tools/shared/agentAwareness";
 import { monitorHoldsWakeCompletion } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import type { ClientSettings } from "@t3tools/contracts/settings";
 import * as Option from "effect/Option";
@@ -245,6 +245,7 @@ export function startThreadNotifications(
     const changed: Array<[NotificationState | undefined, NotificationState]> = [];
     for (const rawThread of threads) {
       if (
+        !isTopLevelThread(rawThread) ||
         isShownUnderParent(
           { environmentId, threadId: rawThread.id },
           rawThread.lineage,
@@ -316,8 +317,7 @@ export function startThreadNotifications(
       unsubscribe: () => {},
       gate: createThreadNotificationGate<ThreadId>((threadId, kind) => {
         const state = entry.previous.get(threadId);
-        // Crew report to their coordinator, so a thread launched as crew never notifies.
-        if (state && state.raw.crewOf === undefined) present(environmentId, state, kind);
+        if (state) present(environmentId, state, kind);
       }),
     };
     let threads: ReadonlyArray<OrchestrationV2ThreadShell> | null = null;

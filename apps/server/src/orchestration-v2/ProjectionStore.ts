@@ -1929,18 +1929,14 @@ function isBackgroundWakeRunForShell(
     message?.notification?.outcome === "updated" &&
     BACKGROUND_WAKE_SOURCE_KINDS.has(message.notification.source.kind) &&
     // A follow-up the user steered into the wake makes the run theirs.
-    !userSteeredIntoRun(run, projection.messages)
+    !projection.messages.some(
+      (candidate) => candidate.runId === run.id && candidate.createdBy === "user",
+    )
   );
 }
 
-function userSteeredIntoRun(
-  run: OrchestrationV2ThreadProjection["runs"][number],
-  messages: OrchestrationV2ThreadProjection["messages"],
-): boolean {
-  return messages.some((candidate) => candidate.runId === run.id && candidate.createdBy === "user");
-}
-
-// Fork: a coordinator's notification-started runs are supervision, so their end stays quiet.
+// Fork: a coordinator's run is supervision, ending quietly, unless the user's own message
+// started it or was steered into it, or its agent asked to alert.
 function isSupervisionRunForShell(
   run: OrchestrationV2ThreadProjection["runs"][number],
   projection: Pick<OrchestrationV2ThreadProjection, "thread" | "messages">,
@@ -1948,10 +1944,11 @@ function isSupervisionRunForShell(
   return (
     projection.thread.coordinator === true &&
     projection.thread.alertRunId !== run.id &&
-    projection.messages.some(
-      (message) => message.id === run.userMessageId && message.notification !== undefined,
-    ) &&
-    !userSteeredIntoRun(run, projection.messages)
+    !projection.messages.some(
+      (message) =>
+        message.createdBy === "user" &&
+        (message.id === run.userMessageId || message.runId === run.id),
+    )
   );
 }
 
@@ -7720,14 +7717,12 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
       return sql`(
         json_extract(t.payload_json, '$.coordinator') IS 1
         AND json_extract(t.payload_json, '$.alertRunId') IS NOT ${run}.run_id
-        AND EXISTS (
-          SELECT 1 FROM orchestration_v2_projection_messages wake
-          WHERE wake.message_id = json_extract(${run}.payload_json, '$.userMessageId')
-            AND json_extract(wake.payload_json, '$.notification') IS NOT NULL
-        ) AND NOT EXISTS (
-          SELECT 1 FROM orchestration_v2_projection_messages steer
-          WHERE steer.run_id = ${run}.run_id
-            AND json_extract(steer.payload_json, '$.createdBy') = 'user'
+        AND NOT EXISTS (
+          SELECT 1 FROM orchestration_v2_projection_messages own
+          WHERE (
+            own.message_id = json_extract(${run}.payload_json, '$.userMessageId')
+            OR own.run_id = ${run}.run_id
+          ) AND json_extract(own.payload_json, '$.createdBy') = 'user'
         )
       )`;
     };

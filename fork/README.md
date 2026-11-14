@@ -554,43 +554,52 @@ sticky rows; and the `shellOlderSettled` capability left out of the server's
 descriptor (`ServerEnvironment.ts`) and config (`ws.ts`). Upstream's Settled shelf tests do not apply: the
 11/14 sync dropped "sidebar settled pagination" from `Sidebar.browser.test.tsx`.
 
-## FirstMate's automatic turns are quiet
+## Only top-level threads alert
 
-FirstMate runs a turn each time a worker event wakes it, and each of those
-turns used to end with the completion sound. Now, on a pinned coordinator, a
-turn that a T3 notification started (background work reporting in, a delegated
-task finishing, or T3's restart note) ends without the sound, toast, desktop
-notification or the paired phone's completed alert, unless the user sent a message into it. Turns the user starts
-alert as before, and so do approval, input, request, failed and usage-limit
-states on every thread except crew (below). Other threads are unchanged.
+T3's thread alerts are the sound, toast and desktop notification chosen under
+Thread notifications in Settings (off by default), and the paired phone's
+alerts. In the fork they come only from a top-level thread: one that is nobody's
+crew, subagent or side chat.
 
-When such a turn needs the user, the agent calls `t3_thread_update` with
-`action: "alert_when_done"` (no `threadId` means its own thread) while the turn
-runs. That turn's end then alerts as usual. The call fails with `run_not_found`
-when the thread has no running turn, and it cannot be taken back. The thread
-stores the turn as `alertRunId`, which does not count as activity. Clients
-detect the action by `alert_when_done` in the tool's `tools/list` `action` enum.
+A thread launched as crew (it has a `crewOf`) raises no alert of any kind and
+is not published to the phone, in any project and however it is grouped:
+snoozed, settled, or after its coordinator is archived or gone. That covers its
+approval, input and failed states as well as its turn ends, because its
+coordinator answers for it: FirstMate watches its workers for a pending
+question or approval and brings what needs the user to its own thread. A
+subagent's or side chat's request shows on its parent, as upstream has it, so
+it alerts only when that parent is top-level. A worker launched without a
+parent is an ordinary thread to T3 and alerts as one.
 
-Upstream alerts whenever any thread's background work reports its end: a
+On a pinned coordinator, a turn alerts at its end only when the user's own
+message started it or was sent into it. Every other turn ends quietly:
+background work reporting in, a delegated task finishing, T3's restart note, or
+a message another agent sent. When such a turn needs the user, the agent calls
+`t3_thread_update` with `action: "alert_when_done"` (no `threadId` means its own
+thread) while the turn runs, and that turn's end then alerts as usual. The call
+fails with `run_not_found` when the thread has no running turn, and it cannot
+be taken back. The thread stores the turn as `alertRunId`, which does not count
+as activity. Clients detect the action by `alert_when_done` in the tool's
+`tools/list` `action` enum. Approval, input, request, failed and usage-limit
+states alert on a coordinator as on any other top-level thread.
+
+Upstream has no crew, so every listed thread is the user's own and alerts.
+It also alerts whenever any thread's background work reports its end: a
 terminal wake ("Command … finished") alerts at once, and a progress wake alerts
 after a 5-second grace when no other turn follows (#32520), so the user hears
 when unattended work finishes. The fork departs because a coordinator's
-automatic turns are supervision, not the user's work: FirstMate's thread had
-about 1,700 turns, most of them such wakes, each ending in a ping. The server
-puts `latestRunSupervision` on the thread shell and the web and desktop
-notification gate treats it like a stopped run. The mobile app is unchanged.
-Code: `isSupervisionRunForShell` and its SQL mirror `isSupervisionShellRun` in
-`apps/server/src/orchestration-v2/ProjectionStore.ts`, the `quiet` option in
-`apps/web/src/components/ThreadNotificationCoordinator.tsx`, and
-`alert_when_done` in `apps/server/src/mcp/ThreadMetadataMcpService.ts`.
+workers report to it, not to the user, and its own automatic turns are
+supervision, not the user's work: FirstMate's thread runs thousands of turns,
+most of them such wakes, and upstream would alert at the end of each. Other
+top-level threads keep upstream's behaviour.
 
-Crew never alert, so only the primary FirstMate thread sounds. A thread
-launched as crew (it has a `crewOf`) raises no sound, toast or desktop
-notification of any kind, and no phone completed alert, in any project and
-however it is grouped: snoozed, settled, or after its coordinator is archived
-or gone. A worker launched without a parent is an ordinary thread to T3 and
-alerts as one. Code: `latestRunEndsQuietly` (shared with the phone relay) and
-the `crewOf` check in `ThreadNotificationCoordinator.tsx`.
+Code: `isTopLevelThread` and `latestRunEndsQuietly` in
+`packages/shared/src/agentAwareness.ts`, used by the web and desktop gate
+(`apps/web/src/components/ThreadNotificationCoordinator.tsx`) and the phone
+relay; `isSupervisionRunForShell` and its SQL mirror `isSupervisionShellRun` in
+`apps/server/src/orchestration-v2/ProjectionStore.ts`, which put
+`latestRunSupervision` on the thread shell; and `alert_when_done` in
+`apps/server/src/mcp/ThreadMetadataMcpService.ts`.
 
 ## FirstMate's doorbell folds to one short line
 

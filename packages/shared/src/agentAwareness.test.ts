@@ -66,23 +66,17 @@ describe("projectThreadAwarenessV2", () => {
     ).toBeNull();
   });
 
-  it("keeps supervision and crew turns quiet, unlike a captain-started or alert-flagged turn", () => {
-    const completed = (latestRunSupervision?: boolean, crewOf?: ThreadId) =>
+  it("keeps supervision turns quiet, unlike a captain-started or alert-flagged turn", () => {
+    const completed = (latestRunSupervision?: boolean) =>
       projectThreadAwarenessV2({
         environmentId: "env-1" as EnvironmentId,
         project,
-        thread: v2Thread({
-          status: "completed",
-          latestRunSupervision,
-          ...(crewOf === undefined ? {} : { crewOf }),
-        }),
+        thread: v2Thread({ status: "completed", latestRunSupervision }),
       })?.phase;
     // The server sets the flag false for a turn that asked to alert; absent means the user's own turn.
     expect(completed(true)).toBeUndefined();
     expect(completed(false)).toBe("completed");
     expect(completed(undefined)).toBe("completed");
-    // A crewmate's coordinator may be archived or unknown here; launched as crew is enough.
-    expect(completed(undefined, "coordinator-gone" as ThreadId)).toBeUndefined();
   });
 
   it.each([
@@ -128,23 +122,50 @@ describe("projectThreadAwarenessV2", () => {
     ["completed", "subagent"],
     ["failed", "subagent"],
     ["running", "side chat"],
+    // Fork: crew are not top-level either. Their coordinator may be archived or unknown here.
+    ["running", "crew"],
+    ["completed", "crew"],
+    ["failed", "crew"],
   ] as const)("does not publish %s %s activity", (status, kind) => {
     expect(
       projectThreadAwarenessV2({
         environmentId: "env-1" as EnvironmentId,
         project,
-        thread: v2Thread({
-          status,
-          lineage: {
-            rootThreadId: "parent" as ThreadId,
-            parentThreadId: "parent" as ThreadId,
-            ...(kind === "subagent"
-              ? { relationshipToParent: "subagent" }
-              : { relationshipToParent: "fork", sideChat: true }),
-          },
-        }),
+        thread: v2Thread(
+          kind === "crew"
+            ? { status, crewOf: "coordinator-gone" as ThreadId }
+            : {
+                status,
+                lineage: {
+                  rootThreadId: "parent" as ThreadId,
+                  parentThreadId: "parent" as ThreadId,
+                  ...(kind === "subagent"
+                    ? { relationshipToParent: "subagent" }
+                    : { relationshipToParent: "fork", sideChat: true }),
+                },
+              },
+        ),
       }),
     ).toBeNull();
+  });
+
+  it("publishes a crew thread's approval request nowhere", () => {
+    const waiting = (crewOf?: ThreadId) =>
+      projectThreadAwarenessV2({
+        environmentId: "env-1" as EnvironmentId,
+        project,
+        thread: v2Thread({
+          status: "waiting",
+          pendingRuntimeRequest: {
+            id: RuntimeRequestId.make("request-1"),
+            kind: "command",
+            createdAt: updatedAt,
+          },
+          ...(crewOf === undefined ? {} : { crewOf }),
+        }),
+      })?.phase;
+    expect(waiting()).toBe("waiting_for_approval");
+    expect(waiting("coordinator" as ThreadId)).toBeUndefined();
   });
 
   it("keeps an older activity run visible over a newer cancelled run", () => {

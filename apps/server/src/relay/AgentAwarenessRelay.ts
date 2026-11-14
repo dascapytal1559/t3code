@@ -1,6 +1,5 @@
 import type { AgentAwarenessThread } from "../orchestration-v2/ProjectionStore.ts";
 import {
-  isListedThreadLineage,
   type EnvironmentId,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2TurnItem,
@@ -15,6 +14,7 @@ import {
 } from "@t3tools/contracts/relay";
 import {
   type SubagentRequestAwareness,
+  isTopLevelThread,
   projectThreadAwarenessV2,
   subagentAwaitsUser,
   turnItemCanChangeUserWait,
@@ -565,10 +565,10 @@ export const make = Effect.gen(function* () {
     yield* trackSubagentRequest(threadId, threadShell);
     if (
       threadShell !== null &&
-      !isListedThreadLineage(threadShell.lineage) &&
+      !isTopLevelThread(threadShell) &&
       !hasLivePublishedState(yield* Ref.get(publishedStateByThreadRef), threadId)
     ) {
-      // Subagents and side chats have no relay rows to clear; per-event tombstones would needlessly redeliver user aggregates.
+      // Subagents, side chats and crew have no relay rows to clear; per-event tombstones would needlessly redeliver user aggregates.
       return;
     }
     const thread =

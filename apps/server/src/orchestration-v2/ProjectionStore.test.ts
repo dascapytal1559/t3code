@@ -1342,10 +1342,11 @@ it.effect(
             payload: { ...thread, ...fields },
           });
         });
-      // Fork: on a coordinator, every notification-started run is supervision.
+      // Fork: on a coordinator, a run is supervision unless the user's own message is in it.
       yield* updateThread("pin", { coordinator: true });
       let ordinal = 1;
       for (const [id, source, outcome, expected, supervision] of [
+        ["agent-sent", "agent", null, false, true],
         ["background-task", { kind: "background_task" }, "updated", true, true],
         ["monitor", { kind: "monitor" }, "updated", true, true],
         ["command", { kind: "command" }, "updated", true, true],
@@ -1371,14 +1372,15 @@ it.effect(
             runId: null,
             nodeId: null,
             createdBy: source === null ? "user" : "agent",
-            creationSource: source === null ? "web" : "server",
+            creationSource: source === null ? "web" : source === "agent" ? "mcp" : "server",
             role: "user",
             text: id,
             attachments: [],
             streaming: false,
             createdAt: at,
             updatedAt: at,
-            ...(source === null
+            // "agent" is a message another agent sent here, which carries no notification.
+            ...(source === null || source === "agent"
               ? {}
               : { notification: { source, outcome, summary: "Background activity updated" } }),
             ...(id === "delegated"

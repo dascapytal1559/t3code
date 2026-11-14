@@ -82,21 +82,21 @@ function buildAgentAwarenessDeepLink(input: {
 }
 
 /**
- * A stopped run, a coordinator's supervision turn, or any turn of a thread launched as crew ends
- * without a completion alert. Crew stay quiet however they are grouped, even once their
- * coordinator is archived or gone.
+ * Fork: only a top-level thread alerts the user or reaches the phone. Crew report to their
+ * coordinator, however they are grouped and even once it is archived or gone; subagents and
+ * side chats show under their parent.
  */
-export function latestRunEndsQuietly(
-  thread: Pick<
-    OrchestrationV2ThreadShell,
-    "crewOf" | "latestRunStopRequested" | "latestRunSupervision"
-  >,
+export function isTopLevelThread(
+  thread: Pick<OrchestrationV2ThreadShell, "crewOf" | "lineage">,
 ): boolean {
-  return (
-    thread.latestRunStopRequested === true ||
-    thread.latestRunSupervision === true ||
-    thread.crewOf !== undefined
-  );
+  return thread.crewOf === undefined && isListedThreadLineage(thread.lineage);
+}
+
+/** A stopped run or a coordinator's supervision turn ends without a completion alert. */
+export function latestRunEndsQuietly(
+  thread: Pick<OrchestrationV2ThreadShell, "latestRunStopRequested" | "latestRunSupervision">,
+): boolean {
+  return thread.latestRunStopRequested === true || thread.latestRunSupervision === true;
 }
 
 export interface ProjectThreadAwarenessV2Input {
@@ -127,7 +127,7 @@ export function projectThreadAwarenessV2(
   input: ProjectThreadAwarenessV2Input,
 ): AgentAwarenessState | null {
   const { environmentId, project, thread } = input;
-  if (!isListedThreadLineage(thread.lineage)) return null;
+  if (!isTopLevelThread(thread)) return null;
   const subagentRequest = input.pendingSubagentRequest ?? null;
   const phase = resolveThreadAwarenessPhaseV2(thread, subagentRequest);
   if (phase === null) {

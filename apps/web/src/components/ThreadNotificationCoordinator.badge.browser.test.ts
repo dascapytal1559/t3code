@@ -280,11 +280,12 @@ it.each(["hasPendingApprovals", "hasPendingUserInput"] as const)(
 );
 
 it.each([
-  [false, ["Thread completed"]],
-  [true, []],
+  [{ latestRunSupervision: false }, ["Thread completed"]],
+  [{ latestRunSupervision: true }, []],
+  [{ crewOf: "coordinator" }, []],
 ] as const)(
-  "presents completion notifications and sound as soon as the shell completes, unless the run is supervision (%s)",
-  async (latestRunSupervision, titles) => {
+  "presents completion notifications and sound as soon as the shell completes, unless the run is supervision or the thread is crew (%j)",
+  async (fields, titles) => {
     await using app = setup();
     state.mode = "notifications-and-sound";
     app.start();
@@ -294,7 +295,7 @@ it.each([
     state.shells.set("one", {
       ...completed,
       snapshot: Option.map(completed.snapshot, ({ threads }) => ({
-        threads: threads.map((shell) => ({ ...shell, latestRunSupervision })),
+        threads: threads.map((shell) => ({ ...shell, ...fields })),
       })),
     });
     expect(TestNotification.sent.map((sent) => sent.title)).toEqual(titles);
