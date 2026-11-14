@@ -1,6 +1,11 @@
 import { indentLess, indentMore } from "@codemirror/commands";
 import { syntaxTree } from "@codemirror/language";
-import type { ChangeSpec, EditorState, StateCommand } from "@codemirror/state";
+import {
+  type ChangeSpec,
+  EditorSelection,
+  type EditorState,
+  type StateCommand,
+} from "@codemirror/state";
 import type { KeyBinding } from "@codemirror/view";
 
 import type { SyntaxNode } from "./markdownSyntax";
@@ -18,6 +23,92 @@ function selectedLineNumbers(state: EditorState): number[] {
   }
   return [...numbers];
 }
+
+/** Wraps each selection in `mark`, or unwraps one already wrapped in it. */
+function toggleInlineMark(
+  mark: string,
+  options?: { readonly needsSelection: boolean },
+): StateCommand {
+  const size = mark.length;
+  return ({ state, dispatch }) => {
+    if (state.readOnly) return false;
+    if (options?.needsSelection && state.selection.ranges.every((range) => range.empty)) {
+      return false;
+    }
+    const change = state.changeByRange((range) => {
+      const selected = state.sliceDoc(range.from, range.to);
+      if (selected.length >= 2 * size && selected.startsWith(mark) && selected.endsWith(mark)) {
+        return {
+          changes: [
+            { from: range.from, to: range.from + size },
+            { from: range.to - size, to: range.to },
+          ],
+          range: EditorSelection.range(range.from, range.to - 2 * size),
+        };
+      }
+      const before = state.sliceDoc(Math.max(0, range.from - size), range.from);
+      const after = state.sliceDoc(range.to, range.to + size);
+      if (before === mark && after === mark) {
+        return {
+          changes: [
+            { from: range.from - size, to: range.from },
+            { from: range.to, to: range.to + size },
+          ],
+          range: EditorSelection.range(range.from - size, range.to - size),
+        };
+      }
+      return {
+        changes: [
+          { from: range.from, insert: mark },
+          { from: range.to, insert: mark },
+        ],
+        range: EditorSelection.range(range.from + size, range.to + size),
+      };
+    });
+    dispatch(state.update(change, { scrollIntoView: true, userEvent: "input.format" }));
+    return true;
+  };
+}
+
+/** A plain line becomes an open task, an open task a done one, and a done task opens again. */
+const toggleTask: StateCommand = ({ state, dispatch }) => {
+  if (state.readOnly) return false;
+  const changes: ChangeSpec[] = [];
+  for (const number of selectedLineNumbers(state)) {
+    const line = state.doc.line(number);
+    const list = LIST_LINE.exec(line.text);
+    const indent = list?.[1] ?? /^\s*/.exec(line.text)?.[0] ?? "";
+    const marker = list?.[2];
+    if (marker === undefined) {
+      changes.push({ from: line.from + indent.length, insert: "- [ ] " });
+    } else if (list?.[3] === undefined) {
+      changes.push({ from: line.from + indent.length + marker.length, insert: "[ ] " });
+    } else {
+      const column = indent.length + marker.length + 1;
+      changes.push({
+        from: line.from + column,
+        to: line.from + column + 1,
+        insert: line.text[column] === " " ? "x" : " ",
+      });
+    }
+  }
+  if (changes.length === 0) return false;
+  dispatch(state.update({ changes, userEvent: "input.task" }));
+  return true;
+};
+
+/**
+ * Bold needs a selection, as in the message box: with a bare caret the chord
+ * stays the app's sidebar toggle. Strikethrough has no chord there, and the
+ * usual one (Mod-Shift-x) is the app's workspace picker, so it takes Mod-Alt-x.
+ */
+export const formatKeymap: readonly KeyBinding[] = [
+  { key: "Mod-b", run: toggleInlineMark("**", { needsSelection: true }) },
+  { key: "Mod-i", run: toggleInlineMark("*") },
+  { key: "Mod-e", run: toggleInlineMark("`") },
+  { key: "Mod-Alt-x", run: toggleInlineMark("~~") },
+  { key: "Mod-l", run: toggleTask },
+];
 
 function inCodeBlock(state: EditorState, pos: number): boolean {
   let node: SyntaxNode | null = syntaxTree(state).resolveInner(pos, -1);

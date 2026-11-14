@@ -115,6 +115,7 @@ const browserTestProject = {
       "@codemirror/commands",
       "@codemirror/lang-markdown",
       "@codemirror/language",
+      "@codemirror/search",
       "@codemirror/state",
       "@codemirror/view",
       "@lezer/highlight",

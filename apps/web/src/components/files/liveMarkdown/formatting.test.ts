@@ -3,7 +3,7 @@ import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorSelection, EditorState, type StateCommand } from "@codemirror/state";
 import { describe, expect, it } from "vite-plus/test";
 
-import { listKeymap } from "./formatting";
+import { formatKeymap, listKeymap } from "./formatting";
 
 /** Runs a command on text where `|` marks the caret, or a pair marks a selection. */
 function runCommand(command: StateCommand, marked: string): string | false {
@@ -31,11 +31,33 @@ function runCommand(command: StateCommand, marked: string): string | false {
 }
 
 const key = (name: string) => {
-  const binding = listKeymap.find((candidate) => candidate.key === name);
+  const binding = [...formatKeymap, ...listKeymap].find((candidate) => candidate.key === name);
   if (!binding?.run) throw new Error(`no binding for ${name}`);
   // A state command only reads the state and dispatch that a view also has.
   return binding.run as unknown as StateCommand;
 };
+
+describe("formatting shortcuts", () => {
+  it.each([
+    ["bold wraps a selection", "Mod-b", "a |word| b", "a **|word|** b"],
+    ["bold unwraps a selection inside the marks", "Mod-b", "a **|word|** b", "a |word| b"],
+    ["bold unwraps a selection that includes the marks", "Mod-b", "a |**word**| b", "a |word| b"],
+    ["italic at a bare caret opens a pair to type into", "Mod-i", "a |word", "a *|*word"],
+    ["inline code wraps a selection", "Mod-e", "run |pnpm test| now", "run `|pnpm test|` now"],
+    ["strikethrough wraps a selection", "Mod-Alt-x", "|gone|", "~~|gone|~~"],
+    ["a plain line becomes an open task", "Mod-l", "  buy| milk", "  - [ ] buy| milk"],
+    ["a bullet gains a box", "Mod-l", "- buy| milk", "- [ ] buy| milk"],
+    ["an open task is ticked", "Mod-l", "1. [ ] buy| milk", "1. [x] buy| milk"],
+    ["a done task opens again", "Mod-l", "- [x] buy| milk", "- [ ] buy| milk"],
+    ["every selected line is toggled", "Mod-l", "- [ ] |a\n- [x] b|", "- [x] |a\n- [ ] b|"],
+  ])("%s", (_name, binding, before, after) => {
+    expect(runCommand(key(binding), before)).toBe(after);
+  });
+
+  it("leaves Mod-b alone at a bare caret, where it is the app's sidebar toggle", () => {
+    expect(runCommand(key("Mod-b"), "a |word")).toBe(false);
+  });
+});
 
 describe("Tab in lists", () => {
   it.each([

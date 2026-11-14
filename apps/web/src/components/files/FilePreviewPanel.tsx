@@ -101,6 +101,8 @@ import { FileExplorerPane } from "./FileExplorerPane";
 import { FileBreadcrumbs } from "./FileBreadcrumbs";
 import { breadcrumbPathOf, retainedBreadcrumbTrail, trailChildOf } from "./filePath";
 import { FileMarkdownPreview } from "./FileMarkdownPreview";
+import { MarkdownOutlineAction } from "./liveMarkdown/MarkdownOutlineAction";
+import type { MarkdownOutlineSource } from "./liveMarkdown/outline";
 import {
   type FileCommentAnnotationEntry,
   type FileCommentAnnotationGroup,
@@ -1291,6 +1293,11 @@ export default function FilePreviewPanel({
     !renderMermaid &&
     !(isMarkdown && renderMarkdown) &&
     !(tableDelimiter && renderTable);
+  // Fork: the outline button lists the live editor's headings, or the ones the rendered view drew.
+  const [liveMarkdownOutline, setLiveMarkdownOutline] = useState<MarkdownOutlineSource | null>(
+    null,
+  );
+  const markdownContentRef = useRef<HTMLDivElement>(null);
   const contentFocusRef = useRef<HTMLDivElement>(null);
   const fileEditorRef = useRef<FileEditor | null>(null);
   const focusEditorFromContent = () => {
@@ -1483,6 +1490,9 @@ export default function FilePreviewPanel({
               revealFileManager={revealsInFileManager}
             />
           ) : null}
+          {isMarkdown && renderMarkdown && file.data !== null ? (
+            <MarkdownOutlineAction live={liveMarkdownOutline} rendered={markdownContentRef} />
+          ) : null}
           {canToggleRendered && renderedMode ? (
             <FileSurfaceAction
               label={renderedToggleLabel(renderedMode, rendered)}
@@ -1552,6 +1562,7 @@ export default function FilePreviewPanel({
       ) : null}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div
+          ref={markdownContentRef}
           className={cn("min-w-0 flex-1 flex-col overflow-hidden", previewPath ? "flex" : "hidden")}
         >
           {mayOpenEditor ? (
@@ -1713,6 +1724,7 @@ export default function FilePreviewPanel({
                   revealLine={revealHandled ? null : revealLine}
                   revealRequestId={revealRequestId}
                   onPendingChange={onPendingChange}
+                  onOutlineSource={setLiveMarkdownOutline}
                 />
               </Suspense>
             ) : isMarkdown && renderMarkdown ? (

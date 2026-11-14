@@ -29,6 +29,7 @@ import {
 } from "../projectFilesQueryState";
 import { createLiveMarkdownEditor, type LiveMarkdownEditor } from "./liveMarkdownEditor";
 import { imageAssetResource, imageSourceOf, linkUrlOf } from "./liveMarkdownHost";
+import type { MarkdownOutlineSource } from "./outline";
 import "./liveMarkdown.css";
 import "./markdownProperties.css";
 
@@ -45,6 +46,16 @@ export interface LiveMarkdownSurfaceProps {
   readonly revealLine: number | null;
   readonly revealRequestId: number;
   readonly onPendingChange: FilePendingListener;
+  /** Offers the editor's outline to the panel's outline button, and takes it back on unmount. */
+  readonly onOutlineSource: (source: MarkdownOutlineSource | null) => void;
+}
+
+function decodeAnchor(anchor: string): string {
+  try {
+    return decodeURIComponent(anchor);
+  } catch {
+    return anchor;
+  }
 }
 
 /**
@@ -62,6 +73,7 @@ export default function LiveMarkdownSurface({
   revealLine,
   revealRequestId,
   onPendingChange,
+  onOutlineSource,
 }: LiveMarkdownSurfaceProps) {
   const saveTarget = { environmentId, cwd, relativePath, threadId: hostFileThreadId };
   useFileSaveSession(saveTarget, onPendingChange);
@@ -111,7 +123,11 @@ export default function LiveMarkdownSurface({
     const destination = normalizeMarkdownLinkDestination(href);
     const file = resolveMarkdownFileLinkMeta(destination, cwd, baseDir);
     if (file === null) {
-      if (destination.startsWith("#")) return;
+      if (destination.startsWith("#")) {
+        // A link to a heading of this file.
+        editorRef.current?.jumpToAnchor(decodeAnchor(destination.slice(1)));
+        return;
+      }
       void openLink(linkUrlOf(destination), { event }).catch((cause: unknown) =>
         console.error(cause),
       );
@@ -137,6 +153,9 @@ export default function LiveMarkdownSurface({
     });
   });
   const resolveImage = useEffectEvent((source: string) => imageSourceOf(source, baseDir));
+  const offerOutline = useEffectEvent((source: MarkdownOutlineSource | null) =>
+    onOutlineSource(source),
+  );
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- mounts the CodeMirror editor, which lives outside React, on its host element
   useEffect(() => {
@@ -151,7 +170,9 @@ export default function LiveMarkdownSurface({
       onOpenLink: (href, event) => followLink(href, event),
     });
     editorRef.current = editor;
+    offerOutline({ headings: editor.outline, jump: editor.jumpToHeading });
     return () => {
+      offerOutline(null);
       editorRef.current = null;
       editor.destroy();
     };

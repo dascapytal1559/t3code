@@ -1,17 +1,21 @@
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { indentUnit, syntaxHighlighting } from "@codemirror/language";
-import { Compartment, EditorState, type Extension } from "@codemirror/state";
+import { foldedRanges, indentUnit, syntaxHighlighting, unfoldEffect } from "@codemirror/language";
+import { Compartment, EditorState, type Extension, type StateEffect } from "@codemirror/state";
 import { drawSelection, dropCursor, EditorView, keymap } from "@codemirror/view";
 import { markdownFrontmatterLength } from "@t3tools/shared/markdownFrontmatter";
 
 import { codeHighlightStyle, codeLanguages } from "./codeLanguages";
+import { type EditorHeading, headingsOf } from "./editorOutline";
 import { externalChange, externalChangeSpec, flashSpans, lineFlash } from "./externalChanges";
-import { listKeymap } from "./formatting";
+import { findReplace } from "./findReplace";
+import { folding } from "./folding";
+import { formatKeymap, listKeymap } from "./formatting";
 import { lineChanges } from "./lineDiff";
 import { fromEditorText, type LineEnding, lineEndingOf, toEditorText } from "./lineEndings";
 import { livePreview, setImageUrls } from "./livePreview";
 import { liveMarkdownExtensions } from "./markdownSyntax";
+import { headingAnchors, type OutlineItem } from "./outline";
 import type { LivePreviewConfig } from "./previewConfig";
 
 // A mixed file names its separator, which keeps its carriage returns as text.
@@ -34,6 +38,12 @@ export interface LiveMarkdownEditor {
   readonly setImageUrls: (urls: ReadonlyMap<string, string>) => void;
   /** Scrolls to a 1-based line of the file, puts the caret there and tints it for a moment. */
   readonly revealLine: (line: number) => void;
+  /** The file's headings, top to bottom. */
+  readonly outline: () => readonly OutlineItem[];
+  /** Scrolls to the heading at that place in the outline. */
+  readonly jumpToHeading: (index: number) => void;
+  /** Scrolls to the heading a `#link` names. False when the file has no such heading. */
+  readonly jumpToAnchor: (anchor: string) => boolean;
   readonly destroy: () => void;
 }
 
@@ -58,7 +68,9 @@ export function createLiveMarkdownEditor(options: LiveMarkdownEditorOptions): Li
     syntaxHighlighting(codeHighlightStyle),
     livePreview(options),
     lineFlash,
-    keymap.of([...listKeymap, ...historyKeymap, ...defaultKeymap]),
+    folding,
+    findReplace,
+    keymap.of([...formatKeymap, ...listKeymap, ...historyKeymap, ...defaultKeymap]),
     EditorView.contentAttributes.of({
       spellcheck: "true",
       "aria-label": "File contents",
@@ -94,9 +106,34 @@ export function createLiveMarkdownEditor(options: LiveMarkdownEditorOptions): Li
     }),
   });
 
+  const showHeading = (heading: EditorHeading | undefined) => {
+    if (!heading) return false;
+    const line = view.state.doc.lineAt(heading.from);
+    // A heading folded away inside another section is opened up first.
+    const unfold: StateEffect<unknown>[] = [];
+    foldedRanges(view.state).between(line.from, line.to, (from, to) => {
+      if (from < line.from) unfold.push(unfoldEffect.of({ from, to }));
+    });
+    view.dispatch({
+      selection: { anchor: line.to },
+      effects: [
+        ...unfold,
+        EditorView.scrollIntoView(line.from, { y: "start", yMargin: 12 }),
+        flashSpans([{ from: line.from, to: line.to }]),
+      ],
+    });
+    return true;
+  };
+
   return {
     view,
     text,
+    outline: () => headingsOf(view.state),
+    jumpToHeading: (index) => void showHeading(headingsOf(view.state)[index]),
+    jumpToAnchor(anchor) {
+      const headings = headingsOf(view.state);
+      return showHeading(headings[headingAnchors(headings).indexOf(anchor.toLowerCase())]);
+    },
     applyExternal(next) {
       const nextEnding = lineEndingOf(next);
       const incoming = toEditorText(next, nextEnding);

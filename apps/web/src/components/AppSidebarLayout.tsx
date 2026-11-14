@@ -341,7 +341,8 @@ function SidebarControl({ showSidebar }: { readonly showSidebar: boolean }) {
       if (
         isRichTextBoldShortcut(event, window.getSelection()) &&
         event.target instanceof HTMLElement &&
-        event.target.closest('[data-composer-rich-text="true"]')
+        // Fork: the live Markdown editor bolds selected text by the same rule.
+        event.target.closest('[data-composer-rich-text="true"], [data-live-markdown]')
       ) {
         // The rich-text composer claims Mod+B only to bold selected text;
         // the toggle stays available everywhere else.

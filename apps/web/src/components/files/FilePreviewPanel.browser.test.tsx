@@ -436,6 +436,39 @@ describe("live Markdown editor", () => {
       expect(screen.container.querySelector(".cm-lp-flash")?.textContent).toBe("Last line."),
     );
   });
+
+  it("lists the file's headings in the rendered view and jumps to one in the editor", async () => {
+    using _settings = setup();
+    const contents = "# Notes\n\nIntro.\n\n## First\n\nOne.\n\n## Second\n\nTwo.\n";
+    const listed = () =>
+      page
+        .getByRole("menuitem")
+        .elements()
+        .map((item) => item.textContent);
+
+    // At phone width the outline reads the headings the rendered view drew.
+    await using phone = await render(markdownPreview(false, contents, "notes.md"));
+    await userEvent.click(phone.getByRole("button", { name: "Outline" }));
+    await expect.element(page.getByRole("menuitem", { name: "Second" })).toBeVisible();
+    expect(listed()).toEqual(["Notes", "First", "Second"]);
+    await userEvent.keyboard("{Escape}");
+    await phone.unmount();
+
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    await page.viewport(1280, 800);
+    await using _viewport = {
+      [Symbol.asyncDispose]: () => page.viewport(viewport.width, viewport.height),
+    };
+    await using screen = await render(markdownPreview(false, contents, "notes.md"));
+    await expect.element(screen.getByRole("textbox", { name: "File contents" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Outline" }));
+    await expect.element(page.getByRole("menuitem", { name: "Second" })).toBeVisible();
+    expect(listed()).toEqual(["Notes", "First", "Second"]);
+    await userEvent.click(page.getByRole("menuitem", { name: "Second" }));
+    await vi.waitFor(() =>
+      expect(screen.container.querySelector(".cm-lp-flash")?.textContent).toBe("Second"),
+    );
+  });
 });
 
 describe("workspace document previews", () => {
