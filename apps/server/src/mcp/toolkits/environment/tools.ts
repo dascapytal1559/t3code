@@ -12,8 +12,6 @@ import {
   OrchestratorMcpFailure,
   RestartRequest,
   RestartRequestStatus,
-  RulesSetInput,
-  RulesSetResult,
   ServerSettings,
   ServerSettingsPatch,
 } from "@t3tools/contracts";
@@ -22,7 +20,6 @@ import { Tool, Toolkit } from "effect/ai";
 import * as Decisions from "../../../decisions/Decisions.ts";
 import * as ServerEnvironment from "../../../environment/ServerEnvironment.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
-import * as Rules from "../../../rules/Rules.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as Settings from "../../../serverSettings.ts";
@@ -51,7 +48,6 @@ const shared = {
     ThreadCommandExecutor.ThreadCommandExecutor,
     Orchestrator.OrchestratorV2,
     Decisions.Decisions,
-    Rules.Rules,
   ],
 };
 const EnvironmentReadTool = Tool.make("t3_environment_read", {
@@ -115,13 +111,6 @@ const DecisionsActionsTool = Tool.make("t3_decisions_actions", {
   parameters: DecisionActionsInput,
   success: DecisionActionsResult,
 }).annotate(Tool.Destructive, false);
-const RulesSetTool = Tool.make("t3_rules_set", {
-  ...shared,
-  description:
-    "Replace the user's rules listed in T3's Bridge tab. `rules`: the whole list in order (empty clears it); a pending rule needs `recommendation`. The user's agreement arrives in your chat as `rule-answer: <id> <choice>`.",
-  parameters: RulesSetInput,
-  success: RulesSetResult,
-}).annotate(Tool.Destructive, true);
 const RestartRequestTool = Tool.make("t3_restart_request", {
   ...shared,
   description:
@@ -148,7 +137,6 @@ export const EnvironmentToolkit = Toolkit.make(
   RoutingSetTool,
   DecisionsSetTool,
   DecisionsActionsTool,
-  RulesSetTool,
   RestartRequestTool,
   RestartStatusTool,
   RestartCancelTool,

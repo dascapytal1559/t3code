@@ -51,7 +51,6 @@ import {
   DecisionActInput,
   DecisionActResult,
 } from "./decisions.ts";
-import { RuleAnswerInput, RuleAnswerResult } from "./rules.ts";
 import { StoredThreadTags, ThreadTag } from "./threadTags.ts";
 import { ThreadTitleRegenerationOutcome } from "./threadTitle.ts";
 import {
@@ -3982,7 +3981,6 @@ export const ORCHESTRATION_V2_WS_METHODS = {
   forceStopThread: "orchestration.forceStopThread",
   replyToDecision: "orchestration.replyToDecision",
   actOnDecision: "orchestration.actOnDecision",
-  answerRule: "orchestration.answerRule",
   getTurnItem: "orchestration.getTurnItem",
   launchThread: "orchestration.launchThread",
   subscribeShell: "orchestration.subscribeShell",
@@ -4693,10 +4691,6 @@ export const OrchestrationV2RpcSchemas = {
   actOnDecision: {
     input: DecisionActInput,
     output: DecisionActResult,
-  },
-  answerRule: {
-    input: RuleAnswerInput,
-    output: RuleAnswerResult,
   },
   getWorkflowScript: {
     input: OrchestrationV2GetWorkflowScriptInput,

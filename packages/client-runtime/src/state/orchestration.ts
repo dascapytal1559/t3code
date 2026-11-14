@@ -214,10 +214,6 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
       label: "environment-data:orchestration:act-on-decision",
       tag: ORCHESTRATION_V2_WS_METHODS.actOnDecision,
     }),
-    answerRule: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:orchestration:answer-rule",
-      tag: ORCHESTRATION_V2_WS_METHODS.answerRule,
-    }),
     turnItem: (target: {
       readonly environmentId: EnvironmentId;
       readonly input: OrchestrationV2GetTurnItemInput;

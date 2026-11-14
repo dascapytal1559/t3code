@@ -237,7 +237,6 @@ import {
   OrchestrationV2ThreadLaunchError,
 } from "./orchestrationV2.ts";
 import { DecisionActError, DecisionReplyError, DecisionsState } from "./decisions.ts";
-import { RuleAnswerError, RulesState } from "./rules.ts";
 import {
   ProjectCreateNewInput,
   ProjectCreateNewResult,
@@ -634,7 +633,6 @@ export const WS_METHODS = {
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
   subscribeRestartRequest: "subscribeRestartRequest",
   subscribeDecisions: "subscribeDecisions",
-  subscribeRules: "subscribeRules",
 } as const;
 
 const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
@@ -1931,12 +1929,6 @@ const WsOrchestrationV2ActOnDecisionRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.a
   error: Schema.Union([DecisionActError, EnvironmentAuthorizationError]),
 });
 
-const WsOrchestrationV2AnswerRuleRpc = Rpc.make(ORCHESTRATION_V2_WS_METHODS.answerRule, {
-  payload: OrchestrationV2RpcSchemas.answerRule.input,
-  success: OrchestrationV2RpcSchemas.answerRule.output,
-  error: Schema.Union([RuleAnswerError, EnvironmentAuthorizationError]),
-});
-
 const WsOrchestrationV2GetWorkflowScriptRpc = Rpc.make(
   ORCHESTRATION_V2_WS_METHODS.getWorkflowScript,
   {
@@ -2138,13 +2130,6 @@ const WsServerCancelRestartRequestRpc = Rpc.make(WS_METHODS.serverCancelRestartR
 const WsSubscribeDecisionsRpc = Rpc.make(WS_METHODS.subscribeDecisions, {
   payload: Schema.Struct({}),
   success: DecisionsState,
-  error: EnvironmentAuthorizationError,
-  stream: true,
-});
-
-const WsSubscribeRulesRpc = Rpc.make(WS_METHODS.subscribeRules, {
-  payload: Schema.Struct({}),
-  success: RulesState,
   error: EnvironmentAuthorizationError,
   stream: true,
 });
@@ -2355,7 +2340,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeRestartRequestRpc,
   WsServerCancelRestartRequestRpc,
   WsSubscribeDecisionsRpc,
-  WsSubscribeRulesRpc,
   WsOrchestrationV2DispatchCommandRpc,
   WsOrchestrationV2GetWorkflowScriptRpc,
   WsOrchestrationV2GetNativeChildWorkRpc,
@@ -2363,7 +2347,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationV2ForceStopThreadRpc,
   WsOrchestrationV2ReplyToDecisionRpc,
   WsOrchestrationV2ActOnDecisionRpc,
-  WsOrchestrationV2AnswerRuleRpc,
   WsOrchestrationV2GetTurnItemRpc,
   WsOrchestrationV2GetTurnDiffRpc,
   WsOrchestrationV2GetFullThreadDiffRpc,

@@ -6,7 +6,7 @@ import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { cn } from "../../lib/utils";
 import { Button } from "../ui/button";
 
-export type BridgeSectionId = "objectives" | "model-routing" | "rules";
+export type BridgeSectionId = "objectives" | "model-routing";
 
 const collapsedKey = (id: BridgeSectionId) => `t3code:bridge:collapsed:${id}`;
 const OBJECTIVES_PINNED_KEY = "t3code:bridge:objectives-pinned";
@@ -24,8 +24,6 @@ export function BridgeSection(props: {
   readonly id: BridgeSectionId;
   readonly title: string;
   readonly count?: number;
-  /** Added to the header after the count, such as "91 to review". */
-  readonly detail?: string;
   readonly pin?: { readonly pinned: boolean; readonly onToggle: () => void };
   readonly children: ReactNode;
 }) {
@@ -33,9 +31,7 @@ export function BridgeSection(props: {
   const bodyId = useId();
   const pinned = props.pin?.pinned === true;
   const expanded = pinned || !collapsed;
-  const label = [props.title, props.count, props.detail]
-    .filter((part) => part !== undefined)
-    .join(" · ");
+  const label = props.count === undefined ? props.title : `${props.title} · ${props.count}`;
 
   return (
     <section aria-label={props.title} className="mb-4">

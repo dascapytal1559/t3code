@@ -7,7 +7,6 @@ import * as Effect from "effect/Effect";
 import * as Decisions from "../../../decisions/Decisions.ts";
 import * as Environment from "../../../environment/ServerEnvironment.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
-import * as Rules from "../../../rules/Rules.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
 import * as Settings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -123,19 +122,6 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
       return yield* (yield* Decisions.Decisions)
         .actions(input)
         .pipe(Effect.mapError(() => unavailable()));
-    }),
-  ),
-  t3_rules_set: McpToolAccess.writesEnvironment((input) =>
-    Effect.gen(function* () {
-      yield* access;
-      const stored = yield* (yield* Rules.Rules)
-        .set(input)
-        .pipe(Effect.mapError(() => unavailable()));
-      return {
-        rules: stored.rules.length,
-        pending: stored.rules.filter((rule) => rule.status === "pending").length,
-        sent: stored.sent,
-      };
     }),
   ),
   // These take no thread lock: holding queues locks every thread, the caller's among them.
