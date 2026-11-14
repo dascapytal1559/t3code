@@ -149,7 +149,7 @@ export interface RightPanelTabsProps {
   onAddDevice: () => void;
   onAddBoard: () => void;
   /** Absent where there is no thread to open it beside. */
-  onAddNeedsMe?: (() => void) | undefined;
+  onAddBridge?: (() => void) | undefined;
   /** Absent where side chats are not offered. */
   onAddSideChat?: (() => void) | undefined;
   browserAvailable: boolean;
@@ -336,7 +336,7 @@ function RightPanelEmptyState(props: {
   onAddDevice: () => void;
   onAddBoard: () => void;
   /** Absent where there is no thread to open it beside. */
-  onAddNeedsMe?: (() => void) | undefined;
+  onAddBridge?: (() => void) | undefined;
   /** Absent where side chats are not offered. */
   onAddSideChat?: (() => void) | undefined;
   browserAvailable: boolean;
@@ -418,7 +418,7 @@ function RightPanelEmptyState(props: {
       disabledReason: SURFACE_UNAVAILABLE_HINTS.board,
       onClick: props.onAddBoard,
     },
-    ...(props.onAddNeedsMe
+    ...(props.onAddBridge
       ? [
           {
             label: "Bridge",
@@ -426,7 +426,7 @@ function RightPanelEmptyState(props: {
             shortcut: "N",
             available: true,
             disabledReason: "",
-            onClick: props.onAddNeedsMe,
+            onClick: props.onAddBridge,
           },
         ]
       : []),
@@ -1204,7 +1204,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       disabledReason: SURFACE_DISABLED_REASONS.board,
       onClick: props.onAddBoard,
     },
-    ...(props.onAddNeedsMe
+    ...(props.onAddBridge
       ? [
           {
             label: "Bridge",
@@ -1212,7 +1212,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             shortcut: "N",
             available: true,
             disabledReason: "",
-            onClick: props.onAddNeedsMe,
+            onClick: props.onAddBridge,
           },
         ]
       : []),
@@ -1612,7 +1612,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddPullRequests={props.onAddPullRequests}
             onAddDevice={props.onAddDevice}
             onAddBoard={props.onAddBoard}
-            onAddNeedsMe={props.onAddNeedsMe}
+            onAddBridge={props.onAddBridge}
             onAddSideChat={props.onAddSideChat}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}

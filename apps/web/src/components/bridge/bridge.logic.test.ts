@@ -1,7 +1,7 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { bridgeSetting, objectiveRow, parseObjective, splitObjectives } from "./needsMe.logic";
+import { bridgeSetting, objectiveRow, parseObjective, splitObjectives } from "./bridge.logic";
 
 describe("bridgeSetting", () => {
   it("shows the host environment's objectives, else another environment's, else none", () => {

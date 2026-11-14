@@ -23,6 +23,7 @@ const RIGHT_PANEL_KINDS = [
   "pull-request",
   "pull-requests",
   "board",
+  // Fork: the Bridge tab. Clients' saved panel state holds it under this, its first name.
   "needs-me",
   "side-chat",
 ] as const;

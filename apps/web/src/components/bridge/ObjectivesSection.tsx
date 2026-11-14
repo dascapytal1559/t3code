@@ -5,7 +5,7 @@ import { useState } from "react";
 import { cn } from "../../lib/utils";
 import ChatMarkdown from "../ChatMarkdown";
 import { BridgeSection, useObjectivesPinned } from "./BridgeSection";
-import { objectiveRow, splitObjectives } from "./needsMe.logic";
+import { objectiveRow, splitObjectives } from "./bridge.logic";
 
 /**
  * Read-only reminders: FirstMate sets them over MCP. Each objective is a bordered one-line row

@@ -3,14 +3,11 @@ import type { EnvironmentId, ModelRouting, ScopedThreadRef } from "@t3tools/cont
 import { useServerConfigs } from "../../state/entities";
 import ChatMarkdown from "../ChatMarkdown";
 import { BridgeSection } from "./BridgeSection";
-import { bridgeSetting } from "./needsMe.logic";
+import { bridgeSetting } from "./bridge.logic";
 import { ObjectivesSection } from "./ObjectivesSection";
 
-/**
- * The Bridge tab: the user's objectives and FirstMate's model routing table. What FirstMate needs
- * from the user is on the sidebar's cards instead.
- */
-export function NeedsMePanel(props: { readonly threadRef: ScopedThreadRef }) {
+/** The Bridge tab: the user's objectives and FirstMate's model routing table, both read-only. */
+export function BridgePanel(props: { readonly threadRef: ScopedThreadRef }) {
   const serverConfigs = useServerConfigs();
   const objectives = bridgeSetting(serverConfigs, props.threadRef.environmentId, "objectives");
   const modelRouting = bridgeSetting(serverConfigs, props.threadRef.environmentId, "modelRouting");

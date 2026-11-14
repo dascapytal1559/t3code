@@ -2403,7 +2403,7 @@ export default function ChatView(props: ChatViewProps) {
   const {
     activateRightPanelSurfaceStable,
     addBoardSurfaceStable,
-    addNeedsMeSurfaceStable,
+    addBridgeSurfaceStable,
     addDeviceSurfaceStable,
     addDiffSurfaceStable,
     addFilesSurfaceStable,
@@ -4090,7 +4090,7 @@ export default function ChatView(props: ChatViewProps) {
           onAddPullRequests={addPullRequestsSurfaceStable}
           onAddDevice={addDeviceSurfaceStable}
           onAddBoard={addBoardSurfaceStable}
-          onAddNeedsMe={activeThreadRef !== null ? addNeedsMeSurfaceStable : undefined}
+          onAddBridge={activeThreadRef !== null ? addBridgeSurfaceStable : undefined}
           onAddSideChat={sideChatsOffered ? openSideChatStable : undefined}
           browserAvailable={canOperatePreview && browserAvailable}
           terminalAvailable={activeProject !== null && canOperateTerminal}

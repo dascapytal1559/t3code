@@ -36,8 +36,8 @@ const FilePreviewPanel = lazy(() => import("../files/FilePreviewPanel"));
 const BoardPanel = lazy(() =>
   import("../board/BoardPanel").then((module) => ({ default: module.BoardPanel })),
 );
-const NeedsMePanel = lazy(() =>
-  import("../needsMe/NeedsMePanel").then((module) => ({ default: module.NeedsMePanel })),
+const BridgePanel = lazy(() =>
+  import("../bridge/BridgePanel").then((module) => ({ default: module.BridgePanel })),
 );
 
 type RightPanelTerminalProps = Omit<
@@ -188,7 +188,7 @@ export function RightPanelSurfaceContent(props: {
     case "needs-me":
       return (
         <Suspense fallback={null}>
-          <NeedsMePanel threadRef={threadRef} />
+          <BridgePanel threadRef={threadRef} />
         </Suspense>
       );
     case "side-chat":

@@ -1699,17 +1699,8 @@ function OpenCommandPaletteDialog(props: {
     });
     actionItems.push({
       kind: "action",
-      value: "action:needs-me",
-      searchTerms: [
-        "bridge",
-        "needs me",
-        "objectives",
-        "decisions",
-        "firstmate",
-        "captain",
-        "waiting",
-        "inbox",
-      ],
+      value: "action:bridge",
+      searchTerms: ["bridge", "objectives", "model routing", "firstmate", "captain"],
       title: "Open Bridge",
       icon: <ShipWheelIcon className={ITEM_ICON_CLASS} />,
       run: async () => {
