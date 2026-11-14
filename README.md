@@ -7,13 +7,14 @@ A fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code), built to host
 For FirstMate:
 
 - [Crew sidebar](fork/README.md#firstmate-crew-in-the-sidebar): FirstMate and its workers as a tree, with short status labels.
-- [No worker composer](fork/README.md#a-crewmate-has-no-composer): a worker thread has no message box, only Stop while it runs and the box back while it asks you something.
+- [Worker replies go to FirstMate](fork/README.md#a-crewmates-message-box-sends-to-firstmate): a worker thread's message box sends to FirstMate, not the worker, and shows how full the worker's context is.
+- [Snoozed pinned, no Settled](fork/README.md#snoozed-stays-at-the-bottom-with-no-settled): the sidebar keeps Snoozed in reach at the bottom and has no Settled section.
 - [Approvals over MCP](fork/README.md#agents-answer-approvals-over-mcp): FirstMate answers a worker's permission prompts.
 - [Waits end on a question](fork/README.md#waits-end-on-a-question-or-approval): FirstMate hears a question or approval the moment it appears.
 - [Per-thread settings](fork/README.md#per-thread-environment-and-instructions): each launched worker gets its own environment and instructions.
 - [Idle agents](fork/README.md#idle-agent-release-is-a-server-setting): idle release is a setting, and agents can be kept for good.
 - [Long sign-in](fork/README.md#firstmates-sign-in-lasts-10-years): FirstMate's sign-in lasts 10 years instead of 30 days, so it never needs renewing.
-- [Bridge](fork/README.md#bridge): your objectives, FirstMate's model routing and your rules for it, in the right panel's Bridge tab.
+- [Bridge](fork/README.md#bridge): your objectives and FirstMate's model routing, in the right panel's Bridge tab.
 - [Clean session close](fork/README.md#a-closed-claude-session-waits-for-its-cli-to-exit): a closed Claude session waits for its CLI to exit, so FirstMate's next one keeps its lock.
 - [Edit any file](fork/README.md#firstmate-edits-files-in-any-project): FirstMate's thread edits files outside its project folder, which upstream opens read-only.
 

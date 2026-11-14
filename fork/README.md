@@ -335,8 +335,7 @@ the user show as usual. The age is the thread's, since a `/clear` keeps the
 thread. Neither it nor anything in its tree shows a branch line, since a worker's
 branch matters little inside FirstMate; other threads and the hover card keep it
 (`isThreadMetaLineEmpty` in `apps/web/src/components/Sidebar.logic.ts`). Its crewmates hang below it as a
-tree that collapses to a count. What FirstMate needs from the user shows on
-those cards; see [Captain items in the sidebar](#captain-items-in-the-sidebar).
+tree that collapses to a count.
 A pinned coordinator (see below) gets this card even with
 no crew; without any coordinator the sidebar is unchanged.
 
@@ -353,9 +352,10 @@ every other thread. Upstream code it touches, for syncs: two guards in
 and on the initial title in `message.dispatch` (`isPrimaryCoordinator`).
 
 No card in the sidebar, crew or not, has hover Snooze or Settle; the context
-menu still has Snooze, and snoozing takes a thread out of the group.
-A card carrying FirstMate's item closes from its own thread instead (see
-[A crewmate has no composer](#a-crewmate-has-no-composer)). Upstream's hover
+menu still has Snooze, and snoozing takes a thread out of the group. Upstream
+shows both on hover so a thread is put away in one click; the captain asked
+for them off so a stray click cannot put a standing agent's thread away
+("We don't need the hover to settle or snooze"). Upstream's hover
 code stays for syncs: the sidebar passes `hideHoverActions` to every row. The
 crew cards drag only as chat context. A fresh
 page load on the home route opens a coordinator whatever its run status,
@@ -444,33 +444,67 @@ second coordinator. Code: `apps/server/src/orchestration-v2/CoordinatorRestartNo
 and its two calls in `continueRestartedRun`
 (`apps/server/src/orchestration-v2/RestartContinuation.ts`).
 
-## A crewmate has no composer
+## A crewmate's message box sends to FirstMate
 
-FirstMate steers its workers through its own inbox and a message it sends over
-MCP, so a message typed into a worker by accident cuts across that. A crew
-thread (the sidebar's crew membership, snoozed or settled too) shows no composer
-at all: no message box, model picker or branch row, and no way to unlock one.
-While the worker runs, a small Stop button takes its place, and a Resume button
-sits beside it (alone once the worker has stopped) whenever the composer's
+<img src="media/crew-reply.jpg" width="560" alt="The box at the foot of a worker's thread, holding a typed reply, with the context ring and a Send to FirstMate button">
+
+Upstream treats every thread as a conversation the user can join. FirstMate
+steers its workers through its own inbox and a message it sends over MCP, so a
+message typed into a worker cuts across that. A crew thread (the sidebar's crew
+membership, snoozed or settled too) has no composer: no model picker or branch
+row, no way to type to the worker, and no way to unlock one.
+
+In its place is a plain box whose words go to FirstMate, because the captain
+reads a worker's report in its thread and wants to answer there: "if I'm ever
+like reviewing a workers probe I could just reply right there". Sending puts
+one ordinary user message in the worker's coordinator thread, queued behind a
+running turn as the composer's Queue does, or starting a turn when the
+coordinator is idle. The worker gets nothing. The message reads:
+
+```
+**Reply · <worker thread title>**
+kept-thread: <worker thread id>
+
+<the captain's words>
+```
+
+FirstMate reads the worker from the second line (`bin/fm-t3-worker-reply.sh`
+in the FirstMate fork). `kept-thread` is the marker an earlier build sent and
+that reader already knows, so it stays. Enter sends and Shift+Enter starts a
+new line. The box takes text only, with no attachments, mentions or commands,
+and keeps no draft when the user leaves the thread. It also carries the
+[context window ring](#context-window-meter), for the worker's own window and
+without Compact, since compacting a worker is FirstMate's call.
+
+While the worker runs, a small Stop button sits above the box, and a Resume
+button beside it (alone once the worker has stopped) whenever the composer's
 Resume would show: an interrupted run to continue, or a queue held by Stop.
-When the worker asks
-for an approval or asks a question, the full box comes back until it is
-answered, because feedback and custom answers use it. FirstMate's own thread
-and ordinary threads keep their composer, and a thread gets it back once it
-leaves the crew (its coordinator or itself archived). This is web and desktop
-only: the server takes messages for crew as before, so FirstMate's MCP messages
-arrive unchanged, and mobile still shows the composer. Code:
-`crewComposerHidden` in `apps/web/src/components/ChatView.tsx`.
+When the worker asks for an approval or asks a question, the full composer
+comes back in place of the box until it is answered, because feedback and
+custom answers use it. FirstMate's own thread and ordinary threads keep their
+composer, and a thread gets it back once it leaves the crew (its coordinator or
+itself archived). This is web and desktop only: the server takes messages for
+crew as before, so FirstMate's MCP messages arrive unchanged, and mobile still
+shows upstream's composer, which types to the worker.
+
+Code: `crewComposerHidden` in `apps/web/src/components/ChatView.tsx`;
+`CrewReply` and `CrewComposerGate` in `apps/web/src/components/chat/CrewReply.tsx`,
+the message in `CrewReply.logic.ts`, and `CrewRunControls.tsx` beside them. For
+syncs: `CrewComposerGate` stands where upstream's `<div className="relative">`
+wraps the composer, so the composer's own lines keep upstream's indentation.
 
 ## Snoozed stays at the bottom, with no Settled
 
-The sidebar is the user's tracker and archive is how a thread is put away, so
-the web and desktop sidebar has no Settled section. The Snoozed row, with its
-count and chevron, is pinned to the bottom of the thread list, just above the
-usage readout, so a long list scrolls under it instead of pushing it out of
-sight (picture under [Captain items in the
-sidebar](#captain-items-in-the-sidebar)). Opening it scrolls the list to its
-end, where the snoozed rows are; scrolled back up, the open row stays pinned.
+<img src="media/snoozed-pinned.jpg" width="256" alt="The sidebar: FirstMate with four workers, the top-level threads with a settled one among them, and the Snoozed row with its count at the bottom">
+
+Upstream collects finished threads in a Settled section at the end of the
+list, and its Snoozed row scrolls with the list. The captain puts a thread away
+by archiving it and does not use Settled ("we're still not gonna need
+settled"), so the web and desktop sidebar has no Settled section. The Snoozed
+row, with its count and chevron, is pinned to the bottom of the thread list,
+just above the usage readout, so a long list scrolls under it instead of
+pushing it out of sight. Opening it scrolls the list to its end, where the
+snoozed rows are; scrolled back up, the open row stays pinned.
 
 A settled thread lists among the active ones, so nothing drops out of sight.
 The thread menus (the card's context menu, a multi-selection's menu and the
@@ -557,17 +591,15 @@ keeps upstream's behaviour. Code: `retiresBusySessions` and its two uses in
 
 ## Bridge
 
-The right panel's "Bridge" tab (once "Needs me") is the captain's overview
-beside any chat: their objectives on top, then FirstMate's model routing table,
-then the captain's rules for FirstMate. What FirstMate needs from the captain is
-not here but on the sidebar's cards (see
-[Captain items in the sidebar](#captain-items-in-the-sidebar)). It
-opens from the panel's launcher or "+" menu (N), or "Open Bridge" in the
-command palette, which still finds it by "needs me". On phone web it opens as a
-sheet like the other right-panel tabs. Internal names (`needs-me` surface kind,
-`components/needsMe/`) keep the old name.
+The right panel's "Bridge" tab is the captain's overview beside any chat: their
+objectives on top, then FirstMate's model routing table. Both are read-only and
+pushed by FirstMate. Upstream's right panel has no tab for an outside agent's
+standing information; the fork adds this one so the captain can glance at both
+from any thread. It opens from the panel's launcher or "+" menu (N), or "Open
+Bridge" in the command palette. On phone web it opens as a sheet like the other
+right-panel tabs.
 
-Each section (Objectives, Model routing, Rules) has a header
+Each section (Objectives, Model routing) has a header
 with a chevron and its count, where it has one, that collapses and expands it.
 Each client remembers what it collapsed in local storage
 (`t3code:bridge:collapsed:<section>`), so it survives a reload. Objectives has a
@@ -592,64 +624,8 @@ title, the middle cells on one line joined by " · ", the last cell beneath. Wit
 none set the section does not show. Like objectives, it is the chat's own
 environment's, else the first connected environment's that has one.
 
-Something FirstMate needs from the captain is an item. FirstMate sends T3 the
-whole list of them (see the records below); T3 keeps it beside the threads and
-shows each item that names a thread on that thread's card. A reply from the
-card puts one ordinary user message into FirstMate's chat, queued behind a
-running turn as the composer's Queue does or starting a turn when FirstMate is
-idle.
-
 The records, for FirstMate's side:
 
-- `t3_decisions_set` replaces the whole list. Input: `{ replyTo, decisions[] }`.
-  `replyTo` is the id of FirstMate's chat thread, where replies are sent; it
-  must be a thread on this server. A decision left out is gone, which is how
-  FirstMate retires an answered one or parks a blocked one. One that differs in
-  any field from the stored one replaces it and shows again, even if the
-  captain had answered it; an unchanged one keeps its answer. An identical list
-  changes nothing: no file is written and nothing is sent to any client, so
-  FirstMate can send the list every time it changes its own records (a call
-  takes a few milliseconds). The result is `{ replyTo, decisions[{ id,
-  revision, answered }] }`, what T3 stored, where `answered` says the captain
-  has replied to that version. Like `t3_objectives_set` it needs a full-access
-  client or a live full-access caller thread, and refuses a linked
-  environment's caller.
-- A decision is `{ id, title, projectName?, since?, question, options[{label}],
-  entries[{at, kind: raised|update, changed?, text,
-  attachments?[{kind, path, label?}]}], revision, kind?, thread?, snoozed? }`:
-  at most 200
-  decisions, each `id` once; entry text at most 8,192 characters, 24 entries,
-  12 options, 12 attachments per entry. `id` is FirstMate's own id for the
-  decision, its task id. `projectName` (at most 200 characters) is the project
-  the decision is about, such as the backlog task's repo.
-  `since` is when the decision started waiting on the captain, an ISO 8601
-  date-time such as `2026-10-26T06:53:24.000Z` (any string `Date.parse` reads
-  is accepted; send the full UTC form). T3 keeps `since`, `entries`, `options`
-  and `projectName` but shows none of them for now. `revision` is FirstMate's own, a positive integer
-  that grows when the captain should read the decision again. `kind` is
-  `decision` (the default) or `read`, a finished report with nothing to decide.
-  `thread: { id, finished }` is the thread whose card carries the item;
-  `finished` says its work is done, so Archive there archives the thread.
-  `snoozed: { at, until }`, in the same date form, says the captain put it off
-  at `at`, until `until`, or with `until: null` until brought back; leave it out
-  of one that waits now. An older sender's `wakeAt` is read as
-  `snoozed: { at: since, until: wakeAt }`. An option is its button label only;
-  FirstMate's messages explain the options, and an option `detail` from an
-  older sender is ignored.
-- `t3_decisions_actions` reads the captain's actions on the items, oldest
-  first: `snooze` (with `until`, null for no date), `unsnooze`, `archive`, and
-  T3's own `thread-archived` and `thread-unarchived` for a thread an item
-  names. Each is `{ seq, commandId, itemId, revision, type, until?, at }`.
-  Input: `{ after?, waitMs?, ack?[{ seq, outcome: applied|refused, message? }] }`.
-  `ack` drops those actions from the log first; a refusal's message shows on
-  the item's card until FirstMate changes it. With nothing after `after`, the
-  call waits up to `waitMs` (at most 30 seconds) for an action. The result is
-  `{ actions[], lastSeq }`. The log is kept in `decisions.json`, so an action
-  FirstMate has not acknowledged survives a restart; a repeated `commandId`
-  adds nothing. Same access rules as `t3_decisions_set`.
-- T3 keeps the list in `decisions.json` in its data folder, beside
-  `settings.json`, so it survives a restart. A file it cannot read starts as an
-  empty list, which FirstMate's next call fills.
 - `t3_objectives_set` replaces the objectives, which T3 keeps in this
   environment's server settings (`objectives` in `settings.json`), so they
   survive a restart and reach every connected client on the settings stream.
@@ -668,49 +644,23 @@ The records, for FirstMate's side:
   last row), at most 8,192 characters, trimmed and not empty; `null` clears it.
   The result is `{ modelRouting: { markdown } | null }`. Same access rules and
   refusals as `t3_objectives_set`. The captain cannot edit it in T3.
-- The reply message reads `**Decision · <title>**`, then the line
-  `needs-me-task: <id>`, a blank line, the question quoted with `> `, a
-  blank line, then the captain's words. Upstream renders user messages without
-  raw HTML, so the header is plain Markdown, not a `<details>` fold.
-- A reply carries the revision the captain read; if FirstMate updated the
-  decision meanwhile, nothing is sent and the captain is told to read the
-  update.
 
-Clients read the list on the `subscribeDecisions` stream, as `{ replyTo,
-decisions[], actions[], lastActionSeq }` where an answered decision carries
-`answered { commandId, at }`, and reply and act with `orchestration.replyToDecision`
-and `orchestration.actOnDecision`, which name the decision by `decisionId`. The
-web and desktop sidebar subscribes while it runs; the App Store mobile app never
-subscribes, so it is sent nothing. Decisions raise no notifications. The mobile
-app shows no items yet.
-
-Decisions were once threads with no agent. FirstMate archived every one of them
-when it moved to `t3_decisions_set`, and T3 no longer knows them as decisions:
-they are ordinary empty threads in the archive.
-
-Code: `packages/contracts/src/decisions.ts`,
-`apps/server/src/decisions/Decisions.ts`, `apps/web/src/state/decisions.ts` and
-`apps/web/src/components/needsMe/`. Shared files it touches, for syncs: the
-`subscribeDecisions` stream in `rpc.ts` and `ws.ts`, with its scope in
-`RpcAuthorization.ts` and `RpcInstrumentation.ts`; the reply RPC and `actOnDecision` in
-`orchestrationV2.ts`, `rpc.ts` and `ws.ts`, with their scopes in
-`clientRpcPermissions.ts`, `RpcAuthorization.ts` and `RpcInstrumentation.ts`;
-the layer in `orchestration-v2/runtimeLayer.ts`; in `packages/client-runtime`,
-`rpc/client.ts`, `state/server.ts` and `state/orchestration.ts`; the tool in
-`mcp/toolkits/environment/`, its row in `t3McpToolPresentation.ts` and the
-larger `agentContextBudget.json`; on the web, the `needs-me` surface kind in
-`rightPanelStore.ts` (and `closedViewStore.ts`), the launcher and "+" menu
-entries and tab title and icon in `RightPanelTabs.tsx`,
-`RightPanelSurfaceContent.tsx`, `useRightPanelActions.ts`, the prop in
-`ChatView.tsx` and a command palette item.
-Objectives and model routing: `packages/contracts/src/objectives.ts`, the
-`objectives` and `modelRouting` fields in `ServerSettings` and
+Code: `packages/contracts/src/objectives.ts` and
+`apps/web/src/components/bridge/`, where the collapsible sections and the pin
+live in `BridgeSection.tsx`; the routing table's stacked layout is the
+`.bridge-routing` block in `apps/web/src/index.css`. Shared files it touches,
+for syncs: the `objectives` and `modelRouting` fields in `ServerSettings` and
 `ServerSettingsPatch` (`settings.ts`), their whole-value replace in
 `applyServerSettingsPatch` (`packages/shared/src/serverSettings.ts`), the tools
 in `mcp/toolkits/environment/`, their rows in `t3McpToolPresentation.ts` and the
-larger `agentContextBudget.json`. Collapsible sections and the pin live in
-`components/needsMe/BridgeSection.tsx`; the routing table's stacked layout is
-the `.bridge-routing` block in `apps/web/src/index.css`.
+larger `agentContextBudget.json`; on the web, the surface kind in
+`rightPanelStore.ts` (and `closedViewStore.ts`), the launcher and "+" menu
+entries and tab title and icon in `RightPanelTabs.tsx`,
+`RightPanelSurfaceContent.tsx`, `useRightPanelActions.ts`, the prop in
+`ChatView.tsx` and a command palette item. The surface kind is still
+`needs-me`, the tab's first name: each client's saved panel state lists its
+open tabs by kind, so a renamed kind would leave a blank tab where the Bridge
+was.
 
 ## Restart registry
 
@@ -877,7 +827,10 @@ auto-compact threshold and a Compact context button when the provider has
 Upstream's #33131 (8 Nov 2026) deleted it with the Labs toggle that hid it,
 "Context window indicator (legacy)". The fork keeps the meter, not the toggle,
 because a glance at the composer is the quickest way to see when a long
-thread needs compacting.
+thread needs compacting. A FirstMate worker's thread, which has no composer,
+shows the same ring on its
+[reply box](#a-crewmates-message-box-sends-to-firstmate) so the captain can see
+how much context each worker holds; there it has no Compact context button.
 
 Upstream's branch `maria/redesign/6-workspace-panes` has its own view of what
 fills a Claude thread's context ("feat(web): show what fills a Claude thread's
@@ -890,7 +843,8 @@ and `ContextWindowMeter.logic.ts`, both fork files. Upstream files it touches:
 `ChatComposer.tsx` (the context window, thread shell, sync phase and compact
 props), `ChatView.tsx` (passes them, and `compactDisabledReason`), and
 `compaction.logic.ts` (exports `providerSupportsManualCompaction`), plus a
-sentence on the ring in `docs/user/composer.md`. The meter
+sentence on the ring in `docs/user/composer.md`. The fork's `CrewReply.tsx`
+renders it too. The meter
 offers no Refresh context; the fork removed that feature.
 
 ## The window grows for the right panel
