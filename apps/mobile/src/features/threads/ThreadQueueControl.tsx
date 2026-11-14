@@ -9,7 +9,10 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { resolveUserMessagePresentation } from "@t3tools/client-runtime/user-message";
+import {
+  resolveAgentMessageFold,
+  resolveUserMessagePresentation,
+} from "@t3tools/client-runtime/user-message";
 import type { ChatAttachment, EnvironmentId, RunId, ThreadId } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 import { Image } from "expo-image";
@@ -73,7 +76,7 @@ function QueuedRunSender(props: {
   readonly environmentId: EnvironmentId;
   readonly message: QueuedRunMessage;
 }) {
-  const { attribution, scheduledTaskId } = resolveUserMessagePresentation(props.message);
+  const { attribution, scheduledTaskId, text } = resolveUserMessagePresentation(props.message);
   const senderThreadId = attribution === "agent" ? props.message.senderThreadId : undefined;
   // A linked environment's agent sent it from a thread there.
   const linkedSender = attribution === "agent" ? props.message.linkedSender : undefined;
@@ -95,7 +98,11 @@ function QueuedRunSender(props: {
       : attribution === "agent"
         ? {
             icon: "bubble.left.and.bubble.right" as const,
-            label: senderShell?.title.trim() || linkedSender?.title.trim() || "Agent",
+            label:
+              resolveAgentMessageFold(text)?.label ||
+              senderShell?.title.trim() ||
+              linkedSender?.title.trim() ||
+              "Agent",
           }
         : attribution === "t3code"
           ? { icon: null, label: "Sent by T3 Code" }

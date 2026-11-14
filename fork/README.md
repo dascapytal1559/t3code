@@ -614,12 +614,14 @@ agent was told. The fork departs only for this one line: it is a mechanical
 pointer with the same words every time, so showing it says nothing. Only the
 display changes; the stored message and what the provider receives are
 untouched. The match is the whole line, so a message that merely mentions it
-is shown as usual. The mobile app folds it the same way. Code:
-`resolveAgentMessageFold` in `packages/client-runtime/src/userMessage.ts`, used
-by `TimelineUserMessageRow.tsx` and `QueuedRunsControl.tsx` in
+is shown as usual. The mobile app's thread card and queue label it the same
+way. Code: `resolveAgentMessageFold` in
+`packages/client-runtime/src/userMessage.ts`, used by
+`TimelineUserMessageRow.tsx` and `QueuedRunsControl.tsx` in
 `apps/web/src/components/chat/`, and by `AgentMessageFoldHeader` in
-`apps/mobile/src/features/threads/ThreadFeed.tsx`. If FirstMate changes the
-line, change the pattern with it.
+`apps/mobile/src/features/threads/ThreadFeed.tsx` and `QueuedRunSender` in
+`apps/mobile/src/features/threads/ThreadQueueControl.tsx`. If FirstMate changes
+the line, change the pattern with it.
 
 ## A fresh start on FirstMate ends the old session
 
