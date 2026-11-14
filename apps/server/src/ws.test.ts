@@ -4,6 +4,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   AuthAccessReadScope,
+  AuthFilesystemWriteScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthSessionId,
@@ -1780,6 +1781,91 @@ it.effect("a missing thread worktree gets its project's skills in the cwd snapsh
       ["finalize"],
       "the thread's removed worktree should list the project's skills",
     );
+  }).pipe(
+    Effect.provide(
+      Layer.mergeAll(
+        Layer.fresh(layerConfigSources),
+        Layer.mock(PreviewAutomationBroker.PreviewAutomationBroker)({}),
+        Layer.mock(ServerBrowser.ServerBrowser)({}),
+      ),
+    ),
+  ),
+);
+
+it.effect("only FirstMate's own thread may save host files", () =>
+  Effect.gen(function* () {
+    const shells: Record<string, Partial<OrchestrationV2ThreadShell>> = {
+      "thread:firstmate": { coordinator: true },
+      "thread:secondmate": { coordinator: true, crewOf: ThreadId.make("thread:firstmate") },
+      "thread:crew": { crewOf: ThreadId.make("thread:firstmate") },
+    };
+    const writes = yield* Queue.unbounded<boolean | undefined>();
+    const services = Layer.mergeAll(
+      layerUnusedConfigRpcServices,
+      Layer.mock(ThreadManagement.ThreadManagementService)({
+        getThreadShell: (threadId) => Effect.succeed((shells[threadId] ?? null) as never),
+      }),
+      Layer.mock(WorkspaceFileSystem.WorkspaceFileSystem)({
+        writeFile: (input, options) =>
+          Queue.offer(writes, options?.hostFiles).pipe(
+            Effect.as({ relativePath: input.relativePath }),
+          ),
+      }),
+      Layer.mock(ExternalLauncher.ExternalLauncher)({}),
+      Layer.mock(ProviderRegistry.ProviderRegistry)({}),
+      Layer.mock(UsageLimitSources.UsageLimitSources)({}),
+      Layer.mock(RemoteOpenTargets.RemoteOpenTargets)({}),
+      Layer.mock(DirectEndpoints.DirectEndpoints)({}),
+      Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({ namedProjectsRoot: "/unused" }),
+      Layer.mock(ScratchThreadPromotion.ScratchThreadPromotion)({}),
+      Layer.mock(ServerEnvironment.ServerEnvironment)({}),
+      Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
+    );
+    const server = yield* RpcServer.makeNoSerialization(WsRpcGroup, {
+      ...WS_RPC_SERVER_OPTIONS,
+      onFromServer: () => Effect.void,
+    }).pipe(
+      Effect.provide(
+        layerWsRpc(
+          {
+            sessionId: AuthSessionId.make("host-file-test"),
+            subject: "host-file-test",
+            method: "browser-session-cookie",
+            scopes: [AuthFilesystemWriteScope],
+            deviceType: "desktop",
+          },
+          {},
+          yield* ServerBrowser.ServerBrowser,
+          () => Effect.void,
+          { secretReferences: true },
+        ).pipe(
+          Layer.provide(services),
+          Layer.merge(RpcAuthorization.layer([AuthFilesystemWriteScope])),
+        ),
+      ),
+    );
+
+    for (const [threadId, hostFiles] of [
+      ["thread:firstmate", true],
+      ["thread:secondmate", false],
+      ["thread:crew", false],
+      ["thread:missing", false],
+      [undefined, false],
+    ] as const) {
+      yield* server.write(0, {
+        _tag: "Request",
+        id: RpcMessage.RequestId(`write:${threadId}`),
+        tag: WS_METHODS.projectsWriteFile,
+        payload: {
+          cwd: "/repo",
+          relativePath: "/elsewhere/script.md",
+          contents: "edited\n",
+          ...(threadId === undefined ? {} : { threadId }),
+        },
+        headers: Headers.empty,
+      });
+      assert.equal(yield* Queue.take(writes), hostFiles, `${threadId}`);
+    }
   }).pipe(
     Effect.provide(
       Layer.mergeAll(

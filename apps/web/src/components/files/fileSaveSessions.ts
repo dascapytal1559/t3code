@@ -1,4 +1,4 @@
-import { AuthFilesystemWriteScope, type EnvironmentId } from "@t3tools/contracts";
+import { AuthFilesystemWriteScope, type EnvironmentId, type ThreadId } from "@t3tools/contracts";
 import { type AtomCommandResult, runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { useEffect } from "react";
 
@@ -16,6 +16,8 @@ export interface FileSaveTarget {
   readonly environmentId: EnvironmentId;
   readonly cwd: string;
   readonly relativePath: string;
+  /** Fork: set only where FirstMate's thread edits a host file; the server checks the thread. */
+  readonly threadId?: ThreadId | undefined;
 }
 
 export type FilePendingListener = (relativePath: string, pending: boolean) => void;
@@ -132,8 +134,8 @@ export function createFileSaveSessions(deps: FileSaveSessionDeps) {
   };
 }
 
-function fileSaveKey({ environmentId, cwd, relativePath }: FileSaveTarget): string {
-  return `${environmentId}\u0000${cwd}\u0000${relativePath}`;
+function fileSaveKey({ environmentId, cwd, relativePath, threadId }: FileSaveTarget): string {
+  return `${environmentId}\u0000${cwd}\u0000${relativePath}\u0000${threadId ?? ""}`;
 }
 
 const fileSaveSessions = createFileSaveSessions({
@@ -150,10 +152,10 @@ const fileSaveSessions = createFileSaveSessions({
       },
     );
   },
-  persist: ({ environmentId, cwd, relativePath }, contents) =>
+  persist: ({ environmentId, cwd, relativePath, threadId }, contents) =>
     runAtomCommand(appAtomRegistry, projectEnvironment.writeFile, {
       environmentId,
-      input: { cwd, relativePath, contents },
+      input: { cwd, relativePath, contents, ...(threadId === undefined ? {} : { threadId }) },
     }),
   confirm: ({ environmentId, cwd, relativePath }, contents) =>
     confirmProjectFileQueryData(environmentId, cwd, relativePath, contents),
@@ -163,13 +165,13 @@ const fileSaveSessions = createFileSaveSessions({
 
 /** Holds the file's save session while the surface is mounted; the last surface to leave flushes. */
 export function useFileSaveSession(
-  { environmentId, cwd, relativePath }: FileSaveTarget,
+  { environmentId, cwd, relativePath, threadId }: FileSaveTarget,
   onPendingChange: FilePendingListener,
 ): void {
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the lease is a mount-scoped external resource; React runs every unmount cleanup before mount setups, so a surface switch flushes before the next surface recovers.
   useEffect(
-    () => fileSaveSessions.acquire({ environmentId, cwd, relativePath }, onPendingChange),
-    [environmentId, cwd, relativePath, onPendingChange],
+    () => fileSaveSessions.acquire({ environmentId, cwd, relativePath, threadId }, onPendingChange),
+    [environmentId, cwd, relativePath, threadId, onPendingChange],
   );
 }
 

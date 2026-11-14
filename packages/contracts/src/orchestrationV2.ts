@@ -664,6 +664,13 @@ export const isDelegatedAppThread = (
   // MCP-launched threads store `delegatedFrom: null` at runtime, so check both absent shapes.
   thread.lineage.relationshipToParent === "subagent" || thread.delegatedFrom != null;
 
+/** Fork: a pinned coordinator that is not itself crew, which rules out FirstMate's secondmates. */
+export function isPrimaryCoordinator(
+  thread: Pick<OrchestrationV2AppThread, "coordinator" | "crewOf">,
+): boolean {
+  return thread.coordinator === true && thread.crewOf === undefined;
+}
+
 /** Provider-native children cannot receive messages; T3 delegate_task children can. */
 export function isProviderNativeSubagentThread(
   thread: Pick<OrchestrationV2AppThread, "lineage" | "creationSource">,

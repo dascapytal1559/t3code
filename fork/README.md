@@ -1371,6 +1371,25 @@ already reads links from the file's folder, has no fallback, and does not make
 inline code tappable. On syncs, keep `resolveInlineCodeFileLinkMeta` resolving
 from the file's folder.
 
+## FirstMate edits files in any project
+
+Upstream's file panel edits only files inside the open thread's project
+folder; any other file on the machine opens read-only, and the server refuses
+to save it. The intent is that a link in one thread cannot change files in
+another project. FirstMate's own thread is the captain's command center across
+every project, so there a file outside its folder is editable and saves like a
+project file. Only FirstMate's main thread gets this (a pinned coordinator
+that is not crew, `isPrimaryCoordinator`); secondmates, crew and every other
+thread keep upstream's rule. The save names its thread, and the server checks
+that thread before writing in place. It writes only a file that already
+exists, outside Git folders and the server's own state, with the filesystem
+write permission still required; truncated reads and attachments stay
+read-only, and mobile does not edit files. Code: `hostFileThreadId` in
+`apps/web/src/components/files/FilePreviewPanel.tsx`, the `threadId` save
+field in `ProjectWriteFileInput`, the `projects.writeFile` handler in
+`apps/server/src/ws.ts`, and `resolveHostWriteTarget` in
+`apps/server/src/workspace/WorkspaceFileSystem.ts`.
+
 ## Version
 
 The fork keeps upstream's version number. The desktop app sets up an SSH or

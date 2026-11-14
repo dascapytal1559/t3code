@@ -75,6 +75,7 @@ import {
   type ProjectFileFailure,
   type ProjectFileOperation,
   type ProjectMutation,
+  isPrimaryCoordinator,
   ProjectListEntriesError,
   ProjectReadFileError,
   ProjectSearchContentsError,
@@ -3015,7 +3016,15 @@ export const layerWsRpc = (
             ),
           ),
         [WS_METHODS.projectsWriteFile]: (input) =>
-          workspaceFileSystem.writeFile(input).pipe(
+          // Fork: FirstMate's own thread is the captain's command center across projects.
+          (input.threadId === undefined
+            ? Effect.succeed(false)
+            : threadManagement.getThreadShell(input.threadId).pipe(
+                Effect.map((shell) => shell !== null && isPrimaryCoordinator(shell)),
+                Effect.orElseSucceed(() => false),
+              )
+          ).pipe(
+            Effect.flatMap((hostFiles) => workspaceFileSystem.writeFile(input, { hostFiles })),
             Effect.mapError(
               (cause) =>
                 new ProjectWriteFileError({

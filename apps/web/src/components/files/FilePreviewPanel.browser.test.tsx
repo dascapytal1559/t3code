@@ -19,6 +19,12 @@ const state = vi.hoisted(() => ({
   writeFile: vi.fn(),
   assetUrl: { _tag: "Loading" } as import("~/assets/assetUrls").AssetUrlState,
   mintUrl: vi.fn<() => Promise<string | null>>(),
+  threadShell: null as { coordinator?: boolean; crewOf?: ThreadId } | null,
+}));
+
+vi.mock(import("~/state/entities"), async (original) => ({
+  ...(await original()),
+  useQuietThreadShell: (() => state.threadShell) as never,
 }));
 
 vi.mock(import("@t3tools/client-runtime/state/runtime"), async (original) => ({
@@ -121,6 +127,7 @@ function setup() {
   state.file = null;
   state.optimistic = null;
   state.assetUrl = { _tag: "Loading" };
+  state.threadShell = null;
   let mints = 0;
   state.mintUrl.mockReset().mockImplementation(async () => `/assets/report.docx?mint=${++mints}`);
   state.writeFile.mockReset().mockResolvedValue(AsyncResult.success(undefined));
@@ -135,14 +142,18 @@ function setup() {
   };
 }
 
-function markdownPreview(truncated: boolean, contents = "- [ ] Keep the rest of this file\n") {
+function markdownPreview(
+  truncated: boolean,
+  contents = "- [ ] Keep the rest of this file\n",
+  relativePath = "tasks.md",
+) {
   state.file = {
-    relativePath: "tasks.md",
+    relativePath,
     contents,
     byteLength: truncated ? 1_200_000 : contents.length,
     truncated,
   };
-  return filePreview("tasks.md");
+  return filePreview(relativePath);
 }
 
 function filePreview(relativePath: string, workspaceMutationId: string | null = null) {
@@ -301,6 +312,42 @@ describe("rendered Markdown task saves", () => {
         contents: "- [x] Keep the rest of this file\n",
       },
     });
+  });
+
+  it("saves a host file from FirstMate's own thread, naming the thread", async () => {
+    using _settings = setup();
+    state.threadShell = { coordinator: true };
+    await using screen = await render(markdownPreview(false, undefined, "/elsewhere/tasks.md"));
+    using _timers = fakeTimers();
+    const checkbox = screen.container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    expect(checkbox.disabled).toBe(false);
+    await act(async () => checkbox.click());
+    await vi.advanceTimersByTimeAsync(500);
+    expect(state.writeFile).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: {
+        cwd: "/workspace",
+        relativePath: "/elsewhere/tasks.md",
+        contents: "- [x] Keep the rest of this file\n",
+        threadId: threadRef.threadId,
+      },
+    });
+  });
+
+  it.each([
+    ["an ordinary thread", null],
+    ["a crew thread", { crewOf: ThreadId.make("firstmate") }],
+    ["a secondmate", { coordinator: true, crewOf: ThreadId.make("firstmate") }],
+  ])("keeps a host file read-only in %s", async (_name, threadShell) => {
+    using _settings = setup();
+    state.threadShell = threadShell;
+    await using screen = await render(markdownPreview(false, undefined, "/elsewhere/tasks.md"));
+    using _timers = fakeTimers();
+    const checkbox = screen.container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    expect(checkbox.disabled).toBe(true);
+    await act(async () => checkbox.click());
+    await vi.advanceTimersByTimeAsync(500);
+    expect(state.writeFile).not.toHaveBeenCalled();
   });
 });
 

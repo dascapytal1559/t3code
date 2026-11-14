@@ -32,6 +32,7 @@ import {
   type GuestMessageId,
   isCompactionCommandMessage,
   isOrchestrationV2WorkActive,
+  isPrimaryCoordinator,
   isProviderNativeSubagentThread,
   MessageId,
   type NodeId,
@@ -741,11 +742,6 @@ function pendingThreadTitleGenerationEffect(
 
 /** Fork: FirstMate's main thread carries this title instead of a generated one. */
 const COORDINATOR_THREAD_TITLE = "Firstmate";
-
-/** Fork: a pinned coordinator that is not itself crew, which rules out FirstMate's secondmates. */
-function isPrimaryCoordinator(thread: Pick<OrchestrationV2AppThread, "coordinator" | "crewOf">) {
-  return thread.coordinator === true && thread.crewOf === undefined;
-}
 
 function delegatedTasksStopEffect(command: {
   readonly commandId: CommandId;

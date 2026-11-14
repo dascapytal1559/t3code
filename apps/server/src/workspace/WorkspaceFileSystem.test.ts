@@ -522,19 +522,63 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
       }),
     );
 
-    it.effect("rejects writes by absolute path", () =>
+    it.effect("saves an existing host file by absolute path only when host files are allowed", () =>
       Effect.gen(function* () {
         const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const cwd = yield* makeTempDir;
         const outsideDir = yield* makeTempDir;
         const absolutePath = path.join(outsideDir, "cleanup-report.md");
+        yield* writeTextFile(outsideDir, "cleanup-report.md", "# Draft\n");
+        const input = { cwd, relativePath: absolutePath, contents: "# Edited\n" };
 
-        const error = yield* workspaceFileSystem
-          .writeFile({ cwd, relativePath: absolutePath, contents: "# Edited\n" })
-          .pipe(Effect.flip);
+        for (const options of [undefined, { hostFiles: false }]) {
+          const error = yield* workspaceFileSystem.writeFile(input, options).pipe(Effect.flip);
+          expect(error).toBeInstanceOf(WorkspacePaths.WorkspacePathOutsideRootError);
+        }
+        expect(yield* fileSystem.readFileString(absolutePath)).toBe("# Draft\n");
 
-        expect(error).toBeInstanceOf(WorkspacePaths.WorkspacePathOutsideRootError);
+        expect(yield* workspaceFileSystem.writeFile(input, { hostFiles: true })).toEqual({
+          relativePath: absolutePath,
+        });
+        expect(yield* fileSystem.readFileString(absolutePath)).toBe("# Edited\n");
+      }),
+    );
+
+    it.effect("refuses host writes to missing files, server state and git folders", () =>
+      Effect.gen(function* () {
+        const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const config = yield* ServerConfig.ServerConfig;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const outsideDir = yield* makeTempDir;
+        yield* writeTextFile(config.stateDir, "statev2.sqlite", "state\n");
+        yield* writeTextFile(outsideDir, ".git/config", "[core]\n");
+        const write = (relativePath: string) =>
+          workspaceFileSystem
+            .writeFile({ cwd, relativePath, contents: "x\n" }, { hostFiles: true })
+            .pipe(Effect.flip);
+
+        expect(yield* write(path.join(outsideDir, "missing.md"))).toBeInstanceOf(
+          WorkspaceFileSystem.WorkspaceFileSystemOperationError,
+        );
+        expect(yield* fileSystem.exists(path.join(outsideDir, "missing.md"))).toBe(false);
+        expect(yield* write(outsideDir)).toBeInstanceOf(
+          WorkspaceFileSystem.WorkspacePathNotFileError,
+        );
+        for (const target of [
+          path.join(config.stateDir, "statev2.sqlite"),
+          path.join(outsideDir, ".git/config"),
+        ]) {
+          expect(yield* write(target)).toBeInstanceOf(
+            WorkspaceFileSystem.WorkspaceFilePathEscapeError,
+          );
+        }
+        expect(yield* fileSystem.readFileString(path.join(config.stateDir, "statev2.sqlite"))).toBe(
+          "state\n",
+        );
       }),
     );
 

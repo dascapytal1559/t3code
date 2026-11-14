@@ -524,6 +524,8 @@ export const ProjectWriteFileInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   relativePath: Schema.NonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
   contents: Schema.String,
+  /** Fork: the saving panel's thread. FirstMate's own thread may also save existing host files. */
+  threadId: Schema.optional(ThreadId),
 });
 export type ProjectWriteFileInput = typeof ProjectWriteFileInput.Type;
 

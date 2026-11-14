@@ -5,9 +5,11 @@ import {
   AuthPreviewOperateScope,
   type EditorId,
   type EnvironmentId,
+  isPrimaryCoordinator,
   type ProjectId,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
+  type ThreadId,
 } from "@t3tools/contracts";
 import { filePreviewDelimiter } from "@t3tools/shared/delimitedPreview";
 import { AuthFilesystemWriteScope } from "@t3tools/contracts";
@@ -83,6 +85,7 @@ import { useEnvironmentHttpBaseUrl, usePrimaryEnvironmentId } from "~/state/envi
 import { hostEnvironmentIdAtom } from "~/state/primaryEnvironment";
 import { previewEnvironment } from "~/state/preview";
 import { serverEnvironment } from "~/state/server";
+import { useQuietThreadShell } from "~/state/entities";
 import { useEnvironmentScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
@@ -724,6 +727,8 @@ interface EditableFileSurfaceProps {
   projectId?: ProjectId | undefined;
   cwd: string;
   relativePath: string;
+  /** Fork: FirstMate's thread, sent with saves of a host file it may edit. */
+  hostFileThreadId: ThreadId | undefined;
   composerDraftTarget: ScopedThreadRef | DraftId;
   contents: string;
   resolvedTheme: "light" | "dark";
@@ -744,6 +749,7 @@ function EditableFileSurface({
   projectId,
   cwd,
   relativePath,
+  hostFileThreadId,
   composerDraftTarget,
   contents,
   resolvedTheme,
@@ -764,7 +770,7 @@ function EditableFileSurface({
   };
   const surfaceRef = useRef<HTMLDivElement>(null);
   const selectionFrameRef = useRef<number | null>(null);
-  const saveTarget = { environmentId, cwd, relativePath };
+  const saveTarget = { environmentId, cwd, relativePath, threadId: hostFileThreadId };
   useFileSaveSession(saveTarget, onPendingChange);
   // Retain file identity for echoed editor changes; only external changes replace the editor's draft.
   const [externalFile, setExternalFile] = useState(() =>
@@ -1023,6 +1029,7 @@ function RenderedMarkdownSurface({
   environmentId,
   cwd,
   relativePath,
+  hostFileThreadId,
   contents,
   threadRef,
   workspaceMutationId,
@@ -1042,7 +1049,7 @@ function RenderedMarkdownSurface({
   readOnly: boolean;
   workspaceMutationId: string | null;
 }) {
-  const saveTarget = { environmentId, cwd, relativePath };
+  const saveTarget = { environmentId, cwd, relativePath, threadId: hostFileThreadId };
   useFileSaveSession(saveTarget, onPendingChange);
 
   return (
@@ -1145,6 +1152,16 @@ export default function FilePreviewPanel({
   const isHtml = relativePath !== null && !isPdf && isBrowserPreviewFile(relativePath);
   const isHostFile =
     attachment !== undefined || (relativePath !== null && isHostPath(relativePath));
+  const threadShell = useQuietThreadShell(threadRef);
+  // Fork: FirstMate's thread is the captain's command center, so it edits host files too.
+  const hostFileThreadId =
+    attachment === undefined &&
+    isHostFile &&
+    threadShell !== null &&
+    isPrimaryCoordinator(threadShell)
+      ? threadRef.threadId
+      : undefined;
+  const readOnlyHostFile = isHostFile && hostFileThreadId === undefined;
   const fileAccess = useFilesystemReadAccess(environmentId);
   const { canReadFiles } = fileAccess;
   const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
@@ -1242,7 +1259,7 @@ export default function FilePreviewPanel({
     !isDocument;
   const mayOpenEditor =
     previewPath !== null &&
-    !isHostFile &&
+    !readOnlyHostFile &&
     canWriteFiles &&
     file.error === null &&
     !file.data?.truncated &&
@@ -1492,7 +1509,11 @@ export default function FilePreviewPanel({
           ) : null}
         </div>
       ) : null}
-      {relativePath && !attachment && !isHostFile && !canWriteFiles && !fileAccess.isPending ? (
+      {relativePath &&
+      !attachment &&
+      !readOnlyHostFile &&
+      !canWriteFiles &&
+      !fileAccess.isPending ? (
         <div className="shrink-0 border-b px-3 py-1.5 text-2xs text-muted-foreground">
           Read-only connection. Unsaved edits are kept until write access returns.
         </div>
@@ -1662,10 +1683,11 @@ export default function FilePreviewPanel({
                 environmentId={environmentId}
                 cwd={cwd}
                 relativePath={relativePath}
+                hostFileThreadId={hostFileThreadId}
                 threadRef={threadRef}
                 contents={file.data.contents}
                 workspaceMutationId={workspaceMutationId}
-                readOnly={file.data.truncated || isHostFile || !canWriteFiles}
+                readOnly={file.data.truncated || readOnlyHostFile || !canWriteFiles}
                 onPendingChange={onPendingChange}
               />
             ) : tableDelimiter && renderTable ? (
@@ -1675,7 +1697,7 @@ export default function FilePreviewPanel({
                 text={file.data.contents}
                 delimiter={tableDelimiter}
               />
-            ) : file.data.truncated || isHostFile || !canWriteFiles ? (
+            ) : file.data.truncated || readOnlyHostFile || !canWriteFiles ? (
               <SourceFilePreview
                 name={relativePath}
                 text={file.data.contents}
@@ -1691,6 +1713,7 @@ export default function FilePreviewPanel({
                   projectId={projectId}
                   cwd={cwd}
                   relativePath={relativePath}
+                  hostFileThreadId={hostFileThreadId}
                   composerDraftTarget={composerDraftTarget}
                   contents={file.data.contents}
                   resolvedTheme={resolvedTheme}
