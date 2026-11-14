@@ -2190,7 +2190,7 @@ it.effect("reads a crew thread stored with legacy crew lineage as crewOf", () =>
   }).pipe(Effect.provide(layerTest)),
 );
 
-it.effect("reads an archived decision thread from before decisions were a list", () =>
+it.effect("reads an archived thread that stores a removed decision and execution fence", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;
     const sql = yield* SqlClient.SqlClient;
@@ -2214,13 +2214,18 @@ it.effect("reads an archived decision thread from before decisions were a list",
       commandId: CommandId.make(`archive:${threadId}`),
       threadId,
     });
-    // What FirstMate's decision threads stored; FirstMate archived them all before they were removed.
-    const legacyDecision = sql`json_set(payload_json,
+    // What FirstMate's decision threads and fenced worker threads stored; nothing writes either now.
+    const removedFields = sql`json_set(payload_json,
       '$.decisionOf', 'thread:firstmate',
-      '$.decision', json(${JSON.stringify({ taskId: "garden-shed-paint", revision: 2 })}))`;
-    yield* sql`UPDATE orchestration_v2_projection_threads SET payload_json = ${legacyDecision}
+      '$.decision', json(${JSON.stringify({ taskId: "garden-shed-paint", revision: 2 })}),
+      '$.executionFence', json(${JSON.stringify({
+        label: "garden-shed-paint/1",
+        worktreePath: null,
+        fencedAt: "2026-11-14T07:40:10.325Z",
+      })}))`;
+    yield* sql`UPDATE orchestration_v2_projection_threads SET payload_json = ${removedFields}
       WHERE thread_id = ${threadId}`;
-    yield* sql`UPDATE orchestration_events SET payload_json = ${legacyDecision}
+    yield* sql`UPDATE orchestration_events SET payload_json = ${removedFields}
       WHERE stream_id = ${threadId} AND event_type = 'thread.created'`;
 
     const reads = yield* crewReadsDecodeUpstream(threadId, "archive");
@@ -2228,6 +2233,7 @@ it.effect("reads an archived decision thread from before decisions were a list",
       assert.equal(read.title, "Garden shed paint");
       assert.notProperty(read, "decisionOf");
       assert.notProperty(read, "decision");
+      assert.notProperty(read, "executionFence");
     }
   }).pipe(Effect.provide(layerTest)),
 );
