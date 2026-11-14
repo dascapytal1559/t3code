@@ -613,6 +613,29 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceFileSystemLive", (i
       }),
     );
 
+    it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
+      "saves a host Windows drive path where wslpath mounts it, and never inside the project",
+      () =>
+        Effect.gen(function* () {
+          const { mountRoot, service, underWsl } = yield* makeWslHost;
+          const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const cwd = yield* makeTempDir;
+          const mountedPath = path.join(mountRoot, "c/Users/me/notes.md");
+          yield* writeTextFile(mountRoot, "c/Users/me/notes.md", "# Draft\n");
+          const input = { cwd, relativePath: "C:/Users/me/notes.md", contents: "# Edited\n" };
+
+          yield* underWsl(service.writeFile(input, { hostFiles: true }));
+          expect(yield* fileSystem.readFileString(mountedPath)).toBe("# Edited\n");
+
+          const error = yield* service
+            .writeFile({ ...input, contents: "# Lost\n" }, { hostFiles: true })
+            .pipe(Effect.provideService(HostProcess.Platform, "darwin"), Effect.flip);
+          expect(error).toBeInstanceOf(WorkspacePaths.WorkspacePathOutsideRootError);
+          expect(yield* fileSystem.readDirectory(cwd)).toEqual([]);
+        }),
+    );
+
     it.effect("refuses host writes to missing files, server state and git folders", () =>
       Effect.gen(function* () {
         const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;

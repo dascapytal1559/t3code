@@ -14,6 +14,8 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import * as UsageClaims from "./UsageClaims.ts";
 
+const ORIGINS_RECORDED_SINCE_MS = Date.parse(USAGE_ORIGINS_RECORDED_SINCE);
+
 export interface UsageOriginKey {
   readonly origin: UsageOrigin;
   readonly basis: UsageOriginBasis;
@@ -119,7 +121,7 @@ export function settleOrigin(
 ): UsageOriginKey {
   if (key !== null && (key.origin === "phone" || key.origin === "computer")) return key;
   if (archived) return { origin: "unknown", basis: "archive" };
-  if (timestampMs < Date.parse(USAGE_ORIGINS_RECORDED_SINCE)) {
+  if (timestampMs < ORIGINS_RECORDED_SINCE_MS) {
     return { origin: "unknown", basis: "beforeOrigins" };
   }
   return {

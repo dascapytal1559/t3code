@@ -13,7 +13,7 @@ import type {
 } from "@t3tools/contracts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as HostProcess from "@t3tools/shared/HostProcess";
-import { isNetworkPath } from "@t3tools/shared/path";
+import { isNetworkPath, isWindowsDrivePath } from "@t3tools/shared/path";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -172,6 +172,12 @@ export const make = Effect.gen(function* () {
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
     );
 
+  const resolveHostPath = Effect.fnUntraced(function* (requestedPath: string) {
+    return requestedPath.startsWith("~/")
+      ? expandHomePath(requestedPath, yield* HostProcess.HomeDirectory)
+      : yield* toHostPath(requestedPath);
+  });
+
   const metadataForPath = Effect.fnUntraced(function* (requestedPath: string) {
     const expandedPath = expandHomePath(
       yield* toHostPath(requestedPath),
@@ -261,9 +267,7 @@ export const make = Effect.gen(function* () {
     input: ProjectReadFileInput,
   ) {
     const requestedPath = input.relativePath;
-    const hostPath = requestedPath.startsWith("~/")
-      ? expandHomePath(requestedPath, yield* HostProcess.HomeDirectory)
-      : yield* toHostPath(requestedPath);
+    const hostPath = yield* resolveHostPath(requestedPath);
     if (
       isNetworkPath(hostPath) &&
       !KnownWorkspaces.isWithinRoot(path, path.resolve(hostPath), path.resolve(input.cwd))
@@ -631,11 +635,16 @@ export const make = Effect.gen(function* () {
     "WorkspaceFileSystem.writeFile",
   )(function* (input, options) {
     yield* knownWorkspaces.assertContains(input.cwd);
-    const hostPath = input.relativePath.startsWith("~/")
-      ? expandHomePath(input.relativePath, yield* HostProcess.HomeDirectory)
-      : input.relativePath;
+    const hostPath =
+      options?.hostFiles === true ? yield* resolveHostPath(input.relativePath) : null;
+    if (hostPath !== null && isWindowsDrivePath(input.relativePath) && !path.isAbsolute(hostPath)) {
+      return yield* new WorkspacePaths.WorkspacePathOutsideRootError({
+        workspaceRoot: input.cwd,
+        relativePath: input.relativePath,
+      });
+    }
     const target =
-      options?.hostFiles === true && path.isAbsolute(hostPath)
+      hostPath !== null && path.isAbsolute(hostPath)
         ? yield* resolveHostWriteTarget(input, hostPath)
         : yield* resolveWriteTarget(input);
     const realTargetPath = target.realTargetPath;
