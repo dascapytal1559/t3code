@@ -86,35 +86,36 @@ export const MAX_CAUSE_DEPTH = 8;
 
 /**
  * An agent prompt counts to the phone or computer prompt at the root of its recorded causes, or,
- * when the chain ends at an uncaused prompt, to the device claimed for that prompt's run. Any
- * other root, a missing message, a cycle or a chain past MAX_CAUSE_DEPTH keeps its own origin.
+ * when the chain ends at an uncaused prompt or one no agent sent, to the device claimed for that
+ * prompt's run. An unknown prompt counts to the device claimed for its own run. Any other root, a
+ * missing message, a cycle or a chain past MAX_CAUSE_DEPTH keeps its own origin.
  */
 export function resolveMessageOrigin(
   message: CausalMessage,
   causeOf: (messageId: string) => CausalMessage | undefined,
   claimOfRun: (runId: string) => DeviceOriginKey | undefined = () => undefined,
 ): UsageOriginKey {
+  const claimedFor = (prompt: CausalMessage, via: UsageOriginVia): UsageOriginKey | undefined => {
+    const claimed = prompt.runId === null ? undefined : claimOfRun(prompt.runId);
+    return claimed === undefined
+      ? undefined
+      : { origin: claimed.origin, basis: claimed.basis, via };
+  };
   const direct = classifyMessageOrigin(message);
-  if (!sentByAgent(direct)) return direct;
+  if (!sentByAgent(direct))
+    return isDevice(direct) ? direct : (claimedFor(message, "agent") ?? direct);
   const seen = new Set([message.id]);
   let current = message;
   for (let depth = 0; depth < MAX_CAUSE_DEPTH; depth++) {
     const causeId = current.causedBy;
-    if (causeId === null) {
-      const claimed = current.runId === null ? undefined : claimOfRun(current.runId);
-      return claimed === undefined
-        ? direct
-        : { origin: claimed.origin, basis: claimed.basis, via: direct.origin };
-    }
+    if (causeId === null) return claimedFor(current, direct.origin) ?? direct;
     if (seen.has(causeId)) break;
     seen.add(causeId);
     const cause = causeOf(causeId);
     if (cause === undefined) break;
     const root = classifyMessageOrigin(cause);
-    if (root.origin === "phone" || root.origin === "computer") {
-      return { origin: root.origin, basis: root.basis, via: direct.origin };
-    }
-    if (!sentByAgent(root)) break;
+    if (isDevice(root)) return { origin: root.origin, basis: root.basis, via: direct.origin };
+    if (!sentByAgent(root)) return claimedFor(cause, direct.origin) ?? direct;
     current = cause;
   }
   return direct;
@@ -467,29 +468,31 @@ const make = Effect.gen(function* () {
         ...promptMessages,
         ...claimRows.flatMap((claim) => claimMessage(claim) ?? []),
       ]);
-      // Device claims settle first, so a cause claim can name a prompt inside a claimed turn.
-      const runClaims = new Map<string, DeviceOriginKey>();
-      for (const claim of claimRows) {
-        if (claim.kind === "run" && claim.device !== null)
-          runClaims.set(claim.target, { origin: claim.device, basis: "claim" });
-      }
+      const runClaims = new Map(
+        claimRows.flatMap((claim) =>
+          claim.kind === "run" ? [[claim.target, claim] as const] : [],
+        ),
+      );
+      // A run claim reached again while it resolves is a cycle and counts to no device.
+      const settledRunClaims = new Map<string, DeviceOriginKey | undefined>();
+      const claimOfRun = (runId: string): DeviceOriginKey | undefined => {
+        if (settledRunClaims.has(runId)) return settledRunClaims.get(runId);
+        const claim = runClaims.get(runId);
+        if (claim === undefined) return undefined;
+        settledRunClaims.set(runId, undefined);
+        const key = claimKey(claim);
+        const settled = isDevice(key) ? { origin: key.origin, basis: key.basis } : undefined;
+        settledRunClaims.set(runId, settled);
+        return settled;
+      };
       const originOf = (message: CausalMessage) =>
-        resolveMessageOrigin(
-          message,
-          (id) => causes.get(id),
-          (runId) => runClaims.get(runId),
-        );
+        resolveMessageOrigin(message, (id) => causes.get(id), claimOfRun);
       const claimKey = (claim: UsageClaims.StoredUsageClaim): UsageOriginKey => {
         const message = claimMessage(claim);
         return message === null
           ? { origin: claim.device ?? "computer", basis: "claim", via: "agent" }
           : originOf(message);
       };
-      for (const claim of claimRows) {
-        if (claim.kind !== "run" || claim.device !== null) continue;
-        const key = claimKey(claim);
-        if (isDevice(key)) runClaims.set(claim.target, { origin: key.origin, basis: key.basis });
-      }
 
       const turns: OriginTurn[] = [];
       const worktrees = new Map<string, string>();
@@ -500,7 +503,7 @@ const make = Effect.gen(function* () {
         const message = turnMessages[index] ?? null;
         const own = message === null ? NO_PROMPT : originOf(message);
         // A claimed turn counts there unless its own prompt already traces to a device.
-        const claimed = row.turn_run_id === null ? undefined : runClaims.get(row.turn_run_id);
+        const claimed = row.turn_run_id === null ? undefined : claimOfRun(row.turn_run_id);
         turns.push({
           sessionId: row.session_id,
           threadId: row.thread_id,

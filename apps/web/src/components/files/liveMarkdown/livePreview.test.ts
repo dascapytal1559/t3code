@@ -1,7 +1,8 @@
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { ensureSyntaxTree } from "@codemirror/language";
-import { EditorState } from "@codemirror/state";
-import type { DecorationSet } from "@codemirror/view";
+import { openSearchPanel } from "@codemirror/search";
+import { EditorState, StateEffect, type TransactionSpec } from "@codemirror/state";
+import type { DecorationSet, EditorView } from "@codemirror/view";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -12,6 +13,7 @@ import {
   setFocused,
   setImageUrls,
 } from "./livePreview";
+import { findReplace } from "./findReplace";
 import { liveMarkdownExtensions } from "./markdownSyntax";
 import { ImageWidget } from "./widgets";
 
@@ -214,6 +216,16 @@ describe("live preview", () => {
     expect(at.dimmed).toEqual(["![Chart](https://t3.codes/chart.png)"]);
   });
 
+  it("shows an image or a link address that spans lines as its source, hiding no line break", () => {
+    const image = drawn("![a picture of\nthe station](https://t3.codes/station.png)");
+    expect(image.images).toEqual(["https://t3.codes/station.png"]);
+    expect(image.replaced).toEqual([]);
+    expect(image.dimmed).toEqual(["![a picture of\nthe station](https://t3.codes/station.png)"]);
+    const link = drawn('[x](https://a.b "first\nsecond")');
+    expect(link.replaced).toEqual(["["]);
+    expect(link.dimmed).toEqual(['](https://a.b "first\nsecond")']);
+  });
+
   it("names the image files that need a URL, and draws each once it has one", () => {
     const state = editorOn("![Chart](media/chart.svg)");
     const whole = [{ from: 0, to: state.doc.length }];
@@ -243,6 +255,30 @@ describe("live preview", () => {
     const at = drawn("Before\n\n| a | b |\n|---|---|\n| 1 ^| 2 |\n\nAfter", "^");
     expect(at.widgets).toEqual([]);
     expect(at.lineClasses[5]).toBe("cm-lp-src-line");
+  });
+
+  it("opens a drawn table that find steps into while the find bar has the focus", () => {
+    let state = editorOn("Before\n\n| a | b |\n|---|---|\n| 417 | 2 |\n\nAfter", "^");
+    state = state.update({ effects: StateEffect.appendConfig.of(findReplace) }).state;
+    // Opening the find bar reads and writes only the state.
+    const findBar = {
+      get state() {
+        return state;
+      },
+      dispatch: (spec: TransactionSpec) => {
+        state = state.update(spec).state;
+      },
+    };
+    openSearchPanel(findBar as unknown as EditorView);
+    const tables = () => {
+      const view: Drawn = { ...drawn(""), widgets: [] };
+      summarize(state, blockDecorations(state), view);
+      return view.widgets;
+    };
+    expect(tables()).toEqual(["TableWidget"]);
+    const match = state.doc.toString().indexOf("417");
+    state = state.update({ selection: { anchor: match, head: match + 3 } }).state;
+    expect(tables()).toEqual([]);
   });
 
   it("leaves a table inside a list as its source", () => {

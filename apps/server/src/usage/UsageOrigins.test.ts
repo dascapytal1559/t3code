@@ -224,13 +224,18 @@ describe("resolveMessageOrigin", () => {
     });
   });
 
-  it("ends an uncaused chain at the device its prompt's run was claimed for", () => {
+  it("ends an uncaused or unknown chain at the device its prompt's run was claimed for", () => {
     const wake = causal("wake", { createdBy: "agent", notification: true, runId: "run-wake" });
     const launch = causal("launch", { ...fromMcp, crew: true, causedBy: "wake" });
     const steer = causal("steer", { ...fromMcp, runId: "run-wake", causedBy: "computer" });
     const unclaimed = causal("unclaimed", { ...fromMcp, runId: "run-other" });
-    const byId = messages([computer, wake, launch, steer, unclaimed]);
-    const claims = new Map([["run-wake", { origin: "phone", basis: "claim" } as const]]);
+    const scheduled = causal("scheduled", { creationSource: "server", runId: "run-scheduled" });
+    const worker = causal("worker", { ...fromMcp, crew: true, causedBy: "scheduled" });
+    const byId = messages([computer, wake, launch, steer, unclaimed, scheduled, worker]);
+    const claims = new Map([
+      ["run-wake", { origin: "phone", basis: "claim" } as const],
+      ["run-scheduled", { origin: "computer", basis: "claim" } as const],
+    ]);
     const claimOfRun = (runId: string) => claims.get(runId);
     assert.deepStrictEqual(resolveMessageOrigin(wake, byId, claimOfRun), {
       origin: "phone",
@@ -252,6 +257,17 @@ describe("resolveMessageOrigin", () => {
     assert.deepStrictEqual(resolveMessageOrigin(unclaimed, byId, claimOfRun), {
       origin: "agent",
       basis: "stamp",
+    });
+    // An unknown prompt counts to its run's claim, and so does the work it causes.
+    assert.deepStrictEqual(resolveMessageOrigin(scheduled, byId, claimOfRun), {
+      origin: "computer",
+      basis: "claim",
+      via: "agent",
+    });
+    assert.deepStrictEqual(resolveMessageOrigin(worker, byId, claimOfRun), {
+      origin: "computer",
+      basis: "claim",
+      via: "crew",
     });
   });
 });
@@ -523,6 +539,66 @@ describe("UsageOrigins.read", () => {
         },
       });
 
+      // A wake claimed for a later prompt, whose run is claimed after it for the phone prompt.
+      yield* seedThread({ id: "firstmate" });
+      for (const [ordinal, id, startedAt] of [
+        [1, "fm-early", "2026-08-07T04:00:00.000Z"],
+        [2, "fm-later", "2026-08-07T04:10:00.000Z"],
+      ] as const) {
+        yield* seedRun({
+          id,
+          ordinal,
+          threadId: "firstmate",
+          sessionId: "fm-session",
+          startedAt,
+          message: { createdBy: "agent", creationSource: "provider" },
+        });
+      }
+      yield* claims.claim({
+        target: { kind: "run", runId: "run-fm-early" },
+        value: {
+          causedBy: {
+            threadId: ThreadId.make("firstmate"),
+            messageId: MessageId.make("message-fm-later"),
+          },
+        },
+      });
+      yield* claims.claim({
+        target: { kind: "run", runId: "run-fm-later" },
+        value: { causedBy: cause },
+      });
+      // An unstamped scheduled prompt claimed for the computer, and the worker it launched.
+      yield* seedThread({ id: "scheduled" });
+      yield* seedRun({
+        id: "scheduled",
+        ordinal: 1,
+        threadId: "scheduled",
+        sessionId: "scheduled-session",
+        startedAt: "2026-08-07T05:00:00.000Z",
+        message: { createdBy: "user", creationSource: "server" },
+      });
+      yield* claims.claim({
+        target: { kind: "run", runId: "run-scheduled" },
+        value: { device: "computer" },
+      });
+      yield* seedThread({
+        id: "scheduled-worker",
+        crewOf: "scheduled",
+        causedBy: { threadId: "scheduled", messageId: "message-scheduled" },
+      });
+      yield* seedRun({
+        id: "scheduled-ask",
+        ordinal: 1,
+        threadId: "scheduled-worker",
+        sessionId: "scheduled-worker-session",
+        startedAt: "2026-08-07T05:05:00.000Z",
+        message: {
+          createdBy: "agent",
+          creationSource: "mcp",
+          origin: { surface: "mcp", deviceType: "bot" },
+        },
+      });
+
       const origins = yield* UsageOrigins;
       const snapshot = yield* origins.read(
         Date.parse("2026-08-07T00:00:00.000Z"),
@@ -557,6 +633,19 @@ describe("UsageOrigins.read", () => {
         via: "agent",
       });
       assert.strictEqual(at("removed", "2026-08-07T03:00:00Z"), null);
+      const fromPhone = { origin: "phone", basis: "stamp", via: "agent" } as const;
+      assert.deepStrictEqual(at("fm-session", "2026-08-07T04:01:00Z"), fromPhone);
+      assert.deepStrictEqual(at("fm-session", "2026-08-07T04:11:00Z"), fromPhone);
+      assert.deepStrictEqual(at("scheduled-session", "2026-08-07T05:01:00Z"), {
+        origin: "computer",
+        basis: "claim",
+        via: "agent",
+      });
+      assert.deepStrictEqual(at("scheduled-worker-session", "2026-08-07T05:06:00Z"), {
+        origin: "computer",
+        basis: "claim",
+        via: "crew",
+      });
       // A CLI run inside the worker's worktree counts to the worker's turn then.
       assert.deepStrictEqual(at("cli-session", "2026-08-07T01:25:00Z", "/wt/worker/runs"), viaCrew);
       assert.deepStrictEqual(
@@ -564,10 +653,14 @@ describe("UsageOrigins.read", () => {
           .map(({ key }) => `${key.origin}/${key.basis}/${key.via ?? "-"}`)
           .toSorted(),
         [
+          "computer/claim/agent",
+          "computer/claim/crew",
           "crew/stamp/-",
           "phone/claim/crew",
           "phone/claim/crew",
           "phone/stamp/-",
+          "phone/stamp/agent",
+          "phone/stamp/agent",
           "phone/stamp/crew",
           "phone/stamp/crew",
         ],

@@ -12,7 +12,7 @@ import { findReplace } from "./findReplace";
 import { folding } from "./folding";
 import { formatKeymap, listKeymap } from "./formatting";
 import { lineChanges } from "./lineDiff";
-import { fromEditorText, type LineEnding, lineEndingOf, toEditorText } from "./lineEndings";
+import { fileFormatOf, fromEditorText, type LineEnding, toEditorText } from "./lineEndings";
 import { livePreview, setImageUrls } from "./livePreview";
 import { liveMarkdownExtensions } from "./markdownSyntax";
 import { headingAnchors, type OutlineItem } from "./outline";
@@ -32,7 +32,7 @@ export interface LiveMarkdownEditorOptions extends LivePreviewConfig {
 
 export interface LiveMarkdownEditor {
   readonly view: EditorView;
-  /** The file's text, with the line endings it was opened with. */
+  /** The file's text, with its own line endings and byte order mark. */
   readonly text: () => string;
   /** Takes contents that changed outside the editor; the caret, scroll and undo history stay. */
   readonly applyExternal: (next: string) => void;
@@ -53,13 +53,13 @@ export interface LiveMarkdownEditor {
 }
 
 export function createLiveMarkdownEditor(options: LiveMarkdownEditorOptions): LiveMarkdownEditor {
-  let ending = lineEndingOf(options.doc);
+  let format = fileFormatOf(options.doc);
   const separator = new Compartment();
-  const text = () => fromEditorText(view.state.doc.toString(), ending);
+  const text = () => fromEditorText(view.state.doc.toString(), format);
 
   // One entry per feature: a new behaviour is a new file added to this list.
   const extensions: Extension[] = [
-    separator.of(separatorFor(ending)),
+    separator.of(separatorFor(format.ending)),
     history(),
     drawSelection(),
     dropCursor(),
@@ -100,7 +100,7 @@ export function createLiveMarkdownEditor(options: LiveMarkdownEditorOptions): Li
     }),
   ];
 
-  const doc = toEditorText(options.doc, ending);
+  const doc = toEditorText(options.doc, format);
   // The caret starts below the frontmatter, which would otherwise open as its source.
   const frontmatter = markdownFrontmatterLength(doc);
   const view = new EditorView({
@@ -144,21 +144,17 @@ export function createLiveMarkdownEditor(options: LiveMarkdownEditorOptions): Li
       return showHeading(headings[headingAnchors(headings).indexOf(anchor.toLowerCase())]);
     },
     applyExternal(next) {
-      const nextEnding = lineEndingOf(next);
-      const incoming = toEditorText(next, nextEnding);
+      const nextFormat = fileFormatOf(next, format);
+      const incoming = toEditorText(next, nextFormat);
       const current = view.state.doc.toString();
-      if (nextEnding === ending && incoming === current) return;
-      if (nextEnding === ending) {
-        view.dispatch(externalChangeSpec(view.state, lineChanges(current, incoming)));
-        return;
-      }
-      // The file changed its line endings: take it whole, under its new separator.
-      ending = nextEnding;
+      const newEnding = nextFormat.ending !== format.ending;
+      if (!newEnding && nextFormat.bom === format.bom && incoming === current) return;
+      format = nextFormat;
       view.dispatch(
         externalChangeSpec(
           view.state,
-          [{ from: 0, to: current.length, insert: incoming }],
-          [separator.reconfigure(separatorFor(ending))],
+          lineChanges(current, incoming),
+          newEnding ? [separator.reconfigure(separatorFor(format.ending))] : [],
         ),
       );
     },

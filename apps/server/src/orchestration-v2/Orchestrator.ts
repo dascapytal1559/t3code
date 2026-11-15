@@ -1554,8 +1554,9 @@ function sessionsReleasedByFreshContext(
 }
 
 /**
- * Fork: a fresh start on FirstMate's main thread ends the previous session even mid-work.
- * Left running, it keeps FirstMate's session lock and goes on dispatching where nobody sees it.
+ * Fork: an explicit fresh start on FirstMate's main thread ends the previous session even
+ * mid-work. Left running, it keeps FirstMate's session lock and goes on dispatching where nobody
+ * sees it.
  */
 function retiresBusySessions(
   freshContext: boolean,
@@ -1828,6 +1829,18 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     }
     return false;
   });
+
+  const freshContextEndsBackgroundWork = Effect.fn("Orchestrator.freshContextEndsBackgroundWork")(
+    function* (
+      projection: Pick<OrchestrationV2ThreadProjection, "providerSessions" | "providerThreads">,
+      activeProviderThread: OrchestrationV2ProviderThread | undefined,
+    ) {
+      for (const session of sessionsReleasedByFreshContext(projection, activeProviderThread)) {
+        if (yield* sessionHasBackgroundWork(session, projection.providerThreads)) return true;
+      }
+      return false;
+    },
+  );
 
   // Runs in every command transaction; avoid reading thousands of finished leaf nodes.
   const readCommandProjection = (
@@ -2734,19 +2747,21 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         queuedRun.freshContext === true,
       );
       // Fork: a new exchange on a cold FirstMate thread starts fresh, like an armed /clear.
-      const coldClear = startsFreshOnColdCache(
-        projection,
-        activeProviderThread,
-        {
-          ...queuedMessage,
-          providerInstanceId: queuedRun.providerInstanceId,
-          freshContext: queuedRun.freshContext,
-          restartContinuationOfRunId: queuedRun.restartContinuationOfRunId,
-          usageLimitContinuationOfRunId: queuedRun.usageLimitContinuationOfRunId,
-          steerFollowUpOfRunId: queuedRun.steerWhenReadyRunId,
-        },
-        DateTime.toEpochMillis(now),
-      );
+      const coldClear =
+        startsFreshOnColdCache(
+          projection,
+          activeProviderThread,
+          {
+            ...queuedMessage,
+            providerInstanceId: queuedRun.providerInstanceId,
+            freshContext: queuedRun.freshContext,
+            restartContinuationOfRunId: queuedRun.restartContinuationOfRunId,
+            usageLimitContinuationOfRunId: queuedRun.usageLimitContinuationOfRunId,
+            manualContinuationOfRunId: queuedRun.manualContinuationOfRunId,
+            steerFollowUpOfRunId: queuedRun.steerWhenReadyRunId,
+          },
+          DateTime.toEpochMillis(now),
+        ) && !(yield* freshContextEndsBackgroundWork(projection, activeProviderThread));
       const freshContext = queuedRun.freshContext === true || coldClear;
       const contextBoundary = freshContext ? ordinal : contextBoundaryOrdinal(projection);
       // A run queued before a fresh run started is bound to the conversation that run left behind.
@@ -2838,7 +2853,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const busySessionIds = new Set<ProviderSessionId>();
       for (const session of releasableSessions) {
         if (
-          !retiresBusySessions(freshContext, projection.thread) &&
+          !retiresBusySessions(queuedRun.freshContext === true, projection.thread) &&
           (yield* sessionHasBackgroundWork(session, projection.providerThreads))
         ) {
           busySessionIds.add(session.id);
@@ -8245,12 +8260,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
     }
     // Fork: a new exchange on a cold FirstMate thread starts fresh, like an armed /clear.
-    const coldClear = startsFreshOnColdCache(
-      projection,
-      activeProviderThread,
-      { ...command, delegatedCompletion, providerInstanceId: modelSelection.instanceId },
-      DateTime.toEpochMillis(now),
-    );
+    const coldClear =
+      startsFreshOnColdCache(
+        projection,
+        activeProviderThread,
+        { ...command, delegatedCompletion, providerInstanceId: modelSelection.instanceId },
+        DateTime.toEpochMillis(now),
+      ) && !(yield* freshContextEndsBackgroundWork(projection, activeProviderThread));
     if (coldClear) freshContext = true;
     if (
       freshContext &&
@@ -8310,7 +8326,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const sessionsToDetach: Array<OrchestrationV2ProviderSession> = [];
     for (const detaching of releasableSessions) {
       if (
-        !retiresBusySessions(freshContext, projection.thread) &&
+        !retiresBusySessions(command.freshContext === true, projection.thread) &&
         (yield* sessionHasBackgroundWork(detaching, projection.providerThreads))
       ) {
         // A schedule has nobody to wait or press Stop; like a queued fresh start, leave it running.

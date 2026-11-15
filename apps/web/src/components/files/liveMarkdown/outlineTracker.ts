@@ -41,6 +41,8 @@ const sameHeadings = (a: readonly OutlineItem[], b: readonly OutlineItem[]) =>
 
 export const NO_OUTLINE: OutlineSnapshot = { headings: [], active: -1 };
 
+const REBUILD_DELAY_MS = 300;
+
 /**
  * Follows the file's headings and the section being read, for the pinned outline.
  * It does the work only while something listens, and hands out the same snapshot
@@ -50,6 +52,7 @@ class OutlineTracker implements PluginValue {
   private headings: EditorHeading[] | null = null;
   private snapshot = NO_OUTLINE;
   private stale = true;
+  private rebuild: ReturnType<typeof setTimeout> | undefined;
   private readonly listeners = new Set<() => void>();
   private readonly onScroll = () => this.changed();
 
@@ -58,10 +61,21 @@ class OutlineTracker implements PluginValue {
   }
 
   update(update: ViewUpdate) {
-    const reparsed =
-      update.docChanged || syntaxTree(update.state) !== syntaxTree(update.startState);
-    if (reparsed) this.headings = null;
-    if (reparsed || update.selectionSet || update.geometryChanged) this.changed();
+    const { changes } = update;
+    if (update.docChanged && this.headings) {
+      this.headings = this.headings.map((heading) => ({
+        ...heading,
+        from: changes.mapPos(heading.from),
+      }));
+    }
+    if (update.docChanged || syntaxTree(update.state) !== syntaxTree(update.startState)) {
+      clearTimeout(this.rebuild);
+      this.rebuild = setTimeout(() => {
+        this.headings = null;
+        this.changed();
+      }, REBUILD_DELAY_MS);
+    }
+    if (update.docChanged || update.selectionSet || update.geometryChanged) this.changed();
   }
 
   /** The outline as it is now; the same object until it changes. */
@@ -77,6 +91,7 @@ class OutlineTracker implements PluginValue {
   }
 
   destroy() {
+    clearTimeout(this.rebuild);
     this.view.scrollDOM.removeEventListener("scroll", this.onScroll);
     this.listeners.clear();
   }

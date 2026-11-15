@@ -33,11 +33,20 @@ describe("tableModel", () => {
       [
         { offset: 43, content: [] },
         { offset: 46, content: [text("2")] },
+        { offset: 49, content: [] },
       ],
     ]);
     expect(tableModel("a | b\n--|--\n1 | 2")?.rows[0]?.map((cell) => cell.content)).toEqual([
       [text("1")],
       [text("2")],
+    ]);
+  });
+
+  it("gives every row the header's cells, as GFM spec example 204 does", () => {
+    const model = tableModel("| abc | def |\n| --- | --- |\n| bar |\n| bar | baz | boo |");
+    expect(model?.rows.map((row) => row.map((cell) => cell.content))).toEqual([
+      [[text("bar")], []],
+      [[text("bar")], [text("baz")]],
     ]);
   });
 
@@ -52,7 +61,8 @@ describe("tableModel", () => {
       text(" "),
       { kind: "strike", children: [text("gone")] },
       text(" "),
-      { kind: "code", text: "code \\| x" },
+      // GFM spec example 200: an escaped pipe is a pipe inside a code span too.
+      { kind: "code", text: "code | x" },
       text(" "),
       { kind: "link", href: "https://t3.codes", children: [text("site")] },
       text(" a|b"),

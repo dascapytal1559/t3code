@@ -3494,6 +3494,8 @@ describe("orchestration v2 provider switching", () => {
       readonly nativeThreadGeneration: Ref.Ref<number>;
       readonly holdFirstTurn?: Deferred.Deferred<void>;
       readonly releaseFirstTurn?: Deferred.Deferred<void>;
+      readonly backgroundWork?: Ref.Ref<boolean>;
+      readonly interruptedRunOrdinals?: ReadonlySet<number>;
     },
   ) =>
     ProviderReplayHarness.layerWithRegistry(
@@ -3578,7 +3580,17 @@ describe("orchestration v2 provider switching", () => {
       });
     });
 
-  it.live.each([
+  it.live.each<
+    readonly [
+      string,
+      {
+        readonly kind: Parameters<typeof coldCacheMessage>[2];
+        readonly cold: boolean;
+        readonly fresh: boolean;
+        readonly background?: true;
+      },
+    ]
+  >([
     ["a message from the web", { kind: "web", cold: true, fresh: true }],
     ["a message an agent sent over MCP", { kind: "mcp", cold: true, fresh: true }],
     ["T3's restart note", { kind: "restart-note", cold: true, fresh: true }],
@@ -3586,11 +3598,19 @@ describe("orchestration v2 provider switching", () => {
     ["an armed /clear", { kind: "clear", cold: true, fresh: true }],
     ["a background wake", { kind: "wake", cold: true, fresh: false }],
     ["a message while the cache is warm", { kind: "web", cold: false, fresh: false }],
-  ] as const)(
+    [
+      "a message while the old session runs background work",
+      { kind: "web", cold: true, fresh: false, background: true },
+    ],
+    [
+      "an armed /clear while the old session runs background work",
+      { kind: "clear", cold: true, fresh: true, background: true },
+    ],
+  ])(
     "on FirstMate's thread after its first run, %s starts fresh only when it begins a new exchange on a cold cache",
-    ([, { kind, cold, fresh }]) =>
+    ([, { kind, cold, fresh, background }]) =>
       Effect.gen(function* () {
-        const key = `cold-cache-${kind}-${cold ? "cold" : "warm"}`;
+        const key = `cold-cache-${kind}-${cold ? "cold" : "warm"}${background ? "-background" : ""}`;
         const cwd = yield* checkpointWorkspace(key);
         const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
         const closedSessions = yield* Ref.make<ReadonlyArray<string>>([]);
@@ -3599,6 +3619,7 @@ describe("orchestration v2 provider switching", () => {
           capturedTurns,
           closedSessions,
           nativeThreadGeneration: yield* Ref.make(0),
+          backgroundWork: yield* Ref.make(background === true),
         });
         const threadId = ThreadId.make(`thread:${key}`);
         yield* Effect.gen(function* () {
@@ -3654,9 +3675,12 @@ describe("orchestration v2 provider switching", () => {
       }),
   );
 
-  it.live("starts a held queue fresh once on FirstMate's thread after its cache expired", () =>
+  it.live.each([
+    ["starts a held queue fresh once", false],
+    ["keeps a held queue in a session still running background work", true],
+  ] as const)("%s on FirstMate's thread after its cache expired", ([, background]) =>
     Effect.gen(function* () {
-      const key = "cold-cache-queue";
+      const key = `cold-cache-queue${background ? "-background" : ""}`;
       const cwd = yield* checkpointWorkspace(key);
       const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
       const closedSessions = yield* Ref.make<ReadonlyArray<string>>([]);
@@ -3669,6 +3693,7 @@ describe("orchestration v2 provider switching", () => {
         nativeThreadGeneration: yield* Ref.make(0),
         holdFirstTurn: started,
         releaseFirstTurn: release,
+        backgroundWork: yield* Ref.make(background),
       });
       const threadId = ThreadId.make(`thread:${key}`);
       yield* Effect.gen(function* () {
@@ -3695,26 +3720,82 @@ describe("orchestration v2 provider switching", () => {
           ]),
           [
             ["completed", undefined],
-            ["completed", true],
+            ["completed", background ? undefined : true],
             ["completed", undefined],
           ],
         );
-        assert.isTrue(
+        assert.equal(
           projection.turnItems.some(
             (item) =>
               item.type === "user_message" &&
               item.messageId === runFor("beta").userMessageId &&
               item.freshContextReason === "cache_expired",
           ),
+          !background,
         );
         const turns = yield* Ref.get(capturedTurns);
         const turnFor = (name: string) =>
           turns.find((turn) => turn.text.endsWith(`Prompt ${name}`))!;
-        assert.notEqual(turnFor("beta").providerThreadId, turnFor("alpha").providerThreadId);
+        assert.equal(
+          turnFor("beta").providerThreadId !== turnFor("alpha").providerThreadId,
+          !background,
+        );
         assert.equal(turnFor("gamma").providerThreadId, turnFor("beta").providerThreadId);
-        assert.deepEqual(yield* Ref.get(closedSessions), [firstSession.id]);
+        assert.deepEqual(yield* Ref.get(closedSessions), background ? [] : [firstSession.id]);
       }).pipe(Effect.provide(harness));
     }),
+  );
+
+  it.live(
+    "resumes an interrupted turn a restart held in the old session after FirstMate's cache expired",
+    () =>
+      Effect.gen(function* () {
+        const key = "cold-cache-held-resume";
+        const cwd = yield* checkpointWorkspace(key);
+        const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+        const closedSessions = yield* Ref.make<ReadonlyArray<string>>([]);
+        const harness = coldCacheHarness(key, cwd, {
+          cacheExpiresAt: COLD_CACHE_EXPIRY,
+          capturedTurns,
+          closedSessions,
+          nativeThreadGeneration: yield* Ref.make(0),
+          interruptedRunOrdinals: new Set([1]),
+        });
+        const threadId = ThreadId.make(`thread:${key}`);
+        yield* Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+          yield* createColdCacheCoordinator(key, cwd);
+          yield* orchestrator.dispatch(coldCacheMessage(key, "alpha", "web"));
+          yield* worker.drain();
+          const interrupted = (yield* waitForIdle(threadId)).runs[0]!;
+          assert.equal(interrupted.status, "interrupted");
+          yield* orchestrator.requestRestart({ reason: "install build", requestedBy: "FirstMate" });
+          yield* orchestrator.dispatch({
+            type: "message.dispatch",
+            commandId: CommandId.make(`command:${key}:resume`),
+            threadId,
+            messageId: MessageId.make(`message:${key}:resume`),
+            manualContinuationOfRunId: interrupted.id,
+            text: "Continue where you left off.",
+            attachments: [],
+            dispatchMode: { type: "start_immediately" },
+            createdBy: "user",
+            creationSource: "web",
+          });
+          assert.include((yield* orchestrator.getThreadProjection(threadId)).runs.at(-1), {
+            status: "queued",
+            restartHold: true,
+          });
+          yield* orchestrator.cancelRestart;
+          yield* worker.drain();
+          const resumed = (yield* waitForIdle(threadId)).runs.at(-1)!;
+          assert.equal(resumed.manualContinuationOfRunId, interrupted.id);
+          assert.isUndefined(resumed.freshContext);
+          assert.equal(resumed.providerThreadId, interrupted.providerThreadId);
+          assert.deepEqual(yield* Ref.get(closedSessions), []);
+        }).pipe(Effect.provide(harness));
+      }),
   );
 
   it.live(

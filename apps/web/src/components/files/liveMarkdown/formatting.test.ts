@@ -43,6 +43,9 @@ describe("formatting shortcuts", () => {
     ["bold unwraps a selection inside the marks", "Mod-b", "a **|word|** b", "a |word| b"],
     ["bold unwraps a selection that includes the marks", "Mod-b", "a |**word**| b", "a |word| b"],
     ["italic at a bare caret opens a pair to type into", "Mod-i", "a |word", "a *|*word"],
+    ["italic on a bold word adds italic", "Mod-i", "a **|word|** b", "a ***|word|*** b"],
+    ["italic on a selected bold word adds italic", "Mod-i", "a |**word**| b", "a *|**word**|* b"],
+    ["italic comes off a bold italic word", "Mod-i", "a ***|word|*** b", "a **|word|** b"],
     ["inline code wraps a selection", "Mod-e", "run |pnpm test| now", "run `|pnpm test|` now"],
     ["strikethrough wraps a selection", "Mod-Alt-x", "|gone|", "~~|gone|~~"],
     ["a plain line becomes an open task", "Mod-l", "  buy| milk", "  - [ ] buy| milk"],
@@ -50,6 +53,12 @@ describe("formatting shortcuts", () => {
     ["an open task is ticked", "Mod-l", "1. [ ] buy| milk", "1. [x] buy| milk"],
     ["a done task opens again", "Mod-l", "- [x] buy| milk", "- [ ] buy| milk"],
     ["every selected line is toggled", "Mod-l", "- [ ] |a\n- [x] b|", "- [x] |a\n- [ ] b|"],
+    [
+      "a selection ending at a line's start leaves that line alone",
+      "Mod-l",
+      "- [ ] |a\n|- [ ] b",
+      "- [x] |a\n|- [ ] b",
+    ],
   ])("%s", (_name, binding, before, after) => {
     expect(runCommand(key(binding), before)).toBe(after);
   });
@@ -64,6 +73,12 @@ describe("Tab in lists", () => {
     ["nests a bullet by its marker's width", "Tab", "- a\n- b|", "- a\n  - b|"],
     ["nests a numbered item under its number", "Tab", "1. a\n2. b|", "1. a\n   2. b|"],
     ["moves a nested item back out", "Shift-Tab", "- a\n  - b|", "- a\n- b|"],
+    [
+      "moves only the lines a selection covers",
+      "Shift-Tab",
+      "- a\n  - |b\n|  - c",
+      "- a\n- |b\n|  - c",
+    ],
     [
       "does nothing in prose, where indentation would start a code block",
       "Tab",

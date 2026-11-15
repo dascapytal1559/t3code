@@ -80,10 +80,23 @@ function differingLines(
   return null;
 }
 
+function narrowed(current: string, change: TextChange): TextChange {
+  const { from, to, insert } = change;
+  const limit = Math.min(to - from, insert.length);
+  let head = 0;
+  while (head < limit && current[from + head] === insert[head]) head += 1;
+  let tail = 0;
+  while (tail < limit - head && current[to - 1 - tail] === insert[insert.length - 1 - tail]) {
+    tail += 1;
+  }
+  return { from: from + head, to: to - tail, insert: insert.slice(head, insert.length - tail) };
+}
+
 /**
  * The changes that turn `current` into `next`, one per run of differing lines,
  * with offsets into `current`. Lines that did not change are never rewritten,
- * so a caret or a fold on them stays where it is.
+ * and of a changed line only the characters that differ, so a caret or a fold
+ * stays where it is.
  */
 export function lineChanges(current: string, next: string): TextChange[] {
   if (current === next) return [];
@@ -140,20 +153,24 @@ export function lineChanges(current: string, next: string): TextChange[] {
     const startA = a.start[fromA] ?? 0;
     if (toA < countA) {
       // A kept line follows: swap whole lines, each with its own line break.
-      changes.push({
-        from: startA,
-        to: a.start[toA] ?? current.length,
-        insert: inserted.map((line) => `${line}\n`).join(""),
-      });
+      changes.push(
+        narrowed(current, {
+          from: startA,
+          to: a.start[toA] ?? current.length,
+          insert: inserted.map((line) => `${line}\n`).join(""),
+        }),
+      );
     } else if (fromA === 0) {
-      changes.push({ from: 0, to: current.length, insert: inserted.join("\n") });
+      changes.push(narrowed(current, { from: 0, to: current.length, insert: inserted.join("\n") }));
     } else {
       // The run reaches the end of the file: take the line break before it instead.
-      changes.push({
-        from: startA - 1,
-        to: current.length,
-        insert: inserted.map((line) => `\n${line}`).join(""),
-      });
+      changes.push(
+        narrowed(current, {
+          from: startA - 1,
+          to: current.length,
+          insert: inserted.map((line) => `\n${line}`).join(""),
+        }),
+      );
     }
   }
   return changes;

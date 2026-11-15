@@ -1,4 +1,5 @@
 import { syntaxTree } from "@codemirror/language";
+import { searchPanelOpen } from "@codemirror/search";
 import {
   type EditorState,
   type Extension,
@@ -77,9 +78,10 @@ const imageUrlsField = StateField.define<ReadonlyMap<string, string>>({
   },
 });
 
-/** What the selection touches while the editor has focus; nothing otherwise, so all is drawn. */
+/** What the selection touches while the editor or its find bar has focus; nothing otherwise. */
 function touchOf(state: EditorState) {
-  const ranges = state.field(focusField) && !state.readOnly ? state.selection.ranges : [];
+  const active = state.field(focusField) || searchPanelOpen(state);
+  const ranges = active && !state.readOnly ? state.selection.ranges : [];
   const touches = (from: number, to: number) =>
     ranges.some((range) => range.from <= to && range.to >= from);
   return {
@@ -92,6 +94,7 @@ function touchOf(state: EditorState) {
 function previewInputsChanged(before: EditorState, after: EditorState): boolean {
   return (
     before.field(focusField) !== after.field(focusField) ||
+    searchPanelOpen(before) !== searchPanelOpen(after) ||
     before.field(frontmatterField) !== after.field(frontmatterField) ||
     before.field(imageUrlsField) !== after.field(imageUrlsField) ||
     syntaxTree(before) !== syntaxTree(after)
@@ -178,7 +181,9 @@ export function inlineDecorations(
   const frontmatter = state.field(frontmatterField);
   const out: Range<Decoration>[] = [];
   const add = (from: number, to: number, decoration: Decoration) => {
-    if (to > from) out.push(decoration.range(from, to));
+    if (to <= from) return;
+    const replacesBreak = decoration.point && doc.lineAt(from).to < to;
+    out.push((replacesBreak ? syntaxMark : decoration).range(from, to));
   };
   const lineStyle = (line: Line, className: string, style?: string) => {
     out.push(
@@ -305,7 +310,7 @@ export function inlineDecorations(
                 ? (imageUrls.get(source.key) ?? null)
                 : null;
           const widget = new ImageWidget(address, doc.sliceString(open.to, close.from));
-          if (touch.onLines(from, to)) {
+          if (touch.onLines(from, to) || doc.lineAt(from).to < to) {
             // At the caret the source shows, with the picture after it.
             add(from, to, syntaxMark);
             out.push(Decoration.widget({ widget, side: 1 }).range(to));

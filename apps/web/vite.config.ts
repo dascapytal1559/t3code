@@ -113,6 +113,9 @@ const browserTestProject = {
       "@base-ui/react/autocomplete",
       // Fork: the live Markdown editor loads lazily.
       "@codemirror/commands",
+      "@codemirror/lang-css",
+      "@codemirror/lang-html",
+      "@codemirror/lang-javascript",
       "@codemirror/lang-markdown",
       "@codemirror/language",
       "@codemirror/search",

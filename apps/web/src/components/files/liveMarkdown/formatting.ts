@@ -16,7 +16,8 @@ const LIST_LINE = /^(\s*)((?:[-*+]|\d+[.)])\s+)(\[[ xX]\](?=\s|$))?/;
 function selectedLineNumbers(state: EditorState): number[] {
   const numbers = new Set<number>();
   for (const range of state.selection.ranges) {
-    const last = state.doc.lineAt(range.to).number;
+    const endsAtLineStart = !range.empty && state.doc.lineAt(range.to).from === range.to;
+    const last = state.doc.lineAt(endsAtLineStart ? range.to - 1 : range.to).number;
     for (let number = state.doc.lineAt(range.from).number; number <= last; number += 1) {
       numbers.add(number);
     }
@@ -30,6 +31,12 @@ function toggleInlineMark(
   options?: { readonly needsSelection: boolean },
 ): StateCommand {
   const size = mark.length;
+  const wrapsOnce = (run: string, fromEnd: boolean) => {
+    if (size > 1) return true;
+    let count = 0;
+    while (count < run.length && run[fromEnd ? run.length - 1 - count : count] === mark) count += 1;
+    return count % 2 === 1;
+  };
   return ({ state, dispatch }) => {
     if (state.readOnly) return false;
     if (options?.needsSelection && state.selection.ranges.every((range) => range.empty)) {
@@ -37,7 +44,13 @@ function toggleInlineMark(
     }
     const change = state.changeByRange((range) => {
       const selected = state.sliceDoc(range.from, range.to);
-      if (selected.length >= 2 * size && selected.startsWith(mark) && selected.endsWith(mark)) {
+      if (
+        selected.length >= 2 * size &&
+        selected.startsWith(mark) &&
+        selected.endsWith(mark) &&
+        wrapsOnce(selected, false) &&
+        wrapsOnce(selected, true)
+      ) {
         return {
           changes: [
             { from: range.from, to: range.from + size },
@@ -48,7 +61,12 @@ function toggleInlineMark(
       }
       const before = state.sliceDoc(Math.max(0, range.from - size), range.from);
       const after = state.sliceDoc(range.to, range.to + size);
-      if (before === mark && after === mark) {
+      if (
+        before === mark &&
+        after === mark &&
+        wrapsOnce(state.sliceDoc(state.doc.lineAt(range.from).from, range.from), true) &&
+        wrapsOnce(state.sliceDoc(range.to, state.doc.lineAt(range.to).to), false)
+      ) {
         return {
           changes: [
             { from: range.from - size, to: range.from },

@@ -32,6 +32,7 @@ describe("changes from disk", () => {
     ["lines added before a kept line", "a\nd", "a\nb\nc\nd", [2, 3]],
     ["lines added at the end", "a", "a\nb\nc", [2, 3]],
     ["a line removed", "a\nb\nc", "a\nc", []],
+    ["a word removed from a line", "a\nbig dog\nc", "a\ndog\nc", [2]],
   ])("tints only the lines written: %s", (_name, current, next, lines) => {
     const state = fromDisk(editorOn(current), next);
     expect(state.doc.toString()).toBe(next);
@@ -62,5 +63,19 @@ describe("changes from disk", () => {
     });
     const next = fromDisk(state, "a much longer first line\nsecond\nthird");
     expect(next.doc.sliceString(next.selection.main.head)).toBe("ird");
+  });
+
+  it.each([
+    ["a line of a longer file", "The quick brown fox\nsecond", "The quick brown fox.\nsecond"],
+    ["the only line of a file", "The quick brown fox", "The quick brown fox."],
+  ])("keeps the caret in place when its own line changes: %s", (_name, current, next) => {
+    const state = EditorState.create({
+      doc: current,
+      selection: { anchor: "The quick".length },
+      extensions: [lineFlash],
+    });
+    const changed = fromDisk(state, next);
+    expect(changed.doc.toString()).toBe(next);
+    expect(changed.selection.main.head).toBe("The quick".length);
   });
 });

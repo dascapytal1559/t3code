@@ -101,8 +101,11 @@ export function externalChangeSpec(
     })),
   );
   const written: Span[] = [];
-  changeSet.iterChangedRanges((_fromA, _toA, fromB, toB) => {
+  changeSet.iterChangedRanges((fromA, toA, fromB, toB) => {
     if (toB > fromB) written.push({ from: fromB, to: toB });
+    else if (!state.doc.sliceString(fromA, toA).includes("\n")) {
+      written.push({ from: fromB, to: fromB });
+    }
   });
   return {
     changes: changeSet,

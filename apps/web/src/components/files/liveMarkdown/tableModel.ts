@@ -57,10 +57,8 @@ function inlineBetween(
       out.push({ kind: wrapper, children: inlineBetween(child, child.from, child.to, source) });
     } else if (child.name === "InlineCode") {
       const marks = child.getChildren("CodeMark");
-      out.push({
-        kind: "code",
-        text: source.slice(marks[0]?.to ?? child.from, marks.at(-1)?.from ?? child.to),
-      });
+      const code = source.slice(marks[0]?.to ?? child.from, marks.at(-1)?.from ?? child.to);
+      out.push({ kind: "code", text: code.replaceAll("\\|", "|") });
     } else if (child.name === "Link" || child.name === "Autolink") {
       const url = child.getChild("URL");
       const marks = child.getChildren("LinkMark");
@@ -126,9 +124,12 @@ export function tableModel(source: string): TableModel | null {
   const header = table?.getChild("TableHeader");
   const delimiter = table?.getChild("TableDelimiter");
   if (!table || !header || !delimiter) return null;
-  return {
-    align: alignOf(source.slice(delimiter.from, delimiter.to)),
-    head: cellsOf(header, source),
-    rows: table.getChildren("TableRow").map((row) => cellsOf(row, source)),
-  };
+  const head = cellsOf(header, source);
+  // A row has as many cells as the header: missing ones are empty, extra ones dropped.
+  const rows = table.getChildren("TableRow").map((row) => {
+    const cells = cellsOf(row, source).slice(0, head.length);
+    while (cells.length < head.length) cells.push({ offset: row.to, content: [] });
+    return cells;
+  });
+  return { align: alignOf(source.slice(delimiter.from, delimiter.to)), head, rows };
 }
