@@ -52,8 +52,20 @@ describe("line endings", () => {
   it("types at the end of a mixed file's CRLF line before its carriage return", () => {
     const start = EditorState.create({ doc: "# Title\r\nnext\n", extensions: mixedLineEndings });
     const atEnd = start.update({ selection: { anchor: start.doc.line(1).to } }).state;
-    const typed = atEnd.update(atEnd.replaceSelection("!")).state;
+    const typed = atEnd.update(atEnd.replaceSelection("!"), { userEvent: "input.type" }).state;
     expect(fromEditorText(typed.doc.toString(), "mixed")).toBe("# Title!\r\nnext\n");
+    expect(typed.selection.main.head).toBe("# Title!".length);
+  });
+
+  it("lets the caret cross a mixed file's CRLF line end", () => {
+    const start = EditorState.create({ doc: "# Title\r\nnext\n", extensions: mixedLineEndings });
+    const line = start.doc.line(1);
+    const right = start.update({ selection: { anchor: line.to }, userEvent: "select" }).state;
+    expect(right.selection.main.head).toBe(line.to);
+    const crLast = EditorState.create({ doc: "a\nb\r", extensions: mixedLineEndings });
+    const all = crLast.update({ selection: { anchor: 0, head: crLast.doc.length } }).state;
+    const cleared = all.update(all.replaceSelection(""), { userEvent: "delete" }).state;
+    expect(cleared.doc.toString()).toBe("");
   });
 
   it("keeps a file's line ending when its new text has no line break", () => {

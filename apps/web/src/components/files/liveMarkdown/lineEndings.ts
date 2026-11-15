@@ -1,4 +1,10 @@
-import { EditorSelection, EditorState, type Extension } from "@codemirror/state";
+import {
+  type ChangeSpec,
+  EditorSelection,
+  EditorState,
+  type Extension,
+  Transaction,
+} from "@codemirror/state";
 
 /** `mixed` also covers lone carriage returns: anything that is not purely LF or purely CRLF. */
 export type LineEnding = "lf" | "crlf" | "mixed";
@@ -28,18 +34,35 @@ export function fromEditorText(text: string, ending: LineEnding): string {
 export const mixedLineEndings: Extension = [
   EditorState.lineSeparator.of("\n"),
   EditorState.transactionFilter.of((tr) => {
-    const { newDoc: doc, newSelection: selection } = tr;
-    const inside = (pos: number) =>
-      pos > 0 && doc.lineAt(pos).to === pos && doc.sliceString(pos - 1, pos) === "\r"
-        ? pos - 1
-        : pos;
-    const ranges = selection.ranges.map((range) =>
-      EditorSelection.range(inside(range.anchor), inside(range.head)),
-    );
-    if (ranges.every((range, index) => range.eq(selection.ranges[index]!))) return tr;
-    return [
-      tr,
-      { selection: EditorSelection.create(ranges, selection.mainIndex), sequential: true },
-    ];
+    if (!tr.docChanged || !tr.isUserEvent("input")) return tr;
+    const doc = tr.startState.doc;
+    const afterLineEndCr = (pos: number) =>
+      pos > 0 && doc.lineAt(pos).to === pos && doc.sliceString(pos - 1, pos) === "\r";
+    const changes: ChangeSpec[] = [];
+    const movedEnds: number[] = [];
+    tr.changes.iterChanges((fromA, toA, _fromB, toB, inserted) => {
+      const moves =
+        fromA === toA &&
+        inserted.length > 0 &&
+        inserted.sliceString(0, 1) !== "\n" &&
+        afterLineEndCr(fromA);
+      if (moves) movedEnds.push(toB);
+      changes.push(
+        moves ? { from: fromA - 1, insert: inserted } : { from: fromA, to: toA, insert: inserted },
+      );
+    });
+    if (movedEnds.length === 0) return tr;
+    const at = (pos: number) => (movedEnds.includes(pos) ? pos - 1 : pos);
+    const selection = tr.newSelection;
+    return {
+      changes,
+      selection: EditorSelection.create(
+        selection.ranges.map((range) => EditorSelection.range(at(range.anchor), at(range.head))),
+        selection.mainIndex,
+      ),
+      effects: tr.effects,
+      scrollIntoView: tr.scrollIntoView,
+      userEvent: tr.annotation(Transaction.userEvent) ?? "input",
+    };
   }),
 ];
