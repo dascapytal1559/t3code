@@ -7,11 +7,17 @@ export interface OriginAmount {
 
 export type OriginDevice = "phone" | "computer";
 
-/** Usage traced to a device, split by whether you typed it (direct) or an agent it started did (coordinated). */
-export type OriginAxes = Record<
-  OriginDevice,
-  { readonly direct: OriginAmount; readonly coordinated: OriginAmount }
->;
+/**
+ * The bar's categories: each device split by whether you typed it (direct) or an agent it started
+ * did (coordinated), then usage with no recorded parent. History that can never trace stays out.
+ */
+export interface OriginAxes {
+  readonly phone: { readonly direct: OriginAmount; readonly coordinated: OriginAmount };
+  readonly computer: { readonly direct: OriginAmount; readonly coordinated: OriginAmount };
+  readonly unknown: OriginAmount;
+  readonly beforeOrigins: OriginAmount;
+  readonly archive: OriginAmount;
+}
 
 const EMPTY: OriginAmount = { costUsd: 0, totalTokens: 0 };
 const plus = (a: OriginAmount, b: OriginAmount): OriginAmount => ({
@@ -19,43 +25,25 @@ const plus = (a: OriginAmount, b: OriginAmount): OriginAmount => ({
   totalTokens: a.totalTokens + b.totalTokens,
 });
 
-/**
- * What the bar leaves out or assumes: computer usage with no recorded parent, which the server
- * counts there by default, and history that can never trace.
- */
-export interface OriginNotes {
-  readonly assumed: OriginAmount;
-  readonly beforeOrigins: OriginAmount;
-  readonly archive: OriginAmount;
-}
-
-export function originNotes(origins: MergedOrigins): OriginNotes {
-  let assumed = EMPTY;
-  let beforeOrigins = EMPTY;
-  let archive = EMPTY;
-  for (const row of origins.rows) {
-    for (const entry of row.bases) {
-      if (row.origin === "computer" && entry.basis === "default") assumed = plus(assumed, entry);
-      if (row.origin === "unknown" && entry.basis === "beforeOrigins")
-        beforeOrigins = plus(beforeOrigins, entry);
-      if (row.origin === "unknown" && entry.basis === "archive") archive = plus(archive, entry);
-    }
-  }
-  return { assumed, beforeOrigins, archive };
-}
-
 export function originAxes(origins: MergedOrigins): OriginAxes {
   const devices = {
     phone: { direct: EMPTY, coordinated: EMPTY },
     computer: { direct: EMPTY, coordinated: EMPTY },
   };
+  let unknown = EMPTY;
+  let beforeOrigins = EMPTY;
+  let archive = EMPTY;
   for (const row of origins.rows) {
-    if (row.origin !== "phone" && row.origin !== "computer") continue;
-    const cell = devices[row.origin];
     for (const entry of row.bases) {
-      const side = entry.via === undefined ? "direct" : "coordinated";
-      cell[side] = plus(cell[side], entry);
+      // Servers before Unknown had its own category sent this as computer `default`.
+      if (entry.basis === "default") unknown = plus(unknown, entry);
+      else if (row.origin === "phone" || row.origin === "computer") {
+        const cell = devices[row.origin];
+        const side = entry.via === undefined ? "direct" : "coordinated";
+        cell[side] = plus(cell[side], entry);
+      } else if (entry.basis === "beforeOrigins") beforeOrigins = plus(beforeOrigins, entry);
+      else if (entry.basis === "archive") archive = plus(archive, entry);
     }
   }
-  return devices;
+  return { ...devices, unknown, beforeOrigins, archive };
 }

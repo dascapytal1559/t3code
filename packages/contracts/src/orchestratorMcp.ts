@@ -512,6 +512,8 @@ export type OrchestratorMcpThreadDetail = typeof OrchestratorMcpThreadDetail.Typ
 
 export const OrchestratorMcpThreadRun = Schema.Struct({
   runId: RunId,
+  /** The prompt that started the run, a wake's notification included; it can be a `causedBy`. */
+  userMessageId: Schema.optional(MessageId),
   ordinal: PositiveInt,
   status: OrchestrationV2RunStatus,
   providerInstanceId: ProviderInstanceId,

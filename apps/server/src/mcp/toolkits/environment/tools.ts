@@ -10,8 +10,10 @@ import {
   OrchestratorMcpFailure,
   RestartRequest,
   RestartRequestStatus,
+  RunId,
   ServerSettings,
   ServerSettingsPatch,
+  ThreadId,
   TrimmedNonEmptyString,
 } from "@t3tools/contracts";
 import * as Path from "effect/Path";
@@ -110,16 +112,22 @@ const UsageClaimTool = Tool.make("t3_usage_claim", {
   ...shared,
   dependencies: [...shared.dependencies, UsageClaims.UsageClaims, Path.Path],
   description:
-    "Count a session run outside T3 (a pipeline, a CLI run) to the prompt that caused it, on Usage. Give `sessionId` (native id) or an absolute `directory` (sessions working inside it). Claiming again replaces the cause; `causedBy: null` removes it. Your own worktree needs no claim.",
+    "Count work Usage can't trace on its own. Target one of: `sessionId` (native id) or an absolute `directory`, for sessions run outside T3 (a pipeline, a CLI run); `threadId` + `runId`, for a turn whose prompt has no cause (a wake). Give `causedBy` (the prompt behind it) or `device` (`computer` for upkeep, `phone` for a voice journal); work a claimed turn causes inherits it. Claiming again replaces it; `causedBy: null` removes it. Your own worktree needs no claim.",
   parameters: Schema.Struct({
     sessionId: Schema.optional(TrimmedNonEmptyString),
     directory: Schema.optional(TrimmedNonEmptyString),
-    causedBy: Schema.NullOr(OrchestratorMcpCausedBy),
+    threadId: Schema.optional(ThreadId),
+    runId: Schema.optional(RunId),
+    causedBy: Schema.optional(Schema.NullOr(OrchestratorMcpCausedBy)),
+    device: Schema.optional(Schema.Literals(["phone", "computer"])),
   }),
   success: Schema.Struct({
     sessionId: Schema.optional(Schema.String),
     directory: Schema.optional(Schema.String),
+    threadId: Schema.optional(ThreadId),
+    runId: Schema.optional(RunId),
     causedBy: Schema.NullOr(OrchestrationV2CausedBy),
+    device: Schema.NullOr(Schema.Literals(["phone", "computer"])),
   }),
 }).annotate(Tool.Destructive, false);
 const RestartStatusTool = Tool.make("t3_restart_status", {

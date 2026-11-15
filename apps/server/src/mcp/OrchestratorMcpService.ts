@@ -1019,6 +1019,7 @@ function threadRun(
 ): OrchestratorMcpThreadRun {
   return {
     runId: run.id,
+    userMessageId: run.userMessageId,
     ordinal: run.ordinal,
     status: run.status,
     providerInstanceId: run.modelSelection.instanceId,

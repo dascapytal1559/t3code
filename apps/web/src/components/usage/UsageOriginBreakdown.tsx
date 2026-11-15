@@ -5,7 +5,7 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { cn } from "../../lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { originAxes, originNotes, type OriginDevice } from "./usageOriginAxes";
+import { originAxes, type OriginDevice } from "./usageOriginAxes";
 
 const ORIGINS_RECORDED_SINCE_LABEL = new Date(USAGE_ORIGINS_RECORDED_SINCE).toLocaleDateString(
   undefined,
@@ -25,13 +25,17 @@ const DEVICE: Record<OriginDevice, { readonly label: string; readonly color: str
 };
 const DEVICES: readonly OriginDevice[] = ["phone", "computer"];
 const NEUTRAL_INK = "color-mix(in oklab, var(--foreground) 70%, var(--background))";
+// Dimmer than the key's Direct grey, so Unknown never reads as direct usage.
+const UNKNOWN: CSSProperties = {
+  backgroundColor: "color-mix(in oklab, var(--foreground) 38%, var(--background))",
+};
 
 const stripes = (color: string) =>
   `repeating-linear-gradient(135deg, ${color} 0 3px, color-mix(in oklab, ${color} 35%, var(--background)) 3px 6px)`;
 const SOLID: CSSProperties = { backgroundColor: "var(--origin)" };
 const STRIPED: CSSProperties = { backgroundImage: stripes("var(--origin)") };
 
-/** Usage traced to a phone or computer, in the same shape as the "by type" share bars. */
+/** Usage by the device it traces to, then usage with no recorded parent, in the shape of the "by type" bars. */
 export function UsageOriginBreakdown({
   label,
   origins,
@@ -49,19 +53,33 @@ export function UsageOriginBreakdown({
     const coordinated = valueOf(axes[key].coordinated);
     return { key, direct, coordinated, total: direct + coordinated };
   });
-  const traced = parts.reduce((sum, part) => sum + part.total, 0);
-  if (traced <= 0) return null;
-  const notes = originNotes(origins);
-  const assumed = valueOf(notes.assumed);
+  const unknown = valueOf(axes.unknown);
+  const total = parts.reduce((sum, part) => sum + part.total, unknown);
+  if (total <= 0) return null;
   const untraceable = [
-    { value: valueOf(notes.beforeOrigins), label: `before ${ORIGINS_RECORDED_SINCE_LABEL}` },
-    { value: valueOf(notes.archive), label: "archived from other machines" },
+    { value: valueOf(axes.beforeOrigins), label: `before ${ORIGINS_RECORDED_SINCE_LABEL}` },
+    { value: valueOf(axes.archive), label: "archived from other machines" },
   ].flatMap(({ value, label }) => (value > 0 ? [`${format(value)} ${label}`] : []));
 
-  const segments = parts.flatMap((part) => [
-    { part, side: "direct" as const, value: part.direct, style: SOLID },
-    { part, side: "coordinated" as const, value: part.coordinated, style: STRIPED },
-  ]);
+  const segments = [
+    ...parts.flatMap((part) => [
+      {
+        id: `${part.key}-direct`,
+        value: part.direct,
+        className: DEVICE[part.key].color,
+        style: SOLID,
+        name: `${DEVICE[part.key].label} direct`,
+      },
+      {
+        id: `${part.key}-coordinated`,
+        value: part.coordinated,
+        className: DEVICE[part.key].color,
+        style: STRIPED,
+        name: `${DEVICE[part.key].label} coordinated`,
+      },
+    ]),
+    { id: "unknown", value: unknown, className: undefined, style: UNKNOWN, name: "Unknown" },
+  ];
 
   return (
     <div className="flex min-w-0 flex-col gap-2.5">
@@ -74,44 +92,63 @@ export function UsageOriginBreakdown({
       </div>
       <div
         role="img"
-        aria-label={`${label}: ${parts.map((part) => `${DEVICE[part.key].label} ${format(part.direct)} direct, ${format(part.coordinated)} coordinated`).join("; ")}`}
+        aria-label={`${label}: ${[
+          ...parts.map(
+            (part) =>
+              `${DEVICE[part.key].label} ${format(part.direct)} direct, ${format(part.coordinated)} coordinated`,
+          ),
+          `Unknown ${format(unknown)}`,
+        ].join("; ")}`}
         className="flex h-2 gap-0.5"
       >
         {segments
           .filter((segment) => segment.value > 0)
-          .map(({ part, side, value, style }) => (
-            <Tooltip key={`${part.key}-${side}`}>
+          .map(({ id, value, className, style, name }) => (
+            <Tooltip key={id}>
               <TooltipTrigger
                 render={
                   <div
                     className={cn(
                       "h-full min-w-1 rounded-xs first:rounded-l-full last:rounded-r-full",
-                      DEVICE[part.key].color,
+                      className,
                     )}
                     style={{ ...style, flex: `${value} 1 0` }}
                   />
                 }
               />
               <TooltipPopup>
-                {DEVICE[part.key].label} {side} · {format(value)} · {formatPercent(value / traced)}
+                {name} · {format(value)} · {formatPercent(value / total)}
               </TooltipPopup>
             </Tooltip>
           ))}
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs tabular-nums">
-        {parts.map((part) => (
-          <Swatch key={part.key} className={DEVICE[part.key].color} style={SOLID}>
-            <span className="text-muted-foreground">{DEVICE[part.key].label}</span>
-            <span className="text-foreground">{format(part.total)}</span>
-            <span className="text-muted-foreground">
-              {formatPercent(part.total / traced, 0)} · {format(part.direct)} direct ·{" "}
-              {format(part.coordinated)} coordinated
-              {part.key === "computer" && assumed > 0
-                ? ` · ${format(assumed)} with no recorded parent`
-                : ""}
+      <div className="flex flex-col gap-1 text-xs tabular-nums">
+        {parts
+          .filter((part) => part.total > 0)
+          .map((part) => (
+            <span key={part.key} className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+              <Swatch className={DEVICE[part.key].color} style={SOLID}>
+                <span className="text-muted-foreground">{DEVICE[part.key].label}</span>
+                <span className="text-foreground">{format(part.total)}</span>
+                <span className="text-muted-foreground">
+                  {formatPercent(part.total / total, 0)} ·
+                </span>
+              </Swatch>
+              <Swatch className={DEVICE[part.key].color} style={SOLID}>
+                <span className="text-foreground">{format(part.direct)}</span>
+              </Swatch>
+              <Swatch className={DEVICE[part.key].color} style={STRIPED}>
+                <span className="text-foreground">{format(part.coordinated)}</span>
+              </Swatch>
             </span>
+          ))}
+        {unknown > 0 ? (
+          <Swatch style={UNKNOWN}>
+            <span className="text-muted-foreground">Unknown</span>
+            <span className="text-foreground">{format(unknown)}</span>
+            <span className="text-muted-foreground">{formatPercent(unknown / total, 0)}</span>
           </Swatch>
-        ))}
+        ) : null}
         {untraceable.length > 0 ? (
           <span className="text-muted-foreground">Can't trace: {untraceable.join(" · ")}</span>
         ) : null}

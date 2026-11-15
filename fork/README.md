@@ -150,9 +150,10 @@ defaults to `["~/.t3-usage-archive"]` and can be changed in
 The captain wants to see the prompts he sent from his phone and the work they
 started, so the Usage page on web and desktop has a **Tokens by origin** bar
 (Cost by origin): the period's usage split between phone and computer, direct
-or coordinated. It is built from what T3 records (see
-[Messages record which client sent them](#messages-record-which-client-sent-them)),
-plus one rule for usage with no recorded parent, below.
+or coordinated, and Unknown for usage with no recorded parent. It is built from
+what T3 records (see
+[Messages record which client sent them](#messages-record-which-client-sent-them))
+and what agents claim.
 
 - A prompt is a user-role message. A run belongs to its `userMessageId`;
   messages that steer a running turn do not split it.
@@ -166,9 +167,11 @@ plus one rule for usage with no recorded parent, below.
   [Work records the prompt that caused it](#work-records-the-prompt-that-caused-it)):
   its own `causedBy`, else its thread's. If the chain reaches a Phone or
   Computer prompt within 8 hops, the prompt and its run count there, keeping
-  the root's basis and adding `via` (`agent` or `crew`) for who sent it. Any
-  other root (an agent acting on its own, a server or unstamped prompt), a
-  missing message or a cycle leaves the prompt where it was.
+  the root's basis and adding `via` (`agent` or `crew`) for who sent it. A
+  chain that ends at an uncaused prompt whose run is claimed (below) counts to
+  the claim's device, so work a claimed turn caused inherits it. Any other root
+  (an agent acting on its own, a server or unstamped prompt), a missing message
+  or a cycle leaves the prompt where it was.
 - Tokens are joined before aggregation: a transcript record's native
   `sessionId` finds the provider thread (`nativeThreadRef.nativeId`), and its
   timestamp the turn running then. A record more than five minutes after that
@@ -176,25 +179,34 @@ plus one rule for usage with no recorded parent, below.
   kept records after dedupe and the model filter, counting a duplicate's merged
   copies once in upstream's `#accumulate` as its bucket does, so they add up to
   the page's totals.
+- Agents claim what T3 can't trace with `t3_usage_claim`: a target of
+  `sessionId` or `directory` (a session run outside T3, such as a pipeline),
+  or `threadId` + `runId` (a turn whose prompt has no cause, such as a
+  FirstMate wake), and a value of `causedBy` (counts like an agent prompt with
+  that cause) or `device` (counts straight to `phone` or `computer`, basis
+  `claim`: FirstMate marks upkeep `computer` and voice-journal work `phone`).
+  Claims live in the fork table `usage_claims`; claiming again replaces one,
+  `causedBy: null` removes it. A claimed turn counts there unless its own
+  prompt already traces. `t3_thread_read`'s `recentRuns` carry each run's
+  `userMessageId`, a wake's notification included, so an agent can name a
+  wake turn as `causedBy` for work it launches.
 - A record in no T3 turn of its own session traces by claim, then by folder.
-  An agent claims a session it ran outside T3 (a pipeline, a CLI run) with
-  `t3_usage_claim` `{ sessionId | directory, causedBy }` (stored in the fork
-  table `usage_claims`; claiming again replaces it, `causedBy: null` removes
-  it), and the claim counts like an agent prompt with that cause. Otherwise the
+  A session or folder claim counts as above. Otherwise the
   record's working folder (`cwd`, kept by the scanner for Claude and Codex)
   decides: a folder named for a T3 session's native id (Claude's scratchpad),
   a thread's worktree, or a claimed folder, deepest first. A worktree counts to
   the latest turn started there by any thread, since slots are reused. A
   record of a T3 session past its turn, such as a terminal resume, never
   traces by folder.
-- Usage still without a phone or computer settles by the captain's rule
-  (`settleOrigin`): with no recorded parent it counts to the computer as basis
-  `default`, keeping `via` for agent work so it stays coordinated. Two kinds
-  can never trace and keep a label instead: anything before
-  `USAGE_ORIGINS_RECORDED_SINCE` (7 Nov 2026, when device stamps shipped) is
-  `unknown`/`beforeOrigins`, and archived history from other machines is
-  `unknown`/`archive`. The bar shows phone and computer; its legend gives the
-  computer's `default` share and lists the other two under "Can't trace".
+- Usage still without a phone or computer settles in `settleOrigin`: with no
+  recorded parent it is `unknown`/`default`, keeping `via` for agent work.
+  (Fork builds before this sent it as computer `default`; the web counts any
+  `default` row as Unknown.) Two kinds can never trace and keep a label
+  instead: anything before `USAGE_ORIGINS_RECORDED_SINCE` (7 Nov 2026, when
+  device stamps shipped) is `unknown`/`beforeOrigins`, and archived history
+  from other machines is `unknown`/`archive`. The bar shows phone, computer
+  and a grey Unknown segment; the legend lists the other two under "Can't
+  trace".
 - The scan cache keeps each record's `cwd` from the fork's v16. Moving from v15
   re-parses live Claude and Codex transcripts changed since 28 Oct 2026, when T3
   turns began; older files keep their saved records, which cannot trace by
@@ -1124,8 +1136,8 @@ it acted on, `t3_thread_launch` and `t3_thread_send` take an optional
   `t3_thread_send_attachments` and `delegate_task` do not take it (delegated
   tasks already record their parent run).
 - `t3_restart_request` and `t3_usage_claim` take the same checked `causedBy`:
-  a restart's note and continuations count to it, and a claimed session or
-  folder outside T3 counts to it.
+  a restart's note and continuations count to it, and a claimed session,
+  folder or turn counts to it.
 
 Usage follows these links ([Usage by origin](#usage-by-origin)). Code:
 `verifyCause` in `apps/server/src/mcp/threadAccess.ts`, `OrchestrationV2CausedBy`

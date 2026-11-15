@@ -118,34 +118,51 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
       return yield* restartStatus;
     }),
   ),
-  t3_usage_claim: McpToolAccess.writesEnvironment(({ sessionId, directory, causedBy }) =>
-    Effect.gen(function* () {
-      const { threads } = yield* access;
-      const path = yield* Path.Path;
-      const target: UsageClaims.UsageClaimTarget | undefined =
-        directory === undefined
-          ? sessionId === undefined
-            ? undefined
-            : { kind: "session", sessionId }
-          : sessionId === undefined
-            ? { kind: "directory", directory }
-            : undefined;
-      if (target === undefined)
-        return yield* invalidRequest("Give exactly one of sessionId or directory.");
-      if (target.kind === "directory" && !path.isAbsolute(target.directory))
-        return yield* invalidRequest("directory must be an absolute path.");
-      const claimed = yield* (yield* UsageClaims.UsageClaims)
-        .claim({
-          target,
-          causedBy: causedBy === null ? null : yield* verifyCause(threads, causedBy),
-        })
-        .pipe(Effect.mapError(unavailable));
-      return {
-        ...(claimed.target.kind === "session"
-          ? { sessionId: claimed.target.sessionId }
-          : { directory: claimed.target.directory }),
-        causedBy: claimed.causedBy,
-      };
-    }),
+  t3_usage_claim: McpToolAccess.writesEnvironment(
+    ({ sessionId, directory, threadId, runId, causedBy, device }) =>
+      Effect.gen(function* () {
+        const { threads } = yield* access;
+        const path = yield* Path.Path;
+        const targets: UsageClaims.UsageClaimTarget[] = [
+          ...(sessionId === undefined ? [] : [{ kind: "session" as const, sessionId }]),
+          ...(directory === undefined ? [] : [{ kind: "directory" as const, directory }]),
+          ...(runId === undefined ? [] : [{ kind: "run" as const, runId }]),
+        ];
+        const target = targets.length === 1 ? targets[0]! : undefined;
+        if (target === undefined)
+          return yield* invalidRequest("Give exactly one of sessionId, directory or runId.");
+        if ((target.kind === "run") !== (threadId !== undefined))
+          return yield* invalidRequest("threadId goes with runId, and only with runId.");
+        if (target.kind === "directory" && !path.isAbsolute(target.directory))
+          return yield* invalidRequest("directory must be an absolute path.");
+        if ((causedBy === undefined) === (device === undefined) || (causedBy === null && device))
+          return yield* invalidRequest("Give exactly one of causedBy or device.");
+        if (runId !== undefined && threadId !== undefined) {
+          const { runs } = yield* threads
+            .getThreadRecords(threadId, ["runs"], { runIds: [runId] })
+            .pipe(Effect.mapError(unavailable));
+          if (!runs.some((run) => run.id === runId))
+            return yield* invalidRequest(`run ${runId} is not a run of thread ${threadId}.`);
+        }
+        const value: UsageClaims.UsageClaimValue | null =
+          device !== undefined
+            ? { device }
+            : causedBy === null || causedBy === undefined
+              ? null
+              : { causedBy: yield* verifyCause(threads, causedBy) };
+        const claimed = yield* (yield* UsageClaims.UsageClaims)
+          .claim({ target, value })
+          .pipe(Effect.mapError(unavailable));
+        return {
+          ...(claimed.target.kind === "session"
+            ? { sessionId: claimed.target.sessionId }
+            : claimed.target.kind === "directory"
+              ? { directory: claimed.target.directory }
+              : { threadId, runId }),
+          causedBy:
+            claimed.value !== null && "causedBy" in claimed.value ? claimed.value.causedBy : null,
+          device: claimed.value !== null && "device" in claimed.value ? claimed.value.device : null,
+        };
+      }),
   ),
 });

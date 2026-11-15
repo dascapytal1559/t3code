@@ -6,6 +6,7 @@ import {
   EnvironmentId,
   MessageId,
   ProviderInstanceId,
+  RunId,
   ThreadId,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
@@ -35,6 +36,7 @@ import { EnvironmentToolkit } from "./tools.ts";
 
 const environmentId = EnvironmentId.make("environment:preferences");
 const threadId = ThreadId.make("thread:preferences");
+const wakeRun = RunId.make("run:wake");
 
 const layerServerEnvironment = Layer.mock(Environment.ServerEnvironment)({
   getDescriptor: Effect.succeed({
@@ -210,7 +212,7 @@ it.effect("refuses a preferences update when the caller's turn ends while it wai
 );
 
 it.effect(
-  "t3_usage_claim takes exactly one absolute target and a real cause, and removes a claim",
+  "t3_usage_claim takes exactly one target and one real cause or device, and removes a claim",
   () =>
     Effect.gen(function* () {
       const claims = yield* UsageClaims.UsageClaims;
@@ -218,7 +220,10 @@ it.effect(
       const claim = (params: {
         readonly sessionId?: string;
         readonly directory?: string;
-        readonly causedBy: { readonly threadId: ThreadId; readonly messageId: MessageId } | null;
+        readonly threadId?: ThreadId;
+        readonly runId?: RunId;
+        readonly causedBy?: { readonly threadId: ThreadId; readonly messageId: MessageId } | null;
+        readonly device?: "phone" | "computer";
       }) =>
         toolkit.handle("t3_usage_claim", params).pipe(
           Stream.unwrap,
@@ -235,6 +240,11 @@ it.effect(
         [{ sessionId: "pipeline", directory: "/runs/one", causedBy: madeUp }, "exactly one"],
         [{ directory: "runs/one", causedBy: madeUp }, "absolute"],
         [{ sessionId: "pipeline", causedBy: madeUp }, "causedBy"],
+        [{ sessionId: "pipeline" }, "exactly one of causedBy or device"],
+        [{ sessionId: "pipeline", causedBy: madeUp, device: "phone" }, "exactly one of causedBy"],
+        [{ runId: wakeRun, device: "computer" }, "threadId goes with runId"],
+        [{ sessionId: "pipeline", threadId, device: "computer" }, "threadId goes with runId"],
+        [{ threadId, runId: RunId.make("run:elsewhere"), device: "computer" }, "not a run of"],
       ] as const) {
         expect(yield* claim(params)).toMatchObject({
           code: "invalid_request",
@@ -243,13 +253,26 @@ it.effect(
       }
       expect(yield* claims.read).toEqual([]);
 
+      // A turn with no cause, claimed straight to a device (a voice journal's wake).
+      expect(yield* claim({ threadId, runId: wakeRun, device: "phone" })).toEqual({
+        threadId,
+        runId: wakeRun,
+        causedBy: null,
+        device: "phone",
+      });
+      expect(yield* claims.read).toEqual([
+        { kind: "run", target: wakeRun, causeMessageId: null, device: "phone" },
+      ]);
+      yield* claim({ threadId, runId: wakeRun, causedBy: null });
+
       yield* claims.claim({
         target: { kind: "session", sessionId: "pipeline" },
-        causedBy: { threadId, messageId: MessageId.make("message:prompt") },
+        value: { causedBy: { threadId, messageId: MessageId.make("message:prompt") } },
       });
       expect(yield* claim({ sessionId: "pipeline", causedBy: null })).toEqual({
         sessionId: "pipeline",
         causedBy: null,
+        device: null,
       });
       expect(yield* claims.read).toEqual([]);
     }).pipe(
@@ -262,6 +285,10 @@ it.effect(
               Layer.mock(Orchestrator.OrchestratorV2)({}),
               Layer.mock(ThreadManagement.ThreadManagementService)({
                 getThreadShell: () => Effect.succeed(null),
+                getThreadRecords: (_threadId, _fields, filter) =>
+                  Effect.succeed({
+                    runs: (filter?.runIds ?? []).flatMap((id) => (id === wakeRun ? [{ id }] : [])),
+                  } as never),
               }),
               Layer.mock(Settings.ServerSettingsService)({}),
               Layer.succeed(McpInvocationContext.McpInvocationContext, {
