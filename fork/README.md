@@ -211,8 +211,10 @@ and what agents claim.
   re-parses live Claude and Codex transcripts changed since 28 Oct 2026, when T3
   turns began; older files keep their saved records, which cannot trace by
   folder. Upstream's own v16 (Codex baseline time) arrived the next night, so
-  the fork reads it as v17 and a fork v16 Codex file re-parses once. On syncs, an
-  upstream cache bump becomes the fork's next number, never upstream's.
+  the fork reads it as v17 and a fork v16 Codex file re-parses once; upstream's
+  v17 (Grok turns keyed by time) is the fork's v18, so Grok files from a fork
+  v16 or v17 cache re-parse once. On syncs, an upstream cache bump becomes the
+  fork's next number, never upstream's.
 
 The server sends `origins` on `UsageSummary` (optional; usage rows keyed by
 origin, basis, `via`, provider and source with no day, so the payload stays small),
@@ -1199,7 +1201,10 @@ it acted on, `t3_thread_launch` and `t3_thread_send` take an optional
   caller may read is allowed, in any project. A failure is `invalid_request`
   with a `causedBy: ...` message, and nothing is launched or sent.
 - `t3_thread_launch` stores it on the new thread (`thread.causedBy`) and on
-  its first message when it has one. `t3_thread_send` stores it on the sent
+  its first message when it has one. That first message travels inside
+  upstream's `thread.create` `initialMessage`, which carries `causedBy` and
+  `origin` for the fork; a new per-message field needs adding there too.
+  `t3_thread_send` stores it on the sent
   message, through queueing and steering. Both are event-sourced:
   `thread.created` and `message.updated` payloads carry it.
 - `t3_thread_read` returns the thread's in `thread.causedBy` and each
