@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import { EditorState, type StateCommand } from "@codemirror/state";
+
+import { formatKeymap } from "./formatting";
 import { frontmatterRows } from "./frontmatter";
-import { EditorState } from "@codemirror/state";
 
 import { fromEditorText, lineEndingOf, mixedLineEndings, toEditorText } from "./lineEndings";
 
@@ -55,6 +57,29 @@ describe("line endings", () => {
     const typed = atEnd.update(atEnd.replaceSelection("!"), { userEvent: "input.type" }).state;
     expect(fromEditorText(typed.doc.toString(), "mixed")).toBe("# Title!\r\nnext\n");
     expect(typed.selection.main.head).toBe("# Title!".length);
+  });
+
+  it("formats at the end of a mixed file's CRLF line as on an LF line", () => {
+    const italic = formatKeymap.find((binding) => binding.key === "Mod-i")?.run;
+    if (!italic) throw new Error("no italic binding");
+    // A state command only reads the state and dispatch that a view also has.
+    const toggle = (state: EditorState) => {
+      let next = state;
+      (italic as unknown as StateCommand)({ state, dispatch: (tr) => void (next = tr.state) });
+      return next;
+    };
+    const type = (state: EditorState, text: string) =>
+      state.update(state.replaceSelection(text), { userEvent: "input.type" }).state;
+
+    const caret = EditorState.create({ doc: "foo\r\nbar\n", extensions: mixedLineEndings });
+    const atEnd = caret.update({ selection: { anchor: caret.doc.line(1).to } }).state;
+    expect(type(toggle(atEnd), "word").doc.toString()).toBe("foo*word*\r\nbar\n");
+
+    const word = EditorState.create({ doc: "word\r\nbar\n", extensions: mixedLineEndings });
+    const selected = word.update({ selection: { anchor: 0, head: word.doc.line(1).to } }).state;
+    const wrapped = toggle(selected);
+    expect(wrapped.doc.toString()).toBe("*word*\r\nbar\n");
+    expect(toggle(wrapped).doc.toString()).toBe("word\r\nbar\n");
   });
 
   it("lets the caret cross a mixed file's CRLF line end", () => {

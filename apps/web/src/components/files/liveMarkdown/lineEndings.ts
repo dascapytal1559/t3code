@@ -39,25 +39,30 @@ export const mixedLineEndings: Extension = [
     const afterLineEndCr = (pos: number) =>
       pos > 0 && doc.lineAt(pos).to === pos && doc.sliceString(pos - 1, pos) === "\r";
     const changes: ChangeSpec[] = [];
-    const movedEnds: number[] = [];
-    tr.changes.iterChanges((fromA, toA, _fromB, toB, inserted) => {
+    const moved: Array<readonly [number, number]> = [];
+    tr.changes.iterChanges((fromA, toA, fromB, toB, inserted) => {
       const moves =
         fromA === toA &&
         inserted.length > 0 &&
         inserted.sliceString(0, 1) !== "\n" &&
         afterLineEndCr(fromA);
-      if (moves) movedEnds.push(toB);
+      if (moves) moved.push([fromB, toB]);
       changes.push(
         moves ? { from: fromA - 1, insert: inserted } : { from: fromA, to: toA, insert: inserted },
       );
     });
-    if (movedEnds.length === 0) return tr;
-    const at = (pos: number) => (movedEnds.includes(pos) ? pos - 1 : pos);
+    if (moved.length === 0) return tr;
+    const at = (pos: number) =>
+      moved.some(([from, to]) => pos >= from && pos <= to) ? pos - 1 : pos;
     const selection = tr.newSelection;
     return {
       changes,
       selection: EditorSelection.create(
-        selection.ranges.map((range) => EditorSelection.range(at(range.anchor), at(range.head))),
+        selection.ranges.map((range) =>
+          at(range.anchor) === range.anchor && at(range.head) === range.head
+            ? range
+            : EditorSelection.range(at(range.anchor), at(range.head), range.goalColumn),
+        ),
         selection.mainIndex,
       ),
       effects: tr.effects,
