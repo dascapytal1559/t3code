@@ -928,6 +928,7 @@ it.live.each([
               subject,
               method: "bearer-access-token",
               scopes: [],
+              deviceType: "desktop",
             }),
         }),
         Layer.mock(SessionStore.SessionStore)({
