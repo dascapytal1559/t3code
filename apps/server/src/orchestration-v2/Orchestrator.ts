@@ -118,6 +118,7 @@ import {
   SHARED_WORKSPACE_RESTORE_MESSAGE,
 } from "./CheckpointRestoreSafety.ts";
 import { CheckpointServiceV2 } from "./CheckpointService.ts";
+import { startsFreshOnColdCache } from "./ColdCache.ts";
 import {
   CommandPolicyV2,
   followUpOwnerRun,
@@ -1396,7 +1397,9 @@ function isScheduledFreshRun(
       (item) =>
         item.type === "user_message" &&
         item.messageId === run.userMessageId &&
-        item.scheduledTaskId !== undefined,
+        item.scheduledTaskId !== undefined &&
+        // Fork: a cold FirstMate thread's scheduled task replaces the conversation instead.
+        item.freshContextReason === undefined,
     )
   );
 }
@@ -2636,8 +2639,26 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ),
       );
       const followsCurrent = followsCurrentConversation(queuedMessage);
-      const freshContext = queuedRun.freshContext === true;
-      const activeProviderThread = dispatchProviderThread(projection, queuedMessage, freshContext);
+      const activeProviderThread = dispatchProviderThread(
+        projection,
+        queuedMessage,
+        queuedRun.freshContext === true,
+      );
+      // Fork: a new exchange on a cold FirstMate thread starts fresh, like an armed /clear.
+      const coldClear = startsFreshOnColdCache(
+        projection,
+        activeProviderThread,
+        {
+          ...queuedMessage,
+          providerInstanceId: queuedRun.providerInstanceId,
+          freshContext: queuedRun.freshContext,
+          restartContinuationOfRunId: queuedRun.restartContinuationOfRunId,
+          usageLimitContinuationOfRunId: queuedRun.usageLimitContinuationOfRunId,
+          steerFollowUpOfRunId: queuedRun.steerWhenReadyRunId,
+        },
+        DateTime.toEpochMillis(now),
+      );
+      const freshContext = queuedRun.freshContext === true || coldClear;
       const contextBoundary = freshContext ? ordinal : contextBoundaryOrdinal(projection);
       // A run queued before a fresh run started is bound to the conversation that run left behind.
       const followsLatestContext =
@@ -2987,6 +3008,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           : "automatic-queue";
       const startingRun: OrchestrationV2Run = {
         ...queuedRun,
+        ...(coldClear ? { freshContext: true } : {}),
         providerThreadId: queuedProviderThread.id,
         ordinal,
         status: "starting",
@@ -3040,6 +3062,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             : { idleCompaction: queuedMessage.idleCompaction }),
         }),
         ...(freshContext ? { freshContext: true } : {}),
+        ...(coldClear ? { freshContextReason: "cache_expired" as const } : {}),
         providerThreadId: queuedProviderThread.id,
         inputIntent: "queued_turn",
         status: "completed",
@@ -7272,7 +7295,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     ) {
       dispatchMode = { type: "start_immediately" };
     }
-    const freshContext = command.freshContext === true;
+    let freshContext = command.freshContext === true;
     if (
       freshContext &&
       (dispatchMode.type === "steer_active" || dispatchMode.type === "restart_active")
@@ -8066,6 +8089,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         },
       });
     }
+    // Fork: a new exchange on a cold FirstMate thread starts fresh, like an armed /clear.
+    const coldClear = startsFreshOnColdCache(
+      projection,
+      activeProviderThread,
+      { ...command, delegatedCompletion, providerInstanceId: modelSelection.instanceId },
+      DateTime.toEpochMillis(now),
+    );
+    if (coldClear) freshContext = true;
     if (
       freshContext &&
       (pendingForkTransfer !== undefined || pendingMergeBackTransfer !== undefined)
@@ -8365,6 +8396,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...(command.context ? { context: command.context } : {}),
         attachments: command.attachments,
         ...(freshContext ? { freshContext: true } : {}),
+        ...(coldClear ? { freshContextReason: "cache_expired" as const } : {}),
         ...(run.contextHandoffId === null ? modelSwitchSince(projection, modelSelection) : {}),
       };
       const preparationTurnItem: OrchestrationV2TurnItem | null =

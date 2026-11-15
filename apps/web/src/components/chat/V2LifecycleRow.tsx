@@ -608,8 +608,14 @@ function EnvironmentHandoffRow({
 }
 
 /** Marks where `/clear` or an automation started a new provider session in this thread. */
-export function FreshSessionRow() {
-  return <TimelineSystemDivider label="New session" icon={EraserIcon} />;
+export function FreshSessionRow(props: { readonly cacheExpired: boolean }) {
+  return (
+    <TimelineSystemDivider
+      label="New session"
+      detail={props.cacheExpired ? "cache expired" : null}
+      icon={EraserIcon}
+    />
+  );
 }
 
 /** A same-harness model or effort change. Shows only what changed. */

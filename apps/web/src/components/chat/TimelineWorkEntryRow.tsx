@@ -48,7 +48,7 @@ import {
 import { cn } from "~/lib/utils";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
 import { FetchedToolOutput, V2ItemInspector } from "./V2ItemInspector";
-import { SubagentNotificationLink } from "./V2LifecycleRow";
+import { FreshSessionRow, SubagentNotificationLink } from "./V2LifecycleRow";
 import {
   TimelineRowCtx,
   TimelineRowActivityCtx,
@@ -160,7 +160,14 @@ export const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: WorkEn
   const childThreadId =
     item?.type === "notification" ? notificationChildThreadId(item.source) : undefined;
   if (item?.type !== "notification" || childThreadId === undefined) {
-    return <WorkEntryLogRow {...props} />;
+    return (
+      <>
+        {item?.type === "notification" && item.freshContext ? (
+          <FreshSessionRow cacheExpired={item.freshContextReason === "cache_expired"} />
+        ) : null}
+        <WorkEntryLogRow {...props} />
+      </>
+    );
   }
   return (
     <SubagentNotificationLink

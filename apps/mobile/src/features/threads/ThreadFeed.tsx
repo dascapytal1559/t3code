@@ -3734,7 +3734,11 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
           info.item.message.projectedItem?.item.type === "user_message" &&
           info.item.message.projectedItem.item.freshContext ? (
             <ThreadContextDivider
-              label="New session"
+              label={
+                info.item.message.projectedItem.item.freshContextReason === "cache_expired"
+                  ? "New session · cache expired"
+                  : "New session"
+              }
               icon="arrow.clockwise"
               iconColor={iconSubtleColor}
             />

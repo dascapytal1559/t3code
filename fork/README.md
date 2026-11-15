@@ -655,6 +655,51 @@ keeps upstream's behaviour. Code: `retiresBusySessions` and its two uses in
 `apps/server/src/orchestration-v2/Orchestrator.ts` (the queued start and
 `message.dispatch`).
 
+## A cold FirstMate thread starts fresh
+
+Upstream never drops a thread's context on its own: a fresh session is the
+user's `/clear` or a caller's `freshContext`, and for a large thread whose
+prompt cache has expired it offers compaction, which keeps a summary. That suits
+threads whose conversation is the only record of the work. On the pinned
+FirstMate thread, a new exchange that starts after the cache has expired starts
+in a fresh session. FirstMate keeps its state in files and rebuilds its context
+at session start, about 71k tokens, while reloading or compacting the old
+session re-sends all of it, 120k to 750k. Every other thread keeps upstream's
+behaviour. This relies on Compact idle threads being set to Never for that
+thread's provider.
+
+The check runs when a run is about to start, at the two places a run starts, so
+every client and route is covered, the stock phone app included. It starts the
+run exactly as an armed `/clear` does, which also retires the old session. Cold
+means the newest usage of the Claude session the run would resume reports a
+cache expiry at or before now; a request served fully from cache reports none, so its time plus one
+hour, Claude's longest cache lifetime, stands in. Other providers report no
+expiry and are never cold. It applies only when that session is over 100k
+tokens, since a smaller one reloads for about the price of a fresh start, and
+when the run stays on the same provider. A message from any client or over MCP,
+T3's restart note and a scheduled task begin an exchange. These continue the old
+session instead: a steer, anything while a run is active or a question or
+approval is pending, `/compact`, `/logout` and `/goal`, every other wake
+(background work, a delegated task or a pull request watch reporting in, and any
+wake the old session buffered), and the continuations after a restart, a usage
+limit or a manual Continue. An armed `/clear`, or a pending fork or merge-back,
+leaves the start as it is. Inputs on one thread run one at a time, so two that
+arrive together give one fresh session, and the second continues it. A cold
+scheduled task's session becomes the thread's conversation, unlike a
+fresh-session schedule's side conversation. The divider reads "New session ·
+cache expired", above a message or the restart note. The stock phone app drops
+the mark: it shows a plain "New session" above a message and none above the
+note. If Compact idle threads is turned on, its
+"When you return" compaction runs first, reloads the session and leaves it warm,
+so nothing clears.
+
+Code: `startsFreshOnColdCache` in
+`apps/server/src/orchestration-v2/ColdCache.ts`, called where
+`startNextQueuedRun` and `message.dispatch` start a run in `Orchestrator.ts`;
+`freshContextReason` on user-message and notification turn items in
+`packages/contracts/src/orchestrationV2.ts`; and the divider's
+`cacheExpired` in `apps/web/src/components/chat/V2LifecycleRow.tsx`.
+
 ## Bridge
 
 The right panel's "Bridge" tab is the captain's overview beside any chat: their

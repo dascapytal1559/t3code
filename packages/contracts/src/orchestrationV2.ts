@@ -1792,11 +1792,16 @@ const OrchestrationV2LinkRequestFields = {
   failure: Schema.optional(Schema.String),
 } as const;
 
+/** Fork: T3 started the new session itself because the old one's prompt cache had expired. */
+const OrchestrationV2FreshContextReason = Schema.optional(Schema.Literal("cache_expired"));
+
 export const OrchestrationV2TurnItem = Schema.Union([
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
     type: Schema.Literal("notification"),
     ...OrchestrationV2Notification.fields,
+    freshContext: OrchestrationV2Run.fields.freshContext,
+    freshContextReason: OrchestrationV2FreshContextReason,
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -1809,6 +1814,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
     freshContext: OrchestrationV2Run.fields.freshContext,
+    freshContextReason: OrchestrationV2FreshContextReason,
     inputIntent: OrchestrationV2UserMessageInputIntent,
     text: Schema.String,
     /** Same as the text of message `messageId`. */
@@ -2735,6 +2741,8 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     ...OrchestrationV2TurnItemJsonBaseFields,
     type: Schema.Literal("notification"),
     ...OrchestrationV2Notification.fields,
+    freshContext: OrchestrationV2Run.fields.freshContext,
+    freshContextReason: OrchestrationV2FreshContextReason,
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
@@ -2747,6 +2755,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
     freshContext: OrchestrationV2Run.fields.freshContext,
+    freshContextReason: OrchestrationV2FreshContextReason,
     inputIntent: OrchestrationV2UserMessageInputIntent,
     text: Schema.String,
     context: Schema.optional(OrchestrationMessageContext),

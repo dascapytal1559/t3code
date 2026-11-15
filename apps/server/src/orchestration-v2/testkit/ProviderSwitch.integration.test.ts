@@ -3344,6 +3344,243 @@ describe("orchestration v2 provider switching", () => {
       }),
   );
 
+  const COLD_CACHE_EXPIRY = "2020-01-01T00:00:00.000Z";
+  const coldCacheHarness = (
+    name: string,
+    cwd: string,
+    {
+      cacheExpiresAt,
+      ...adapter
+    }: {
+      readonly cacheExpiresAt: string;
+      readonly capturedTurns: Ref.Ref<ReadonlyArray<CapturedTurn>>;
+      readonly closedSessions: Ref.Ref<ReadonlyArray<string>>;
+      readonly nativeThreadGeneration: Ref.Ref<number>;
+      readonly holdFirstTurn?: Deferred.Deferred<void>;
+      readonly releaseFirstTurn?: Deferred.Deferred<void>;
+    },
+  ) =>
+    ProviderReplayHarness.layerWithRegistry(
+      {
+        name,
+        runtimePolicyOverride: {
+          cwd,
+          approvalPolicy: "never",
+          sandboxPolicy: { type: "readOnly", access: { type: "fullAccess" }, networkAccess: false },
+        },
+      },
+      ProviderAdapterRegistry.layerFromAdapters([
+        makeTestAdapter({
+          ...adapter,
+          instanceId: CLAUDE_MODEL_SELECTION.instanceId,
+          driver: CLAUDE_DRIVER,
+          capabilities: ClaudeProviderCapabilitiesV2,
+          modelSelection: CLAUDE_MODEL_SELECTION,
+          responseByRunOrdinal: {},
+          // The first run leaves a large session; only its usage reports a cache expiry.
+          tokenUsageByRunOrdinal: {
+            1: { usedTokens: 250_000, promptCacheExpiresAt: cacheExpiresAt },
+          },
+        }),
+      ]),
+    );
+  const coldCacheMessage = (
+    key: string,
+    name: string,
+    kind: "web" | "mcp" | "restart-note" | "scheduled" | "clear" | "wake",
+  ): Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }> => ({
+    type: "message.dispatch",
+    commandId: CommandId.make(`command:${key}:${name}`),
+    threadId: ThreadId.make(`thread:${key}`),
+    messageId: MessageId.make(`message:${key}:${name}`),
+    text: `Prompt ${name}`,
+    attachments: [],
+    modelSelection: CLAUDE_MODEL_SELECTION,
+    ...(kind === "restart-note" || kind === "wake"
+      ? {
+          createdBy: "agent",
+          creationSource: "server",
+          notification: {
+            source: { kind: kind === "wake" ? "background_task" : "system" },
+            outcome: "updated",
+            summary: "Woke the thread",
+          },
+          dispatchMode: { type: "queue_after_active" },
+        }
+      : {
+          createdBy: kind === "mcp" ? "agent" : "user",
+          creationSource: kind === "mcp" ? "mcp" : "web",
+          ...(kind === "scheduled"
+            ? { scheduledTaskId: ScheduledTaskId.make(`scheduled:${key}`) }
+            : {}),
+          ...(kind === "clear" ? { freshContext: true } : {}),
+          dispatchMode: { type: "queue_after_active" },
+        }),
+  });
+  const createColdCacheCoordinator = (key: string, cwd: string) =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        createdBy: "user",
+        creationSource: "web",
+        commandId: CommandId.make(`command:${key}:create`),
+        threadId: ThreadId.make(`thread:${key}`),
+        projectId: ProjectId.make(`project:${key}`),
+        title: "Firstmate",
+        modelSelection: CLAUDE_MODEL_SELECTION,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: cwd,
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.metadata.update",
+        commandId: CommandId.make(`command:${key}:pin`),
+        threadId: ThreadId.make(`thread:${key}`),
+        coordinator: true,
+      });
+    });
+
+  it.live.each([
+    ["a message from the web", { kind: "web", cold: true, fresh: true }],
+    ["a message an agent sent over MCP", { kind: "mcp", cold: true, fresh: true }],
+    ["T3's restart note", { kind: "restart-note", cold: true, fresh: true }],
+    ["a scheduled task", { kind: "scheduled", cold: true, fresh: true }],
+    ["an armed /clear", { kind: "clear", cold: true, fresh: true }],
+    ["a background wake", { kind: "wake", cold: true, fresh: false }],
+    ["a message while the cache is warm", { kind: "web", cold: false, fresh: false }],
+  ] as const)(
+    "on FirstMate's thread after its first run, %s starts fresh only when it begins a new exchange on a cold cache",
+    ([, { kind, cold, fresh }]) =>
+      Effect.gen(function* () {
+        const key = `cold-cache-${kind}-${cold ? "cold" : "warm"}`;
+        const cwd = yield* checkpointWorkspace(key);
+        const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+        const closedSessions = yield* Ref.make<ReadonlyArray<string>>([]);
+        const harness = coldCacheHarness(key, cwd, {
+          cacheExpiresAt: cold ? COLD_CACHE_EXPIRY : "2999-01-01T00:00:00.000Z",
+          capturedTurns,
+          closedSessions,
+          nativeThreadGeneration: yield* Ref.make(0),
+        });
+        const threadId = ThreadId.make(`thread:${key}`);
+        yield* Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+          yield* createColdCacheCoordinator(key, cwd);
+          yield* orchestrator.dispatch(coldCacheMessage(key, "alpha", "web"));
+          yield* worker.drain();
+          yield* waitForIdle(threadId);
+          const firstSession = (yield* orchestrator.getThreadProjection(threadId))
+            .providerSessions[0]!;
+          yield* orchestrator.dispatch(coldCacheMessage(key, "beta", kind));
+          yield* worker.drain();
+          const projection = yield* waitForIdle(threadId);
+          const run = projection.runs.find(
+            (candidate) => candidate.userMessageId === `message:${key}:beta`,
+          )!;
+          // A wake's prompt shows as a notification row; both rows draw the divider.
+          const item = projection.turnItems.find(
+            (candidate) =>
+              (candidate.type === "user_message" || candidate.type === "notification") &&
+              candidate.runId === run.id,
+          );
+          assert.equal(run.status, "completed");
+          assert.equal(run.freshContext === true, fresh);
+          assert.deepEqual(
+            item?.type === "user_message" || item?.type === "notification"
+              ? [item.freshContext === true, item.freshContextReason]
+              : "missing",
+            [fresh, fresh && kind !== "clear" ? "cache_expired" : undefined],
+          );
+          const turns = yield* Ref.get(capturedTurns);
+          const turnFor = (name: string) =>
+            turns.find((turn) => turn.text.endsWith(`Prompt ${name}`))!;
+          assert.equal(
+            turnFor("beta").providerThreadId !== turnFor("alpha").providerThreadId,
+            fresh,
+          );
+          assert.deepEqual(yield* Ref.get(closedSessions), fresh ? [firstSession.id] : []);
+          if (!fresh) return;
+          // The fresh session is now the thread's conversation, so the next message continues it.
+          yield* orchestrator.dispatch(coldCacheMessage(key, "gamma", "web"));
+          yield* worker.drain();
+          const after = yield* waitForIdle(threadId);
+          const gamma = after.runs.find((run) => run.userMessageId === `message:${key}:gamma`)!;
+          assert.isUndefined(gamma.freshContext);
+          assert.equal(
+            (yield* Ref.get(capturedTurns)).find((turn) => turn.text.endsWith("Prompt gamma"))!
+              .providerThreadId,
+            turnFor("beta").providerThreadId,
+          );
+        }).pipe(Effect.provide(harness));
+      }),
+  );
+
+  it.live("starts a held queue fresh once on FirstMate's thread after its cache expired", () =>
+    Effect.gen(function* () {
+      const key = "cold-cache-queue";
+      const cwd = yield* checkpointWorkspace(key);
+      const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+      const closedSessions = yield* Ref.make<ReadonlyArray<string>>([]);
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const harness = coldCacheHarness(key, cwd, {
+        cacheExpiresAt: COLD_CACHE_EXPIRY,
+        capturedTurns,
+        closedSessions,
+        nativeThreadGeneration: yield* Ref.make(0),
+        holdFirstTurn: started,
+        releaseFirstTurn: release,
+      });
+      const threadId = ThreadId.make(`thread:${key}`);
+      yield* Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        yield* createColdCacheCoordinator(key, cwd);
+        yield* orchestrator.dispatch(coldCacheMessage(key, "alpha", "web"));
+        yield* Deferred.await(started);
+        yield* worker.drain();
+        const firstSession = (yield* orchestrator.getThreadProjection(threadId))
+          .providerSessions[0]!;
+        // His message and an agent's arrive together behind the running turn.
+        yield* orchestrator.dispatch(coldCacheMessage(key, "beta", "web"));
+        yield* orchestrator.dispatch(coldCacheMessage(key, "gamma", "mcp"));
+        yield* Deferred.succeed(release, undefined);
+        yield* worker.drain();
+        const projection = yield* waitForIdle(threadId);
+        const runFor = (name: string) =>
+          projection.runs.find((run) => run.userMessageId === `message:${key}:${name}`)!;
+        assert.deepEqual(
+          ["alpha", "beta", "gamma"].map((name) => [
+            runFor(name).status,
+            runFor(name).freshContext,
+          ]),
+          [
+            ["completed", undefined],
+            ["completed", true],
+            ["completed", undefined],
+          ],
+        );
+        assert.isTrue(
+          projection.turnItems.some(
+            (item) =>
+              item.type === "user_message" &&
+              item.messageId === runFor("beta").userMessageId &&
+              item.freshContextReason === "cache_expired",
+          ),
+        );
+        const turns = yield* Ref.get(capturedTurns);
+        const turnFor = (name: string) =>
+          turns.find((turn) => turn.text.endsWith(`Prompt ${name}`))!;
+        assert.notEqual(turnFor("beta").providerThreadId, turnFor("alpha").providerThreadId);
+        assert.equal(turnFor("gamma").providerThreadId, turnFor("beta").providerThreadId);
+        assert.deepEqual(yield* Ref.get(closedSessions), [firstSession.id]);
+      }).pipe(Effect.provide(harness));
+    }),
+  );
+
   it.live(
     "starts a scheduled fresh run while the previous run's session still has background work",
     () =>

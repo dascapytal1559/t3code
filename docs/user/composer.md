@@ -310,6 +310,11 @@ earlier messages, and the thread marks where it began with **New session**.
 Earlier messages and diffs stay in the thread. Dismiss the notice above the
 composer to keep the current session instead.
 
+FirstMate's own thread does this by itself when a new message arrives after its
+Claude prompt cache has expired, usually after an hour idle, and the divider
+reads **New session · cache expired**. This needs **Compact idle threads** in
+**Settings > Providers > Advanced** set to **Never** for Claude.
+
 On web and desktop, turn on **Context window** in **Settings → Appearance →
 Thread details** to see context usage in the thread details card. It appears
 once the provider reports usage. The ring beside the send button shows the same
