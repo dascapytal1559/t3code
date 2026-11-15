@@ -13,6 +13,7 @@ import {
   hasUnseenRunFailure,
   pickSnoozePreset,
   resolveSnoozePresets,
+  snoozeRowLabel,
   snoozeWakeLabel,
   threadRaisedHandWhileSnoozed,
   threadWokeAt,
@@ -525,6 +526,8 @@ describe("pickSnoozePreset", () => {
     expect(effectiveSnoozed(shell, { now: "2126-01-01T00:00:00.000Z" })).toBe(true);
     expect(threadWokeAt(shell, { now: NOW })).toBeNull();
     expect(snoozeWakeLabel(INDEFINITE_SNOOZE_UNTIL, { now: NOW })).toBe("");
+    expect(snoozeRowLabel(INDEFINITE_SNOOZE_UNTIL, { now: NOW })).toBe("Snoozed");
+    expect(snoozeRowLabel("2026-04-10T13:00:30.000Z", { now: NOW })).toBe("1h");
   });
 });
 

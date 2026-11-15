@@ -179,8 +179,7 @@ import {
   selectActiveRightPanel,
   useRightPanelStore,
 } from "../rightPanelStore";
-import { getLatestThreadForProject, sortThreads } from "@t3tools/client-runtime/state/thread-sort";
-import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
+import { getLatestThreadForProject } from "@t3tools/client-runtime/state/thread-sort";
 import {
   cn,
   getLocalFileManagerName,
@@ -231,6 +230,7 @@ import {
   remoteProjectInputPlaceholder,
   reduceCommandPaletteSearchState,
   type SearchOverlayMode,
+  latestOpenableProjectThread,
   settledOutOfSight,
 } from "./CommandPalette.logic";
 import { resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
@@ -822,23 +822,13 @@ function OpenCommandPaletteDialog(props: {
       : null;
     // oxlint-disable-next-line react/purity -- runs in an event handler (oxc#27309)
     const now = new Date().toISOString();
-    const openableThreads = threads.filter(
-      (thread) => !settledOutOfSight(thread) && !effectiveSnoozed(thread, { now }),
-    );
-    const latestThread = groupedProjectKeys
-      ? (sortThreads(
-          openableThreads.filter(
-            (thread) =>
-              thread.archivedAt === null &&
-              groupedProjectKeys.has(`${thread.environmentId}:${thread.projectId}`),
-          ),
-          clientSettings.sidebarThreadSortOrder,
-        )[0] ?? null)
-      : getLatestThreadForProject(
-          openableThreads.filter((thread) => thread.environmentId === project.environmentId),
-          project.id,
-          clientSettings.sidebarThreadSortOrder,
-        );
+    const latestThread = latestOpenableProjectThread({
+      threads,
+      project,
+      groupedProjectKeys,
+      sortOrder: clientSettings.sidebarThreadSortOrder,
+      now,
+    });
     if (latestThread) {
       await navigate({
         to: "/$environmentId/$threadId",

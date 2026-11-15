@@ -184,6 +184,13 @@ describe("live preview", () => {
     expect(view.lineClasses[3]).toBe("cm-lp-h cm-lp-h1");
   });
 
+  it("hides keyless frontmatter as the rendered view does, with no empty card", () => {
+    const view = drawn("---\nfoo\n---\n\n# Body");
+    expect(view.widgets).toEqual([]);
+    expect(view.replaced).toEqual(["---\nfoo\n---", "# "]);
+    expect(view.lineClasses[2]).toBeUndefined();
+  });
+
   it("draws everything while the editor has no focus", () => {
     const view = drawn("Some **bold** text.");
     expect(view.dimmed).toEqual([]);

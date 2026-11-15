@@ -20,6 +20,14 @@ describe("maskMarkdownFrontmatter", () => {
     expect(maskMarkdownFrontmatter("---\n---\n# Body")).toBe("   \n   \n# Body");
   });
 
+  it("hides keyless frontmatter, and leaves rules around paragraphs as Markdown", () => {
+    expect(maskMarkdownFrontmatter("---\nfoo\n---\n# Body")).toBe("   \n   \n   \n# Body");
+    const ruled = "---\n\n# Intro\n\nText\n\n---\n\nMore";
+    expect(markdownFrontmatterLength(ruled)).toBe(0);
+    expect(maskMarkdownFrontmatter(ruled)).toBe(ruled);
+    expect(markdownFrontmatterLength("---\ntitle: A\n\nsummary: B\n---\n")).toBe(28);
+  });
+
   it("leaves unterminated or non-leading fences alone", () => {
     expect(maskMarkdownFrontmatter("---\na: 1\n")).toBe("---\na: 1\n");
     expect(maskMarkdownFrontmatter("# A\n---\nb\n---\n")).toBe("# A\n---\nb\n---\n");

@@ -222,7 +222,7 @@ import { createSidebarShiftGuard } from "./Sidebar.shiftGuard";
 import {
   pickSnoozePreset,
   resolveSnoozePresets,
-  snoozeWakeLabel,
+  snoozeRowLabel,
   type SnoozePreset,
 } from "./Sidebar.snooze";
 import { ProjectFavicon } from "./ProjectFavicon";
@@ -3514,7 +3514,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                             }
                             snoozeWakeLabelText={
                               section === "snoozed" && thread.snoozedUntil != null
-                                ? snoozeWakeLabel(thread.snoozedUntil, {
+                                ? snoozeRowLabel(thread.snoozedUntil, {
                                     now: new Date().toISOString(),
                                   })
                                 : null

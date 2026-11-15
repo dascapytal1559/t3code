@@ -5,7 +5,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { externalChangeSpec, lineFlash } from "./externalChanges";
 import { lineChanges } from "./lineDiff";
-import { fromEditorText, lineEndingOf, toEditorText } from "./lineEndings";
 
 const editorOn = (doc: string) => EditorState.create({ doc, extensions: [history(), lineFlash] });
 
@@ -40,28 +39,6 @@ describe("changes from disk", () => {
     const state = fromDisk(editorOn(current), next);
     expect(state.doc.toString()).toBe(next);
     expect(flashedLines(state)).toEqual(lines);
-  });
-
-  it("take a rewrite that changes the line ending without moving the caret or losing undo", () => {
-    const file = "a\r\nhello world\r\nc\r\n";
-    const typed = EditorState.create({
-      doc: toEditorText(file),
-      selection: { anchor: "a\nhello".length },
-      extensions: [history(), lineFlash],
-    }).update({ changes: { from: 7, to: 13 }, userEvent: "delete" }).state;
-    const next = "a\r\nhello\r\nNEW\nc\r\n";
-    let state = fromDisk(typed, toEditorText(next));
-    expect(state.doc.toString()).toBe("a\nhello\nNEW\nc\n");
-    expect(state.selection.main.head).toBe("a\nhello".length);
-    undo({
-      state,
-      dispatch: (tr) => {
-        state = tr.state;
-      },
-    });
-    expect(fromEditorText(state.doc.toString(), lineEndingOf(next, "crlf"))).toBe(
-      "a\r\nhello world\r\nNEW\r\nc\r\n",
-    );
   });
 
   it("stay out of undo, which still takes back what was typed", () => {

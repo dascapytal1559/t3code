@@ -14,14 +14,49 @@ import {
   resolveAddProjectEntry,
   createCommandPaletteSearchState,
   reduceCommandPaletteSearchState,
-  settledOutOfSight,
+  latestOpenableProjectThread,
   type CommandPaletteUiState,
 } from "./CommandPalette.logic";
 
 describe("opening a project's latest thread", () => {
-  it("counts a settled thread, which the sidebar without a Settled shelf lists as active", () => {
-    expect(settledOutOfSight({ settledOverride: "settled" })).toBe(false);
-    expect(settledOutOfSight({ settledOverride: null })).toBe(false);
+  const environmentId = EnvironmentId.make("local");
+  const projectId = ProjectId.make("project");
+  const thread = (id: string, at: string, overrides: Record<string, unknown> = {}) => ({
+    id,
+    environmentId,
+    projectId,
+    archivedAt: null,
+    createdAt: at,
+    updatedAt: at,
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    ...overrides,
+  });
+  const latest = (
+    threads: ReadonlyArray<ReturnType<typeof thread>>,
+    groupedProjectKeys: ReadonlySet<string> | null = null,
+  ) =>
+    latestOpenableProjectThread({
+      threads,
+      project: { environmentId, id: projectId },
+      groupedProjectKeys,
+      sortOrder: "updated_at",
+      now: "2026-06-01T00:00:00.000Z",
+    })?.id;
+
+  it("opens the newest thread even when settled, as the sidebar without a Settled shelf lists it", () => {
+    const older = thread("older", "2026-05-01T00:00:00.000Z");
+    const settled = thread("settled", "2026-05-02T00:00:00.000Z", { settledOverride: "settled" });
+    expect(latest([older, settled])).toBe("settled");
+    expect(latest([older, settled], new Set([`${environmentId}:${projectId}`]))).toBe("settled");
+  });
+
+  it("passes over a thread snoozed into the future", () => {
+    const older = thread("older", "2026-05-01T00:00:00.000Z");
+    const snoozed = thread("snoozed", "2026-05-02T00:00:00.000Z", {
+      snoozedUntil: "2026-07-01T00:00:00.000Z",
+    });
+    expect(latest([older, snoozed])).toBe("older");
   });
 });
 

@@ -30,6 +30,16 @@ import {
   THREAD_JUMP_KEYBINDING_COMMANDS,
 } from "@t3tools/contracts";
 import { filterFilesystemBrowseEntries } from "@t3tools/client-runtime/state/filesystem";
+import {
+  effectiveSnoozed,
+  type ThreadSnoozeShell,
+} from "@t3tools/client-runtime/state/thread-settled";
+import {
+  getLatestThreadForProject,
+  sortThreads,
+  type ThreadSortInput,
+} from "@t3tools/client-runtime/state/thread-sort";
+import type { SidebarThreadSortOrder } from "@t3tools/contracts/settings";
 import { type ReactNode } from "react";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { type Project, type SidebarThreadSummary, type Thread } from "../types";
@@ -41,6 +51,48 @@ export function settledOutOfSight(thread: {
   readonly settledOverride?: "settled" | "active" | null;
 }): boolean {
   return SIDEBAR_SETTLED_SHELF && thread.settledOverride === "settled";
+}
+
+/**
+ * The thread opening a project from search lands on: the latest one in the project, or in
+ * every project of its group, that is neither snoozed nor put away as settled.
+ */
+export function latestOpenableProjectThread<
+  T extends {
+    readonly id: string;
+    readonly environmentId: EnvironmentId;
+    readonly projectId: ProjectId;
+    readonly archivedAt: string | null;
+    readonly settledOverride?: "settled" | "active" | null;
+  } & ThreadSortInput &
+    ThreadSnoozeShell,
+>(input: {
+  readonly threads: readonly T[];
+  readonly project: { readonly environmentId: EnvironmentId; readonly id: ProjectId };
+  readonly groupedProjectKeys: ReadonlySet<string> | null;
+  readonly sortOrder: SidebarThreadSortOrder;
+  readonly now: string;
+}): T | null {
+  const openable = input.threads.filter(
+    (thread) => !settledOutOfSight(thread) && !effectiveSnoozed(thread, { now: input.now }),
+  );
+  const grouped = input.groupedProjectKeys;
+  if (grouped === null) {
+    return getLatestThreadForProject(
+      openable.filter((thread) => thread.environmentId === input.project.environmentId),
+      input.project.id,
+      input.sortOrder,
+    );
+  }
+  return (
+    sortThreads(
+      openable.filter(
+        (thread) =>
+          thread.archivedAt === null && grouped.has(`${thread.environmentId}:${thread.projectId}`),
+      ),
+      input.sortOrder,
+    )[0] ?? null
+  );
 }
 
 export const RECENT_THREAD_LIMIT = 12;

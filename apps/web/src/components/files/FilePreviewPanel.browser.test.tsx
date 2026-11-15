@@ -424,6 +424,53 @@ describe("live Markdown editor", () => {
     );
   });
 
+  it("keeps a CRLF file's endings, saves only an edit, and follows an agent's switch to LF", async () => {
+    using _settings = setup();
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    await page.viewport(1280, 800);
+    await using _viewport = {
+      [Symbol.asyncDispose]: () => page.viewport(viewport.width, viewport.height),
+    };
+    const written = (contents: string) => ({
+      environmentId,
+      input: { cwd: "/workspace", relativePath: "notes.md", contents },
+    });
+    await using screen = await render(
+      markdownPreview(false, "# Notes\r\n\r\nFirst line.\r\n\r\nLast line.\r\n", "notes.md"),
+    );
+    await expect.element(screen.getByText("Last line.")).toBeVisible();
+
+    using _timers = fakeTimers();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(state.writeFile, "opening the file wrote it").not.toHaveBeenCalled();
+    await userEvent.click(screen.getByText("Last line."));
+    await userEvent.keyboard("{End} More.");
+    await vi.advanceTimersByTimeAsync(500);
+    expect(state.writeFile).toHaveBeenCalledExactlyOnceWith(
+      written("# Notes\r\n\r\nFirst line.\r\n\r\nLast line. More.\r\n"),
+    );
+
+    // An agent rewrites the file with LF endings and another first line.
+    state.optimistic = null;
+    await screen.rerender(
+      markdownPreview(false, "# Notes\n\nFirst line, from disk.\n\nLast line. More.\n", "notes.md"),
+    );
+    await expect.element(screen.getByText("First line, from disk.")).toBeVisible();
+    // The caret stayed at the end of the last line, and the file now saves with LF.
+    await userEvent.keyboard("!");
+    await vi.advanceTimersByTimeAsync(500);
+    expect(state.writeFile).toHaveBeenLastCalledWith(
+      written("# Notes\n\nFirst line, from disk.\n\nLast line. More.!\n"),
+    );
+    await userEvent.keyboard(
+      isMacPlatform(navigator.platform) ? "{Meta>}z{/Meta}" : "{Control>}z{/Control}",
+    );
+    await vi.advanceTimersByTimeAsync(500);
+    expect(state.writeFile).toHaveBeenLastCalledWith(
+      written("# Notes\n\nFirst line, from disk.\n\nLast line. More.\n"),
+    );
+  });
+
   it("opens at a linked line in the editor, where the rendered view needs the source", async () => {
     using _settings = setup();
     state.file = {

@@ -356,6 +356,7 @@ const seedThread = (input: {
   crewOf?: string;
   causedBy?: Record<string, string>;
   worktreePath?: string;
+  rootThreadId?: string;
 }) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
@@ -373,6 +374,9 @@ const seedThread = (input: {
         crewOf: input.crewOf ?? null,
         worktreePath: input.worktreePath ?? null,
         ...(input.causedBy === undefined ? {} : { causedBy: input.causedBy }),
+        ...(input.rootThreadId === undefined
+          ? {}
+          : { lineage: { rootThreadId: input.rootThreadId } }),
       }),
     })}`;
   });
@@ -641,6 +645,71 @@ describe("UsageOrigins.read", () => {
         },
       });
 
+      // A crew worker's subagent has no crew link of its own; its lineage leads to the worker.
+      yield* seedThread({ id: "worker-subagent", rootThreadId: "worker" });
+      yield* seedRun({
+        id: "sub-brief",
+        ordinal: 1,
+        threadId: "worker-subagent",
+        sessionId: "worker-subagent-session",
+        startedAt: "2026-08-07T01:30:00.000Z",
+        message: {
+          createdBy: "agent",
+          creationSource: "mcp",
+          origin: { surface: "mcp", deviceType: "bot" },
+        },
+      });
+
+      // Two runs claimed for each other's prompts. The second's prompt traces to a run claimed
+      // for the phone, so both count there whichever is resolved first.
+      yield* seedThread({ id: "cycle" });
+      for (const [ordinal, id, startedAt, causedBy] of [
+        [1, "cycle-b", "2026-08-07T06:00:00.000Z", undefined],
+        [2, "cycle-a", "2026-08-07T06:10:00.000Z", "message-cycle-c"],
+        [3, "cycle-c", "2026-08-07T06:20:00.000Z", undefined],
+      ] as const) {
+        yield* seedRun({
+          id,
+          ordinal,
+          threadId: "cycle",
+          sessionId: "cycle-session",
+          startedAt,
+          message: {
+            createdBy: "agent",
+            creationSource: "provider",
+            ...(causedBy === undefined
+              ? {}
+              : { causedBy: { threadId: "cycle", messageId: causedBy } }),
+          },
+        });
+      }
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`INSERT INTO orchestration_v2_projection_messages ${sql.insert({
+        message_id: "message-cycle-a-follow-up",
+        thread_id: "cycle",
+        run_id: "run-cycle-a",
+        role: "user",
+        streaming: 0,
+        created_at: "2026-08-07T06:15:00.000Z",
+        updated_at: "2026-08-07T06:15:00.000Z",
+        payload_json: encodeJson({ createdBy: "agent", creationSource: "provider" }),
+      })}`;
+      for (const [run, message] of [
+        ["run-cycle-a", "message-cycle-b"],
+        ["run-cycle-b", "message-cycle-a"],
+      ] as const) {
+        yield* claims.claim({
+          target: { kind: "run", runId: run },
+          value: {
+            causedBy: { threadId: ThreadId.make("cycle"), messageId: MessageId.make(message) },
+          },
+        });
+      }
+      yield* claims.claim({
+        target: { kind: "run", runId: "run-cycle-c" },
+        value: { device: "phone" },
+      });
+
       const origins = yield* UsageOrigins;
       const snapshot = yield* origins.read(
         Date.parse("2026-08-07T00:00:00.000Z"),
@@ -688,6 +757,13 @@ describe("UsageOrigins.read", () => {
         basis: "claim",
         via: "crew",
       });
+      assert.deepStrictEqual(at("worker-subagent-session", "2026-08-07T01:31:00Z"), {
+        origin: "crew",
+        basis: "stamp",
+      });
+      const cyclePhone = { origin: "phone", basis: "claim", via: "agent" } as const;
+      assert.deepStrictEqual(at("cycle-session", "2026-08-07T06:01:00Z"), cyclePhone);
+      assert.deepStrictEqual(at("cycle-session", "2026-08-07T06:11:00Z"), cyclePhone);
       // A CLI run inside the worker's worktree counts to the worker's turn then.
       assert.deepStrictEqual(at("cli-session", "2026-08-07T01:25:00Z", "/wt/worker/runs"), viaCrew);
       assert.deepStrictEqual(
@@ -698,6 +774,11 @@ describe("UsageOrigins.read", () => {
           "computer/claim/agent",
           "computer/claim/crew",
           "crew/stamp/-",
+          "crew/stamp/-",
+          "phone/claim/agent",
+          "phone/claim/agent",
+          "phone/claim/agent",
+          "phone/claim/agent",
           "phone/claim/crew",
           "phone/claim/crew",
           "phone/stamp/-",

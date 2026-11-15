@@ -366,7 +366,14 @@ const make = Effect.gen(function* () {
     json_extract(message.payload_json, '$.creationSource') AS creation_source,
     json_extract(message.payload_json, '$.origin.surface') AS surface,
     json_extract(message.payload_json, '$.origin.deviceType') AS device_type,
-    json_extract(thread.payload_json, '$.crewOf') IS NOT NULL AS crew,
+    (
+      json_extract(thread.payload_json, '$.crewOf') IS NOT NULL
+      OR EXISTS (
+        SELECT 1 FROM orchestration_v2_projection_threads AS root
+        WHERE root.thread_id = json_extract(thread.payload_json, '$.lineage.rootThreadId')
+          AND json_extract(root.payload_json, '$.crewOf') IS NOT NULL
+      )
+    ) AS crew,
     json_extract(message.payload_json, '$.notification') IS NOT NULL AS notification,
     coalesce(
       json_extract(message.payload_json, '$.causedBy.messageId'),
@@ -480,14 +487,26 @@ const make = Effect.gen(function* () {
       );
       // A run claim reached again while it resolves is a cycle and counts to no device.
       const settledRunClaims = new Map<string, DeviceOriginKey | undefined>();
+      const resolving: string[] = [];
+      let cycleAt = Number.POSITIVE_INFINITY;
       const claimOfRun = (runId: string): DeviceOriginKey | undefined => {
         if (settledRunClaims.has(runId)) return settledRunClaims.get(runId);
+        const ancestor = resolving.indexOf(runId);
+        if (ancestor >= 0) {
+          cycleAt = Math.min(cycleAt, ancestor);
+          return undefined;
+        }
         const claim = runClaims.get(runId);
         if (claim === undefined) return undefined;
-        settledRunClaims.set(runId, undefined);
+        const depth = resolving.length;
+        const outerCycleAt = cycleAt;
+        cycleAt = Number.POSITIVE_INFINITY;
+        resolving.push(runId);
         const key = claimKey(claim);
+        resolving.pop();
         const settled = isDevice(key) ? { origin: key.origin, basis: key.basis } : undefined;
-        settledRunClaims.set(runId, settled);
+        if (cycleAt >= depth) settledRunClaims.set(runId, settled);
+        cycleAt = Math.min(outerCycleAt, cycleAt < depth ? cycleAt : Number.POSITIVE_INFINITY);
         return settled;
       };
       const originOf = (message: CausalMessage) =>

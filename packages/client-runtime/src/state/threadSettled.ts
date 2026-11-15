@@ -371,6 +371,11 @@ export function snoozeWakeLabel(snoozedUntil: string, options: { readonly now: s
   return `${Math.ceil(minutes / (24 * 60))}d`;
 }
 
+/** What a snoozed thread's row shows: its countdown, or "Snoozed" when no wake is set. */
+export function snoozeRowLabel(snoozedUntil: string, options: { readonly now: string }): string {
+  return isIndefiniteSnooze(snoozedUntil) ? "Snoozed" : snoozeWakeLabel(snoozedUntil, options);
+}
+
 export type CustomSnoozeInput =
   | { readonly mode: "date"; readonly date: string; readonly time: string }
   | {

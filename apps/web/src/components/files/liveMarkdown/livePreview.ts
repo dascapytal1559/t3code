@@ -51,8 +51,7 @@ function frontmatterEnd(state: EditorState): number {
   const head = state.doc.sliceString(0, FRONTMATTER_SCAN_CHARS);
   const length = markdownFrontmatterLength(head);
   // A fence cut off by the scan limit would read as closed.
-  if (length === head.length && state.doc.length > head.length) return 0;
-  return frontmatterRows(head.slice(0, length)).length > 0 ? length : 0;
+  return length === head.length && state.doc.length > head.length ? 0 : length;
 }
 
 /** Length of the leading frontmatter block, 0 without one. The Markdown grammar does not know it. */
@@ -111,8 +110,12 @@ export function blockDecorations(state: EditorState): DecorationSet {
   const touch = touchOf(state);
   const frontmatter = state.field(frontmatterField);
   if (frontmatter > 0 && !touch.onLines(0, frontmatter)) {
-    const widget = new FrontmatterWidget(doc.sliceString(0, frontmatter));
-    out.push(Decoration.replace({ widget, block: true }).range(0, frontmatter));
+    const source = doc.sliceString(0, frontmatter);
+    const shown =
+      frontmatterRows(source).length > 0
+        ? Decoration.replace({ widget: new FrontmatterWidget(source), block: true })
+        : Decoration.replace({ block: true });
+    out.push(shown.range(0, frontmatter));
   }
   // Only a table at the top level is drawn; one inside a list or a quote stays as its source.
   const top = syntaxTree(state).topNode;
