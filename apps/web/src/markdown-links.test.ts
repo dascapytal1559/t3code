@@ -105,7 +105,7 @@ describe("relative links inside a rendered host file", () => {
       [
         "explicit ./",
         resolveInlineCodeFileLinkMeta("./src/main.ts", "/ws", "/ws/docs"),
-        "/ws/docs/./src/main.ts",
+        "/ws/docs/src/main.ts",
         null,
       ],
       [
