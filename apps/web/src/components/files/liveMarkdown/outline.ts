@@ -1,3 +1,5 @@
+import { githubHeadingSlug } from "~/components/chat/markdownFragments";
+
 export interface OutlineItem {
   readonly level: number;
   readonly text: string;
@@ -15,11 +17,7 @@ export interface MarkdownOutlineSource {
 export function headingAnchors(headings: readonly OutlineItem[]): string[] {
   const seen = new Map<string, number>();
   return headings.map(({ text }) => {
-    const anchor = text
-      .trim()
-      .toLowerCase()
-      .replace(/[^\p{L}\p{M}\p{N}\s_-]/gu, "")
-      .replace(/\s/g, "-");
+    const anchor = githubHeadingSlug(text);
     const repeats = seen.get(anchor) ?? 0;
     seen.set(anchor, repeats + 1);
     return repeats === 0 ? anchor : `${anchor}-${repeats}`;

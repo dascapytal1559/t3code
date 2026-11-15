@@ -222,7 +222,7 @@ describe("live preview", () => {
     expect(view.links).toEqual([]);
   });
 
-  it("leaves a bracketed citation to the Markdown grammar, not a wiki-link", () => {
+  it("steps aside for a bracketed citation, which keeps its address clickable", () => {
     const view = drawn("See [[1]](https://example.com).");
     expect(view.replaced).toEqual([]);
     expect(view.links).toEqual([["https://example.com", "https://example.com"]]);
