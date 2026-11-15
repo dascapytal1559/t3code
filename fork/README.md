@@ -1381,11 +1381,16 @@ shows), the default of `t3code.renderMarkdown`, the outline button with its
 ref and column state (`useOutlineColumn`), and the badge; the properties card in `FileMarkdownPreview.tsx`; the selector in
 `AppSidebarLayout.tsx` that lets Cmd+B bold a selection; the
 `markdownFrontmatterLength` export in
-`packages/shared/src/markdownFrontmatter.ts`; the pre-bundled packages in
+`packages/shared/src/markdownFrontmatter.ts`, whose rule that a leading `---`
+block with a blank line and no `key:` line is Markdown, not frontmatter, also
+reaches upstream's rendered views on web and mobile through
+`maskMarkdownFrontmatter`; the
+`githubHeadingSlug` export in `apps/web/src/components/chat/markdownFragments.ts`,
+which the outline uses for heading anchors; the pre-bundled packages in
 `apps/web/vite.config.ts`; the `@codemirror/*` and `@lezer/*` entries in
 `apps/web/package.json`; and a section in `docs/user/composer.md`. If
 upstream ships its own editable rendered view, choose one of the two. The
-mobile app is unchanged.
+mobile app is otherwise unchanged.
 
 ## Version
 
