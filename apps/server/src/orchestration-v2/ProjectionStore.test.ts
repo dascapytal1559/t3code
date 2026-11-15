@@ -1385,6 +1385,7 @@ it.effect(
         ["usage-limit-resume", "agent", null, false, false],
         ["restart-resume", "agent", null, false, false],
         ["supervision-resume", "agent", null, false, true],
+        ["restart-then-usage-limit-resume", "agent", null, false, false],
         ["alerted", { kind: "command" }, "completed", false, false],
         ["unpinned", { kind: "command" }, "completed", false, false],
       ] as const) {
@@ -1441,7 +1442,13 @@ it.effect(
                 ? { restartContinuationOfRunId: RunId.make("run:background-wake:user") }
                 : id === "supervision-resume"
                   ? { usageLimitContinuationOfRunId: RunId.make("run:background-wake:agent-sent") }
-                  : {}),
+                  : id === "restart-then-usage-limit-resume"
+                    ? {
+                        usageLimitContinuationOfRunId: RunId.make(
+                          "run:background-wake:restart-resume",
+                        ),
+                      }
+                    : {}),
           },
         });
         if (id === "steered") {

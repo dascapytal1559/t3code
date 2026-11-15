@@ -1958,28 +1958,38 @@ function isBackgroundWakeRunForShell(
   );
 }
 
+const MAX_SUPERVISION_CONTINUATION_DEPTH = 8;
+
+/** The run and the runs it continues after a restart or a usage limit, nearest first. */
+function continuationChainForShell(
+  run: OrchestrationV2ThreadProjection["runs"][number],
+  runs: OrchestrationV2ThreadProjection["runs"],
+): OrchestrationV2ThreadProjection["runs"] {
+  const chain = [run];
+  for (let current = run; chain.length <= MAX_SUPERVISION_CONTINUATION_DEPTH;) {
+    const sourceRunId = current.usageLimitContinuationOfRunId ?? current.restartContinuationOfRunId;
+    const source = runs.find((candidate) => candidate.id === sourceRunId);
+    if (source === undefined || chain.includes(source)) break;
+    chain.push(source);
+    current = source;
+  }
+  return chain;
+}
+
 // Fork: a coordinator's run is supervision, ending quietly, unless the user's own message
 // started it or was steered into it, or its agent asked to alert.
 function isSupervisionRunForShell(
   run: OrchestrationV2ThreadProjection["runs"][number],
   projection: Pick<OrchestrationV2ThreadProjection, "thread" | "messages" | "runs">,
 ): boolean {
-  const sourceRunId = run.usageLimitContinuationOfRunId ?? run.restartContinuationOfRunId;
-  const source =
-    sourceRunId === undefined
-      ? undefined
-      : projection.runs.find((candidate) => candidate.id === sourceRunId);
-  return (
-    projection.thread.coordinator === true &&
-    projection.thread.alertRunId !== run.id &&
-    !projection.messages.some(
-      (message) =>
-        message.createdBy === "user" &&
-        (message.id === run.userMessageId ||
-          message.runId === run.id ||
-          (source !== undefined &&
-            (message.id === source.userMessageId || message.runId === source.id))),
-    )
+  if (projection.thread.coordinator !== true || projection.thread.alertRunId === run.id) {
+    return false;
+  }
+  const chain = continuationChainForShell(run, projection.runs);
+  return !projection.messages.some(
+    (message) =>
+      message.createdBy === "user" &&
+      chain.some((link) => message.id === link.userMessageId || message.runId === link.id),
   );
 }
 
@@ -7916,25 +7926,37 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
     // Mirrors isSupervisionRunForShell; the coordinator test first keeps other threads cheap.
     const isSupervisionShellRun = (alias: string) => {
       const run = sql.literal(alias);
-      const continued = sql`COALESCE(
-        json_extract(${run}.payload_json, '$.usageLimitContinuationOfRunId'),
-        json_extract(${run}.payload_json, '$.restartContinuationOfRunId')
-      )`;
+      const continued = (row: string) => {
+        const source = sql.literal(row);
+        return sql`COALESCE(
+          json_extract(${source}.payload_json, '$.usageLimitContinuationOfRunId'),
+          json_extract(${source}.payload_json, '$.restartContinuationOfRunId')
+        )`;
+      };
       return sql`(
         json_extract(t.payload_json, '$.coordinator') IS 1
         AND json_extract(t.payload_json, '$.alertRunId') IS NOT ${run}.run_id
         AND NOT EXISTS (
-          SELECT 1 FROM orchestration_v2_projection_messages own
-          WHERE (
-            own.message_id = json_extract(${run}.payload_json, '$.userMessageId')
-            OR own.run_id = ${run}.run_id
-            OR own.run_id = ${continued}
-            OR own.message_id = (
-              SELECT json_extract(source.payload_json, '$.userMessageId')
-              FROM orchestration_v2_projection_runs source
-              WHERE source.run_id = ${continued}
-            )
-          ) AND json_extract(own.payload_json, '$.createdBy') = 'user'
+          WITH RECURSIVE chain(run_id, user_message_id, continued, depth) AS (
+            SELECT
+              ${run}.run_id,
+              json_extract(${run}.payload_json, '$.userMessageId'),
+              ${continued(alias)},
+              0
+            UNION
+            SELECT
+              source.run_id,
+              json_extract(source.payload_json, '$.userMessageId'),
+              ${continued("source")},
+              chain.depth + 1
+            FROM chain
+            JOIN orchestration_v2_projection_runs source ON source.run_id = chain.continued
+            WHERE chain.depth < ${MAX_SUPERVISION_CONTINUATION_DEPTH}
+          )
+          SELECT 1 FROM chain
+          JOIN orchestration_v2_projection_messages own
+            ON own.message_id = chain.user_message_id OR own.run_id = chain.run_id
+          WHERE json_extract(own.payload_json, '$.createdBy') = 'user'
         )
       )`;
     };
