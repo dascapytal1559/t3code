@@ -18,7 +18,7 @@ export function headingAnchors(headings: readonly OutlineItem[]): string[] {
     const anchor = text
       .trim()
       .toLowerCase()
-      .replace(/[^\p{L}\p{N}\s_-]/gu, "")
+      .replace(/[^\p{L}\p{M}\p{N}\s_-]/gu, "")
       .replace(/\s/g, "-");
     const repeats = seen.get(anchor) ?? 0;
     seen.set(anchor, repeats + 1);

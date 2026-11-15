@@ -222,6 +222,12 @@ describe("live preview", () => {
     expect(view.links).toEqual([]);
   });
 
+  it("leaves a bracketed citation to the Markdown grammar, not a wiki-link", () => {
+    const view = drawn("See [[1]](https://example.com).");
+    expect(view.replaced).toEqual([]);
+    expect(view.links).toEqual([["https://example.com", "https://example.com"]]);
+  });
+
   it("draws an image in place of its Markdown, and after it while the caret is on its line", () => {
     const away = drawn("![Chart](https://t3.codes/chart.png)");
     expect(away.images).toEqual(["https://t3.codes/chart.png"]);

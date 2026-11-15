@@ -31,6 +31,20 @@ function toggleInlineMark(
   options?: { readonly needsSelection: boolean },
 ): StateCommand {
   const size = mark.length;
+  const char = mark[0];
+  const holdsMark = (text: string) => {
+    for (let at = 0; at < text.length;) {
+      if (text[at] !== char || text[at - 1] === "\\") {
+        at += 1;
+        continue;
+      }
+      let end = at;
+      while (text[end] === char) end += 1;
+      if (size > 1 ? end - at >= size : (end - at) % 2 === 1) return true;
+      at = end;
+    }
+    return false;
+  };
   const wrapsOnce = (run: string, fromEnd: boolean) => {
     if (size > 1) return true;
     let count = 0;
@@ -42,14 +56,22 @@ function toggleInlineMark(
     if (options?.needsSelection && state.selection.ranges.every((range) => range.empty)) {
       return false;
     }
-    const change = state.changeByRange((range) => {
+    const change = state.changeByRange((original) => {
+      const text = state.sliceDoc(original.from, original.to);
+      const lead = /^\s*/.exec(text)?.[0].length ?? 0;
+      const trail = /\s*$/.exec(text)?.[0].length ?? 0;
+      const range =
+        lead === text.length
+          ? original
+          : EditorSelection.range(original.from + lead, original.to - trail);
       const selected = state.sliceDoc(range.from, range.to);
       if (
         selected.length >= 2 * size &&
         selected.startsWith(mark) &&
         selected.endsWith(mark) &&
         wrapsOnce(selected, false) &&
-        wrapsOnce(selected, true)
+        wrapsOnce(selected, true) &&
+        !holdsMark(selected.slice(size, selected.length - size))
       ) {
         return {
           changes: [
@@ -65,7 +87,8 @@ function toggleInlineMark(
         before === mark &&
         after === mark &&
         wrapsOnce(state.sliceDoc(state.doc.lineAt(range.from).from, range.from), true) &&
-        wrapsOnce(state.sliceDoc(range.to, state.doc.lineAt(range.to).to), false)
+        wrapsOnce(state.sliceDoc(range.to, state.doc.lineAt(range.to).to), false) &&
+        !holdsMark(selected)
       ) {
         return {
           changes: [
@@ -137,10 +160,28 @@ function inCodeBlock(state: EditorState, pos: number): boolean {
   return false;
 }
 
+/** The nearest list item above `lineNumber` at most `indent` deep, or shallower than it. */
+function listItemAbove(
+  state: EditorState,
+  lineNumber: number,
+  indent: number,
+  shallower: boolean,
+): { readonly indent: number; readonly width: number } | undefined {
+  for (let number = lineNumber - 1; number >= 1; number -= 1) {
+    const text = state.doc.line(number).text;
+    if (text.trim() === "") continue;
+    const list = LIST_LINE.exec(text);
+    const depth = (list?.[1] ?? /^\s*/.exec(text)?.[0] ?? "").length;
+    if (shallower ? depth >= indent : depth > indent) continue;
+    return list ? { indent: depth, width: (list[2] ?? "").length } : undefined;
+  }
+  return undefined;
+}
+
 /**
- * Tab nests a list item under the one above: it moves in by the width of its
- * own marker, which lines it up with that item's text. Shift-Tab moves it back.
- * In prose Tab does nothing, since leading spaces there would start a code block.
+ * Tab nests a list item under the one above: it moves in to that item's text.
+ * Shift-Tab moves it back out to its parent's indent. In prose Tab does
+ * nothing, since leading spaces there would start a code block.
  */
 function shiftListItems(direction: 1 | -1): StateCommand {
   return (target) => {
@@ -152,17 +193,28 @@ function shiftListItems(direction: 1 | -1): StateCommand {
       if (!inCodeBlock(state, state.selection.main.head)) return true;
       return direction === 1 ? indentMore(target) : indentLess(target);
     }
+    const firstIndex = lists.findIndex((list) => list !== null);
+    const first = lists[firstIndex];
+    const firstNumber = numbers[firstIndex];
+    if (!first || firstNumber === undefined) return true;
+    const indent = (first[1] ?? "").length;
+    const above = listItemAbove(state, firstNumber, indent, direction === -1);
+    const delta =
+      direction === 1
+        ? (above ? above.indent + above.width : indent + (first[2] ?? "").length) - indent
+        : indent - (above?.indent ?? 0);
     const changes: ChangeSpec[] = [];
-    numbers.forEach((number, index) => {
-      const line = state.doc.line(number);
-      const width = (lists[index]?.[2] ?? "  ").length;
-      if (direction === 1) {
-        changes.push({ from: line.from, insert: " ".repeat(width) });
-        return;
+    if (delta > 0) {
+      for (const number of numbers) {
+        const line = state.doc.line(number);
+        if (direction === 1) {
+          changes.push({ from: line.from, insert: " ".repeat(delta) });
+          continue;
+        }
+        const spaces = /^ */.exec(line.text)?.[0].length ?? 0;
+        if (spaces > 0) changes.push({ from: line.from, to: line.from + Math.min(spaces, delta) });
       }
-      const indent = /^ */.exec(line.text)?.[0].length ?? 0;
-      if (indent > 0) changes.push({ from: line.from, to: line.from + Math.min(indent, width) });
-    });
+    }
     if (changes.length > 0) dispatch(state.update({ changes, userEvent: "input.indent" }));
     return true;
   };

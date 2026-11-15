@@ -4,6 +4,7 @@ import type { MarkdownConfig } from "@lezer/markdown";
 export type SyntaxNode = ReturnType<typeof syntaxTree>["topNode"];
 
 const OPEN_BRACKET = 91;
+const OPEN_PAREN = 40;
 
 /** `[[note]]` and `[[note|label]]`. Drawn as a link; opening the note is not built. */
 const wikiLinkSyntax: MarkdownConfig = {
@@ -18,6 +19,7 @@ const wikiLinkSyntax: MarkdownConfig = {
         const close = rest.indexOf("]]");
         if (close < 1 || /[[\]\n]/.test(rest.slice(0, close))) return -1;
         const end = pos + 2 + close + 2;
+        if (cx.char(end) === OPEN_PAREN || cx.char(end) === OPEN_BRACKET) return -1;
         return cx.addElement(
           cx.elt("WikiLink", pos, end, [
             cx.elt("WikiLinkMark", pos, pos + 2),

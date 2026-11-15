@@ -56,5 +56,7 @@ describe("the editor's outline", () => {
       text,
     }));
     expect(headingAnchors(headings)).toEqual(["next-steps", "qa-whats-left", "next-steps-1"]);
+    // GitHub keeps combining marks, so a Devanagari heading keeps its vowel signs.
+    expect(headingAnchors([{ level: 2, text: "हिन्दी" }])).toEqual(["हिन्दी"]);
   });
 });

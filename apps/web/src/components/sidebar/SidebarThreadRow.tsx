@@ -1474,7 +1474,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         "list-none py-0.5 [content-visibility:auto]",
         titleOnTopLine
           ? metaLineEmpty
-            ? "[contain-intrinsic-size:auto_34px]"
+            ? "[contain-intrinsic-size:auto_36px]"
             : "[contain-intrinsic-size:auto_54px]"
           : metaLineEmpty
             ? "[contain-intrinsic-size:auto_60px]"
