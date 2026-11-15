@@ -1,5 +1,6 @@
 // @effect-diagnostics globalDate:off -- UI snooze presets use local calendar boundaries and Intl labels.
 import * as DateTime from "effect/DateTime";
+import { INDEFINITE_SNOOZE_UNTIL, isIndefiniteSnooze } from "@t3tools/contracts";
 import { DEFAULT_SNOOZE_PRESETS, type SnoozePresetSetting } from "@t3tools/contracts/settings";
 
 import type { EnvironmentThreadShell, PendingSubagentRequest } from "./models.ts";
@@ -306,7 +307,15 @@ export function resolveSnoozePreset(
   };
 }
 
-/** The snooze menu: soonest first, one row per wake minute. */
+/** Fork: leads every snooze menu, ahead of the configurable presets. */
+const INDEFINITE_SNOOZE_PRESET: SnoozePreset = {
+  id: "indefinite",
+  label: "Indefinitely",
+  whenLabel: "",
+  snoozedUntil: INDEFINITE_SNOOZE_UNTIL,
+};
+
+/** The snooze menu: Indefinitely, then the presets soonest first, one row per wake minute. */
 export function resolveSnoozePresets(
   now: Date,
   options: SnoozePresetOptions = {},
@@ -315,8 +324,9 @@ export function resolveSnoozePresets(
   // minute tie, and the stable sort keeps whichever comes first in settings.
   const wakeMinute = (preset: SnoozePreset) => Math.floor(Date.parse(preset.snoozedUntil) / 60_000);
   const seen = new Set<number>();
-  return (
-    (options.presets ?? DEFAULT_SNOOZE_PRESETS)
+  return [
+    INDEFINITE_SNOOZE_PRESET,
+    ...(options.presets ?? DEFAULT_SNOOZE_PRESETS)
       .flatMap((setting) => resolveSnoozePreset(setting, now, options.formatTime) ?? [])
       // flatMap returned a new array; Hermes has no `toSorted`.
       .sort((a, b) => wakeMinute(a) - wakeMinute(b))
@@ -324,8 +334,8 @@ export function resolveSnoozePresets(
         if (seen.has(wakeMinute(preset))) return false;
         seen.add(wakeMinute(preset));
         return true;
-      })
-  );
+      }),
+  ];
 }
 
 /**
@@ -348,7 +358,9 @@ export function pickSnoozePreset(input: {
   return (setting && resolveSnoozePreset(setting, input.now, input.formatTime)) ?? ahead;
 }
 
+/** Time left until the wake, such as "3h"; empty for an indefinite snooze, which has none. */
 export function snoozeWakeLabel(snoozedUntil: string, options: { readonly now: string }): string {
+  if (isIndefiniteSnooze(snoozedUntil)) return "";
   const wakeMs = Date.parse(snoozedUntil);
   const nowMs = Date.parse(options.now);
   if (Number.isNaN(wakeMs) || Number.isNaN(nowMs)) return "now";

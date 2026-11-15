@@ -330,6 +330,9 @@ tomorrow. A weekday means the next one after today. Menus list the options soone
 first and hide a today option after its time passes. Saved with **All environments**
 selected, the options apply to every connected environment, and the mobile app uses them too.
 
+Choose **Snooze → Indefinitely**, the first choice in every snooze menu, to snooze
+with no wake time: the thread stays snoozed until you wake it or it comes back early.
+
 Choose **Snooze → Custom…** from a thread's menu to pick a date and time in your
 local time zone, or a duration in minutes, hours, or days. Durations start when
 you confirm; one day means 24 hours. On web and desktop, you can also snooze

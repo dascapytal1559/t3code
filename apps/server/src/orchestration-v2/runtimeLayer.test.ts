@@ -16,6 +16,7 @@ import {
   ContextTransferId,
   EnvironmentId,
   EventId,
+  INDEFINITE_SNOOZE_UNTIL,
   MessageId,
   NodeId,
   RuntimeRequestId,
@@ -10184,8 +10185,13 @@ it.layer(layerSharedApplicationDataPlaneTest)("snooze projection", (it) => {
         type: "thread.snooze",
         commandId: CommandId.make("runtime-layer-snoozed-thread-snooze-after-wake"),
         threadId,
-        snoozedUntil,
+        snoozedUntil: INDEFINITE_SNOOZE_UNTIL,
       });
+      // The shell carries an indefinite snooze like any wake time; the message below still wakes it.
+      const indefinite = (yield* orchestrator.getShellSnapshot()).threads.find(
+        (candidate) => candidate.id === threadId,
+      );
+      assert.equal(DateTime.formatIso(indefinite!.snoozedUntil!), INDEFINITE_SNOOZE_UNTIL);
 
       yield* orchestrator.dispatch({
         type: "message.dispatch",

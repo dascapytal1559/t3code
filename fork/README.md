@@ -563,6 +563,37 @@ sticky rows; and the `shellOlderSettled` capability left out of the server's
 descriptor (`ServerEnvironment.ts`) and config (`ws.ts`). Upstream's Settled shelf tests do not apply: the
 11/14 sync dropped "sidebar settled pagination" from `Sidebar.browser.test.tsx`.
 
+## Indefinite snooze
+
+<img src="media/indefinite-snooze-menu.jpg" width="512" alt="A thread's right-click Snooze submenu with Indefinitely first, above upstream's timed options and Custom…">
+
+The captain wants to snooze a thread without picking a return time ("I want
+the default snooze to be indefinite snooze"). Every snooze menu (the card's
+context menu, a multi-selection's menu, the hover button upstream shows, and
+the mobile app's swipe menu) starts with Indefinitely, above upstream's presets
+and Custom…, which all stay. An indefinitely snoozed thread stays in Snoozed
+until someone wakes it, or until whatever already wakes a snoozed thread wakes
+it: a new message, a question or approval it raises, a failure, or pinning.
+It sorts after timed snoozes and shows the alarm clock with no countdown; its
+chat says "Snoozed until you wake it".
+
+It is stored as a wake time no clock reaches, `9999-12-31T23:59:59.000Z`
+(`INDEFINITE_SNOOZE_UNTIL` in `packages/contracts/src/indefiniteSnooze.ts`), so
+the wire command, the database and every upstream "snoozed while the wake is in
+the future" check stay unchanged. Settings › Snooze options still edits only the
+timed presets; Indefinitely is not one of them and always leads the menu
+(`INDEFINITE_SNOOZE_PRESET` in `resolveSnoozePresets`,
+`packages/client-runtime/src/state/threadSettled.ts`). MCP's
+`t3_thread_organize` with `action: "snooze"` and no `snoozedUntil` snoozes
+indefinitely (upstream refused it), and thread reads report an indefinite
+snooze as `snoozed: true, snoozedUntil: null`.
+
+For syncs: keep the Indefinitely entry first in `resolveSnoozePresets`, the
+empty countdown in `snoozeWakeLabel`, the indefinite labels in
+`useThreadLifecycle.tsx` and the mobile `ThreadDetailScreen.tsx`, and the MCP
+default and read in `toolkits/thread/handlers.ts` and `threadSnooze` in
+`OrchestratorMcpService.ts`.
+
 ## Only top-level threads alert
 
 T3's thread alerts are the sound, toast and desktop notification chosen under

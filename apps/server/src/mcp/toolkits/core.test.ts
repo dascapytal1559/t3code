@@ -9,6 +9,7 @@ import {
   ChatImageAttachment,
   CommandId,
   EnvironmentId,
+  INDEFINITE_SNOOZE_UNTIL,
   NodeId,
   OrchestratorMcpThreadReadResult,
   ProjectId,
@@ -743,6 +744,43 @@ it.effect("rejects an unknown organize target instead of archiving the calling t
       _tag: "Failure",
       failure: { message: expect.stringContaining('Unknown argument "threadIds"') },
     });
+  }).pipe(
+    Effect.provide(
+      layerThreadToolkit.pipe(
+        Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
+        Layer.provide(NodeCrypto.layer),
+        Layer.provide(
+          Layer.mock(ThreadManagement.ThreadManagementService)({
+            getThreadShell: (id) => Effect.succeed(McpToolAccessTestkit.liveThreadShell(id)),
+            getProjectThreadRecords: ({ threadId: id }) =>
+              Effect.succeed(
+                McpToolAccessTestkit.idleThreadProjection(McpToolAccessTestkit.liveThreadShell(id)),
+              ),
+            dispatch: (command) => {
+              dispatched.push(command);
+              return Effect.succeed({ sequence: 1 } as never);
+            },
+          }),
+        ),
+      ),
+    ),
+  );
+});
+
+it.effect("snoozes indefinitely when snooze names no wake time", () => {
+  const dispatched: Array<unknown> = [];
+  return Effect.gen(function* () {
+    const server = yield* McpServer.McpServer;
+    const result = yield* server
+      .callTool({ name: "t3_thread_organize", arguments: { action: "snooze" } })
+      .pipe(
+        Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+        Effect.provideService(McpSchema.McpServerClient, client),
+      );
+    expect(result.isError).not.toBe(true);
+    expect(dispatched).toMatchObject([
+      { type: "thread.snooze", threadId, snoozedUntil: INDEFINITE_SNOOZE_UNTIL },
+    ]);
   }).pipe(
     Effect.provide(
       layerThreadToolkit.pipe(

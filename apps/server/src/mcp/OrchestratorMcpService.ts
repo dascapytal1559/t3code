@@ -61,6 +61,7 @@ import {
   type ServerProvider,
   type ServerProviderModel,
   ThreadId,
+  isIndefiniteSnooze,
   isOrchestrationV2WorkActive,
   latestProviderTurnForAttempt,
   resolveProjectProviderInstanceEnabled,
@@ -822,10 +823,14 @@ function threadSnooze(
   nowMs: number,
 ): Pick<OrchestratorMcpThreadListItem, "snoozed" | "snoozedUntil"> {
   const snoozed = isSnoozed(thread, nowMs);
+  const until = snoozed ? thread.snoozedUntil : null;
   return {
     snoozed,
+    // An indefinite snooze reads as snoozed with no return time.
     snoozedUntil:
-      snoozed && thread.snoozedUntil != null ? DateTime.formatIso(thread.snoozedUntil) : null,
+      until != null && !isIndefiniteSnooze(DateTime.toEpochMillis(until))
+        ? DateTime.formatIso(until)
+        : null,
   };
 }
 

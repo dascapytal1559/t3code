@@ -405,6 +405,7 @@ export const OrchestratorMcpThreadListItem = Schema.Struct({
   settled: Schema.Boolean,
   settledAt: Schema.NullOr(IsoDateTime),
   snoozed: Schema.Boolean,
+  /** Fork: null while snoozed means an indefinite snooze, held until woken. */
   snoozedUntil: Schema.NullOr(IsoDateTime),
   /** Absent from linked environments that predate it. */
   blockedOnThreadWait: Schema.optional(Schema.Boolean),
@@ -500,6 +501,7 @@ export const OrchestratorMcpThreadDetail = Schema.Struct({
   settled: Schema.Boolean,
   settledAt: Schema.NullOr(IsoDateTime),
   snoozed: Schema.Boolean,
+  /** Fork: null while snoozed means an indefinite snooze, held until woken. */
   snoozedUntil: Schema.NullOr(IsoDateTime),
   /** Absent from linked environments that predate it. */
   blockedOnThreadWait: Schema.optional(Schema.Boolean),

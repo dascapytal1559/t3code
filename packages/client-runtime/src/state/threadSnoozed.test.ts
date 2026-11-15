@@ -1,6 +1,6 @@
 // @effect-diagnostics globalDate:off -- Tests exercise local calendar snooze boundaries.
 import * as DateTime from "effect/DateTime";
-import { RuntimeRequestId } from "@t3tools/contracts";
+import { INDEFINITE_SNOOZE_UNTIL, RuntimeRequestId } from "@t3tools/contracts";
 import { ThreadId } from "@t3tools/contracts";
 import { TurnId } from "@t3tools/contracts";
 import type { SnoozePresetSetting } from "@t3tools/contracts/settings";
@@ -12,6 +12,7 @@ import {
   hasQueuedTurnStart,
   pickSnoozePreset,
   resolveSnoozePresets,
+  snoozeWakeLabel,
   threadRaisedHandWhileSnoozed,
   threadWokeAt,
   isThreadWokeUnseen,
@@ -391,7 +392,13 @@ describe("resolveSnoozePresets", () => {
         { kind: "after", minutes: 360 },
         { kind: "after", minutes: 180 },
       ]),
-    ).toEqual(["In 3 hours 23:00", "In 6 hours Thu 2:00", "Tomorrow 21:00", "Next week Mon 18:00"]);
+    ).toEqual([
+      "Indefinitely ",
+      "In 3 hours 23:00",
+      "In 6 hours Thu 2:00",
+      "Tomorrow 21:00",
+      "Next week Mon 18:00",
+    ]);
   });
 
   it("drops a today preset once its time passes and moves a weekday on that day to next week", () => {
@@ -403,8 +410,8 @@ describe("resolveSnoozePresets", () => {
         { kind: "at", day: "monday", time: "09:00" },
       ],
     });
-    expect(presets.map((preset) => preset.id)).toEqual(["at:monday:09:00"]);
-    expect(new Date(presets[0]!.snoozedUntil)).toEqual(localDate(2026, 4, 20, 9));
+    expect(presets.map((preset) => preset.id)).toEqual(["indefinite", "at:monday:09:00"]);
+    expect(new Date(presets[1]!.snoozedUntil)).toEqual(localDate(2026, 4, 20, 9));
   });
 
   it("names the real day gap: a Monday option on Sunday is Tomorrow, a weekday a week out is Next", () => {
@@ -415,12 +422,14 @@ describe("resolveSnoozePresets", () => {
     ];
     // Sunday 14:00.
     expect(menu(localDate(2026, 8, 30, 14), theo)).toEqual([
+      "Indefinitely ",
       "Tomorrow 18:00",
       "Tomorrow 21:00",
       "Friday 17:00",
     ]);
     // Friday 10:00: today's 17:00 is a week away.
     expect(menu(localDate(2026, 9, 4, 10), theo)).toEqual([
+      "Indefinitely ",
       "Tomorrow 21:00",
       "Next week Mon 18:00",
       "Next Friday 17:00",
@@ -430,6 +439,7 @@ describe("resolveSnoozePresets", () => {
   it("shows one row when two presets wake at the same time", () => {
     // Sunday, so Tomorrow 9:00 and Next week 9:00 are the same Monday.
     expect(menu(localDate(2026, 8, 30, 7, 1))).toEqual([
+      "Indefinitely ",
       "In 1 hour 8:01",
       "In 3 hours 10:01",
       "This evening 18:00",
@@ -445,7 +455,7 @@ describe("resolveSnoozePresets", () => {
         { kind: "after", minutes: 180 },
         { kind: "at", day: "today", time: "18:00" },
       ]),
-    ).toEqual(["In 3 hours 18:00"]);
+    ).toEqual(["Indefinitely ", "In 3 hours 18:00"]);
   });
 });
 
@@ -475,6 +485,20 @@ describe("pickSnoozePreset", () => {
       now: localDate(2026, 8, 31, 0, 1),
     });
     expect(picked?.snoozedUntil).toBe(localDate(2026, 8, 31, 9).toISOString());
+  });
+
+  it("picks Indefinitely as a snooze that holds until a wake and shows no countdown", () => {
+    const now = localDate(2026, 4, 8, 15);
+    const picked = pickSnoozePreset({
+      shown: resolveSnoozePresets(now),
+      id: "indefinite",
+      now,
+    });
+    expect(picked?.snoozedUntil).toBe(INDEFINITE_SNOOZE_UNTIL);
+    const shell = makeShell({ snoozedUntil: INDEFINITE_SNOOZE_UNTIL });
+    expect(effectiveSnoozed(shell, { now: "2126-01-01T00:00:00.000Z" })).toBe(true);
+    expect(threadWokeAt(shell, { now: NOW })).toBeNull();
+    expect(snoozeWakeLabel(INDEFINITE_SNOOZE_UNTIL, { now: NOW })).toBe("");
   });
 });
 

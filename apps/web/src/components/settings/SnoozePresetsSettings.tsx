@@ -186,7 +186,7 @@ export function SnoozePresetsRow() {
       serverScoped
       settingKeys={["snoozePresets"]}
       {...searchableSetting("snooze-options")}
-      description="Choices in every snooze menu, listed soonest first. Weekdays mean the next one after today."
+      description="Choices in every snooze menu after Indefinitely, listed soonest first. Weekdays mean the next one after today."
       resetAction={
         !mixed && sameSnoozePresets(presets, DEFAULT_SNOOZE_PRESETS) ? null : (
           <SettingResetButton
@@ -306,9 +306,7 @@ function SnoozePresetList(props: {
           </div>
         );
       })}
-      <p className="text-xs text-muted-foreground">
-        {menuOrder.length === 0 ? "Menus offer only Custom…" : `Menu now: ${menuOrder.join(" · ")}`}
-      </p>
+      <p className="text-xs text-muted-foreground">{`Menu now: ${menuOrder.join(" · ")}`}</p>
       <div>
         <Button
           variant="ghost-muted"

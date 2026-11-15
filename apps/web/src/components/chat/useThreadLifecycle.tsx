@@ -18,6 +18,7 @@ import {
   AuthOrchestrationOperateScope,
   AuthSourceControlWriteScope,
   type EnvironmentId,
+  isIndefiniteSnooze,
   type ScopedThreadRef,
   type ThreadId,
   ProviderInteractionMode,
@@ -623,7 +624,13 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
     limitRecoveryHoldsSnooze ? null : (
       <ThreadStatusLine
         icon={<AlarmClockIcon />}
-        label={snoozeWake && snoozeWake !== "now" ? `Snoozed, ${snoozeWake} left` : "Snoozed"}
+        label={
+          isIndefiniteSnooze(snoozedUntil)
+            ? "Snoozed until you wake it"
+            : snoozeWake && snoozeWake !== "now"
+              ? `Snoozed, ${snoozeWake} left`
+              : "Snoozed"
+        }
         clockMinute={nowMinute}
         actionLabel={isUnsnoozing ? "Waking..." : "Wake now"}
         actionDisabled={!canOperateThread || isUnsnoozing}

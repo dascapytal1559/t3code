@@ -6,6 +6,7 @@ import {
   ContextTransferId,
   EnvironmentId,
   GitCommandError,
+  INDEFINITE_SNOOZE_UNTIL,
   MessageId,
   NodeId,
   ORCHESTRATOR_MCP_RUNNING_TASK_NEXT,
@@ -4377,11 +4378,21 @@ describe("OrchestratorMcpService thread list", () => {
     capabilities: new Set(["orchestration"]),
     issuedAt: 1,
   };
-  const shell = (id: string, projectId: string, snoozed: boolean, waiting = false) => ({
+  const shell = (
+    id: string,
+    projectId: string,
+    snoozed: boolean | "indefinite",
+    waiting = false,
+  ) => ({
     ...liveThreadShell(ThreadId.make(id)),
     projectId: ProjectId.make(projectId),
     status: "completed" as const,
-    snoozedUntil: snoozed ? DateTime.makeUnsafe("2099-01-01T00:00:00Z") : null,
+    snoozedUntil:
+      snoozed === "indefinite"
+        ? DateTime.makeUnsafe(INDEFINITE_SNOOZE_UNTIL)
+        : snoozed
+          ? DateTime.makeUnsafe("2099-01-01T00:00:00Z")
+          : null,
     blockedOnThreadWait: waiting,
     pendingBackgroundTasks: waiting
       ? [
@@ -4400,7 +4411,7 @@ describe("OrchestratorMcpService thread list", () => {
   const shells = [
     shell("thread:a-snoozed", "project:a", true),
     shell("thread:a-awake", "project:a", false),
-    shell("thread:b-snoozed", "project:b", true, true),
+    shell("thread:b-snoozed", "project:b", "indefinite", true),
     {
       ...shell("thread:a-awaiting-command", "project:a", false),
       activityRunStatus: null,
@@ -4471,6 +4482,14 @@ describe("OrchestratorMcpService thread list", () => {
         [
           ["thread:a-snoozed", "project:a"],
           ["thread:b-snoozed", "project:b"],
+        ],
+      );
+      // An indefinite snooze reads as snoozed with no return time.
+      assert.deepStrictEqual(
+        listed.threads.map((thread) => [thread.snoozed, thread.snoozedUntil]),
+        [
+          [true, "2099-01-01T00:00:00.000Z"],
+          [true, null],
         ],
       );
       assert.deepStrictEqual(
