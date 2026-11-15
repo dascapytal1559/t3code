@@ -116,7 +116,7 @@ it.effect.each([false, true])(
       assert.deepEqual(command.causedBy, installRequest.causedBy);
       // FirstMate matches this line against t3_restart_status's serverStartedAt.
       assert.isTrue(command.text.startsWith(`The T3 server restarted at ${startedAt}.\n`));
-      assert.notInclude(command.text, "No restart was requested");
+      assert.notInclude(command.text, "No restart request was found");
       assert.include(command.text, "- thread:crew-cut (thread:crew-cut)");
       assert.notInclude(command.text, "thread:crew-done");
       assert.notInclude(command.text, "thread:crew-stopped");
@@ -149,8 +149,8 @@ it.effect.each([
     assert.equal(command.threadId, coordinatorId);
     assert.deepEqual(command.dispatchMode, { type: "queue_after_active" });
     assert.include(command.text, "None of your crew threads had a run interrupted.");
-    // Nobody asked for this restart, so the note says so and names no cause.
-    assert.include(command.text, "No restart was requested");
+    // No saved request, so the note lists possible causes without asserting one.
+    assert.include(command.text, "No restart request was found");
     assert.isUndefined(command.causedBy);
   }),
 );

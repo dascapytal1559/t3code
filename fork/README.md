@@ -425,8 +425,9 @@ crew. Code: `apps/web/src/components/sidebar/coordinatorGroup.logic.ts`.
 A server restart ends the coordinator's session, and nothing inside it can wake
 it again. So after each start T3 sends a coordinator one note, attributed to
 T3 Code. Its first line is `The T3 server restarted at <serverStartedAt>.`; when
-no restart was pending (a crash or a manual restart) the next says "No restart
-was requested, so it crashed or was restarted by hand." Then come the crew that had a run cut (or "None of your crew threads had a run
+no saved restart request was found the next says "No restart request was found.
+It may have crashed, been restarted by hand, or followed a machine restart or an
+app upgrade." Then come the crew that had a run cut (or "None of your crew threads had a run
 interrupted."), and then that its session ended with whatever lived only in it,
 such as background commands, waits and monitors, and to run its session-start
 steps again, check what is still running, and report. A thread pinned with

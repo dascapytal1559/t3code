@@ -88,7 +88,9 @@ function owedNote(roster: Roster, coordinator: OrchestrationV2ThreadShell): stri
   return [
     `The T3 server restarted at ${roster.startedAt}.`,
     ...(roster.restartedFor === null
-      ? ["No restart was requested, so it crashed or was restarted by hand."]
+      ? [
+          "No restart request was found. It may have crashed, been restarted by hand, or followed a machine restart or an app upgrade.",
+        ]
       : []),
     ...(cutCrew.length === 0
       ? ["None of your crew threads had a run interrupted."]
