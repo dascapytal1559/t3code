@@ -1303,9 +1303,21 @@ short lines.
   the browser. Option-click puts the caret in the link. `[[wiki-links]]` are
   drawn but do not open. A link to a line (`report.md:42`) scrolls to it
   here; the read-only view still switches to source for that.
-- The outline button lists the headings and jumps to one, also in the
-  read-only view and on a phone. Cmd+F finds and replaces. A section or a
-  block folds from the chevron beside it.
+- A "Fork editor" badge sits in the file panel's toolbar while the editor
+  shows, so it is never mistaken for upstream's read-only preview. Upstream's
+  own views (the rendered view, the source editor, other files) carry none.
+- Where the panel is at least 560 px wide, the outline is pinned in a column
+  left of the page: headings nested by level, kept current as you type, the
+  section being read marked (the caret's while it is on screen, otherwise the
+  one at the top), a click jumps. The outline button shows or hides the column
+  and the choice is remembered (`t3code.markdownOutlinePinned`, on by
+  default). The column is on the left because the file explorer already sits
+  on the right. A narrower panel, the read-only view and a phone keep the
+  outline button's list. Cmd+F finds and replaces. A section or a block folds
+  from the chevron beside it.
+
+![The live editor with the Fork editor badge in the toolbar and the outline pinned left of the page, the section on screen marked](media/live-markdown-outline.png)
+
 - Keys: Cmd+I italic, Cmd+E inline code, Cmd+Option+X strikethrough, Cmd+L
   toggles a task, Tab nests a list item. Cmd+B bolds only selected text, as
   in the message box; with a bare caret it stays the sidebar toggle.
@@ -1324,8 +1336,8 @@ editor to T3's save path, signed image URLs and link opening.
 Shared files it touches, for syncs: in `FilePreviewPanel.tsx` the lazy
 import, the `liveMarkdown` flag and the branch that mounts the editor, the
 `renderMarkdown` line (a linked line no longer forces source while the editor
-shows), the default of `t3code.renderMarkdown`, and the outline button with
-its ref; the properties card in `FileMarkdownPreview.tsx`; the selector in
+shows), the default of `t3code.renderMarkdown`, the outline button with its
+ref and column state (`useOutlineColumn`), and the badge; the properties card in `FileMarkdownPreview.tsx`; the selector in
 `AppSidebarLayout.tsx` that lets Cmd+B bold a selection; the
 `markdownFrontmatterLength` export in
 `packages/shared/src/markdownFrontmatter.ts`; the pre-bundled packages in

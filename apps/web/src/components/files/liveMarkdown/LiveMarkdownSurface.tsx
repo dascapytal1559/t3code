@@ -29,6 +29,7 @@ import {
 } from "../projectFilesQueryState";
 import { createLiveMarkdownEditor, type LiveMarkdownEditor } from "./liveMarkdownEditor";
 import { imageAssetResource, imageSourceOf, linkUrlOf } from "./liveMarkdownHost";
+import { MarkdownOutlineColumn } from "./MarkdownOutlineColumn";
 import type { MarkdownOutlineSource } from "./outline";
 import "./liveMarkdown.css";
 import "./markdownProperties.css";
@@ -48,6 +49,8 @@ export interface LiveMarkdownSurfaceProps {
   readonly onPendingChange: FilePendingListener;
   /** Offers the editor's outline to the panel's outline button, and takes it back on unmount. */
   readonly onOutlineSource: (source: MarkdownOutlineSource | null) => void;
+  /** Pins the outline in a column beside the page. */
+  readonly showOutline: boolean;
 }
 
 function decodeAnchor(anchor: string): string {
@@ -74,11 +77,14 @@ export default function LiveMarkdownSurface({
   revealRequestId,
   onPendingChange,
   onOutlineSource,
+  showOutline,
 }: LiveMarkdownSurfaceProps) {
   const saveTarget = { environmentId, cwd, relativePath, threadId: hostFileThreadId };
   useFileSaveSession(saveTarget, onPendingChange);
   const hostRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<LiveMarkdownEditor | null>(null);
+  // The pinned outline reads the editor, which exists only once mounted.
+  const [mountedEditor, setMountedEditor] = useState<LiveMarkdownEditor | null>(null);
   // An edit can land between a render and its effects. Every edit is written to the
   // optimistic file at once, so that is read ahead of a prop that may be a render behind.
   const latestContents = useEffectEvent(
@@ -174,9 +180,11 @@ export default function LiveMarkdownSurface({
       onOpenLink: (href, event) => followLink(href, event),
     });
     editorRef.current = editor;
+    setMountedEditor(editor);
     offerOutline({ headings: editor.outline, jump: editor.jumpToHeading });
     return () => {
       offerOutline(null);
+      setMountedEditor(null);
       editorRef.current = null;
       editor.destroy();
     };
@@ -204,5 +212,10 @@ export default function LiveMarkdownSurface({
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A second link to the same line is a new request for it.
   }, [revealLine, revealRequestId]);
 
-  return <div ref={hostRef} data-live-markdown className="min-h-0 flex-1" />;
+  return (
+    <div className="flex min-h-0 flex-1">
+      {showOutline && mountedEditor ? <MarkdownOutlineColumn editor={mountedEditor} /> : null}
+      <div ref={hostRef} data-live-markdown className="min-h-0 flex-1" />
+    </div>
+  );
 }

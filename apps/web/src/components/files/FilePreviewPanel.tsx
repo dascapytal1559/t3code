@@ -101,8 +101,10 @@ import { FileExplorerPane } from "./FileExplorerPane";
 import { FileBreadcrumbs } from "./FileBreadcrumbs";
 import { breadcrumbPathOf, retainedBreadcrumbTrail, trailChildOf } from "./filePath";
 import { FileMarkdownPreview } from "./FileMarkdownPreview";
+import { ForkEditorBadge } from "./liveMarkdown/ForkEditorBadge";
 import { MarkdownOutlineAction } from "./liveMarkdown/MarkdownOutlineAction";
 import type { MarkdownOutlineSource } from "./liveMarkdown/outline";
+import { useOutlineColumn } from "./liveMarkdown/useOutlineColumn";
 import {
   type FileCommentAnnotationEntry,
   type FileCommentAnnotationGroup,
@@ -1300,6 +1302,9 @@ export default function FilePreviewPanel({
     null,
   );
   const markdownContentRef = useRef<HTMLDivElement>(null);
+  // Fork: the live editor wears the fork's badge and pins its outline beside the page where it fits.
+  const liveMarkdownShown = isMarkdown && renderMarkdown && liveMarkdown;
+  const outlineColumn = useOutlineColumn(markdownContentRef, liveMarkdownShown);
   const contentFocusRef = useRef<HTMLDivElement>(null);
   const fileEditorRef = useRef<FileEditor | null>(null);
   const focusEditorFromContent = () => {
@@ -1477,6 +1482,7 @@ export default function FilePreviewPanel({
               />
             </div>
           </ScrollArea>
+          {liveMarkdownShown ? <ForkEditorBadge /> : null}
           {absolutePath &&
           (environmentId === primaryEnvironmentId ||
             environmentId === hostEnvironmentId ||
@@ -1493,7 +1499,11 @@ export default function FilePreviewPanel({
             />
           ) : null}
           {isMarkdown && renderMarkdown && file.data !== null ? (
-            <MarkdownOutlineAction live={liveMarkdownOutline} rendered={markdownContentRef} />
+            <MarkdownOutlineAction
+              live={liveMarkdownOutline}
+              rendered={markdownContentRef}
+              column={outlineColumn}
+            />
           ) : null}
           {canToggleRendered && renderedMode ? (
             <FileSurfaceAction
@@ -1712,7 +1722,7 @@ export default function FilePreviewPanel({
               <Suspense fallback={<FileSurfaceLoading />}>
                 <MermaidFilePreview text={file.data.contents} />
               </Suspense>
-            ) : isMarkdown && renderMarkdown && liveMarkdown ? (
+            ) : liveMarkdownShown ? (
               <Suspense fallback={<FileSurfaceLoading />}>
                 <LiveMarkdownSurface
                   key={relativePath}
@@ -1727,6 +1737,7 @@ export default function FilePreviewPanel({
                   revealRequestId={revealRequestId}
                   onPendingChange={onPendingChange}
                   onOutlineSource={setLiveMarkdownOutline}
+                  showOutline={outlineColumn.shown}
                 />
               </Suspense>
             ) : isMarkdown && renderMarkdown ? (

@@ -128,10 +128,11 @@ import FilePreviewPanel from "./FilePreviewPanel";
 const environmentId = EnvironmentId.make("markdown-preview-test");
 const threadRef = { environmentId, threadId: ThreadId.make("thread") };
 function setup() {
-  const keys = ["t3code.fileExplorerOpen", "t3code.renderMarkdown"];
+  const keys = ["t3code.fileExplorerOpen", "t3code.renderMarkdown", "t3code.markdownOutlinePinned"];
   const previous = keys.map((key) => localStorage.getItem(key));
   localStorage.setItem(keys[0]!, "false");
   localStorage.setItem(keys[1]!, "true");
+  localStorage.removeItem(keys[2]!);
   state.file = null;
   state.optimistic = null;
   state.assetUrl = { _tag: "Loading" };
@@ -452,6 +453,30 @@ describe("live Markdown editor", () => {
     );
   });
 
+  it("marks the live editor as the fork's, and no upstream view", async () => {
+    using _settings = setup();
+    const contents = "# Notes\n\nIntro.\n";
+
+    // At phone width the file shows in upstream's rendered view.
+    await using phone = await render(markdownPreview(false, contents, "notes.md"));
+    await expect.element(phone.getByText("Intro.")).toBeVisible();
+    await expect.element(phone.getByText("Fork editor")).not.toBeInTheDocument();
+    await phone.unmount();
+
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    await page.viewport(1280, 800);
+    await using _viewport = {
+      [Symbol.asyncDispose]: () => page.viewport(viewport.width, viewport.height),
+    };
+    await using screen = await render(markdownPreview(false, contents, "notes.md"));
+    await expect.element(screen.getByRole("textbox", { name: "File contents" })).toBeVisible();
+    await expect.element(screen.getByText("Fork editor")).toBeVisible();
+
+    // Upstream's source editor carries no mark.
+    await userEvent.click(screen.getByRole("button", { name: "Show markdown source" }));
+    await expect.element(screen.getByText("Fork editor")).not.toBeInTheDocument();
+  });
+
   it("lists the file's headings in the rendered view and jumps to one in the editor", async () => {
     using _settings = setup();
     const contents = "# Notes\n\nIntro.\n\n## First\n\nOne.\n\n## Second\n\nTwo.\n";
@@ -474,8 +499,14 @@ describe("live Markdown editor", () => {
     await using _viewport = {
       [Symbol.asyncDispose]: () => page.viewport(viewport.width, viewport.height),
     };
-    await using screen = await render(markdownPreview(false, contents, "notes.md"));
+    // A desktop panel too narrow for the pinned column keeps the menu.
+    const container = document.createElement("div");
+    container.style.width = "500px";
+    await using screen = await render(markdownPreview(false, contents, "notes.md"), { container });
     await expect.element(screen.getByRole("textbox", { name: "File contents" })).toBeVisible();
+    await expect
+      .element(screen.getByRole("navigation", { name: "Outline" }))
+      .not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Outline" }));
     await expect.element(page.getByRole("menuitem", { name: "Second" })).toBeVisible();
     expect(listed()).toEqual(["Notes", "First", "Second"]);
@@ -483,6 +514,70 @@ describe("live Markdown editor", () => {
     await vi.waitFor(() =>
       expect(screen.container.querySelector(".cm-lp-flash")?.textContent).toBe("Second"),
     );
+  });
+
+  it("pins the outline beside the editor, follows the file, and remembers when it is hidden", async () => {
+    using _settings = setup();
+    const filler = "A line of the section.\n\n".repeat(30);
+    const contents = `# Notes\n\nIntro.\n\n## First\n\n${filler}## Second\n\n${filler}`;
+    // The editor scrolls inside the panel only with the app's layout styles.
+    const style = document.createElement("style");
+    style.textContent = appCss;
+    document.head.append(style);
+    using _style = { [Symbol.dispose]: () => style.remove() };
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    await page.viewport(1280, 800);
+    await using _viewport = {
+      [Symbol.asyncDispose]: () => page.viewport(viewport.width, viewport.height),
+    };
+    const sized = () => {
+      const container = document.createElement("div");
+      container.style.cssText =
+        "display: flex; flex-direction: column; width: 900px; height: 400px";
+      return container;
+    };
+    await using screen = await render(markdownPreview(false, contents, "notes.md"), {
+      container: sized(),
+    });
+    const outline = screen.getByRole("navigation", { name: "Outline" });
+    const listed = () =>
+      outline
+        .getByRole("button")
+        .elements()
+        .map((item) => item.textContent);
+    const current = () => outline.element().querySelector('[aria-current="location"]')?.textContent;
+    await expect.element(outline.getByRole("button", { name: "Second" })).toBeVisible();
+    expect(listed()).toEqual(["Notes", "First", "Second"]);
+    expect(current()).toBe("Notes");
+
+    // Scrolling to the end marks the section on screen.
+    const scroller = screen.container.querySelector<HTMLElement>(".cm-scroller")!;
+    scroller.scrollTop = scroller.scrollHeight;
+    await vi.waitFor(() => expect(current()).toBe("Second"));
+
+    await userEvent.click(outline.getByRole("button", { name: "First" }));
+    await vi.waitFor(() =>
+      expect(screen.container.querySelector(".cm-lp-flash")?.textContent).toBe("First"),
+    );
+    await vi.waitFor(() => expect(current()).toBe("First"));
+
+    // A heading typed into the file joins the outline as it is written.
+    await userEvent.click(screen.getByText("Intro."));
+    await userEvent.keyboard("{End}{Enter}{Enter}## Added");
+    await vi.waitFor(() => expect(listed()).toEqual(["Notes", "Added", "First", "Second"]));
+    expect(current()).toBe("Added");
+
+    // Hidden from the outline button, and still hidden when the file opens again.
+    await userEvent.click(screen.getByRole("button", { name: "Hide outline" }));
+    await expect.element(outline).not.toBeInTheDocument();
+    await screen.unmount();
+    await using reopened = await render(markdownPreview(false, contents, "notes.md"), {
+      container: sized(),
+    });
+    await expect.element(reopened.getByRole("button", { name: "Show outline" })).toBeVisible();
+    await expect
+      .element(reopened.getByRole("navigation", { name: "Outline" }))
+      .not.toBeInTheDocument();
   });
 });
 

@@ -16,6 +16,7 @@ import { fromEditorText, type LineEnding, lineEndingOf, toEditorText } from "./l
 import { livePreview, setImageUrls } from "./livePreview";
 import { liveMarkdownExtensions } from "./markdownSyntax";
 import { headingAnchors, type OutlineItem } from "./outline";
+import { NO_OUTLINE, type OutlineSnapshot, outlineTracker } from "./outlineTracker";
 import type { LivePreviewConfig } from "./previewConfig";
 
 // A mixed file names its separator, which keeps its carriage returns as text.
@@ -42,6 +43,10 @@ export interface LiveMarkdownEditor {
   readonly outline: () => readonly OutlineItem[];
   /** Scrolls to the heading at that place in the outline. */
   readonly jumpToHeading: (index: number) => void;
+  /** The headings and the section being read, for the pinned outline; the same object until either changes. */
+  readonly outlineSnapshot: () => OutlineSnapshot;
+  /** Calls back when `outlineSnapshot` changes, until the returned function is called. */
+  readonly watchOutline: (listener: () => void) => () => void;
   /** Scrolls to the heading a `#link` names. False when the file has no such heading. */
   readonly jumpToAnchor: (anchor: string) => boolean;
   readonly destroy: () => void;
@@ -68,6 +73,7 @@ export function createLiveMarkdownEditor(options: LiveMarkdownEditorOptions): Li
     syntaxHighlighting(codeHighlightStyle),
     livePreview(options),
     lineFlash,
+    outlineTracker,
     folding,
     findReplace,
     keymap.of([...formatKeymap, ...listKeymap, ...historyKeymap, ...defaultKeymap]),
@@ -130,6 +136,9 @@ export function createLiveMarkdownEditor(options: LiveMarkdownEditorOptions): Li
     text,
     outline: () => headingsOf(view.state),
     jumpToHeading: (index) => void showHeading(headingsOf(view.state)[index]),
+    // A destroyed editor has no plugins left.
+    outlineSnapshot: () => view.plugin(outlineTracker)?.current() ?? NO_OUTLINE,
+    watchOutline: (listener) => view.plugin(outlineTracker)?.subscribe(listener) ?? (() => {}),
     jumpToAnchor(anchor) {
       const headings = headingsOf(view.state);
       return showHeading(headings[headingAnchors(headings).indexOf(anchor.toLowerCase())]);

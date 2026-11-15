@@ -447,8 +447,11 @@ briefly tinted.
   you click to put the cursor in the link instead.
 - Click a table or the properties card to edit its Markdown. Move the cursor
   away to see it drawn again.
-- Use the outline button in the file's header to jump to a heading, and
-  `Cmd+F` or `Ctrl+F` to find and replace.
+- When the panel is wide enough, the outline sits in a column beside the page
+  and marks the section you are reading; select a heading to jump to it. The
+  outline button in the file's header shows or hides the column. In a narrower
+  panel the button opens the outline as a list instead.
+- `Cmd+F` or `Ctrl+F` finds and replaces.
 - With `Cmd` on macOS or `Ctrl` elsewhere: `B` bolds selected text, `I` is
   italic, `E` is inline code, `Option+X` (`Alt+X`) is strikethrough, and `L`
   turns a line into a task or ticks it. `Tab` nests a list item.
