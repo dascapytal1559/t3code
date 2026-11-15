@@ -166,7 +166,12 @@ const make = Effect.gen(function* () {
         ),
       );
     if (shell === null || shell.deletedAt !== null) {
-      return yield* threadNotFound(threadManagement, threadId, `Thread ${threadId} was not found.`);
+      return yield* threadNotFound(
+        threadManagement,
+        scope,
+        threadId,
+        `Thread ${threadId} was not found.`,
+      );
     }
     if (input.action === "alert_when_done" && shell.activeRunId === null) {
       return yield* failure("run_not_found", `Thread ${threadId} has no running turn to alert on.`);

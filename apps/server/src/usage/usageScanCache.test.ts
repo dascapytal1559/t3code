@@ -357,6 +357,30 @@ describe("scan cache round trip", () => {
     });
     expect(restored.get("/old.jsonl")).toEqual(original.get("/old.jsonl"));
   });
+  // The fork's v17 is upstream's v16, so it predates time-keyed Grok turns too.
+  it.each([
+    ["s:p:grok-4.5", 16],
+    ["s:p:1786000000000:grok-4.5", 16],
+    ["s:p:grok-4.5", 17],
+  ] as const)("re-parses Grok transcripts with key %s from cache v%i", (dedupeKey, version) => {
+    const original = cacheWith([
+      ["/grok/updates.jsonl", 100, [record({ provider: "grok", model: "grok-4.5", dedupeKey })]],
+    ]);
+    original.set("/grok/updates.jsonl", {
+      ...original.get("/grok/updates.jsonl")!,
+      provider: "grok",
+    });
+    const encoded = parse(makeScanCacheWriter()(original, {}));
+    const restored = decodeScanCache({ ...encoded, version }, TEST_FORMAT_MAP);
+    expect(restored.get("/grok/updates.jsonl")).toEqual({
+      ...original.get("/grok/updates.jsonl"),
+      size: -1,
+      position: { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null },
+      records: [
+        record({ provider: "grok", model: "grok-4.5", dedupeKey: "s:p:1786000000000:grok-4.5" }),
+      ],
+    });
+  });
 
   it("rewrites only changed entries and still restores the whole cache", () => {
     const write = makeScanCacheWriter();

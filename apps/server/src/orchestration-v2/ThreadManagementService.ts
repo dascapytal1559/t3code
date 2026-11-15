@@ -12,6 +12,7 @@ import type {
 import {
   type ChatAttachment,
   CommandId,
+  isDelegatedAppThread,
   isListedThreadLineage,
   MessageId,
   OrchestrationV2StopWorkflowError,
@@ -90,11 +91,13 @@ export function withCreationProvenance(
 ): OrchestrationV2Command {
   switch (command.type) {
     case "thread.create": {
-      // Only the server stamps a link's origin or a cause, so a client cannot set one.
+      // Only the server stamps a link's origin or a cause, or folds in a first message, so a
+      // client cannot set one.
       const {
         linkOrigin: _linkOrigin,
         delegatedFrom: _delegatedFrom,
         causedBy: _causedBy,
+        initialMessage: _initialMessage,
         ...rest
       } = command;
       return { ...rest, ...provenance };
@@ -900,7 +903,7 @@ const make = Effect.gen(function* () {
           .filter((thread) =>
             input.includeSubagents
               ? thread.lineage.sideChat !== true
-              : isListedThreadLineage(thread.lineage),
+              : isListedThreadLineage(thread.lineage) && !isDelegatedAppThread(thread),
           )
           .toSorted(
             (left, right) =>
@@ -1215,7 +1218,25 @@ const make = Effect.gen(function* () {
         )
       )
         return true;
-      const following = records.runs.filter((candidate) => candidate.ordinal > run.ordinal);
+      const later = records.runs.filter((candidate) => candidate.ordinal > run.ordinal);
+      const cancelledMessageIds = later
+        .filter((candidate) => candidate.status === "cancelled")
+        .map((candidate) => candidate.userMessageId);
+      // Send now cancels a queued run and moves its message into the running turn.
+      const steeredMessageIds =
+        cancelledMessageIds.length === 0
+          ? new Set()
+          : new Set(
+              (yield* getProjectThreadRecords(input, ["messages"], {
+                messageIds: cancelledMessageIds,
+              })).messages
+                .filter((message) => message.runId === run.id)
+                .map((message) => message.id),
+            );
+      const following = later.filter(
+        (candidate) =>
+          candidate.status !== "cancelled" || !steeredMessageIds.has(candidate.userMessageId),
+      );
       if (following.length > 0) {
         const { messages } = yield* getProjectThreadRecords(input, ["messages"], {
           messageRunIds: following.map((candidate) => candidate.id),

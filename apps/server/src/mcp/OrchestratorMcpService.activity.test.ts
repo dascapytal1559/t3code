@@ -213,6 +213,7 @@ it("readThread preserves caller access errors and prefers activity-run status ov
                   threadId === parentThreadId
                     ? ({
                         ...projection.thread,
+                        pinnedAt: now,
                         blockedOnThreadWait: true,
                         pendingBackgroundTasks,
                       } as unknown as OrchestrationV2ThreadShell)
@@ -251,6 +252,7 @@ it("readThread preserves caller access errors and prefers activity-run status ov
     // FirstMate reads crew from MCP lineage, though threads carry it outside `lineage`.
     expect(result.thread.parentThreadId).toBe(crewCoordinatorId);
     expect(result.thread.relationshipToParent).toBe("crew");
+    expect(result.thread.pinned).toBe(true);
     expect(result.thread.blockedOnThreadWait).toBe(true);
     expect(result.thread.pendingBackgroundTasks).toEqual([
       { taskId: "task-subagent", kind: "subagent", childThreadId },

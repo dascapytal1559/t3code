@@ -173,7 +173,7 @@ export const make = Effect.gen(function* () {
     );
 
   const resolveHostPath = Effect.fnUntraced(function* (requestedPath: string) {
-    return requestedPath.startsWith("~/")
+    return requestedPath.startsWith("~/") || requestedPath.startsWith("~\\")
       ? expandHomePath(requestedPath, yield* HostProcess.HomeDirectory)
       : yield* toHostPath(requestedPath);
   });

@@ -17,6 +17,7 @@ import { act, fakeTimers, render } from "../../test/render";
 import { openCommandPalette } from "../commandPaletteBus";
 import { makeThreadFixture } from "../test-fixtures";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useNowMinute } from "../hooks/useNowMinute";
 import { __setClientSettingsForTests, getClientSettings } from "../hooks/useSettings";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import { useProjects, useQuietThreadShells } from "../state/entities";
@@ -47,6 +48,7 @@ vi.mock(import("../state/presentation"), async (original) => {
   } as never;
 });
 vi.mock("../hooks/useHandleNewThread", { spy: true });
+vi.mock("../hooks/useNowMinute", { spy: true });
 vi.mock("../hooks/useThreadRouteTarget", { spy: true });
 vi.mock("./sidebar/SidebarThreadRow", { spy: true });
 vi.mock("../state/session", { spy: true });
@@ -155,6 +157,8 @@ describe("sidebar render isolation", () => {
       threadId: threads[0]!.id,
     };
     threads.unshift(threadShell(activeProject.id, 100));
+    // A real wall-clock minute tick mid-test re-renders every row and reads as a leak.
+    vi.mocked(useNowMinute).mockReturnValue("2026-01-01T00:00");
     vi.mocked(useProjects).mockReturnValue([activeProject]);
     vi.mocked(useQuietThreadShells).mockReturnValue(threads);
     vi.mocked(useThreadRouteTarget).mockReturnValue({ kind: "server", threadRef: routeThreadRef });
