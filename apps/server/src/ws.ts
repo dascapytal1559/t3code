@@ -29,6 +29,7 @@ import {
   AuthAccessStreamError,
   type AuthAccessStreamEvent,
   AuthOrchestrationOperateScope,
+  AuthTerminalOperateScope,
   type AuthEnvironmentScope,
   type ScheduledTaskListResult,
   AuthSessionId,
@@ -2987,7 +2988,8 @@ export const layerWsRpc = (
           ),
         [WS_METHODS.projectsWriteFile]: (input) =>
           // Fork: FirstMate's own thread is the captain's command center across projects.
-          (input.threadId === undefined
+          // The thread id is the caller's claim; the shell right is what authorizes host writes.
+          (input.threadId === undefined || !currentSession.scopes.includes(AuthTerminalOperateScope)
             ? Effect.succeed(false)
             : threadManagement.getThreadShell(input.threadId).pipe(
                 Effect.map((shell) => shell !== null && isPrimaryCoordinator(shell)),

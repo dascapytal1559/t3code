@@ -4,11 +4,13 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import {
   AuthAccessReadScope,
+  type AuthEnvironmentScope,
   AuthFilesystemWriteScope,
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
   AuthSessionId,
   AuthSourceControlWriteScope,
+  AuthTerminalOperateScope,
   EnvironmentId,
   EventId,
   GitManagerError,
@@ -1801,7 +1803,7 @@ it.effect("a missing thread worktree gets its project's skills in the cwd snapsh
   ),
 );
 
-it.effect("only FirstMate's own thread may save host files", () =>
+it.effect("only FirstMate's own thread may save host files, and only with the terminal right", () =>
   Effect.gen(function* () {
     const shells: Record<string, Partial<OrchestrationV2ThreadShell>> = {
       "thread:firstmate": { coordinator: true },
@@ -1830,36 +1832,39 @@ it.effect("only FirstMate's own thread may save host files", () =>
       Layer.mock(ServerEnvironment.ServerEnvironment)({}),
       Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
     );
-    const server = yield* RpcServer.makeNoSerialization(WsRpcGroup, {
-      ...WS_RPC_SERVER_OPTIONS,
-      onFromServer: () => Effect.void,
-    }).pipe(
-      Effect.provide(
-        layerWsRpc(
-          {
-            sessionId: AuthSessionId.make("host-file-test"),
-            subject: "host-file-test",
-            method: "browser-session-cookie",
-            scopes: [AuthFilesystemWriteScope],
-            deviceType: "desktop",
-          },
-          {},
-          yield* ServerBrowser.ServerBrowser,
-          () => Effect.void,
-          { secretReferences: true },
-        ).pipe(
-          Layer.provide(services),
-          Layer.merge(RpcAuthorization.layer([AuthFilesystemWriteScope])),
+    const browser = yield* ServerBrowser.ServerBrowser;
+    const serverWith = (scopes: Array<AuthEnvironmentScope>) =>
+      RpcServer.makeNoSerialization(WsRpcGroup, {
+        ...WS_RPC_SERVER_OPTIONS,
+        onFromServer: () => Effect.void,
+      }).pipe(
+        Effect.provide(
+          layerWsRpc(
+            {
+              sessionId: AuthSessionId.make(`host-file-test:${scopes.join(",")}`),
+              subject: "host-file-test",
+              method: "browser-session-cookie",
+              scopes,
+              deviceType: "desktop",
+            },
+            {},
+            browser,
+            () => Effect.void,
+            { secretReferences: true },
+          ).pipe(Layer.provide(services), Layer.merge(RpcAuthorization.layer(scopes))),
         ),
-      ),
-    );
+      );
+    const operator = yield* serverWith([AuthFilesystemWriteScope, AuthTerminalOperateScope]);
+    const filesOnly = yield* serverWith([AuthFilesystemWriteScope]);
 
-    for (const [threadId, hostFiles] of [
-      ["thread:firstmate", true],
-      ["thread:secondmate", false],
-      ["thread:crew", false],
-      ["thread:missing", false],
-      [undefined, false],
+    for (const [server, threadId, hostFiles] of [
+      [operator, "thread:firstmate", true],
+      [operator, "thread:secondmate", false],
+      [operator, "thread:crew", false],
+      [operator, "thread:missing", false],
+      [operator, undefined, false],
+      // Any reader of thread shells can name FirstMate's thread; the id alone grants nothing.
+      [filesOnly, "thread:firstmate", false],
     ] as const) {
       yield* server.write(0, {
         _tag: "Request",

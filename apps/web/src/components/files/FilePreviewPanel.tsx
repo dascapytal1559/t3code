@@ -12,7 +12,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import { filePreviewDelimiter } from "@t3tools/shared/delimitedPreview";
-import { AuthFilesystemWriteScope } from "@t3tools/contracts";
+import { AuthFilesystemWriteScope, AuthTerminalOperateScope } from "@t3tools/contracts";
 import {
   isWorkspaceAudioPreviewPath,
   isWorkspaceImagePreviewPath,
@@ -1165,10 +1165,12 @@ export default function FilePreviewPanel({
   const isHostFile =
     attachment !== undefined || (relativePath !== null && isHostPath(relativePath));
   const threadShell = useQuietThreadShell(threadRef);
+  const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
   // Fork: FirstMate's thread is the captain's command center, so it edits host files too.
   const hostFileThreadId =
     attachment === undefined &&
     isHostFile &&
+    canOperateTerminal &&
     threadShell !== null &&
     isPrimaryCoordinator(threadShell)
       ? threadRef.threadId

@@ -1,5 +1,11 @@
 import { DEFAULT_THEMES, preloadHighlighter } from "@pierre/diffs";
-import { EnvironmentId, ThreadId, type ProjectReadFileResult } from "@t3tools/contracts";
+import {
+  type AuthEnvironmentScope,
+  AuthTerminalOperateScope,
+  EnvironmentId,
+  ThreadId,
+  type ProjectReadFileResult,
+} from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -20,6 +26,7 @@ const state = vi.hoisted(() => ({
   assetUrl: { _tag: "Loading" } as import("~/assets/assetUrls").AssetUrlState,
   mintUrl: vi.fn<() => Promise<string | null>>(),
   threadShell: null as { coordinator?: boolean; crewOf?: ThreadId } | null,
+  deniedScope: null as AuthEnvironmentScope | null,
 }));
 
 vi.mock(import("~/state/entities"), async (original) => ({
@@ -35,7 +42,8 @@ vi.mock(import("@t3tools/client-runtime/state/runtime"), async (original) => ({
 vi.mock(import("~/state/session"), async (original) => ({
   ...(await original()),
   readEnvironmentScope: () => true,
-  useEnvironmentScope: () => true,
+  useEnvironmentScope: ((_environmentId: unknown, scope: AuthEnvironmentScope) =>
+    scope !== state.deniedScope) as never,
 }));
 vi.mock(import("~/state/filesystem"), async (original) => ({
   ...(await original()),
@@ -128,6 +136,7 @@ function setup() {
   state.optimistic = null;
   state.assetUrl = { _tag: "Loading" };
   state.threadShell = null;
+  state.deniedScope = null;
   let mints = 0;
   state.mintUrl.mockReset().mockImplementation(async () => `/assets/report.docx?mint=${++mints}`);
   state.writeFile.mockReset().mockResolvedValue(AsyncResult.success(undefined));
@@ -339,12 +348,18 @@ describe("rendered Markdown task saves", () => {
   });
 
   it.each([
-    ["an ordinary thread", null],
-    ["a crew thread", { crewOf: ThreadId.make("firstmate") }],
-    ["a secondmate", { coordinator: true, crewOf: ThreadId.make("firstmate") }],
-  ])("keeps a host file read-only in %s", async (_name, threadShell) => {
+    ["an ordinary thread", null, null],
+    ["a crew thread", { crewOf: ThreadId.make("firstmate") }, null],
+    ["a secondmate", { coordinator: true, crewOf: ThreadId.make("firstmate") }, null],
+    [
+      "FirstMate's thread without the terminal right",
+      { coordinator: true },
+      AuthTerminalOperateScope,
+    ],
+  ])("keeps a host file read-only in %s", async (_name, threadShell, deniedScope) => {
     using _settings = setup();
     state.threadShell = threadShell;
+    state.deniedScope = deniedScope;
     await using screen = await render(markdownPreview(false, undefined, "/elsewhere/tasks.md"));
     using _timers = fakeTimers();
     const checkbox = screen.container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
