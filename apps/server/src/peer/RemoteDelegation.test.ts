@@ -241,6 +241,8 @@ const boxToolkitLayer = (thread: BoxThread) => {
     ({
       id: runId,
       threadId: ThreadId.make("thread:box"),
+      // The fork's thread reads report each run's prompt, as every real run has one.
+      userMessageId: MessageId.make("message:box"),
       ordinal: 1,
       status,
       modelSelection,
