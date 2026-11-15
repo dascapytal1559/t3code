@@ -3,7 +3,6 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { foldedRanges, indentUnit, syntaxHighlighting, unfoldEffect } from "@codemirror/language";
 import { Compartment, EditorState, type Extension, type StateEffect } from "@codemirror/state";
 import { drawSelection, dropCursor, EditorView, keymap } from "@codemirror/view";
-import { markdownFrontmatterLength } from "@t3tools/shared/markdownFrontmatter";
 
 import { codeHighlightStyle, codeLanguages } from "./codeLanguages";
 import { type EditorHeading, headingsOf, mapHeadings } from "./editorOutline";
@@ -12,16 +11,21 @@ import { findReplace } from "./findReplace";
 import { folding } from "./folding";
 import { formatKeymap, listKeymap } from "./formatting";
 import { lineChanges } from "./lineDiff";
-import { fromEditorText, type LineEnding, lineEndingOf, toEditorText } from "./lineEndings";
-import { livePreview, setImageUrls } from "./livePreview";
+import {
+  fromEditorText,
+  type LineEnding,
+  lineEndingOf,
+  mixedLineEndings,
+  toEditorText,
+} from "./lineEndings";
+import { frontmatterField, livePreview, setImageUrls } from "./livePreview";
 import { liveMarkdownExtensions } from "./markdownSyntax";
 import { headingAnchors, type MarkdownOutlineSource } from "./outline";
 import { NO_OUTLINE, type OutlineSnapshot, outlineTracker } from "./outlineTracker";
 import type { LivePreviewConfig } from "./previewConfig";
 
-// A mixed file names its separator, which keeps its carriage returns as text.
 const separatorFor = (ending: LineEnding): Extension =>
-  ending === "mixed" ? EditorState.lineSeparator.of("\n") : [];
+  ending === "mixed" ? mixedLineEndings : [];
 
 export interface LiveMarkdownEditorOptions extends LivePreviewConfig {
   readonly parent: HTMLElement;
@@ -103,15 +107,15 @@ export function createLiveMarkdownEditor(options: LiveMarkdownEditorOptions): Li
   ];
 
   const doc = toEditorText(options.doc, ending);
+  const opened = EditorState.create({ doc, extensions });
   // The caret starts below the frontmatter, which would otherwise open as its source.
-  const frontmatter = markdownFrontmatterLength(doc);
+  const frontmatter = opened.field(frontmatterField);
   const view = new EditorView({
     parent: options.parent,
-    state: EditorState.create({
-      doc,
-      selection: { anchor: frontmatter > 0 ? Math.min(frontmatter + 1, doc.length) : 0 },
-      extensions,
-    }),
+    state:
+      frontmatter > 0
+        ? opened.update({ selection: { anchor: Math.min(frontmatter + 1, doc.length) } }).state
+        : opened,
   });
 
   const showHeading = (heading: EditorHeading | undefined) => {

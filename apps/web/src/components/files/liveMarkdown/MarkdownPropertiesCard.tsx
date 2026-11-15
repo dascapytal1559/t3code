@@ -14,8 +14,9 @@ export function MarkdownPropertiesCard(props: {
     <div className={props.className}>
       <div data-markdown-properties>
         <div data-head>Properties</div>
-        {rows.map((row) => (
-          <div key={row.key} className="contents">
+        {rows.map((row, index) => (
+          // oxlint-disable-next-line react/no-array-index-key -- a key can repeat in frontmatter; rows follow the block's order
+          <div key={`${index}:${row.key}`} className="contents">
             <span data-key>{row.key}</span>
             <span data-value>{row.value}</span>
           </div>

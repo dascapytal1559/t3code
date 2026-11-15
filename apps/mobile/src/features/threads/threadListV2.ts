@@ -324,7 +324,7 @@ export function threadListV2RowAccessibilityLabel(input: {
     input.hasQueuedMessages ? "messages queued to send" : null,
     input.regeneratingTitle ? "regenerating title" : null,
   ]
-    .filter((part) => part !== null)
+    .filter((part) => part !== null && part !== "")
     .join(", ");
 }
 
@@ -583,7 +583,7 @@ export function buildThreadListV2ListItems(input: {
   const threadItems = input.items.map((item): ThreadListV2ListItem => {
     const snoozeWakeLabelText =
       item.snoozed && item.thread.snoozedUntil != null && input.snoozeLabelNow !== undefined
-        ? snoozeWakeLabel(item.thread.snoozedUntil, { now: input.snoozeLabelNow })
+        ? snoozeWakeLabel(item.thread.snoozedUntil, { now: input.snoozeLabelNow }) || undefined
         : undefined;
     // Put the clock on items so recycler equality limits ticks to rows displaying snooze preset times.
     const snoozePresetMinute =

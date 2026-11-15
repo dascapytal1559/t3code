@@ -34,6 +34,14 @@ import { type ReactNode } from "react";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { type Project, type SidebarThreadSummary, type Thread } from "../types";
 import { isSidebarHiddenThread } from "./Sidebar.logic";
+import { SIDEBAR_SETTLED_SHELF } from "./sidebar/settledShelf";
+
+/** A settled thread is put away only where the sidebar has a Settled shelf to find it on. */
+export function settledOutOfSight(thread: {
+  readonly settledOverride?: "settled" | "active" | null;
+}): boolean {
+  return SIDEBAR_SETTLED_SHELF && thread.settledOverride === "settled";
+}
 
 export const RECENT_THREAD_LIMIT = 12;
 export const ITEM_ICON_CLASS = "size-4 text-icon-muted";

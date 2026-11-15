@@ -33,6 +33,8 @@ describe("changes from disk", () => {
     ["lines added at the end", "a", "a\nb\nc", [2, 3]],
     ["a line removed", "a\nb\nc", "a\nc", []],
     ["a word removed from a line", "a\nbig dog\nc", "a\ndog\nc", [2]],
+    ["a line split in two", "a\nb1\nz", "a\nb\n1\nz", [2, 3]],
+    ["two lines joined", "a\nb", "ab", [1]],
   ])("tints only the lines written: %s", (_name, current, next, lines) => {
     const state = fromDisk(editorOn(current), next);
     expect(state.doc.toString()).toBe(next);

@@ -231,6 +231,7 @@ import {
   remoteProjectInputPlaceholder,
   reduceCommandPaletteSearchState,
   type SearchOverlayMode,
+  settledOutOfSight,
 } from "./CommandPalette.logic";
 import { resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
 import { CommandPaletteContent, type PendingInputSelection } from "./CommandPaletteContent";
@@ -822,7 +823,7 @@ function OpenCommandPaletteDialog(props: {
     // oxlint-disable-next-line react/purity -- runs in an event handler (oxc#27309)
     const now = new Date().toISOString();
     const openableThreads = threads.filter(
-      (thread) => thread.settledOverride !== "settled" && !effectiveSnoozed(thread, { now }),
+      (thread) => !settledOutOfSight(thread) && !effectiveSnoozed(thread, { now }),
     );
     const latestThread = groupedProjectKeys
       ? (sortThreads(
@@ -1963,7 +1964,7 @@ function OpenCommandPaletteDialog(props: {
         existing.id,
         clientSettings.sidebarThreadSortOrder,
       );
-      if (latestThread && latestThread.settledOverride !== "settled") {
+      if (latestThread && !settledOutOfSight(latestThread)) {
         await navigate({
           to: "/$environmentId/$threadId",
           params: buildThreadRouteParams(

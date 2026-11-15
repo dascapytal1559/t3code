@@ -17,7 +17,7 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 
-import type { TextChange } from "./lineDiff";
+import { narrowChange, type TextChange } from "./lineDiff";
 
 /** Marks a change that came from the file on disk, not from typing. */
 export const externalChange = Annotation.define<boolean>();
@@ -85,28 +85,30 @@ export const flashSpans = (spans: readonly Span[]) => flash.of(spans);
 
 /**
  * A transaction that applies changes made on disk. It stays out of the undo
- * history, so undo never takes back someone else's edit, and the lines it
- * wrote are tinted for a moment.
+ * history, so undo never takes back someone else's edit. Each change rewrites
+ * only the characters that differ, so a caret on its line keeps its place, and
+ * the lines it covered are tinted for a moment.
  */
 export function externalChangeSpec(
   state: EditorState,
   changes: readonly TextChange[],
   extraEffects: readonly StateEffect<unknown>[] = [],
 ): TransactionSpec {
-  const changeSet = state.changes(
-    changes.map((change) => ({
-      from: change.from,
-      to: change.to,
-      insert: Text.of(change.insert.split("\n")),
-    })),
-  );
+  const changeSetOf = (spans: readonly TextChange[]) =>
+    state.changes(
+      spans.map((change) => ({
+        from: change.from,
+        to: change.to,
+        insert: Text.of(change.insert.split("\n")),
+      })),
+    );
   const written: Span[] = [];
-  changeSet.iterChangedRanges((fromA, toA, fromB, toB) => {
+  changeSetOf(changes).iterChangedRanges((_fromA, _toA, fromB, toB) => {
     if (toB > fromB) written.push({ from: fromB, to: toB });
-    else if (!state.doc.sliceString(fromA, toA).includes("\n")) {
-      written.push({ from: fromB, to: fromB });
-    }
   });
+  const changeSet = changeSetOf(
+    changes.map((change) => narrowChange(state.doc.sliceString(change.from, change.to), change)),
+  );
   return {
     changes: changeSet,
     effects: [flash.of(written), ...extraEffects],

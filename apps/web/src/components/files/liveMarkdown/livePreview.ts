@@ -17,6 +17,7 @@ import {
 } from "@codemirror/view";
 import { markdownFrontmatterLength } from "@t3tools/shared/markdownFrontmatter";
 
+import { frontmatterRows } from "./frontmatter";
 import { HEADING_NODE } from "./markdownSyntax";
 import { clickedLink, type LivePreviewConfig, previewConfig } from "./previewConfig";
 import {
@@ -50,7 +51,8 @@ function frontmatterEnd(state: EditorState): number {
   const head = state.doc.sliceString(0, FRONTMATTER_SCAN_CHARS);
   const length = markdownFrontmatterLength(head);
   // A fence cut off by the scan limit would read as closed.
-  return length === head.length && state.doc.length > head.length ? 0 : length;
+  if (length === head.length && state.doc.length > head.length) return 0;
+  return frontmatterRows(head.slice(0, length)).length > 0 ? length : 0;
 }
 
 /** Length of the leading frontmatter block, 0 without one. The Markdown grammar does not know it. */

@@ -176,6 +176,14 @@ describe("live preview", () => {
     expect(opened.field(frontmatterField)).toBe(0);
   });
 
+  it("reads a leading rule closed by another as Markdown, not as empty frontmatter", () => {
+    const file = "---\n\n# Intro\n\nText\n\n---\n\nMore";
+    expect(editorOn(file).field(frontmatterField)).toBe(0);
+    const view = drawn(file);
+    expect(view.widgets).toEqual(["RuleWidget", "RuleWidget"]);
+    expect(view.lineClasses[3]).toBe("cm-lp-h cm-lp-h1");
+  });
+
   it("draws everything while the editor has no focus", () => {
     const view = drawn("Some **bold** text.");
     expect(view.dimmed).toEqual([]);

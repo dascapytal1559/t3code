@@ -355,6 +355,15 @@ const runFoldRowsCache = new WeakMap<
 >();
 let cachedThinkingRow: Extract<ThreadFeedEntry, { readonly type: "thinking" }> | null = null;
 
+/** Fork: the divider above a restart note that opens a fresh session, as web draws it. */
+export function freshSessionDividerLabel(entry: ThreadFeedActivityGroup): string | undefined {
+  const item = entry.activities[0]?.projectedItem.item;
+  if (item?.type !== "notification" || !item.freshContext) return undefined;
+  return item.freshContextReason === "cache_expired"
+    ? "New session · cache expired"
+    : "New session";
+}
+
 export function isContextCompactionActivityGroup(entry: ThreadFeedActivityGroup): boolean {
   return (
     entry.activities.length === 1 && entry.activities[0]?.projectedItem.item.type === "compaction"

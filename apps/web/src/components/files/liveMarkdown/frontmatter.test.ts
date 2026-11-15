@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { frontmatterRows } from "./frontmatter";
-import { fromEditorText, lineEndingOf, toEditorText } from "./lineEndings";
+import { EditorState } from "@codemirror/state";
+
+import { fromEditorText, lineEndingOf, mixedLineEndings, toEditorText } from "./lineEndings";
 
 describe("frontmatterRows", () => {
   it("reads top-level keys, joining list items and block text onto their key", () => {
@@ -45,6 +47,13 @@ describe("line endings", () => {
     expect(lineEndingOf(text)).toBe(ending);
     expect(toEditorText(text, ending)).toBe(held);
     expect(fromEditorText(held, ending)).toBe(text);
+  });
+
+  it("types at the end of a mixed file's CRLF line before its carriage return", () => {
+    const start = EditorState.create({ doc: "# Title\r\nnext\n", extensions: mixedLineEndings });
+    const atEnd = start.update({ selection: { anchor: start.doc.line(1).to } }).state;
+    const typed = atEnd.update(atEnd.replaceSelection("!")).state;
+    expect(fromEditorText(typed.doc.toString(), "mixed")).toBe("# Title!\r\nnext\n");
   });
 
   it("keeps a file's line ending when its new text has no line break", () => {

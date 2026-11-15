@@ -18,6 +18,7 @@ import { canSnooze, resolveSnoozePresets } from "@t3tools/client-runtime/state/t
 import {
   CommandId,
   EnvironmentId,
+  INDEFINITE_SNOOZE_UNTIL,
   MessageId,
   OrchestrationV2ThreadShell,
   ProjectId,
@@ -271,6 +272,9 @@ describe("threadListV2RowAccessibilityLabel", () => {
         snoozeWakeLabel: "in 2h",
       }),
     ).toBe("Fix login, in 2h, Codex");
+    expect(
+      threadListV2RowAccessibilityLabel({ ...row, statusLabel: "Working", providerNameLabel: "" }),
+    ).toBe("Fix login, Working");
   });
 });
 
@@ -1465,6 +1469,32 @@ describe("threadListV2ListItemsAreEqual", () => {
     expect(rows(earlier).snoozeWakeLabelText).toBe("2h");
     expect(rows(later).snoozeWakeLabelText).toBe("1h");
     expect(threadListV2ListItemsAreEqual(rows(earlier), rows(later))).toBe(false);
+  });
+
+  it("shows a thread snoozed indefinitely by its time, as it has no wake to count down to", () => {
+    const snoozedLayout = buildThreadListV2Items({
+      threads: [
+        makeThread({
+          id: ThreadId.make("wake"),
+          title: "wake",
+          snoozedAt: NOW,
+          snoozedUntil: INDEFINITE_SNOOZE_UNTIL,
+        }),
+      ],
+      environmentId: null,
+      searchQuery: "",
+      now: NOW,
+      snoozedShelfExpanded: true,
+    });
+    const row = buildThreadListV2ListItems({
+      items: snoozedLayout.items,
+      pendingTasks: [],
+      snoozedShelfExpanded: true,
+      snoozeLabelNow: NOW,
+    }).find((item) => item.key === `v2-thread:${environmentId}:wake`);
+    if (row?.type !== "v2-thread") throw new Error("missing snoozed row");
+    expect(row.snoozeWakeLabelText).toBeUndefined();
+    expect(row.timeLabel).not.toBe("");
   });
 
   it("notices a trailing-divider flip caused by a neighbour change", () => {

@@ -202,6 +202,7 @@ import {
   failedFeedRunIds,
   deriveThreadFeedPresentation,
   threadFeedRunIsUnsettled,
+  freshSessionDividerLabel,
   isContextCompactionActivityGroup,
   isContextHandoffActivityGroup,
   isLinkRequestActivityGroup,
@@ -3766,6 +3767,13 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
                   ? "New session · cache expired"
                   : "New session"
               }
+              icon="arrow.clockwise"
+              iconColor={iconSubtleColor}
+            />
+          ) : null}
+          {info.item.type === "activity-group" && freshSessionDividerLabel(info.item) ? (
+            <ThreadContextDivider
+              label={freshSessionDividerLabel(info.item) ?? ""}
               icon="arrow.clockwise"
               iconColor={iconSubtleColor}
             />

@@ -14,8 +14,16 @@ import {
   resolveAddProjectEntry,
   createCommandPaletteSearchState,
   reduceCommandPaletteSearchState,
+  settledOutOfSight,
   type CommandPaletteUiState,
 } from "./CommandPalette.logic";
+
+describe("opening a project's latest thread", () => {
+  it("counts a settled thread, which the sidebar without a Settled shelf lists as active", () => {
+    expect(settledOutOfSight({ settledOverride: "settled" })).toBe(false);
+    expect(settledOutOfSight({ settledOverride: null })).toBe(false);
+  });
+});
 
 describe("linked pull request thread navigation", () => {
   it("keeps archived relations searchable and routes them through the PR environment", async () => {

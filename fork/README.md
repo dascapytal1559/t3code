@@ -714,8 +714,9 @@ T3's restart note and a scheduled task begin an exchange. These continue the old
 session instead: a steer, anything while a run is active or a question or
 approval is pending, `/compact`, `/logout` and `/goal`, every other wake
 (background work, a delegated task or a pull request watch reporting in, and any
-wake the old session buffered), and the continuations after a restart, a usage
-limit or a manual Continue. An armed `/clear`, or a pending fork or merge-back,
+wake the old session buffered), the continuations after a restart, a usage
+limit or a manual Continue, and any start while the old session still has
+background work running. An armed `/clear`, or a pending fork or merge-back,
 leaves the start as it is. Inputs on one thread run one at a time, so two that
 arrive together give one fresh session, and the second continues it. A cold
 scheduled task's session becomes the thread's conversation, unlike a
