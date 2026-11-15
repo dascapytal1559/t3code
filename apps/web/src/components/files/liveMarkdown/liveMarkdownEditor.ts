@@ -6,16 +6,16 @@ import { drawSelection, dropCursor, EditorView, keymap } from "@codemirror/view"
 import { markdownFrontmatterLength } from "@t3tools/shared/markdownFrontmatter";
 
 import { codeHighlightStyle, codeLanguages } from "./codeLanguages";
-import { type EditorHeading, headingsOf } from "./editorOutline";
+import { type EditorHeading, headingsOf, mapHeadings } from "./editorOutline";
 import { externalChange, externalChangeSpec, flashSpans, lineFlash } from "./externalChanges";
 import { findReplace } from "./findReplace";
 import { folding } from "./folding";
 import { formatKeymap, listKeymap } from "./formatting";
 import { lineChanges } from "./lineDiff";
-import { fileFormatOf, fromEditorText, type LineEnding, toEditorText } from "./lineEndings";
+import { fromEditorText, type LineEnding, lineEndingOf, toEditorText } from "./lineEndings";
 import { livePreview, setImageUrls } from "./livePreview";
 import { liveMarkdownExtensions } from "./markdownSyntax";
-import { headingAnchors, type OutlineItem } from "./outline";
+import { headingAnchors, type MarkdownOutlineSource } from "./outline";
 import { NO_OUTLINE, type OutlineSnapshot, outlineTracker } from "./outlineTracker";
 import type { LivePreviewConfig } from "./previewConfig";
 
@@ -32,16 +32,16 @@ export interface LiveMarkdownEditorOptions extends LivePreviewConfig {
 
 export interface LiveMarkdownEditor {
   readonly view: EditorView;
-  /** The file's text, with its own line endings and byte order mark. */
+  /** The file's text, with its own line endings. */
   readonly text: () => string;
   /** Takes contents that changed outside the editor; the caret, scroll and undo history stay. */
   readonly applyExternal: (next: string) => void;
   readonly setImageUrls: (urls: ReadonlyMap<string, string>) => void;
   /** Scrolls to a 1-based line of the file, puts the caret there and tints it for a moment. */
   readonly revealLine: (line: number) => void;
-  /** The file's headings, top to bottom. */
-  readonly outline: () => readonly OutlineItem[];
-  /** Scrolls to the heading at that place in the outline. */
+  /** The file's headings for the outline menu; a jump goes to one it listed. */
+  readonly outline: MarkdownOutlineSource;
+  /** Scrolls to the heading at that place in `outlineSnapshot`. */
   readonly jumpToHeading: (index: number) => void;
   /** The headings and the section being read, for the pinned outline; the same object until either changes. */
   readonly outlineSnapshot: () => OutlineSnapshot;
@@ -53,13 +53,14 @@ export interface LiveMarkdownEditor {
 }
 
 export function createLiveMarkdownEditor(options: LiveMarkdownEditorOptions): LiveMarkdownEditor {
-  let format = fileFormatOf(options.doc);
+  let ending = lineEndingOf(options.doc);
   const separator = new Compartment();
-  const text = () => fromEditorText(view.state.doc.toString(), format);
+  const text = () => fromEditorText(view.state.doc.toString(), ending);
+  let listed: readonly EditorHeading[] = [];
 
   // One entry per feature: a new behaviour is a new file added to this list.
   const extensions: Extension[] = [
-    separator.of(separatorFor(format.ending)),
+    separator.of(separatorFor(ending)),
     history(),
     drawSelection(),
     dropCursor(),
@@ -95,12 +96,13 @@ export function createLiveMarkdownEditor(options: LiveMarkdownEditorOptions): Li
     }),
     EditorView.updateListener.of((update) => {
       if (!update.docChanged) return;
+      listed = mapHeadings(listed, update.changes);
       if (update.transactions.every((tr) => tr.annotation(externalChange) === true)) return;
       options.onChange(text());
     }),
   ];
 
-  const doc = toEditorText(options.doc, format);
+  const doc = toEditorText(options.doc, ending);
   // The caret starts below the frontmatter, which would otherwise open as its source.
   const frontmatter = markdownFrontmatterLength(doc);
   const view = new EditorView({
@@ -134,8 +136,11 @@ export function createLiveMarkdownEditor(options: LiveMarkdownEditorOptions): Li
   return {
     view,
     text,
-    outline: () => headingsOf(view.state),
-    jumpToHeading: (index) => void showHeading(headingsOf(view.state)[index]),
+    outline: {
+      headings: () => (listed = headingsOf(view.state)),
+      jump: (index) => void showHeading(listed[index]),
+    },
+    jumpToHeading: (index) => void showHeading(view.plugin(outlineTracker)?.headingAt(index)),
     // A destroyed editor has no plugins left.
     outlineSnapshot: () => view.plugin(outlineTracker)?.current() ?? NO_OUTLINE,
     watchOutline: (listener) => view.plugin(outlineTracker)?.subscribe(listener) ?? (() => {}),
@@ -144,17 +149,17 @@ export function createLiveMarkdownEditor(options: LiveMarkdownEditorOptions): Li
       return showHeading(headings[headingAnchors(headings).indexOf(anchor.toLowerCase())]);
     },
     applyExternal(next) {
-      const nextFormat = fileFormatOf(next, format);
-      const incoming = toEditorText(next, nextFormat);
+      const nextEnding = lineEndingOf(next, ending);
+      const incoming = toEditorText(next, nextEnding);
       const current = view.state.doc.toString();
-      const newEnding = nextFormat.ending !== format.ending;
-      if (!newEnding && nextFormat.bom === format.bom && incoming === current) return;
-      format = nextFormat;
+      const newEnding = nextEnding !== ending;
+      if (!newEnding && incoming === current) return;
+      ending = nextEnding;
       view.dispatch(
         externalChangeSpec(
           view.state,
           lineChanges(current, incoming),
-          newEnding ? [separator.reconfigure(separatorFor(format.ending))] : [],
+          newEnding ? [separator.reconfigure(separatorFor(ending))] : [],
         ),
       );
     },

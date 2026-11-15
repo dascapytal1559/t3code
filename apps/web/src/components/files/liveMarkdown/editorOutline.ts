@@ -1,5 +1,5 @@
 import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
-import type { EditorState } from "@codemirror/state";
+import type { ChangeDesc, EditorState } from "@codemirror/state";
 
 import { frontmatterField } from "./livePreview";
 import { HEADING_NODE } from "./markdownSyntax";
@@ -9,6 +9,13 @@ export interface EditorHeading extends OutlineItem {
   /** Where the heading starts in the document. */
   readonly from: number;
 }
+
+/** `headings` where they stand after `changes`. */
+export const mapHeadings = (
+  headings: readonly EditorHeading[],
+  changes: ChangeDesc,
+): EditorHeading[] =>
+  headings.map((heading) => ({ ...heading, from: changes.mapPos(heading.from) }));
 
 /** Blocks a heading can sit inside. Nothing else is searched. */
 const CONTAINERS = new Set(["Document", "Blockquote", "BulletList", "OrderedList", "ListItem"]);

@@ -1,7 +1,7 @@
 import { syntaxTree } from "@codemirror/language";
 import { type EditorView, type PluginValue, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 
-import { type EditorHeading, headingsOf } from "./editorOutline";
+import { type EditorHeading, headingsOf, mapHeadings } from "./editorOutline";
 import type { OutlineItem } from "./outline";
 
 export interface OutlineSnapshot {
@@ -49,7 +49,8 @@ const REBUILD_DELAY_MS = 300;
  * until the outline or the section changes.
  */
 class OutlineTracker implements PluginValue {
-  private headings: EditorHeading[] | null = null;
+  private headings: EditorHeading[] = [];
+  private headingsOutdated = true;
   private snapshot = NO_OUTLINE;
   private stale = true;
   private rebuild: ReturnType<typeof setTimeout> | undefined;
@@ -61,17 +62,11 @@ class OutlineTracker implements PluginValue {
   }
 
   update(update: ViewUpdate) {
-    const { changes } = update;
-    if (update.docChanged && this.headings) {
-      this.headings = this.headings.map((heading) => ({
-        ...heading,
-        from: changes.mapPos(heading.from),
-      }));
-    }
+    if (update.docChanged) this.headings = mapHeadings(this.headings, update.changes);
     if (update.docChanged || syntaxTree(update.state) !== syntaxTree(update.startState)) {
       clearTimeout(this.rebuild);
       this.rebuild = setTimeout(() => {
-        this.headings = null;
+        this.headingsOutdated = true;
         this.changed();
       }, REBUILD_DELAY_MS);
     }
@@ -82,6 +77,11 @@ class OutlineTracker implements PluginValue {
   current(): OutlineSnapshot {
     if (this.stale) this.refresh();
     return this.snapshot;
+  }
+
+  /** The heading at `index` in the snapshot last handed out, where it stands now. */
+  headingAt(index: number): EditorHeading | undefined {
+    return this.headings[index];
   }
 
   subscribe(listener: () => void): () => void {
@@ -112,7 +112,11 @@ class OutlineTracker implements PluginValue {
   /** Brings the snapshot up to date and says whether it changed. */
   private refresh(): boolean {
     this.stale = false;
-    const headings = (this.headings ??= headingsOf(this.view.state));
+    if (this.headingsOutdated) {
+      this.headings = headingsOf(this.view.state);
+      this.headingsOutdated = false;
+    }
+    const { headings } = this;
     const active = sectionAt(headings, readingPosition(this.view));
     const previous = this.snapshot;
     if (active === previous.active && sameHeadings(headings, previous.headings)) return false;

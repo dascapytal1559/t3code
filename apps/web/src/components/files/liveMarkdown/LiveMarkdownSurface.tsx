@@ -181,7 +181,7 @@ export default function LiveMarkdownSurface({
     });
     editorRef.current = editor;
     setMountedEditor(editor);
-    offerOutline({ headings: editor.outline, jump: editor.jumpToHeading });
+    offerOutline(editor.outline);
     return () => {
       offerOutline(null);
       setMountedEditor(null);

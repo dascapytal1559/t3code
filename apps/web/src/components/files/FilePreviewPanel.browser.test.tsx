@@ -567,6 +567,15 @@ describe("live Markdown editor", () => {
     await vi.waitFor(() => expect(listed()).toEqual(["Notes", "Added", "First", "Second"]));
     expect(current()).toBe("Added");
 
+    {
+      // A click before the outline catches up with typing goes to the heading it shows.
+      using _timers = fakeTimers();
+      await userEvent.keyboard("{Enter}{Enter}# New");
+      expect(listed()).toEqual(["Notes", "Added", "First", "Second"]);
+      await userEvent.click(outline.getByRole("button", { name: "First" }));
+      await vi.waitFor(() => expect(current()).toBe("First"));
+    }
+
     // Hidden from the outline button, and still hidden when the file opens again.
     await userEvent.click(screen.getByRole("button", { name: "Hide outline" }));
     await expect.element(outline).not.toBeInTheDocument();
