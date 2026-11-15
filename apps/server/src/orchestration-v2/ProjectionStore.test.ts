@@ -1382,6 +1382,9 @@ it.effect(
         ["system", { kind: "system" }, "updated", false, true],
         ["steered", { kind: "background_task" }, "updated", false, false],
         ["user", null, null, false, false],
+        ["usage-limit-resume", "agent", null, false, false],
+        ["restart-resume", "agent", null, false, false],
+        ["supervision-resume", "agent", null, false, true],
         ["alerted", { kind: "command" }, "completed", false, false],
         ["unpinned", { kind: "command" }, "completed", false, false],
       ] as const) {
@@ -1432,6 +1435,13 @@ it.effect(
             userMessageId: messageId,
             status: "completed",
             completedAt: at,
+            ...(id === "usage-limit-resume"
+              ? { usageLimitContinuationOfRunId: RunId.make("run:background-wake:user") }
+              : id === "restart-resume"
+                ? { restartContinuationOfRunId: RunId.make("run:background-wake:user") }
+                : id === "supervision-resume"
+                  ? { usageLimitContinuationOfRunId: RunId.make("run:background-wake:agent-sent") }
+                  : {}),
           },
         });
         if (id === "steered") {

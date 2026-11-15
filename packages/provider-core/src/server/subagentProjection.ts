@@ -67,6 +67,11 @@ export function makeSubagentChildThread(input: {
     environment: _environment,
     instructions: _instructions,
     delegatedFrom: _delegatedFrom,
+    coordinator: _coordinator,
+    crewOf: _crewOf,
+    statusLabel: _statusLabel,
+    statusLabelSince: _statusLabelSince,
+    alertRunId: _alertRunId,
     ...parentThread
   } = input.parentThread;
   return {

@@ -1,5 +1,5 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { type EnvironmentId, INDEFINITE_SNOOZE_UNTIL } from "@t3tools/contracts";
 import {
   CHATGPT_USAGE_LIMIT_CODE,
   CHATGPT_WORKSPACE_USAGE_LIMIT_CODE,
@@ -129,6 +129,24 @@ describe("UsageLimitRecoveryCard", () => {
     expect(Clipboard.setStringAsync).toHaveBeenCalledTimes(1);
     await act(async () => first.resolve(true));
     expect(container.textContent).toContain("Request copied");
+  });
+
+  it("resumes an indefinitely snoozed thread when it is woken, not on a date", () => {
+    const resetAt = new Date(DAY_MS).toISOString();
+    const thread = {
+      ...failedThread(resetAt),
+      snoozedUntil: INDEFINITE_SNOOZE_UNTIL,
+      limitRecovery: { runId: "run-1", resetAt, autoResume: true },
+    } as unknown as EnvironmentThreadShell;
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    using _root = { [Symbol.dispose]: () => act(() => root.unmount()) };
+    act(() =>
+      root.render(
+        <UsageLimitRecoveryCard thread={thread} environmentId={"env-1" as EnvironmentId} />,
+      ),
+    );
+    expect(container.textContent).toContain("Resumes when you wake it.");
   });
 
   it("disables Snooze once a reset more than 24.8 days away passes", () => {

@@ -106,6 +106,7 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
         crewOf: _crewOf,
         statusLabel: _statusLabel,
         statusLabelSince: _statusLabelSince,
+        alertRunId: _alertRunId,
         delegatedFrom: _delegatedFrom,
         ...inherited
       } = input.sourceProjection.thread;

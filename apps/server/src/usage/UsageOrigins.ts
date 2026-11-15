@@ -85,10 +85,10 @@ const isDevice = (key: UsageOriginKey): key is DeviceOriginKey =>
 export const MAX_CAUSE_DEPTH = 8;
 
 /**
- * An agent prompt counts to the phone or computer prompt at the root of its recorded causes, or,
- * when the chain ends at an uncaused prompt or one no agent sent, to the device claimed for that
- * prompt's run. An unknown prompt counts to the device claimed for its own run. Any other root, a
- * missing message, a cycle or a chain past MAX_CAUSE_DEPTH keeps its own origin.
+ * An agent prompt counts to the phone or computer prompt at the root of its recorded causes. A
+ * chain that reaches no device, whatever ends it, counts to the device claimed for the first run
+ * along it, starting with the prompt's own. An unknown prompt counts to the device claimed for its
+ * own run. With no claim either, the prompt keeps its own origin.
  */
 export function resolveMessageOrigin(
   message: CausalMessage,
@@ -105,18 +105,23 @@ export function resolveMessageOrigin(
   if (!sentByAgent(direct))
     return isDevice(direct) ? direct : (claimedFor(message, "agent") ?? direct);
   const seen = new Set([message.id]);
+  const visited = [message];
   let current = message;
   for (let depth = 0; depth < MAX_CAUSE_DEPTH; depth++) {
     const causeId = current.causedBy;
-    if (causeId === null) return claimedFor(current, direct.origin) ?? direct;
-    if (seen.has(causeId)) break;
+    if (causeId === null || seen.has(causeId)) break;
     seen.add(causeId);
     const cause = causeOf(causeId);
     if (cause === undefined) break;
     const root = classifyMessageOrigin(cause);
     if (isDevice(root)) return { origin: root.origin, basis: root.basis, via: direct.origin };
-    if (!sentByAgent(root)) return claimedFor(cause, direct.origin) ?? direct;
+    visited.push(cause);
+    if (!sentByAgent(root)) break;
     current = cause;
+  }
+  for (const prompt of visited) {
+    const claimed = claimedFor(prompt, direct.origin);
+    if (claimed !== undefined) return claimed;
   }
   return direct;
 }

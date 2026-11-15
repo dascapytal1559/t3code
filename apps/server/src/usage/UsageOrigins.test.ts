@@ -231,10 +231,35 @@ describe("resolveMessageOrigin", () => {
     const unclaimed = causal("unclaimed", { ...fromMcp, runId: "run-other" });
     const scheduled = causal("scheduled", { creationSource: "server", runId: "run-scheduled" });
     const worker = causal("worker", { ...fromMcp, crew: true, causedBy: "scheduled" });
-    const byId = messages([computer, wake, launch, steer, unclaimed, scheduled, worker]);
+    const quietTask = causal("quiet-task", { creationSource: "server", runId: "run-quiet-task" });
+    const quietWorker = causal("quiet-worker", { ...fromMcp, crew: true, causedBy: "quiet-task" });
+    const workerWake = causal("worker-wake", {
+      createdBy: "agent",
+      notification: true,
+      runId: "run-worker-wake",
+      causedBy: "quiet-worker",
+    });
+    const subWorker = causal("sub-worker", { ...fromMcp, crew: true, causedBy: "worker-wake" });
+    const orphan = causal("orphan", { ...fromMcp, runId: "run-orphan", causedBy: "gone" });
+    const byId = messages([
+      computer,
+      wake,
+      launch,
+      steer,
+      unclaimed,
+      scheduled,
+      worker,
+      quietTask,
+      quietWorker,
+      workerWake,
+      subWorker,
+      orphan,
+    ]);
     const claims = new Map([
       ["run-wake", { origin: "phone", basis: "claim" } as const],
       ["run-scheduled", { origin: "computer", basis: "claim" } as const],
+      ["run-worker-wake", { origin: "phone", basis: "claim" } as const],
+      ["run-orphan", { origin: "computer", basis: "claim" } as const],
     ]);
     const claimOfRun = (runId: string) => claims.get(runId);
     assert.deepStrictEqual(resolveMessageOrigin(wake, byId, claimOfRun), {
@@ -268,6 +293,23 @@ describe("resolveMessageOrigin", () => {
       origin: "computer",
       basis: "claim",
       via: "crew",
+    });
+    // A chain ending at an unclaimed unknown prompt counts to a claim on a run along the way.
+    assert.deepStrictEqual(resolveMessageOrigin(workerWake, byId, claimOfRun), {
+      origin: "phone",
+      basis: "claim",
+      via: "agent",
+    });
+    assert.deepStrictEqual(resolveMessageOrigin(subWorker, byId, claimOfRun), {
+      origin: "phone",
+      basis: "claim",
+      via: "crew",
+    });
+    // So does a prompt whose recorded cause is missing.
+    assert.deepStrictEqual(resolveMessageOrigin(orphan, byId, claimOfRun), {
+      origin: "computer",
+      basis: "claim",
+      via: "agent",
     });
   });
 });

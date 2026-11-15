@@ -576,8 +576,11 @@ the mobile app's swipe menu) starts with Indefinitely, above upstream's presets
 and Custom…, which all stay. An indefinitely snoozed thread stays in Snoozed
 until someone wakes it, or until whatever already wakes a snoozed thread wakes
 it: a new message, a question or approval it raises, a failure, or pinning.
-It sorts after timed snoozes and shows the alarm clock with no countdown; its
-chat says "Snoozed until you wake it".
+It sorts after timed snoozes and shows the alarm clock with no countdown (the
+mobile row reads "Snoozed"); its chat says "Snoozed until you wake it", and a
+usage-limit resume armed on it says it resumes when you wake it. Only
+fork-built clients offer Indefinitely; stock clients show such a thread with a
+countdown of millions of days.
 
 It is stored as a wake time no clock reaches, `9999-12-31T23:59:59.000Z`
 (`INDEFINITE_SNOOZE_UNTIL` in `packages/contracts/src/indefiniteSnooze.ts`), so
@@ -1319,7 +1322,8 @@ A Markdown file that can be edited opens in the file panel as a rendered page
 you type into, like Obsidian's Live Preview. Markdown marks show, dimmed, only
 where the caret is; the rest stays drawn. The editor holds the file's exact
 text and never converts it, so nothing an agent wrote is reformatted on save,
-line endings included. Upstream offers a read-only rendered view or a source
+line endings included; a file that mixes line endings is saved with the one it
+uses most once you edit it. Upstream offers a read-only rendered view or a source
 editor, and opens Markdown as source.
 
 It draws headings, bold, italic, strikethrough, inline code, quotes, callouts,

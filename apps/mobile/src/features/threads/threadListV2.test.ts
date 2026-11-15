@@ -1471,7 +1471,7 @@ describe("threadListV2ListItemsAreEqual", () => {
     expect(threadListV2ListItemsAreEqual(rows(earlier), rows(later))).toBe(false);
   });
 
-  it("shows a thread snoozed indefinitely by its time, as it has no wake to count down to", () => {
+  it("labels a thread snoozed indefinitely as snoozed, as it has no wake to count down to", () => {
     const snoozedLayout = buildThreadListV2Items({
       threads: [
         makeThread({
@@ -1493,8 +1493,20 @@ describe("threadListV2ListItemsAreEqual", () => {
       snoozeLabelNow: NOW,
     }).find((item) => item.key === `v2-thread:${environmentId}:wake`);
     if (row?.type !== "v2-thread") throw new Error("missing snoozed row");
-    expect(row.snoozeWakeLabelText).toBeUndefined();
-    expect(row.timeLabel).not.toBe("");
+    expect(row.snoozeWakeLabelText).toBe("Snoozed");
+    expect(
+      threadListV2RowAccessibilityLabel({
+        title: "wake",
+        variant: row.item.variant,
+        woke: false,
+        statusLabel: undefined,
+        timeLabel: row.timeLabel,
+        snoozeWakeLabel: row.snoozeWakeLabelText,
+        providerNameLabel: null,
+        hasQueuedMessages: false,
+        regeneratingTitle: false,
+      }),
+    ).toBe("wake, Snoozed");
   });
 
   it("notices a trailing-divider flip caused by a neighbour change", () => {

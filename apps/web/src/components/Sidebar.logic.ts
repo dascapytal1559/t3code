@@ -47,6 +47,7 @@ import { deadlineAfter, deadlineStore, type ClockStore } from "@t3tools/client-r
 import { useDeadlinePassed } from "../hooks/useDeadline";
 import { legacyProjectCwdPreferenceKey } from "../uiStateStore";
 import { isElectron } from "../env";
+import { SIDEBAR_SETTLED_SHELF } from "./sidebar/settledShelf";
 import { shouldShowThreadJumpHintsForModifiers } from "../keybindings";
 import { isTerminalFocused, subscribeToTerminalFocusChanges } from "../lib/terminalFocus";
 import { isPreviewFocused } from "../lib/previewFocus";
@@ -1397,7 +1398,7 @@ export function getFallbackThreadIdAfterDelete<
           thread.projectId === deletedThread.projectId &&
           thread.id !== deletedThreadId &&
           !deletedThreadIds?.has(thread.id) &&
-          thread.settledOverride !== "settled" &&
+          (!SIDEBAR_SETTLED_SHELF || thread.settledOverride !== "settled") &&
           !effectiveSnoozed(thread, { now }) &&
           !isShownUnderParent(
             { environmentId: thread.environmentId, threadId: thread.id },

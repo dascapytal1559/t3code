@@ -1,7 +1,7 @@
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { foldedRanges, indentUnit, syntaxHighlighting, unfoldEffect } from "@codemirror/language";
-import { Compartment, EditorState, type Extension, type StateEffect } from "@codemirror/state";
+import { EditorState, type Extension, type StateEffect } from "@codemirror/state";
 import { drawSelection, dropCursor, EditorView, keymap } from "@codemirror/view";
 
 import { codeHighlightStyle, codeLanguages } from "./codeLanguages";
@@ -11,21 +11,12 @@ import { findReplace } from "./findReplace";
 import { folding } from "./folding";
 import { formatKeymap, listKeymap } from "./formatting";
 import { lineChanges } from "./lineDiff";
-import {
-  fromEditorText,
-  type LineEnding,
-  lineEndingOf,
-  mixedLineEndings,
-  toEditorText,
-} from "./lineEndings";
+import { fromEditorText, lineEndingOf, toEditorText } from "./lineEndings";
 import { frontmatterField, livePreview, setImageUrls } from "./livePreview";
 import { liveMarkdownExtensions } from "./markdownSyntax";
 import { headingAnchors, type MarkdownOutlineSource } from "./outline";
 import { NO_OUTLINE, type OutlineSnapshot, outlineTracker } from "./outlineTracker";
 import type { LivePreviewConfig } from "./previewConfig";
-
-const separatorFor = (ending: LineEnding): Extension =>
-  ending === "mixed" ? mixedLineEndings : [];
 
 export interface LiveMarkdownEditorOptions extends LivePreviewConfig {
   readonly parent: HTMLElement;
@@ -58,13 +49,11 @@ export interface LiveMarkdownEditor {
 
 export function createLiveMarkdownEditor(options: LiveMarkdownEditorOptions): LiveMarkdownEditor {
   let ending = lineEndingOf(options.doc);
-  const separator = new Compartment();
   const text = () => fromEditorText(view.state.doc.toString(), ending);
   let listed: readonly EditorHeading[] = [];
 
   // One entry per feature: a new behaviour is a new file added to this list.
   const extensions: Extension[] = [
-    separator.of(separatorFor(ending)),
     history(),
     drawSelection(),
     dropCursor(),
@@ -106,7 +95,7 @@ export function createLiveMarkdownEditor(options: LiveMarkdownEditorOptions): Li
     }),
   ];
 
-  const doc = toEditorText(options.doc, ending);
+  const doc = toEditorText(options.doc);
   const opened = EditorState.create({ doc, extensions });
   // The caret starts below the frontmatter, which would otherwise open as its source.
   const frontmatter = opened.field(frontmatterField);
@@ -153,19 +142,11 @@ export function createLiveMarkdownEditor(options: LiveMarkdownEditorOptions): Li
       return showHeading(headings[headingAnchors(headings).indexOf(anchor.toLowerCase())]);
     },
     applyExternal(next) {
-      const nextEnding = lineEndingOf(next, ending);
-      const incoming = toEditorText(next, nextEnding);
+      ending = lineEndingOf(next, ending);
+      const incoming = toEditorText(next);
       const current = view.state.doc.toString();
-      const newEnding = nextEnding !== ending;
-      if (!newEnding && incoming === current) return;
-      ending = nextEnding;
-      view.dispatch(
-        externalChangeSpec(
-          view.state,
-          lineChanges(current, incoming),
-          newEnding ? [separator.reconfigure(separatorFor(ending))] : [],
-        ),
-      );
+      if (incoming === current) return;
+      view.dispatch(externalChangeSpec(view.state, lineChanges(current, incoming)));
     },
     setImageUrls: (urls) => view.dispatch({ effects: setImageUrls.of(urls) }),
     revealLine(number) {

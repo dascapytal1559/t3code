@@ -1,4 +1,4 @@
-import { RunId } from "@t3tools/contracts";
+import { INDEFINITE_SNOOZE_UNTIL, RunId } from "@t3tools/contracts";
 import type { TimestampFormat } from "@t3tools/contracts/settings";
 import { describe, expect, it, vi } from "vite-plus/test";
 
@@ -6,7 +6,11 @@ import { usageLimitRecoveryBannerItem } from "./UsageLimitRecoveryBanner";
 
 const stoppedAt = new Date(2026, 9, 20, 12, 0);
 
-function bannerDescription(resetAt: Date, timestampFormat: TimestampFormat) {
+function bannerDescription(
+  resetAt: Date,
+  timestampFormat: TimestampFormat,
+  snoozedUntil: string | null = null,
+) {
   return usageLimitRecoveryBannerItem({
     runId: RunId.make("run-1"),
     errorCode: null,
@@ -14,8 +18,15 @@ function bannerDescription(resetAt: Date, timestampFormat: TimestampFormat) {
     stoppedAt: stoppedAt.toISOString(),
     settled: false,
     requestPending: false,
-    snoozedUntil: null,
-    recovery: null,
+    snoozedUntil,
+    recovery:
+      snoozedUntil === null
+        ? null
+        : {
+            runId: RunId.make("run-1"),
+            resetAt: resetAt.toISOString(),
+            autoResume: true,
+          },
     timestampFormat,
     onChange: async () => {},
   }).description;
@@ -35,5 +46,12 @@ describe("usageLimitRecoveryBannerItem", () => {
     expect(bannerDescription(new Date(2026, 9, 21, 17, 30), "24-hour")).toBe(
       "Resets tomorrow at 17:30",
     );
+  });
+
+  it("resumes an indefinitely snoozed thread when it is woken, not on a date", () => {
+    using _now = vi.spyOn(Date, "now").mockReturnValue(stoppedAt.getTime());
+    expect(
+      bannerDescription(new Date(2026, 9, 20, 17, 30), "24-hour", INDEFINITE_SNOOZE_UNTIL),
+    ).toBe("Resumes when you wake it");
   });
 });

@@ -1,4 +1,5 @@
 import {
+  isIndefiniteSnooze,
   type OrchestrationV2LimitRecovery,
   type OrchestrationV2LimitRecoveryUpdate,
   type RunId,
@@ -60,9 +61,11 @@ export function usageLimitRecoveryBannerItem(props: RecoveryProps): ComposerBann
     resumes && resetAt && snoozedUntil && Date.parse(snoozedUntil) > Date.parse(resetAt)
       ? snoozedUntil
       : resetAt;
-  const resetDescription = displayAt
-    ? `${resumes ? "Resumes" : "Resets"} ${formatUpcomingTimestamp(displayAt, timestampFormat)}`
-    : "Reset time unavailable; retry manually";
+  const resetDescription = !displayAt
+    ? "Reset time unavailable; retry manually"
+    : isIndefiniteSnooze(displayAt)
+      ? "Resumes when you wake it"
+      : `${resumes ? "Resumes" : "Resets"} ${formatUpcomingTimestamp(displayAt, timestampFormat)}`;
   if (!chatGptLimit) {
     return {
       id: `usage-limit-recovery:${runId}`,

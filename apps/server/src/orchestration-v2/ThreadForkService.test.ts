@@ -222,6 +222,7 @@ it.effect.each([{ sideChat: false }, { sideChat: true }])(
           crewOf: ThreadId.make("thread:fork-source-coordinator"),
           statusLabel: "Testing",
           statusLabelSince: sourceCreatedAt,
+          alertRunId: sourceRunId,
           environment: { FM_TASK_ID: "task-1" },
           instructions: "The launch brief is first-party.",
         },
@@ -232,6 +233,7 @@ it.effect.each([{ sideChat: false }, { sideChat: true }])(
       assert.isUndefined(result.targetThread.crewOf);
       assert.isUndefined(result.targetThread.statusLabel);
       assert.isUndefined(result.targetThread.statusLabelSince);
+      assert.isUndefined(result.targetThread.alertRunId);
       assert.deepEqual(result.targetThread.environment, { FM_TASK_ID: "task-1" });
       assert.equal(result.targetThread.instructions, "The launch brief is first-party.");
     }),

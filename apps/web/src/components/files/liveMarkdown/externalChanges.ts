@@ -92,7 +92,6 @@ export const flashSpans = (spans: readonly Span[]) => flash.of(spans);
 export function externalChangeSpec(
   state: EditorState,
   changes: readonly TextChange[],
-  extraEffects: readonly StateEffect<unknown>[] = [],
 ): TransactionSpec {
   const changeSetOf = (spans: readonly TextChange[]) =>
     state.changes(
@@ -111,7 +110,7 @@ export function externalChangeSpec(
   );
   return {
     changes: changeSet,
-    effects: [flash.of(written), ...extraEffects],
+    effects: flash.of(written),
     annotations: [Transaction.addToHistory.of(false), externalChange.of(true)],
   };
 }
