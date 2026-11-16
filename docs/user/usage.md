@@ -62,7 +62,9 @@ and **Computer**. Each device splits into **Direct** (prompts you typed, solid) 
 **Coordinated** (prompts an agent sent on behalf of one you typed, hatched). A run counts toward
 the message that started it; messages sent while it runs do not split it. Phone includes
 tablets. Sessions an agent runs outside T3, such as a CLI run in its worktree, count with the
-agent's turn. Usage with no sign of the phone counts to the computer, including agent work with
+agent's turn. A coordinator's own turns that nobody typed, such as FirstMate's wakes and
+background checks, count to the computer as upkeep unless FirstMate says what they were about.
+Usage with no sign of the phone counts to the computer, including agent work with
 no recorded cause, usage from before T3 recorded the sending device (7 Nov 2026) and archived
 history. To see how much of the computer's share is there only by default, and why, run
 `t3 usage reasons`.

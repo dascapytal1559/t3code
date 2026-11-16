@@ -116,7 +116,7 @@ const UsageClaimTool = Tool.make("t3_usage_claim", {
   ...shared,
   dependencies: [...shared.dependencies, UsageClaims.UsageClaims, Path.Path],
   description:
-    "Count work Usage can't trace on its own. Target one of: `sessionId` (native id) or an absolute `directory`, for sessions run outside T3 (a pipeline, a CLI run); `threadId` + `runId`, for a turn whose prompt has no cause (a wake). Give `causedBy` (the prompt behind it) or `device` (`computer` for upkeep, `phone` for a voice journal); work a claimed turn causes inherits it. `from` (ISO time) claims a session from then until a later `from`. Claiming again replaces it; `causedBy: null` removes it. Your own worktree needs no claim.",
+    "Count work Usage can't trace on its own. Target one of: `sessionId` (native id) or an absolute `directory`, for sessions run outside T3 (a pipeline, a CLI run); `threadId` + `runId`, for a turn whose prompt has no cause (a wake). Give `causedBy` (the prompt behind it) or `device` (`phone` for a voice journal); work a claimed turn causes inherits it. `from` (ISO time) claims a session from then until a later `from`. Claiming again replaces it, unless `ifUnclaimed` keeps the first (`kept`); `causedBy: null` removes it. A coordinator's unclaimed turn counts as upkeep. Your own worktree needs no claim.",
   parameters: Schema.Struct({
     sessionId: Schema.optional(TrimmedNonEmptyString),
     from: Schema.optional(IsoDateTime),
@@ -125,6 +125,7 @@ const UsageClaimTool = Tool.make("t3_usage_claim", {
     runId: Schema.optional(RunId),
     causedBy: Schema.optional(Schema.NullOr(OrchestratorMcpCausedBy)),
     device: Schema.optional(Schema.Literals(["phone", "computer"])),
+    ifUnclaimed: Schema.optional(Schema.Boolean),
   }),
   success: Schema.Struct({
     sessionId: Schema.optional(Schema.String),
@@ -134,6 +135,7 @@ const UsageClaimTool = Tool.make("t3_usage_claim", {
     runId: Schema.optional(RunId),
     causedBy: Schema.NullOr(OrchestrationV2CausedBy),
     device: Schema.NullOr(Schema.Literals(["phone", "computer"])),
+    kept: Schema.optional(Schema.Literal(true)),
   }),
 }).annotate(Tool.Destructive, false);
 const UsageReasonsTool = Tool.make("t3_usage_reasons", {

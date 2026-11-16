@@ -51,6 +51,8 @@ export interface CausalMessage extends OriginMessage {
   readonly id: string;
   readonly runId: string | null;
   readonly causedBy: string | null;
+  /** The message's thread is a pinned coordinator, such as FirstMate's own thread. */
+  readonly coordinator: boolean;
 }
 
 /** A phone or computer origin. */
@@ -103,15 +105,28 @@ const isDevice = (key: UsageOriginKey): key is DeviceOriginKey =>
 export const MAX_CAUSE_DEPTH = 8;
 
 /**
+ * A coordinator's prompt that no person typed, in a turn no claim named, is the coordinator's own
+ * upkeep (recovery, scheduled checks, background commands, restart notes): it counts to the computer.
+ */
+function upkeepOf(prompt: CausalMessage): DeviceOriginKey | undefined {
+  if (!prompt.coordinator) return undefined;
+  const own = classifyMessageOrigin(prompt);
+  return sentByAgent(own) || own.reason === "serverPrompt"
+    ? { origin: "computer", basis: own.basis, reason: "upkeep" }
+    : undefined;
+}
+
+/**
  * An agent prompt counts to the phone or computer prompt at the root of its recorded causes. A
- * chain that reaches no device, whatever ends it, counts to the device claimed for the first run
- * along it, starting with the prompt's own. An unknown prompt counts to the device claimed for its
- * own run. With no claim either, the prompt keeps its own origin.
+ * chain reaching no device counts to the first claimed run along it, else to upkeep if a
+ * coordinator's unclaimed turn is on it; an unknown prompt, to its own run's. Else it keeps its own.
  */
 export function resolveMessageOrigin(
   message: CausalMessage,
   causeOf: (messageId: string) => CausalMessage | undefined,
   claimOfRun: (runId: string) => DeviceOriginKey | undefined = () => undefined,
+  // A claim whose cause reaches no device still names its turn, so it is not filed as upkeep.
+  runClaimed: (runId: string) => boolean = (runId) => claimOfRun(runId) !== undefined,
 ): UsageOriginKey {
   const claimedFor = (prompt: CausalMessage, via: UsageOriginVia): UsageOriginKey | undefined => {
     const claimed = prompt.runId === null ? undefined : claimOfRun(prompt.runId);
@@ -119,9 +134,16 @@ export function resolveMessageOrigin(
       ? undefined
       : { origin: claimed.origin, basis: claimed.basis, via, reason: claimed.reason, claim: "run" };
   };
+  const filedFor = (prompt: CausalMessage, via?: UsageOriginVia): UsageOriginKey | undefined => {
+    if (prompt.runId !== null && runClaimed(prompt.runId)) return undefined;
+    const upkeep = upkeepOf(prompt);
+    return upkeep === undefined || via === undefined ? upkeep : { ...upkeep, via };
+  };
   const direct = classifyMessageOrigin(message);
   if (!sentByAgent(direct))
-    return isDevice(direct) ? direct : (claimedFor(message, "agent") ?? direct);
+    return isDevice(direct)
+      ? direct
+      : (claimedFor(message, "agent") ?? filedFor(message) ?? direct);
   const seen = new Set([message.id]);
   const visited = [message];
   let current = message;
@@ -143,10 +165,19 @@ export function resolveMessageOrigin(
     const claimed = claimedFor(prompt, direct.origin);
     if (claimed !== undefined) return claimed;
   }
+  for (const prompt of visited) {
+    const filed = filedFor(prompt, direct.origin);
+    if (filed !== undefined) return filed;
+  }
   return message.causedBy === null ? direct : { ...direct, reason: "untracedCause" };
 }
 
 const NO_PROMPT: UsageOriginKey = { origin: "unknown", basis: "noPrompt", reason: "noPrompt" };
+const NO_PROMPT_UPKEEP: UsageOriginKey = {
+  origin: "computer",
+  basis: "noPrompt",
+  reason: "upkeep",
+};
 
 /** Where a usage record came from: this machine's transcripts, an archive, or a provider account. */
 export type UsageRecordSource = "live" | "archive" | "account";
@@ -437,6 +468,7 @@ interface MessageColumns {
   readonly crew: number;
   readonly notification: number;
   readonly caused_by: string | null;
+  readonly coordinator: number;
 }
 
 const messageOf = (row: MessageColumns): CausalMessage => ({
@@ -449,6 +481,7 @@ const messageOf = (row: MessageColumns): CausalMessage => ({
   crew: row.crew === 1,
   notification: row.notification === 1,
   causedBy: row.caused_by,
+  coordinator: row.coordinator === 1,
 });
 
 const parseMs = (value: string | null): number | null => {
@@ -546,7 +579,8 @@ const make = Effect.gen(function* () {
     coalesce(
       json_extract(message.payload_json, '$.causedBy.messageId'),
       json_extract(thread.payload_json, '$.causedBy.messageId')
-    ) AS caused_by`);
+    ) AS caused_by,
+    coalesce(json_extract(thread.payload_json, '$.coordinator') = 1, 0) AS coordinator`);
 
   // Loads the recorded causes of agent prompts, one chain hop per query.
   const loadCauses = Effect.fn("UsageOrigins.loadCauses")(function* (
@@ -642,6 +676,7 @@ const make = Effect.gen(function* () {
               crew: false,
               notification: false,
               causedBy: claim.causeMessageId,
+              coordinator: false,
             };
       const registrations = yield* resolveRegistrations(
         yield* register.read(sinceMs - TURN_LOOKBACK_MS, untilMs),
@@ -656,6 +691,7 @@ const make = Effect.gen(function* () {
           claim.kind === "run" ? [[claim.target, claim] as const] : [],
         ),
       );
+      const runClaimed = (runId: string) => runClaims.has(runId);
       // A run claim reached again while it resolves is a cycle and counts to no device.
       const settledRunClaims = new Map<string, DeviceOriginKey | undefined>();
       const resolving: string[] = [];
@@ -683,7 +719,7 @@ const make = Effect.gen(function* () {
         return settled;
       };
       const originOf = (message: CausalMessage) =>
-        resolveMessageOrigin(message, (id) => causes.get(id), claimOfRun);
+        resolveMessageOrigin(message, (id) => causes.get(id), claimOfRun, runClaimed);
       const claimKey = (claim: UsageClaims.StoredUsageClaim): UsageOriginKey => {
         const message = claimMessage(claim);
         if (message !== null) return originOf(message);
@@ -704,7 +740,10 @@ const make = Effect.gen(function* () {
         const startedAtMs = parseMs(row.started_at);
         if (row.session_id === null || startedAtMs === null) return;
         const message = turnMessages[index] ?? null;
-        const own = message === null ? NO_PROMPT : originOf(message);
+        const unnamedUpkeep =
+          row.coordinator === 1 && (row.turn_run_id === null || !runClaimed(row.turn_run_id));
+        const own =
+          message !== null ? originOf(message) : unnamedUpkeep ? NO_PROMPT_UPKEEP : NO_PROMPT;
         // A claimed turn counts there unless its own prompt already traces to a device.
         const claimed = row.turn_run_id === null ? undefined : claimOfRun(row.turn_run_id);
         turns.push({

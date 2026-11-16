@@ -331,6 +331,7 @@ it.effect(
         readonly runId?: RunId;
         readonly causedBy?: { readonly threadId: ThreadId; readonly messageId: MessageId } | null;
         readonly device?: "phone" | "computer";
+        readonly ifUnclaimed?: boolean;
       }) =>
         toolkit.handle("t3_usage_claim", params).pipe(
           Stream.unwrap,
@@ -354,6 +355,7 @@ it.effect(
         [{ threadId, runId: RunId.make("run:elsewhere"), device: "computer" }, "not a run of"],
         [{ sessionId: "pipeline", from: "after lunch", device: "computer" }, "ISO 8601"],
         [{ directory: "/runs/one", from: "2026-11-16T00:00:00Z", device: "computer" }, "from goes"],
+        [{ threadId, runId: wakeRun, causedBy: null, ifUnclaimed: true }, "not a removal"],
       ] as const) {
         expect(yield* claim(params)).toMatchObject({
           code: "invalid_request",
@@ -362,22 +364,28 @@ it.effect(
       }
       expect(yield* claims.read).toEqual([]);
 
-      // A turn with no cause, claimed straight to a device (a voice journal's wake).
-      expect(yield* claim({ threadId, runId: wakeRun, device: "phone" })).toEqual({
-        threadId,
-        runId: wakeRun,
-        causedBy: null,
-        device: "phone",
-      });
+      // A turn with no cause, claimed straight to a device (a voice journal's wake); a later
+      // drain's claim, made only if unclaimed, keeps it.
+      const journal = { threadId, runId: wakeRun, causedBy: null, device: "phone" } as const;
+      expect(
+        yield* claim({ threadId, runId: wakeRun, device: "phone", ifUnclaimed: true }),
+      ).toEqual(journal);
+      expect(
+        yield* claim({ threadId, runId: wakeRun, device: "computer", ifUnclaimed: true }),
+      ).toEqual({ ...journal, kept: true });
       expect(yield* claims.read).toEqual([
         { kind: "run", target: wakeRun, causeMessageId: null, device: "phone" },
       ]);
       yield* claim({ threadId, runId: wakeRun, causedBy: null });
 
+      const prompt = { threadId, messageId: MessageId.make("message:prompt") };
       yield* claims.claim({
         target: { kind: "session", sessionId: "pipeline" },
-        value: { causedBy: { threadId, messageId: MessageId.make("message:prompt") } },
+        value: { causedBy: prompt },
       });
+      expect(
+        yield* claim({ sessionId: "pipeline", device: "computer", ifUnclaimed: true }),
+      ).toEqual({ sessionId: "pipeline", causedBy: prompt, device: null, kept: true });
       expect(yield* claim({ sessionId: "pipeline", causedBy: null })).toEqual({
         sessionId: "pipeline",
         causedBy: null,

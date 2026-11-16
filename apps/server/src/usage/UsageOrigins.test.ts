@@ -40,6 +40,7 @@ const causal = (id: string, overrides: Partial<CausalMessage>): CausalMessage =>
   id,
   runId: overrides.runId ?? null,
   causedBy: overrides.causedBy ?? null,
+  coordinator: overrides.coordinator ?? false,
 });
 
 const messages = (list: ReadonlyArray<CausalMessage>) => {
@@ -404,6 +405,70 @@ describe("resolveMessageOrigin", () => {
       via: "agent",
     });
   });
+
+  it("files a coordinator's turn that no claim named and no person typed as upkeep", () => {
+    const fm = { coordinator: true } as const;
+    const wake = causal("wake", { ...fm, createdBy: "agent", notification: true, runId: "run-w" });
+    const restartNote = causal("note", { ...fm, creationSource: "server", runId: "run-n" });
+    const relay = causal("relay", { ...fm, ...fromMcp, runId: "run-r" });
+    const typed = causal("typed", { ...fm, surface: "web", deviceType: "mobile", runId: "run-t" });
+    const oddDevice = causal("odd", { ...fm, surface: "web", deviceType: "tv", runId: "run-o" });
+    const named = causal("named", {
+      ...fm,
+      createdBy: "agent",
+      notification: true,
+      runId: "run-j",
+    });
+    const lostCause = causal("lost", {
+      ...fm,
+      createdBy: "agent",
+      notification: true,
+      runId: "run-l",
+    });
+    const worker = causal("worker", { ...fromMcp, crew: true, causedBy: "wake" });
+    // A coordinator prompt caused by a named turn counts to that claim, not to upkeep.
+    const followUp = causal("follow-up", { ...fm, ...fromMcp, runId: "run-f", causedBy: "named" });
+    // Not a coordinator's: a worker's wake is left to its task's cause.
+    const workerWake = causal("worker-wake", {
+      createdBy: "agent",
+      notification: true,
+      runId: "run-c",
+    });
+    const byId = messages([wake, named, followUp]);
+    const claims = new Map([
+      ["run-j", { origin: "phone", basis: "claim", reason: "journal" } as const],
+    ]);
+    const claimOfRun = (runId: string) => claims.get(runId);
+    // run-l's claim names a cause that reaches no device: still a named turn.
+    const runClaimed = (runId: string) => runId === "run-l" || claims.has(runId);
+    const resolve = (prompt: CausalMessage) =>
+      resolveMessageOrigin(prompt, byId, claimOfRun, runClaimed);
+    const upkeep = { origin: "computer", reason: "upkeep" } as const;
+
+    assert.deepStrictEqual(resolve(wake), { ...upkeep, basis: "notification", via: "agent" });
+    assert.deepStrictEqual(resolve(restartNote), { ...upkeep, basis: "server" });
+    assert.deepStrictEqual(resolve(relay), { ...upkeep, basis: "stamp", via: "agent" });
+    assert.deepStrictEqual(resolve(worker), { ...upkeep, basis: "notification", via: "crew" });
+    assert.deepStrictEqual(resolve(typed), { origin: "phone", basis: "stamp", reason: "typed" });
+    assert.deepStrictEqual(resolve(oddDevice), {
+      origin: "unknown",
+      basis: "stamp",
+      reason: "unknownDevice",
+    });
+    const journal = { origin: "phone", basis: "claim", reason: "journal", claim: "run" } as const;
+    assert.deepStrictEqual(resolve(named), { ...journal, via: "agent" });
+    assert.deepStrictEqual(resolve(followUp), { ...journal, via: "agent" });
+    assert.deepStrictEqual(resolve(lostCause), {
+      origin: "agent",
+      basis: "notification",
+      reason: "unnamedTurn",
+    });
+    assert.deepStrictEqual(resolve(workerWake), {
+      origin: "agent",
+      basis: "notification",
+      reason: "unnamedTurn",
+    });
+  });
 });
 
 describe("settleOrigin", () => {
@@ -463,6 +528,7 @@ const seedThread = (input: {
   rootThreadId?: string;
   environment?: Record<string, string>;
   createdAt?: string;
+  coordinator?: true;
 }) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
@@ -480,6 +546,7 @@ const seedThread = (input: {
         crewOf: input.crewOf ?? null,
         worktreePath: input.worktreePath ?? null,
         ...(input.environment === undefined ? {} : { environment: input.environment }),
+        ...(input.coordinator === undefined ? {} : { coordinator: input.coordinator }),
         ...(input.causedBy === undefined ? {} : { causedBy: input.causedBy }),
         ...(input.rootThreadId === undefined
           ? {}
@@ -693,7 +760,7 @@ describe("UsageOrigins.read", () => {
       });
 
       // A wake claimed for a later prompt, whose run is claimed after it for the phone prompt.
-      yield* seedThread({ id: "firstmate" });
+      yield* seedThread({ id: "firstmate", coordinator: true });
       for (const [ordinal, id, startedAt] of [
         [1, "fm-early", "2026-08-07T04:00:00.000Z"],
         [2, "fm-later", "2026-08-07T04:10:00.000Z"],
@@ -707,6 +774,59 @@ describe("UsageOrigins.read", () => {
           message: { createdBy: "agent", creationSource: "provider" },
         });
       }
+      // FirstMate's turns no claim named: a background command's wake, a turn with no prompt, and
+      // one whose claim names a prompt that is gone. A worker launched in the wake inherits it.
+      const backgroundUpdate = {
+        createdBy: "agent",
+        creationSource: "provider",
+        notification: { source: { kind: "background_task" }, outcome: "updated" },
+      };
+      yield* seedRun({
+        id: "fm-wake",
+        ordinal: 3,
+        threadId: "firstmate",
+        sessionId: "fm-session",
+        startedAt: "2026-08-07T04:20:00.000Z",
+        message: backgroundUpdate,
+      });
+      yield* seedRun({
+        id: "fm-silent",
+        ordinal: 4,
+        threadId: "firstmate",
+        sessionId: "fm-session",
+        startedAt: "2026-08-07T04:30:00.000Z",
+      });
+      yield* seedRun({
+        id: "fm-lost",
+        ordinal: 5,
+        threadId: "firstmate",
+        sessionId: "fm-session",
+        startedAt: "2026-08-07T04:40:00.000Z",
+        message: backgroundUpdate,
+      });
+      yield* claims.claim({
+        target: { kind: "run", runId: "run-fm-lost" },
+        value: {
+          causedBy: { threadId: ThreadId.make("firstmate"), messageId: MessageId.make("gone") },
+        },
+      });
+      yield* seedThread({
+        id: "fm-worker",
+        crewOf: "firstmate",
+        causedBy: { threadId: "firstmate", messageId: "message-fm-wake" },
+      });
+      yield* seedRun({
+        id: "fm-worker-brief",
+        ordinal: 1,
+        threadId: "fm-worker",
+        sessionId: "fm-worker-session",
+        startedAt: "2026-08-07T04:21:00.000Z",
+        message: {
+          createdBy: "agent",
+          creationSource: "mcp",
+          origin: { surface: "mcp", deviceType: "bot" },
+        },
+      });
       yield* claims.claim({
         target: { kind: "run", runId: "run-fm-early" },
         value: {
@@ -913,6 +1033,26 @@ describe("UsageOrigins.read", () => {
       } as const;
       assert.deepStrictEqual(at("fm-session", "2026-08-07T04:01:00Z"), fromPhone);
       assert.deepStrictEqual(at("fm-session", "2026-08-07T04:11:00Z"), fromPhone);
+      const filed = { origin: "computer", reason: "upkeep" } as const;
+      assert.deepStrictEqual(at("fm-session", "2026-08-07T04:21:00Z"), {
+        ...filed,
+        basis: "notification",
+        via: "agent",
+      });
+      assert.deepStrictEqual(at("fm-worker-session", "2026-08-07T04:22:00Z"), {
+        ...filed,
+        basis: "notification",
+        via: "crew",
+      });
+      assert.deepStrictEqual(at("fm-session", "2026-08-07T04:31:00Z"), {
+        ...filed,
+        basis: "noPrompt",
+      });
+      assert.deepStrictEqual(at("fm-session", "2026-08-07T04:41:00Z"), {
+        origin: "agent",
+        basis: "notification",
+        reason: "unnamedTurn",
+      });
       assert.deepStrictEqual(at("scheduled-session", "2026-08-07T05:01:00Z"), {
         ...upkeep,
         via: "agent",
@@ -955,8 +1095,11 @@ describe("UsageOrigins.read", () => {
           .map(({ key }) => `${key.origin}/${key.basis}/${key.via ?? "-"}`)
           .toSorted(),
         [
+          "agent/notification/-",
           "computer/claim/agent",
           "computer/claim/crew",
+          "computer/notification/agent",
+          "computer/notification/crew",
           "computer/stamp/-",
           "computer/stamp/-",
           "crew/stamp/-",

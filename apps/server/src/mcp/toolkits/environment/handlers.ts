@@ -160,7 +160,7 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
     }),
   ),
   t3_usage_claim: McpToolAccess.writesEnvironment(
-    ({ sessionId, from, directory, threadId, runId, causedBy, device }) =>
+    ({ sessionId, from, directory, threadId, runId, causedBy, device, ifUnclaimed }) =>
       Effect.gen(function* () {
         const { threads } = yield* access;
         const path = yield* Path.Path;
@@ -191,6 +191,8 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
           return yield* invalidRequest("directory must be an absolute path.");
         if ((causedBy === undefined) === (device === undefined) || (causedBy === null && device))
           return yield* invalidRequest("Give exactly one of causedBy or device.");
+        if (causedBy === null && ifUnclaimed === true)
+          return yield* invalidRequest("ifUnclaimed goes only with a claim, not a removal.");
         if (runId !== undefined && threadId !== undefined) {
           const { runs } = yield* threads
             .getThreadRecords(threadId, ["runs"], { runIds: [runId] })
@@ -205,7 +207,7 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
               ? null
               : { causedBy: yield* verifyCause(threads, causedBy) };
         const claimed = yield* (yield* UsageClaims.UsageClaims)
-          .claim({ target, value })
+          .claim({ target, value, ifUnclaimed: ifUnclaimed === true })
           .pipe(Effect.mapError(unavailable));
         return {
           ...(claimed.target.kind === "session"
@@ -221,6 +223,7 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
           causedBy:
             claimed.value !== null && "causedBy" in claimed.value ? claimed.value.causedBy : null,
           device: claimed.value !== null && "device" in claimed.value ? claimed.value.device : null,
+          ...(claimed.kept ? { kept: true as const } : {}),
         };
       }),
   ),

@@ -1,4 +1,4 @@
-import type { OrchestrationV2CausedBy } from "@t3tools/contracts";
+import { MessageId, type OrchestrationV2CausedBy, RunId, ThreadId } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -37,10 +37,9 @@ export interface StoredUsageClaim {
 }
 
 /**
- * Work Usage can't trace on its own, claimed by an agent: sessions run outside T3 (a pipeline, a
- * child CLI run), or a turn whose prompt has no cause (a wake, upkeep, a voice journal). A session
- * keeps one claim per start time. Claiming the same target again replaces the value; a null value
- * removes the claim. Folders are stored resolved, as transcripts record them.
+ * Work Usage can't trace on its own, claimed by an agent: sessions run outside T3, or a turn whose
+ * prompt has no cause (a wake). A session keeps one claim per start. Claiming again replaces the
+ * value unless `ifUnclaimed` keeps the first (`kept`); null removes it. Folders are stored resolved.
  */
 export class UsageClaims extends Context.Service<
   UsageClaims,
@@ -48,8 +47,13 @@ export class UsageClaims extends Context.Service<
     readonly claim: (input: {
       readonly target: UsageClaimTarget;
       readonly value: UsageClaimValue | null;
+      readonly ifUnclaimed?: boolean;
     }) => Effect.Effect<
-      { readonly target: UsageClaimTarget; readonly value: UsageClaimValue | null },
+      {
+        readonly target: UsageClaimTarget;
+        readonly value: UsageClaimValue | null;
+        readonly kept: boolean;
+      },
       SqlError.SqlError
     >;
     readonly read: Effect.Effect<ReadonlyArray<StoredUsageClaim>, SqlError.SqlError>;
@@ -63,6 +67,26 @@ interface ClaimRow {
   readonly cause_message_id: string | null;
   readonly device: string | null;
 }
+
+interface StoredValueRow {
+  readonly cause_thread_id: string | null;
+  readonly cause_run_id: string | null;
+  readonly cause_message_id: string | null;
+  readonly device: string | null;
+}
+
+const storedValue = (row: StoredValueRow): UsageClaimValue | null =>
+  row.device === "phone" || row.device === "computer"
+    ? { device: row.device }
+    : row.cause_thread_id === null || row.cause_message_id === null
+      ? null
+      : {
+          causedBy: {
+            threadId: ThreadId.make(row.cause_thread_id),
+            messageId: MessageId.make(row.cause_message_id),
+            ...(row.cause_run_id === null ? {} : { runId: RunId.make(row.cause_run_id) }),
+          },
+        };
 
 // A claim with no start is stored from "", since SQLite never matches NULL keys on conflict.
 const NO_START = "";
@@ -105,6 +129,7 @@ const make = Effect.gen(function* () {
   const claim = Effect.fn("UsageClaims.claim")(function* (input: {
     readonly target: UsageClaimTarget;
     readonly value: UsageClaimValue | null;
+    readonly ifUnclaimed?: boolean;
   }) {
     const target = yield* resolveTarget(input.target);
     const key = targetKey(target);
@@ -116,25 +141,35 @@ const make = Effect.gen(function* () {
         DELETE FROM usage_claims
         WHERE target_kind = ${target.kind} AND target IN ${sql.in(keys)} AND claimed_from = ${from}
       `;
-      return { target, value: null };
+      return { target, value: null, kept: false };
     }
     const claimedAt = DateTime.formatIso(yield* DateTime.now);
     const cause = "causedBy" in input.value ? input.value.causedBy : null;
     const device = "device" in input.value ? input.value.device : null;
-    yield* sql`
+    const onConflict =
+      input.ifUnclaimed === true
+        ? sql`DO NOTHING`
+        : sql`DO UPDATE SET
+            cause_thread_id = excluded.cause_thread_id,
+            cause_run_id = excluded.cause_run_id,
+            cause_message_id = excluded.cause_message_id,
+            device = excluded.device,
+            claimed_at = excluded.claimed_at`;
+    const written = yield* sql`
       INSERT INTO usage_claims
         (target_kind, target, claimed_from, cause_thread_id, cause_run_id, cause_message_id,
           device, claimed_at)
       VALUES (${target.kind}, ${key}, ${from}, ${cause?.threadId ?? null},
         ${cause?.runId ?? null}, ${cause?.messageId ?? null}, ${device}, ${claimedAt})
-      ON CONFLICT (target_kind, target, claimed_from) DO UPDATE SET
-        cause_thread_id = excluded.cause_thread_id,
-        cause_run_id = excluded.cause_run_id,
-        cause_message_id = excluded.cause_message_id,
-        device = excluded.device,
-        claimed_at = excluded.claimed_at
+      ON CONFLICT (target_kind, target, claimed_from) ${onConflict}
+      RETURNING target
     `;
-    return { target, value: input.value };
+    if (written.length > 0) return { target, value: input.value, kept: false };
+    const [stored] = yield* sql<StoredValueRow>`
+      SELECT cause_thread_id, cause_run_id, cause_message_id, device FROM usage_claims
+      WHERE target_kind = ${target.kind} AND target = ${key} AND claimed_from = ${from}
+    `;
+    return { target, value: stored === undefined ? null : storedValue(stored), kept: true };
   });
 
   const read = sql<ClaimRow>`
