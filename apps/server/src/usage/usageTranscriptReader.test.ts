@@ -605,6 +605,7 @@ describe("working folder from a transcript's path", () => {
       ],
       worktrees: [{ threadId: "worker", directory: worktree }],
       claims: [],
+      registrations: [],
     });
     assert.deepStrictEqual(
       result.records.map((record) => index.lookup(record)),

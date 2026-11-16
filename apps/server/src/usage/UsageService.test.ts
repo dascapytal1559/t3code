@@ -45,6 +45,7 @@ import * as Sqlite from "../persistence/Sqlite.ts";
 import * as CodexUsageHistory from "./CodexUsageHistory.ts";
 import * as UsageClaims from "./UsageClaims.ts";
 import * as UsageOrigins from "./UsageOrigins.ts";
+import * as UsageSessionRegister from "./UsageSessionRegister.ts";
 import * as CursorAccountReader from "@t3tools/provider-cursor/server/CursorAccountReader";
 import * as CursorUsageAccounts from "@t3tools/provider-cursor/server/CursorUsageAccounts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
@@ -203,10 +204,10 @@ const layerService = (input: {
     Layer.provideMerge(MuseUsageHome.layer),
     Layer.provideMerge(ProviderHostLive.layer),
     Layer.provideMerge(
-      Layer.mergeAll(CodexUsageHistory.layer, UsageOrigins.layer).pipe(
-        Layer.provideMerge(UsageClaims.layer),
-        Layer.provideMerge(Sqlite.layerMemory),
-      ),
+      Layer.mergeAll(
+        CodexUsageHistory.layer,
+        UsageOrigins.layer.pipe(Layer.provide(UsageSessionRegister.layer)),
+      ).pipe(Layer.provideMerge(UsageClaims.layer), Layer.provideMerge(Sqlite.layerMemory)),
     ),
     Layer.provideMerge(Layer.mock(BackgroundPolicy.BackgroundPolicy)({})),
     Layer.provideMerge(

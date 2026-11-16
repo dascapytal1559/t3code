@@ -13,6 +13,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as UsageClaims from "./UsageClaims.ts";
+import * as UsageSessionRegister from "./UsageSessionRegister.ts";
 
 const ORIGINS_RECORDED_SINCE_MS = Date.parse(USAGE_ORIGINS_RECORDED_SINCE);
 
@@ -179,11 +180,25 @@ export interface OriginClaim {
   readonly key: UsageOriginKey;
 }
 
+/**
+ * A session T3 does not run, registered when it started, with the T3 thread whose environment
+ * started it. A session whose environment named no thread or task started in a terminal.
+ */
+export interface OriginRegistration {
+  readonly sessionId: string;
+  readonly startedAtMs: number;
+  readonly threadId?: string;
+}
+
+/** A session started with no T3 thread or FirstMate task behind it: you, in a terminal. */
+const TERMINAL_ORIGIN: DeviceOriginKey = { origin: "computer", basis: "terminal" };
+
 export interface UsageOriginSnapshot {
   readonly turns: readonly OriginTurn[];
   readonly prompts: readonly OriginPrompt[];
   readonly worktrees: readonly OriginWorktree[];
   readonly claims: readonly OriginClaim[];
+  readonly registrations: readonly OriginRegistration[];
 }
 
 export interface OriginRecord {
@@ -194,6 +209,9 @@ export interface OriginRecord {
 
 // Records written this long after a turn ended belong to no T3 turn, such as a terminal resume.
 const LATE_RECORD_GRACE_MS = 5 * 60 * 1000;
+
+// The session-start hook stamps whole seconds, so a session may have started up to a second later.
+const REGISTER_STAMP_SLACK_MS = 999;
 
 /** The last item that started at or before the time; items are sorted by start. */
 function startedBy<T extends { readonly startedAtMs: number }>(
@@ -236,27 +254,33 @@ function appendTo<K, T>(index: Map<K, T[]>, key: K, items: readonly T[]): void {
 }
 
 /**
- * Matches a transcript record to the T3 work it belongs to: the turn of its own native session
- * running then, else its session's latest claim started by then, else its working folder. A folder
- * inside a session's own folder (Claude names its scratchpad for the session), a thread's worktree,
- * or a claimed folder counts to the latest turn there, or to the claim; the deepest folder wins.
+ * Matches a record to the T3 work it belongs to: its own session's turn then, else its session's
+ * latest claim, else its latest registration, else its working folder: a session's own folder
+ * (Claude's scratchpad), a thread's worktree, or a claimed folder; the deepest folder wins.
  */
 export class UsageOriginIndex {
   readonly #turnsBySession = new Map<string, OriginTurn[]>();
+  readonly #turnsByThread = new Map<string, OriginTurn[]>();
   // Worktree slots are reused, so a folder holds the turns of every thread that worked there.
   readonly #turnsByWorktree = new Map<string, OriginTurn[]>();
   // A claim with no start covers the session from its beginning.
   readonly #claimsBySession = new Map<string, SessionClaim[]>();
+  // A session resumed later registers again, from wherever it was resumed.
+  readonly #registrationsBySession = new Map<string, OriginRegistration[]>();
   /** Deepest first; a claim wins a tie with a worktree. */
   readonly #folders: { readonly directory: string; readonly owner: FolderOwner }[];
   // Records repeat their folder thousands of times; its owner does not depend on the time.
   readonly #ownerByCwd = new Map<string, FolderOwner | null>();
 
-  constructor(snapshot: Pick<UsageOriginSnapshot, "turns" | "worktrees" | "claims">) {
-    const turnsByThread = new Map<string, OriginTurn[]>();
+  constructor(
+    snapshot: Pick<UsageOriginSnapshot, "turns" | "worktrees" | "claims" | "registrations">,
+  ) {
     for (const turn of snapshot.turns) {
       appendTo(this.#turnsBySession, turn.sessionId, [turn]);
-      appendTo(turnsByThread, turn.threadId, [turn]);
+      appendTo(this.#turnsByThread, turn.threadId, [turn]);
+    }
+    for (const registration of snapshot.registrations) {
+      appendTo(this.#registrationsBySession, registration.sessionId, [registration]);
     }
     const folders: { directory: string; owner: FolderOwner }[] = [];
     for (const claim of snapshot.claims) {
@@ -269,11 +293,13 @@ export class UsageOriginIndex {
       if (!this.#turnsByWorktree.has(directory)) {
         folders.push({ directory, owner: { kind: "worktree", directory } });
       }
-      appendTo(this.#turnsByWorktree, directory, turnsByThread.get(threadId) ?? []);
+      appendTo(this.#turnsByWorktree, directory, this.#turnsByThread.get(threadId) ?? []);
     }
     for (const turns of this.#turnsBySession.values()) turns.sort(byStart);
+    for (const turns of this.#turnsByThread.values()) turns.sort(byStart);
     for (const turns of this.#turnsByWorktree.values()) turns.sort(byStart);
     for (const claims of this.#claimsBySession.values()) claims.sort(byStart);
+    for (const registrations of this.#registrationsBySession.values()) registrations.sort(byStart);
     this.#folders = folders.toSorted((a, b) => b.directory.length - a.directory.length);
   }
 
@@ -291,7 +317,20 @@ export class UsageOriginIndex {
     const claimed = claims === undefined ? undefined : startedBy(claims, record.timestampMs);
     if (claimed !== undefined) return claimed.key;
     // A T3 session's record outside its turns is someone resuming it elsewhere, such as a terminal.
-    if (own !== undefined || record.cwd === undefined) return null;
+    if (own !== undefined) return null;
+    const registered = this.#registrationsBySession.get(record.sessionId);
+    const registration =
+      registered === undefined ? undefined : startedBy(registered, record.timestampMs);
+    if (registration !== undefined) {
+      if (registration.threadId === undefined) return TERMINAL_ORIGIN;
+      const turns = this.#turnsByThread.get(registration.threadId);
+      const starter =
+        turns === undefined
+          ? undefined
+          : startedBy(turns, registration.startedAtMs + REGISTER_STAMP_SLACK_MS);
+      if (starter !== undefined) return starter.key;
+    }
+    if (record.cwd === undefined) return null;
     const owner = this.#ownerOf(record.cwd);
     if (owner === null) return null;
     if (owner.kind === "claim") return owner.key;
@@ -364,8 +403,7 @@ const parseMs = (value: string | null): number | null => {
   return Number.isNaN(parsed) ? null : parsed;
 };
 
-const MessageIdList = Schema.fromJsonString(Schema.Array(Schema.String));
-const encodeMessageIds = Schema.encodeSync(MessageIdList);
+const encodeIds = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.String)));
 
 // A turn that started before the window can still be running in it.
 const TURN_LOOKBACK_MS = 2 * 24 * 60 * 60 * 1000;
@@ -373,6 +411,64 @@ const TURN_LOOKBACK_MS = 2 * 24 * 60 * 60 * 1000;
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const claims = yield* UsageClaims.UsageClaims;
+  const register = yield* UsageSessionRegister.UsageSessionRegister;
+
+  // T3's own sessions register too, and are dropped: T3 knows them turn by turn. A FirstMate task
+  // resolves to the thread it runs in, named by that thread's bound environment.
+  const resolveRegistrations = Effect.fn("UsageOrigins.resolveRegistrations")(function* (
+    registrations: ReadonlyArray<UsageSessionRegister.SessionRegistration>,
+  ) {
+    if (registrations.length === 0) return [];
+    const sessionIds = [...new Set(registrations.map((entry) => entry.sessionId))];
+    const ownRows = yield* sql<{ readonly native_id: string }>`
+      SELECT json_extract(payload_json, '$.nativeThreadRef.nativeId') AS native_id
+      FROM orchestration_v2_projection_provider_threads
+      WHERE json_extract(payload_json, '$.nativeThreadRef.nativeId')
+        IN (SELECT value FROM json_each(${encodeIds(sessionIds)}))
+    `.pipe(NodeSqliteClient.readOnly);
+    const own = new Set(ownRows.map((row) => row.native_id));
+    const taskIds = [...new Set(registrations.flatMap((entry) => entry.fmTaskId ?? []))];
+    const taskRows =
+      taskIds.length === 0
+        ? []
+        : yield* sql<{
+            readonly thread_id: string;
+            readonly created_at: string;
+            readonly task_id: string;
+            readonly home: string | null;
+          }>`
+            SELECT thread_id, created_at,
+              json_extract(payload_json, '$.environment.FM_TASK_ID') AS task_id,
+              json_extract(payload_json, '$.environment.FM_HOME') AS home
+            FROM orchestration_v2_projection_threads
+            WHERE json_extract(payload_json, '$.environment.FM_TASK_ID')
+              IN (SELECT value FROM json_each(${encodeIds(taskIds)}))
+          `.pipe(NodeSqliteClient.readOnly);
+    // Newest first: a task id launched again names its latest thread by the session's start.
+    const taskThreads = taskRows
+      .flatMap((row) => {
+        const createdAtMs = parseMs(row.created_at);
+        return createdAtMs === null ? [] : [{ ...row, createdAtMs }];
+      })
+      .toSorted((a, b) => b.createdAtMs - a.createdAtMs);
+    return registrations.flatMap((entry): OriginRegistration[] => {
+      if (own.has(entry.sessionId)) return [];
+      const started = { sessionId: entry.sessionId, startedAtMs: entry.startedAtMs };
+      const taskThread =
+        entry.fmTaskId === undefined
+          ? undefined
+          : taskThreads.find(
+              (thread) =>
+                thread.task_id === entry.fmTaskId &&
+                thread.home === (entry.fmHome ?? null) &&
+                thread.createdAtMs <= entry.startedAtMs + REGISTER_STAMP_SLACK_MS,
+            );
+      const threadId = taskThread?.thread_id ?? entry.threadId;
+      if (threadId !== undefined) return [{ ...started, threadId }];
+      // FirstMate work with no thread T3 knows stays untraced rather than counting as a terminal.
+      return entry.fmTaskId === undefined && entry.fmHome === undefined ? [started] : [];
+    });
+  });
 
   // Columns of `message` (joined to its `thread`) that classify it and name its cause.
   const messageColumns = sql.literal(`
@@ -418,7 +514,7 @@ const make = Effect.gen(function* () {
         FROM orchestration_v2_projection_messages AS message
         LEFT JOIN orchestration_v2_projection_threads AS thread
           ON thread.thread_id = message.thread_id
-        WHERE message.message_id IN (SELECT value FROM json_each(${encodeMessageIds([...pending])}))
+        WHERE message.message_id IN (SELECT value FROM json_each(${encodeIds([...pending])}))
       `.pipe(NodeSqliteClient.readOnly);
       const found = rows.map(messageOf);
       for (const message of found) loaded.set(message.id, message);
@@ -491,6 +587,9 @@ const make = Effect.gen(function* () {
               notification: false,
               causedBy: claim.causeMessageId,
             };
+      const registrations = yield* resolveRegistrations(
+        yield* register.read(sinceMs - TURN_LOOKBACK_MS, untilMs),
+      );
       const causes = yield* loadCauses([
         ...turnMessages.filter((message) => message !== null),
         ...promptMessages,
@@ -577,6 +676,7 @@ const make = Effect.gen(function* () {
                 },
               ],
         ),
+        registrations,
       } satisfies UsageOriginSnapshot;
     },
     Effect.mapError((cause) => new UsageOriginsReadError({ cause })),

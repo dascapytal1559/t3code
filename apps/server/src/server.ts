@@ -211,6 +211,7 @@ import * as UsageService from "./usage/UsageService.ts";
 import * as CodexUsageHistory from "./usage/CodexUsageHistory.ts";
 import * as UsageClaims from "./usage/UsageClaims.ts";
 import * as UsageOrigins from "./usage/UsageOrigins.ts";
+import * as UsageSessionRegister from "./usage/UsageSessionRegister.ts";
 import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
@@ -313,7 +314,7 @@ const layerUsage = UsageService.layer.pipe(
       CursorUsageAccounts.layer.pipe(Layer.provide(CursorAccountReader.layer)),
     ).pipe(Layer.provide(ProviderHostLive.layer.pipe(Layer.provide(ServerSecretStore.layer)))),
   ),
-  Layer.provide(UsageOrigins.layer),
+  Layer.provide(UsageOrigins.layer.pipe(Layer.provide(UsageSessionRegister.layer))),
   Layer.provide(layerServerSettings),
   // Merged so the MCP claim tool writes through the same service Usage reads.
   Layer.provideMerge(UsageClaims.layer),

@@ -63,10 +63,46 @@ On web and desktop, **Tokens by origin** (or **Cost by origin**) splits usage be
 the message that started it; messages sent while it runs do not split it. Phone includes
 tablets. Sessions an agent runs outside T3, such as a CLI run in its worktree, count with the
 agent's turn. **Unknown** (grey) is usage nothing recorded a parent for, such as agent work with
-no recorded cause or your own terminal sessions; an agent can claim it for the prompt or device
-behind it. Usage from before T3 recorded the sending device (7 Nov 2026) and archived history
-from other machines can never trace, so the bar leaves it out and the legend lists it under
-**Can't trace**.
+no recorded cause; an agent can claim it for the prompt or device behind it. Usage from before T3
+recorded the sending device (7 Nov 2026) and archived history from other machines can never
+trace, so the bar leaves it out and the legend lists it under **Can't trace**.
+
+## Count agent sessions T3 does not run
+
+A session-start hook makes every Claude, Codex, and Grok session on the server's machine register
+itself in `<T3 home>/userdata/session-register` (the T3 home is `~/.t3` unless you set
+`T3CODE_HOME`). A session started by a T3 agent, such as a review or a child CLI run, then counts
+to the turn its thread was running when it started, wherever it ran. A session started with no T3
+thread or FirstMate task behind it, such as one you start in a terminal, counts to **Computer**.
+Sessions T3 runs itself are unaffected. Registration needs no running server and never delays or
+fails a session.
+
+The hook is `apps/server/scripts/session-register-hook.sh` in the T3 Code source. It takes the
+tool's name and the register folder. In the examples, replace `<hook>` with its full path and
+`<register>` with the folder, for example `$HOME/.t3/userdata/session-register`.
+
+- **Claude Code:** add it to `~/.claude/settings.json`, and to the `settings.json` of each profile
+  you run with `CLAUDE_CONFIG_DIR`:
+
+  ```json
+  {
+    "hooks": {
+      "SessionStart": [
+        { "hooks": [{ "type": "command", "command": "<hook> claude <register>", "timeout": 5 }] }
+      ]
+    }
+  }
+  ```
+
+- **Codex:** turn on `hooks = true` under `[features]` in `~/.codex/config.toml`, then add the
+  same block to `~/.codex/hooks.json` with `codex` in place of `claude`. Codex may ask you to
+  approve a new hook before it runs.
+- **Grok:** Grok also runs the hooks in `~/.claude/settings.json`, and the hook records those
+  sessions as Grok's. If you skipped that file, save the same block with `grok` in place of
+  `claude` as `~/.grok/hooks/t3-session-register.json`.
+
+To check a tool, start a session in it and look for a new line in the register folder's file for
+the current month.
 
 ## Set custom model prices
 

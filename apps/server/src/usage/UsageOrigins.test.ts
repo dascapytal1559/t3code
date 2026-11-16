@@ -9,6 +9,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 
 import * as Sqlite from "../persistence/Sqlite.ts";
 import * as UsageClaims from "./UsageClaims.ts";
+import * as UsageSessionRegister from "./UsageSessionRegister.ts";
 import {
   classifyMessageOrigin,
   layer as usageOriginsLayer,
@@ -152,6 +153,7 @@ describe("resolveMessageOrigin", () => {
         ],
         worktrees: [],
         claims: [],
+        registrations: [],
       });
       const at = (sessionId: string, timestampMs: number) =>
         index.lookup({ sessionId, timestampMs });
@@ -164,7 +166,7 @@ describe("resolveMessageOrigin", () => {
       assert.strictEqual(at("other", 1_200), null);
     });
 
-    it("credits sessions outside T3 by claim, then by the folder they ran in", () => {
+    it("credits sessions outside T3 by claim, then by registration, then by their folder", () => {
       const phone = { origin: "phone", basis: "stamp" } as const;
       const computer = { origin: "computer", basis: "stamp" } as const;
       const claimed = { origin: "phone", basis: "stamp", via: "agent" } as const;
@@ -209,6 +211,18 @@ describe("resolveMessageOrigin", () => {
           { kind: "session", target: "resumed", key: claimed },
           { kind: "session", target: "resumed", fromMs: 10_000, key: computer },
         ],
+        registrations: [
+          { sessionId: "pipeline-session", startedAtMs: 0, threadId: "worker" },
+          // A review the worker started, resumed later from a terminal.
+          { sessionId: "review", startedAtMs: 30_000 },
+          { sessionId: "review", startedAtMs: 5_000, threadId: "worker" },
+          { sessionId: "terminal", startedAtMs: 100 },
+          // Stamped in whole seconds: started in the same second as the thread's turn.
+          { sessionId: "child", startedAtMs: 19_500, threadId: "next-worker" },
+          { sessionId: "lost", startedAtMs: 100, threadId: "unknown-thread" },
+          // T3 runs this session itself, so its registration says nothing more.
+          { sessionId: "w2", startedAtMs: 0 },
+        ],
       });
       const at = (sessionId: string, timestampMs: number, cwd?: string) =>
         index.lookup({ sessionId, timestampMs, cwd });
@@ -223,6 +237,13 @@ describe("resolveMessageOrigin", () => {
       // A claim with no start covers the session until a later one starts.
       assert.deepStrictEqual(at("resumed", 9_999), claimed);
       assert.deepStrictEqual(at("resumed", 10_000), computer);
+      // A registration counts to the turn its thread was running when the session started.
+      const terminal = { origin: "computer", basis: "terminal" } as const;
+      assert.deepStrictEqual(at("review", 9_000, "/wt/worker/nested"), computer);
+      assert.deepStrictEqual(at("review", 31_000), terminal);
+      assert.deepStrictEqual(at("terminal", 9_000, "/wt/worker"), terminal);
+      assert.deepStrictEqual(at("child", 21_000), claimed);
+      assert.deepStrictEqual(at("lost", 2_000, "/wt/worker"), phone);
       assert.deepStrictEqual(at("cli", 9_000, "/runs/pipeline/review"), claimed);
       assert.strictEqual(at("cli", 9_000, "/runs/pipeline-other"), null);
       // A child run in a thread's worktree counts to that thread's latest turn by then.
@@ -372,6 +393,8 @@ const seedThread = (input: {
   causedBy?: Record<string, string>;
   worktreePath?: string;
   rootThreadId?: string;
+  environment?: Record<string, string>;
+  createdAt?: string;
 }) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
@@ -382,12 +405,13 @@ const seedThread = (input: {
       default_provider: "claudeAgent",
       runtime_mode: "full-access",
       interaction_mode: "default",
-      created_at: "2026-08-07T00:00:00.000Z",
-      updated_at: "2026-08-07T00:00:00.000Z",
+      created_at: input.createdAt ?? "2026-08-07T00:00:00.000Z",
+      updated_at: input.createdAt ?? "2026-08-07T00:00:00.000Z",
       payload_json: encodeJson({
         id: input.id,
         crewOf: input.crewOf ?? null,
         worktreePath: input.worktreePath ?? null,
+        ...(input.environment === undefined ? {} : { environment: input.environment }),
         ...(input.causedBy === undefined ? {} : { causedBy: input.causedBy }),
         ...(input.rootThreadId === undefined
           ? {}
@@ -725,6 +749,37 @@ describe("UsageOrigins.read", () => {
         value: { device: "phone" },
       });
 
+      // A FirstMate task relaunched in a new thread, and a task of the same name in another home.
+      const fmTask = { FM_TASK_ID: "task-a", FM_HOME: "/fm" };
+      yield* seedThread({ id: "task-first", environment: fmTask });
+      yield* seedThread({
+        id: "task-again",
+        environment: fmTask,
+        createdAt: "2026-08-07T06:30:00.000Z",
+      });
+      yield* seedThread({
+        id: "task-elsewhere",
+        environment: { FM_TASK_ID: "task-a", FM_HOME: "/other" },
+        createdAt: "2026-08-07T06:45:00.000Z",
+      });
+      for (const threadId of ["task-first", "task-again", "task-elsewhere"]) {
+        yield* seedRun({
+          id: threadId,
+          ordinal: 1,
+          threadId,
+          sessionId: `${threadId}-session`,
+          startedAt: "2026-08-07T06:50:00.000Z",
+          message: {
+            createdBy: "user",
+            creationSource: "web",
+            origin: {
+              surface: "web",
+              deviceType: threadId === "task-again" ? "mobile" : "desktop",
+            },
+          },
+        });
+      }
+
       const origins = yield* UsageOrigins;
       const snapshot = yield* origins.read(
         Date.parse("2026-08-07T00:00:00.000Z"),
@@ -781,6 +836,17 @@ describe("UsageOrigins.read", () => {
       assert.deepStrictEqual(at("cycle-session", "2026-08-07T06:11:00Z"), cyclePhone);
       // A CLI run inside the worker's worktree counts to the worker's turn then.
       assert.deepStrictEqual(at("cli-session", "2026-08-07T01:25:00Z", "/wt/worker/runs"), viaCrew);
+      // Registered sessions: by their task's latest thread in that home, then by their thread.
+      const phoneStamp = { origin: "phone", basis: "stamp" } as const;
+      assert.deepStrictEqual(at("task-review", "2026-08-07T07:06:00Z"), phoneStamp);
+      assert.deepStrictEqual(at("probe", "2026-08-07T01:26:00Z"), viaCrew);
+      assert.deepStrictEqual(at("my-terminal", "2026-08-07T03:01:00Z"), {
+        origin: "computer",
+        basis: "terminal",
+      });
+      // T3's own session, though older than any turn read, and FirstMate work with no thread.
+      assert.strictEqual(at("old-session", "2026-08-07T01:00:00Z"), null);
+      assert.strictEqual(at("fm-only", "2026-08-07T01:01:00Z"), null);
       assert.deepStrictEqual(
         snapshot.prompts
           .map(({ key }) => `${key.origin}/${key.basis}/${key.via ?? "-"}`)
@@ -788,6 +854,8 @@ describe("UsageOrigins.read", () => {
         [
           "computer/claim/agent",
           "computer/claim/crew",
+          "computer/stamp/-",
+          "computer/stamp/-",
           "crew/stamp/-",
           "crew/stamp/-",
           "phone/claim/agent",
@@ -796,6 +864,7 @@ describe("UsageOrigins.read", () => {
           "phone/claim/agent",
           "phone/claim/crew",
           "phone/claim/crew",
+          "phone/stamp/-",
           "phone/stamp/-",
           "phone/stamp/agent",
           "phone/stamp/agent",
@@ -806,6 +875,33 @@ describe("UsageOrigins.read", () => {
     }).pipe(
       Effect.provide(
         usageOriginsLayer.pipe(
+          Layer.provide(
+            Layer.succeed(
+              UsageSessionRegister.UsageSessionRegister,
+              UsageSessionRegister.UsageSessionRegister.of({
+                read: () =>
+                  Effect.succeed(
+                    [
+                      {
+                        sessionId: "task-review",
+                        startedAt: "2026-08-07T07:05:00Z",
+                        fmTaskId: "task-a",
+                        fmHome: "/fm",
+                        threadId: "lead",
+                      },
+                      { sessionId: "probe", startedAt: "2026-08-07T01:25:00Z", threadId: "worker" },
+                      { sessionId: "my-terminal", startedAt: "2026-08-07T03:00:00Z" },
+                      { sessionId: "old-session", startedAt: "2026-08-07T00:30:00Z" },
+                      { sessionId: "fm-only", startedAt: "2026-08-07T01:00:00Z", fmHome: "/fm" },
+                    ].map(({ startedAt, ...entry }) => ({
+                      ...entry,
+                      provider: "claude",
+                      startedAtMs: Date.parse(startedAt),
+                    })),
+                  ),
+              }),
+            ),
+          ),
           Layer.provideMerge(UsageClaims.layer),
           Layer.provideMerge(Layer.merge(Sqlite.layerMemory, NodeServices.layer)),
         ),

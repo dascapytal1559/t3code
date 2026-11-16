@@ -82,9 +82,9 @@ export type UsageOrigin = typeof UsageOrigin.Type;
 
 /**
  * How the origin was read: the client `stamp`, else creation fields (`nativeApp`, `sender`,
- * `notification`, `server`, `unstamped`, `noPrompt`), or `claim` when an agent's usage claim named
- * the device. Usage with no recorded parent is unknown `default` (servers before it said computer);
- * usage that can never trace is `beforeOrigins` or `archive`. Older clients drop unknown bases.
+ * `notification`, `server`, `unstamped`, `noPrompt`), `claim` from an agent's usage claim, or
+ * `terminal` for a session started with no thread or task behind it. Unknown `default` has no
+ * recorded parent; `beforeOrigins` and `archive` never trace. Older clients drop unknown bases.
  */
 export const UsageOriginBasis = Schema.Literals([
   "stamp",
@@ -95,6 +95,7 @@ export const UsageOriginBasis = Schema.Literals([
   "unstamped",
   "noPrompt",
   "claim",
+  "terminal",
   "default",
   "beforeOrigins",
   "archive",
