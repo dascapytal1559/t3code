@@ -43,17 +43,6 @@ export const ensureForkSchema = Effect.fn("ensureForkSchema")(function* () {
       bound_at TEXT NOT NULL
     )
   `;
-  yield* sql`
-    CREATE TRIGGER IF NOT EXISTS usage_scheduled_task_origins_follow_task
-    AFTER DELETE ON scheduled_tasks
-    BEGIN
-      DELETE FROM usage_scheduled_task_origins WHERE task_id = OLD.task_id;
-    END
-  `;
-  yield* sql`
-    DELETE FROM usage_scheduled_task_origins
-    WHERE task_id NOT IN (SELECT task_id FROM scheduled_tasks)
-  `;
   yield* sql.withTransaction(
     Effect.gen(function* () {
       // SQLite can't change a CHECK or primary key in place, so an older table is rebuilt once.

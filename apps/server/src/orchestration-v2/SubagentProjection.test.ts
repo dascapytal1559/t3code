@@ -97,6 +97,11 @@ it("resets a subagent child's snooze, title job and remote delegation but keeps 
       threadId: ThreadId.make("linked-parent"),
       title: "Linked parent",
     },
+    usageOrigin: { origin: "phone", basis: "stamp", reason: "typed" },
+    causedBy: {
+      threadId: ThreadId.make("thread:subagent-parent-launcher"),
+      messageId: MessageId.make("message:subagent-parent-launch"),
+    },
   };
   const childProviderThreadId = ProviderThreadId.make("provider-thread:subagent-awake-child");
   const parentNodeId = NodeId.make("node:subagent-parent");
@@ -122,6 +127,8 @@ it("resets a subagent child's snooze, title job and remote delegation but keeps 
   assert.isUndefined(childThread.statusLabel);
   assert.isUndefined(childThread.statusLabelSince);
   assert.isUndefined(childThread.alertRunId);
+  assert.isUndefined(childThread.usageOrigin);
+  assert.isUndefined(childThread.causedBy);
   assert.equal(childThread.projectId, parentThread.projectId);
   assert.equal(childThread.runtimeMode, parentThread.runtimeMode);
   assert.equal(childThread.interactionMode, parentThread.interactionMode);

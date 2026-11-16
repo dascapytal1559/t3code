@@ -847,12 +847,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["ask before thread pinned section"],
   },
   {
-    id: "archive-confirmation",
-    title: msg("Archive confirmation"),
-    to: "/settings/general",
-    searchTerms: ["ask before thread second click inline action"],
-  },
-  {
     id: "delete-confirmation",
     title: msg("Delete confirmation"),
     to: "/settings/general",

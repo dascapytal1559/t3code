@@ -214,16 +214,7 @@ export default function LiveMarkdownSurface({
         return result._tag === "Success" ? result.value.entries : [];
       },
     }).then((path) => {
-      if (embedLookups.current.get(key) !== lookup) return;
-      if (path === null) {
-        setEmbedFiles((files) => {
-          if (!files.has(key)) return files;
-          const next = new Map(files);
-          next.delete(key);
-          return next;
-        });
-        return;
-      }
+      if (path === null || embedLookups.current.get(key) !== lookup) return;
       const file = imageEmbedFileKey(path);
       addImageKey(file);
       setEmbedFiles((files) => (files.get(key) === file ? files : new Map(files).set(key, file)));
@@ -233,12 +224,20 @@ export default function LiveMarkdownSurface({
     if (imageEmbedTargetOf(key) === null) return addImageKey(key);
     lookUpEmbed(key);
   });
+  const lookUpMissingEmbeds = useEffectEvent(() => {
+    const missing = [...embedLookups.current.keys()].filter((key) => !embedFiles.has(key));
+    if (missing.length === 0) return;
+    const doc = editorRef.current?.view.state.doc.toString() ?? "";
+    for (const key of missing) {
+      if (doc.includes(imageEmbedTargetOf(key) ?? key)) lookUpEmbed(key);
+    }
+  });
   const lookedUpAt = useRef(workspaceMutationId);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a workspace change can add or move the file an embed names, which only a new lookup finds
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a workspace change can add the file an embed names, which only a new lookup finds
   useEffect(() => {
     if (lookedUpAt.current === workspaceMutationId) return;
     lookedUpAt.current = workspaceMutationId;
-    for (const key of embedLookups.current.keys()) lookUpEmbed(key);
+    lookUpMissingEmbeds();
   }, [workspaceMutationId]);
   const offerOutline = useEffectEvent((source: MarkdownOutlineSource | null) =>
     onOutlineSource(source),

@@ -11,7 +11,6 @@ import { announce } from "../lib/announce";
 const commands = vi.hoisted(() => ({
   pin: vi.fn(),
   unpin: vi.fn(),
-  archive: vi.fn(),
   unarchive: vi.fn(),
   delete: vi.fn(),
   settle: vi.fn(),
@@ -69,6 +68,7 @@ const threadShell = vi.hoisted(() => ({
   activeOrderKey: null as string | null,
   unsettledAt: null as string | null,
   snoozedUntil: null as string | null,
+  hasPendingApprovals: false,
   settledOverride: null as "settled" | "active" | null,
   projectId: "project",
   environmentId: "undo-env",
@@ -101,8 +101,6 @@ vi.mock("../state/use-atom-command", () => ({
         return commands.pin;
       case threadEnvironment.unpin:
         return commands.unpin;
-      case threadEnvironment.archive:
-        return commands.archive;
       case threadEnvironment.unarchive:
         return commands.unarchive;
       case threadEnvironment.delete:
@@ -147,6 +145,7 @@ beforeEach(() => {
   threadShell.activeOrderKey = null;
   threadShell.unsettledAt = null;
   threadShell.snoozedUntil = null;
+  threadShell.hasPendingApprovals = false;
   threadShell.settledOverride = null;
   threadShell.crewOf = undefined;
   shellLoaded.current = true;
@@ -162,7 +161,6 @@ describe("concurrent thread action Undo", () => {
     ["settleThread", "settle", "unsettle", "Settled"],
     ["snoozeThread", "snooze", "unsnooze", "Snoozed"],
     ["unpinThread", "unpin", "pin", "Unpinned"],
-    ["archiveThread", "archive", "unarchive", "Archived"],
   ] as const)(
     "%s retains one undo for concurrent successful requests",
     async (handler, action, inverse, notice) => {
@@ -206,12 +204,17 @@ describe("telling a crew thread's coordinator", () => {
     await useThreadActions().pinThread(target);
     threadShell.settledOverride = "active";
     threadShell.snoozedUntil = "2099-01-01T09:00:00.000Z";
+    // A snoozed thread that raised its hand already shows as awake.
+    threadShell.hasPendingApprovals = true;
+    await useThreadActions().pinThread(target);
+    threadShell.hasPendingApprovals = false;
     await useThreadActions().pinThread(target);
     threadShell.snoozedUntil = null;
     threadShell.pinnedAt = "2026-01-01T00:00:00.000Z";
     await useThreadActions().unpinThread(target);
+    threadShell.settledOverride = "settled";
     await currentUndo()();
-    expect(commands.pin).toHaveBeenCalledTimes(3);
+    expect(commands.pin).toHaveBeenCalledTimes(4);
     expect(sentTexts()).toEqual(["thread-action: unsettled", "thread-action: unsnoozed"]);
   });
 
@@ -279,57 +282,6 @@ describe("unpin Undo", () => {
     });
     await latestUndo();
     expect(commands.pin).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe("archive Undo", () => {
-  it("unarchives and returns to the thread when archiving left it", async () => {
-    const add = vi.spyOn(toastManager, "add").mockReturnValue("toast");
-    router.state.matches[0]!.params = {
-      environmentId: target.environmentId,
-      threadId: target.threadId,
-    };
-    const actions = useThreadActions();
-    await actions.archiveThread(target);
-    expect(useThreadUndoNotice.getState().notice).toMatchObject({ action: "Archived", count: 1 });
-    expect(add).not.toHaveBeenCalled();
-    await currentUndo()();
-    expect(commands.unarchive).toHaveBeenCalledExactlyOnceWith({
-      environmentId: target.environmentId,
-      input: { threadId: target.threadId },
-    });
-    expect(router.navigate).toHaveBeenCalledWith(
-      expect.objectContaining({
-        to: "/$environmentId/$threadId",
-        params: { environmentId: target.environmentId, threadId: target.threadId },
-      }),
-    );
-  });
-});
-
-describe("archive navigation", () => {
-  it.each([
-    { destination: "/undo-env/thread", expected: "/draft/project" },
-    { destination: "/undo-env/other-thread", expected: "/undo-env/other-thread" },
-    { destination: "/settings", expected: "/settings" },
-  ])("ends at $expected after opening $destination while archiving", async (route) => {
-    router.state.location.href = "/undo-env/thread";
-    router.state.matches[0]!.params = {
-      environmentId: target.environmentId,
-      threadId: target.threadId,
-    };
-    let finishArchive!: () => void;
-    commands.archive.mockReturnValue(
-      new Promise((resolve) => {
-        finishArchive = () => resolve({ _tag: "Success", value: undefined });
-      }),
-    );
-    const archived = useThreadActions().archiveThread(target);
-    router.state.location.href = route.destination;
-    finishArchive();
-    expect((await archived)._tag).toBe("Success");
-    expect(useThreadUndoNotice.getState().notice).toMatchObject({ action: "Archived" });
-    expect(router.state.location.href).toBe(route.expected);
   });
 });
 
@@ -448,7 +400,7 @@ describe("settle and snooze Undo", () => {
   });
 });
 
-describe("archive and delete Undo expiry", () => {
+describe("delete Undo expiry", () => {
   const otherThread = { environmentId: target.environmentId, threadId: ThreadId.make("other") };
   const otherEnvironment = {
     environmentId: EnvironmentId.make("other-env"),
@@ -456,7 +408,7 @@ describe("archive and delete Undo expiry", () => {
   };
   const failure = { _tag: "Failure", cause: Cause.fail(new Error("Request failed")) };
 
-  describe.each(["archiveThread", "deleteThread"] as const)("%s", (lifecycle) => {
+  describe("deleteThread", () => {
     it.each([
       ["settleThread", "unsettle"],
       ["snoozeThread", "unsnooze"],
@@ -472,7 +424,7 @@ describe("archive and delete Undo expiry", () => {
             : sidebar[handler](ref));
         }
         const staleUndo = currentUndo();
-        await header[lifecycle](target);
+        await header.deleteThread(target);
         await staleUndo();
         expect(commands[inverse]).toHaveBeenCalledTimes(2);
         expect(commands[inverse]).not.toHaveBeenCalledWith(
@@ -487,25 +439,11 @@ describe("archive and delete Undo expiry", () => {
     it("keeps the earlier Undo when the request fails", async () => {
       const actions = useThreadActions();
       await actions.settleThread(target);
-      commands[lifecycle === "archiveThread" ? "archive" : "delete"].mockResolvedValue(failure);
-      await actions[lifecycle](target);
+      commands.delete.mockResolvedValue(failure);
+      await actions.deleteThread(target);
       expect(useThreadUndoNotice.getState().notice).toMatchObject({ action: "Settled" });
       await currentUndo()();
       expect(commands.unsettle).toHaveBeenCalledOnce();
     });
   });
-
-  it.each([true, false])(
-    "expires the Archived Undo when deleting with shell loaded: %s",
-    async (loaded) => {
-      const actions = useThreadActions();
-      await actions.archiveThread(target);
-      const staleUndo = currentUndo();
-      shellLoaded.current = loaded;
-      await actions.deleteThread(target);
-      expect(useThreadUndoNotice.getState().notice).toBeNull();
-      await staleUndo();
-      expect(commands.unarchive).not.toHaveBeenCalled();
-    },
-  );
 });

@@ -5,8 +5,11 @@ import {
   scopedThreadKey,
 } from "@t3tools/client-runtime/environment";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { canSnooze, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
-import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
+import {
+  canSnooze,
+  effectiveSnoozed,
+  threadWokeAt,
+} from "@t3tools/client-runtime/state/thread-settled";
 import {
   AuthOrchestrationOperateScope,
   AuthSourceControlWriteScope,
@@ -32,7 +35,6 @@ import { orchestrationEnvironment } from "../state/orchestration";
 import { projectEnvironment } from "../state/projects";
 import { threadEnvironment } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
-import { useNewThreadHandler } from "./useHandleNewThread";
 import { useTellCoordinator } from "./useTellCoordinator";
 import { refreshArchivedThreadsForEnvironment } from "../lib/archivedThreadsState";
 import { releaseComposerDraftUploads } from "../lib/composerDraftUploads";
@@ -41,7 +43,6 @@ import { readLocalApi } from "../localApi";
 import {
   readDelegatedUnderParent,
   readEnvironmentServerConfigLoaded,
-  readEnvironmentSupportsAutoSettleOptOut,
   readEnvironmentThreadRefs,
   readProject,
   readThreadShell,
@@ -62,18 +63,6 @@ import { showThreadUndoNotice } from "./showThreadUndoNotice";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
-
-export class ThreadArchiveBlockedError extends Schema.TaggedError<ThreadArchiveBlockedError>()(
-  "ThreadArchiveBlockedError",
-  {
-    environmentId: EnvironmentId,
-    threadId: ThreadId,
-  },
-) {
-  override get message(): string {
-    return "Cannot archive while the provider is active.";
-  }
-}
 
 export class ThreadSettlementUnsupportedError extends Schema.TaggedError<ThreadSettlementUnsupportedError>()(
   "ThreadSettlementUnsupportedError",
@@ -118,18 +107,6 @@ function topOfPinnedRunOrderKey(): string | undefined {
     if (firstKey === null || shell.pinOrderKey < firstKey) firstKey = shell.pinOrderKey;
   }
   return pinOrderKeyBetween(null, firstKey) ?? undefined;
-}
-
-export class ThreadAutoSettleOptOutUnsupportedError extends Schema.TaggedError<ThreadAutoSettleOptOutUnsupportedError>()(
-  "ThreadAutoSettleOptOutUnsupportedError",
-  {
-    environmentId: EnvironmentId,
-    threadId: ThreadId,
-  },
-) {
-  override get message(): string {
-    return "This environment's server does not support turning auto-settle off per thread yet. Update the server to use it.";
-  }
 }
 
 export class ThreadPinningUnsupportedError extends Schema.TaggedError<ThreadPinningUnsupportedError>()(
@@ -277,9 +254,6 @@ function threadOperationFailure(target: ScopedThreadRef) {
 }
 
 export function useThreadActions() {
-  const archiveThreadMutation = useOrchestrationCommand(threadEnvironment.archive, {
-    reportFailure: false,
-  });
   const unarchiveThreadMutation = useOrchestrationCommand(threadEnvironment.unarchive, {
     reportFailure: false,
   });
@@ -296,9 +270,6 @@ export function useThreadActions() {
     reportFailure: false,
   });
   const unpinThreadMutation = useOrchestrationCommand(threadEnvironment.unpin, {
-    reportFailure: false,
-  });
-  const setThreadAutoSettleMutation = useOrchestrationCommand(threadEnvironment.setAutoSettle, {
     reportFailure: false,
   });
   const reorderPinnedThreadMutation = useOrchestrationCommand(threadEnvironment.reorderPin, {
@@ -346,7 +317,6 @@ export function useThreadActions() {
   const clearTerminalUiState = useTerminalUiStateStore((state) => state.clearTerminalUiState);
   const markThreadVisited = useUiStateStore((state) => state.markThreadVisited);
   const router = useRouter();
-  const handleNewThread = useNewThreadHandler();
 
   const resolveThreadTarget = (target: ScopedThreadRef) => {
     const thread = readThreadShell(target);
@@ -382,62 +352,6 @@ export function useThreadActions() {
       );
     }
     return result;
-  };
-
-  const archiveThread = async (target: ScopedThreadRef, opts: { onArchived?: () => void } = {}) => {
-    const resolved = resolveThreadTarget(target);
-    if (!resolved) return AsyncResult.success(undefined);
-    const { thread, threadRef } = resolved;
-    if (!threadRuntimeCanArchive(thread.runtime)) {
-      return AsyncResult.failure(
-        Cause.fail(
-          new ThreadArchiveBlockedError({
-            environmentId: threadRef.environmentId,
-            threadId: threadRef.threadId,
-          }),
-        ),
-      );
-    }
-
-    const requestingRouteHref = router.state.location.href;
-    const currentRouteThreadRef = getCurrentRouteThreadRef();
-    const shouldNavigateToDraft =
-      currentRouteThreadRef?.threadId === threadRef.threadId &&
-      currentRouteThreadRef.environmentId === threadRef.environmentId;
-    const action = ThreadUndo.begin("archive", scopedThreadKey(threadRef));
-    const archiveResult = await archiveThreadMutation({
-      environmentId: threadRef.environmentId,
-      input: { threadId: threadRef.threadId },
-    });
-    if (archiveResult._tag === "Failure") {
-      action.finish();
-      return archiveResult;
-    }
-    expireThreadUndos(threadRef, LIST_PLACEMENT_UNDO_KINDS);
-    const wokeAt = threadWokeAt(thread, { now: new Date().toISOString() });
-    if (wokeAt !== null) {
-      markThreadVisited(scopedThreadKey(threadRef), wokeAt);
-    }
-    refreshArchivedThreadsForEnvironment(threadRef.environmentId);
-    opts.onArchived?.();
-    showThreadUndoNotice({
-      action: "Archived",
-      claim: action,
-      undo: () => unarchiveThread(threadRef, { navigate: shouldNavigateToDraft }),
-      failureTitle: "Failed to undo archive",
-    });
-
-    if (shouldNavigateToDraft && router.state.location.href === requestingRouteHref) {
-      const navigationResult = await settlePromise(() =>
-        handleNewThread(scopeProjectRef(thread.environmentId, thread.projectId)),
-      );
-      if (navigationResult._tag === "Failure") {
-        return navigationResult;
-      }
-      return archiveResult;
-    }
-
-    return archiveResult;
   };
 
   const deleteThread = async (
@@ -733,23 +647,6 @@ export function useThreadActions() {
     return result;
   };
 
-  const setThreadAutoSettle = async (target: ScopedThreadRef, enabled: boolean) => {
-    if (!readEnvironmentSupportsAutoSettleOptOut(target.environmentId)) {
-      return AsyncResult.failure(
-        Cause.fail(
-          new ThreadAutoSettleOptOutUnsupportedError({
-            environmentId: target.environmentId,
-            threadId: target.threadId,
-          }),
-        ),
-      );
-    }
-    return setThreadAutoSettleMutation({
-      environmentId: target.environmentId,
-      input: { threadId: target.threadId, enabled },
-    });
-  };
-
   const sendPin = async (target: ScopedThreadRef, opts: { orderKey?: string } = {}) => {
     if (!readEnvironmentServerConfigLoaded(target.environmentId)) {
       return AsyncResult.failure(
@@ -777,12 +674,12 @@ export function useThreadActions() {
 
   const pinThread = async (target: ScopedThreadRef, opts: { orderKey?: string } = {}) => {
     const thread = readThreadShell(target);
-    const nowMs = Date.now();
+    const now = new Date().toISOString();
     const result = await sendPin(target, opts);
     if (result._tag !== "Success") return result;
     announce("Pinned 1 thread");
     if (thread?.settledOverride === "settled") tellCoordinator(target, { kind: "unsettled" });
-    else if (thread?.snoozedUntil != null && Date.parse(thread.snoozedUntil) > nowMs) {
+    else if (thread && effectiveSnoozed(thread, { now })) {
       tellCoordinator(target, { kind: "unsnoozed" });
     }
     return result;
@@ -1034,7 +931,6 @@ export function useThreadActions() {
   };
 
   return {
-    archiveThread,
     unarchiveThread,
     deleteThread,
     confirmAndDeleteThread,
@@ -1048,7 +944,6 @@ export function useThreadActions() {
     reorderPinnedThread,
     reorderActiveThread,
     markThreadUnread,
-    setThreadAutoSettle,
     turnThreadIntoProject: (target: ScopedThreadRef) =>
       createProjectFromThread({
         environmentId: target.environmentId,

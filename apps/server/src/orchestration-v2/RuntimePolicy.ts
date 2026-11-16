@@ -12,6 +12,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
@@ -225,11 +226,12 @@ export const layerFromProjectStore: Layer.Layer<
             providerInstanceId: input.modelSelection.instanceId,
             cause,
           });
-        const project = Option.getOrUndefined(
-          yield* projects.get(input.thread.projectId).pipe(Effect.mapError(resolveError)),
-        );
+        // A worktree turn needs no project for its folder, so a failed read leaves the defaults.
+        const read = yield* Effect.result(projects.get(input.thread.projectId));
+        const project = Result.isSuccess(read) ? Option.getOrUndefined(read.success) : undefined;
         const cwd = input.thread.worktreePath ?? project?.workspaceRoot;
-        if (cwd === undefined) return yield* resolveError("Project not found.");
+        if (cwd === undefined)
+          return yield* resolveError(Result.isFailure(read) ? read.failure : "Project not found.");
         return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
           runtimeMode: effectiveRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
           interactionMode: input.thread.interactionMode,

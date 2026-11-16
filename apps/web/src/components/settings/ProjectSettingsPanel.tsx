@@ -324,12 +324,19 @@ function ProjectDetail({
 
   // Shown and typed in thousands of tokens; stored in tokens.
   const coldClearMinTokens = filePickerProject.coldClearMinTokens ?? null;
-  const saveColdClearFloor = (value: string) => {
-    const thousands = Number(value.trim());
-    const next =
-      value.trim() === "" || !Number.isFinite(thousands) || thousands <= 0
-        ? null
-        : Math.max(1, Math.round(thousands * 1000));
+  const coldClearShown = coldClearMinTokens === null ? "" : String(coldClearMinTokens / 1000);
+  const typeColdClearFloor = (input: HTMLInputElement) => {
+    const text = input.value.trim();
+    const thousands = Number(text);
+    if (!Number.isFinite(thousands)) {
+      input.value = coldClearShown;
+      return;
+    }
+    saveColdClearFloor(
+      text === "" || thousands <= 0 ? null : Math.max(1, Math.round(thousands * 1000)),
+    );
+  };
+  const saveColdClearFloor = (next: number | null) => {
     if (next === coldClearMinTokens) return;
     void updateAllMembers({ coldClearMinTokens: next }, "Failed to save the cache-expiry setting");
   };
@@ -629,7 +636,7 @@ function ProjectDetail({
                 <SettingResetButton
                   label="cache-expiry setting"
                   disabled={!canEditGroup}
-                  onClick={() => saveColdClearFloor("")}
+                  onClick={() => saveColdClearFloor(null)}
                 />
               ) : null
             }
@@ -642,8 +649,8 @@ function ProjectDetail({
                 placeholder="Off"
                 inputMode="numeric"
                 disabled={!canEditGroup}
-                defaultValue={coldClearMinTokens === null ? "" : String(coldClearMinTokens / 1000)}
-                onBlur={(event) => saveColdClearFloor(event.currentTarget.value)}
+                defaultValue={coldClearShown}
+                onBlur={(event) => typeColdClearFloor(event.currentTarget)}
                 onKeyDown={(event) => {
                   if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                   if (event.key === "Enter") event.currentTarget.blur();

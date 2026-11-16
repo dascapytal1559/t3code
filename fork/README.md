@@ -732,9 +732,12 @@ Upstream code it touches, for syncs: the `SIDEBAR_SETTLED_SHELF` switch
 scopes, the list items and the multi-selection menu in `Sidebar.tsx`,
 `settledOutOfSight` in `CommandPalette.logic.ts`, and both single-thread menus;
 the Archive thread and Auto-settle behavior items left out of
-`buildThreadActionMenuItems` (`threadActionMenu.logic.ts`), whose handlers
-stay; the Snoozed header's sticky classes and `toggleSnoozedShelfAndReveal` in
-`Sidebar.tsx`; the drag projection in `Sidebar.drag.ts`, which leaves the
+`buildThreadActionMenuItems` (`threadActionMenu.logic.ts`), with their menu
+handlers in `useThreadActionMenu.ts` and `Sidebar.tsx`, `archiveThread` and
+`setThreadAutoSettle` in `useThreadActions.ts`, and the Archive confirmation
+setting in `SettingsPanels.tsx` removed (mobile keeps its Archive and
+Auto-settle); the Snoozed header's sticky classes and
+`toggleSnoozedShelfAndReveal` in `Sidebar.tsx`; the drag projection in `Sidebar.drag.ts`, which leaves the
 pinned header where the browser put it; and `readTops` in
 `Sidebar.shiftGuard.ts`, which skips sticky rows.
 

@@ -60,6 +60,7 @@ const BoundJson = Schema.fromJsonString(
   }),
 );
 const encodeBound = Schema.encodeSync(BoundJson);
+const encodeRunIds = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.String)));
 const decodeBoundOption = Schema.decodeOption(BoundJson);
 const decodeBound = (json: string | null): UsageClaimBinding | undefined => {
   const decoded = json === null ? Option.none() : decodeBoundOption(json);
@@ -249,7 +250,8 @@ const make = Effect.gen(function* () {
     if (runIds.length === 0) return [];
     const rows = yield* sql<ClaimRow>`
       SELECT target_kind, target, claimed_from, cause_message_id, device, bound_json
-      FROM usage_claims WHERE target_kind = 'run' AND target IN ${sql.in(runIds)}
+      FROM usage_claims WHERE target_kind = 'run'
+        AND target IN (SELECT value FROM json_each(${encodeRunIds(runIds)}))
     `.pipe(NodeSqliteClient.readOnly);
     return storedClaims(rows);
   });

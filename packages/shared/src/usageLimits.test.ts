@@ -290,6 +290,7 @@ describe("pools", () => {
     expect(accounts[0]).toMatchObject({
       key: "env-a:claude",
       sourceLabel: null,
+      checkedBy: "env-b",
       redeem: { environmentId: "env-b", input: { instanceId: "claude" } },
       environments: [
         { environmentId: "env-a", label: "Laptop" },
@@ -1219,6 +1220,7 @@ describe("pools", () => {
           providerOrder: null,
           environments: [],
           sourceLabel: null,
+          checkedBy: EnvironmentId.make("env-a"),
           redeem: null,
           limits: {
             checkedAt,
@@ -1271,6 +1273,7 @@ describe("pooled account columns", () => {
     providerOrder: null,
     environments: [],
     sourceLabel: "Hub",
+    checkedBy: EnvironmentId.make("env-a"),
     redeem: null,
     limits: { checkedAt: "2026-09-03T11:00:00.000Z", windows },
   });

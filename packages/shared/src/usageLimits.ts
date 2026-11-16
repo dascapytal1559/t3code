@@ -349,6 +349,8 @@ export interface LimitAccount {
     readonly label: string;
   }>;
   readonly sourceLabel: string | null;
+  /** The server that read `limits`, whose clock stamped its `checkedAt`. */
+  readonly checkedBy: EnvironmentId;
   readonly redeem: {
     readonly environmentId: EnvironmentId;
     readonly input: ProviderConsumeResetCreditInput;
@@ -419,6 +421,7 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
       providerOrder: previous.providerOrder ?? next.providerOrder,
       environments,
       sourceLabel: environments.length > 0 ? null : (previous.sourceLabel ?? next.sourceLabel),
+      checkedBy: winner.checkedBy,
       redeem:
         hubRedeems.get(key)?.redeem ??
         (creditSource ? creditSource.redeem : (winner.redeem ?? previous.redeem ?? next.redeem)),
@@ -457,6 +460,7 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
         providerOrder: providerOrder++,
         environments: [{ environmentId, label }],
         sourceLabel: null,
+        checkedBy: environmentId,
         redeem: { environmentId, input: { instanceId: provider.instanceId } },
         limits: provider.usageLimits,
       });
@@ -484,6 +488,7 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
           providerOrder: null,
           environments: [],
           sourceLabel,
+          checkedBy: environmentId,
           redeem: account.usageLimits.resetCredits?.nextCreditId
             ? {
                 environmentId,

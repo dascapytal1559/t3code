@@ -48,7 +48,6 @@ vi.mock("../state/session", () => ({
 }));
 vi.mock("../state/entities", () => ({
   readEnvironmentServerConfigLoaded: () => true,
-  readEnvironmentSupportsAutoSettleOptOut: () => true,
   readThreadShell: () => ({
     id: "thread",
     environmentId: "secondary",
@@ -114,7 +113,6 @@ vi.mock("./useSettings", () => ({
   useClientSettings: (select: (settings: unknown) => unknown) =>
     select({
       confirmThreadDelete: true,
-      confirmThreadArchive: true,
       timestampFormat: "12-hour",
     }),
 }));
@@ -130,7 +128,6 @@ vi.mock("./useThreadActions", () => ({
         "unsnoozeThread",
         "pinThread",
         "confirmAndUnpinThread",
-        "archiveThread",
         "deleteThread",
       ].map((action) => [
         action,

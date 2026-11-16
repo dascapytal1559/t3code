@@ -300,6 +300,9 @@ export const bindUsageOrigin = Effect.fn("mcp.bindUsageOrigin")(function* (
   if (fromThread !== undefined && callerId !== undefined && fromThread.threadId !== callerId) {
     return yield* invalidFromThread("an agent in a thread speaks only for its own thread.");
   }
+  if (fromThread?.at !== undefined && callerId !== undefined) {
+    return yield* invalidFromThread("only a script outside threads names `at`.");
+  }
   const threadId = fromThread?.threadId ?? callerId;
   if (threadId === undefined) return null;
   if (fromThread !== undefined) {

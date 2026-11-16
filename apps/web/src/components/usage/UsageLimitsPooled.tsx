@@ -42,7 +42,7 @@ import { Button } from "../ui/button";
 import { OpenAI } from "../Icons";
 import { Alert, AlertTitle } from "../ui/alert";
 import { Popover, PopoverCreateHandle, PopoverPopup, PopoverTrigger } from "../ui/popover";
-import { LimitsUpdated, limitsEnvironmentOf, oldestCheckedAt, useLimitsAge } from "./LimitsUpdated";
+import { LimitsUpdated, oldestCheckedAt, useLimitsAge } from "./LimitsUpdated";
 import { PaceIcon, ResetCreditDialog, barColor, usePaceMark, useResetCredit } from "./UsageLimits";
 
 function accountInitials(email: string): string {
@@ -154,7 +154,7 @@ function SegmentPopover({
       ? account.environments.map((environment) => environment.label).join(", ")
       : account.sourceLabel;
   const credits = resetCreditsForWindow(account.limits.resetCredits, window);
-  const age = useLimitsAge(account.limits.checkedAt, limitsEnvironmentOf(account));
+  const age = useLimitsAge(account.limits.checkedAt, account.checkedBy);
   const choices =
     redeem && account.redeem && credits?.availableCount
       ? resetCreditChoices(credits, account.redeem.input, now, true)

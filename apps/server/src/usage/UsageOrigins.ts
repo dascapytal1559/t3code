@@ -904,6 +904,11 @@ const messageOf = (
 };
 
 const encodeIds = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.String)));
+const encodeStarters = Schema.encodeSync(
+  Schema.fromJsonString(
+    Schema.Array(Schema.Struct({ threadId: Schema.String, at: Schema.String })),
+  ),
+);
 
 // A turn that started before the window can still be running in it.
 const TURN_LOOKBACK_MS = 2 * 24 * 60 * 60 * 1000;
@@ -1069,8 +1074,20 @@ const make = Effect.gen(function* () {
     readonly untilMs: number;
     readonly promptsSinceMs?: number;
     readonly onlyThread?: string;
+    /** Registered sessions, whose starting turns are loaded however long before they began. */
+    readonly registrations?: ReadonlyArray<OriginRegistration>;
   }) {
     const until = iso(input.untilMs);
+    const starters = (input.registrations ?? []).flatMap((registration) =>
+      registration.threadId === undefined
+        ? []
+        : [
+            {
+              threadId: registration.threadId,
+              at: iso(registration.startedAtMs + REGISTER_STAMP_SLACK_MS),
+            },
+          ],
+    );
     const scheduledOrigins = yield* loadScheduledOrigins;
     const toMessage = (row: MessageColumns) => messageOf(row, scheduledOrigins);
     const turnRows = yield* sql<
@@ -1100,8 +1117,23 @@ const make = Effect.gen(function* () {
       LEFT JOIN orchestration_v2_projection_messages AS message
         ON message.message_id = json_extract(run.payload_json, '$.userMessageId')
       LEFT JOIN orchestration_v2_projection_threads AS thread ON thread.thread_id = turn.thread_id
-      WHERE turn.started_at >= ${iso(input.turnsSinceMs)} AND turn.started_at < ${until}
+      WHERE (
+        turn.started_at >= ${iso(input.turnsSinceMs)} AND turn.started_at < ${until}
         ${input.onlyThread === undefined ? sql`` : sql`AND turn.thread_id = ${input.onlyThread}`}
+      ) ${
+        starters.length === 0
+          ? sql``
+          : sql`OR turn.provider_turn_id IN (
+              SELECT (
+                SELECT earlier.provider_turn_id
+                FROM orchestration_v2_projection_provider_turns AS earlier
+                WHERE earlier.thread_id = json_extract(wanted.value, '$.threadId')
+                  AND earlier.started_at <= json_extract(wanted.value, '$.at')
+                ORDER BY earlier.started_at DESC LIMIT 1
+              )
+              FROM json_each(${encodeStarters(starters)}) AS wanted
+            )`
+      }
     `.pipe(NodeSqliteClient.readOnly);
     const promptRows =
       input.promptsSinceMs === undefined
@@ -1390,14 +1422,15 @@ const make = Effect.gen(function* () {
 
   const read = Effect.fn("UsageOrigins.read")(
     function* (sinceMs: number, untilMs: number) {
+      const registrations = yield* resolveRegistrations(
+        yield* register.read(sinceMs - REGISTER_LOOKBACK_MS, untilMs),
+      );
       const facts = yield* collect({
         turnsSinceMs: sinceMs - TURN_LOOKBACK_MS,
         untilMs,
         promptsSinceMs: sinceMs,
+        registrations,
       });
-      const registrations = yield* resolveRegistrations(
-        yield* register.read(sinceMs - REGISTER_LOOKBACK_MS, untilMs),
-      );
       const turns = facts.turns.flatMap((turn) =>
         turnSegments(turn, facts.resolver).map(({ typed: _typed, ...segment }) => segment),
       );

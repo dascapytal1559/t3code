@@ -18,7 +18,7 @@ import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { providerClients } from "../settings/providerDriverMeta";
 import { useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { limitsEnvironmentOf, onClientClock } from "../usage/LimitsUpdated";
+import { onClientClock } from "../usage/LimitsUpdated";
 import { barColor, useLimitPresentations, usePaceMark } from "../usage/UsageLimits";
 import { useUsageHiddenProviders } from "../usage/usagePagePreferences";
 
@@ -152,7 +152,7 @@ function UsageTooltip({ rows }: { readonly rows: readonly UsageRow[] }) {
     <div className="flex flex-col gap-2 text-xs">
       {rows.map((row) => {
         const age = formatRelativeTimeLabel(
-          onClientClock(row.account.limits.checkedAt, limitsEnvironmentOf(row.account)),
+          onClientClock(row.account.limits.checkedAt, row.account.checkedBy),
           now,
         );
         const details = [formatResetsIn(row.window, now), age && `updated ${age}`].filter(Boolean);

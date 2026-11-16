@@ -93,7 +93,10 @@ const providerInstanceFor = (instanceId: ProviderInstanceId) =>
     },
   }) as unknown as ProviderInstance;
 
-const layerWithPolicy = (policy?: ManagedPolicySummary) =>
+const layerWithPolicy = (
+  policy?: ManagedPolicySummary,
+  projectRead?: ProjectStore.ProjectStoreV2["Service"]["get"],
+) =>
   RuntimePolicy.layerFromProjectStore.pipe(
     Layer.provide(ServerSettings.layerTest({}, policy)),
     Layer.provide(
@@ -107,25 +110,27 @@ const layerWithPolicy = (policy?: ManagedPolicySummary) =>
     ),
     Layer.provide(
       Layer.mock(ProjectStore.ProjectStoreV2)({
-        get: () =>
-          Effect.succeedSome({
-            projectId,
-            title: "Project",
-            workspaceRoot: "/project-root",
-            defaultModelSelection: null,
-            defaultThreadEnvMode: null,
-            hasCustomTitle: false,
-            autoPull: false,
-            leanClaudeStartup: true,
-            faviconPath: null,
-            projectIcon: null,
-            scripts: [],
-            pinnedAt: null,
-            archivedAt: null,
-            createdAt: "2026-06-21T00:00:00.000Z",
-            updatedAt: "2026-06-21T00:00:00.000Z",
-            deletedAt: null,
-          }),
+        get:
+          projectRead ??
+          (() =>
+            Effect.succeedSome({
+              projectId,
+              title: "Project",
+              workspaceRoot: "/project-root",
+              defaultModelSelection: null,
+              defaultThreadEnvMode: null,
+              hasCustomTitle: false,
+              autoPull: false,
+              leanClaudeStartup: true,
+              faviconPath: null,
+              projectIcon: null,
+              scripts: [],
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: "2026-06-21T00:00:00.000Z",
+              updatedAt: "2026-06-21T00:00:00.000Z",
+              deletedAt: null,
+            })),
       }),
     ),
   );
@@ -251,6 +256,27 @@ it.layer(
       const allowed = yield* resolve("auto-accept-edits");
       assert.equal(allowed.runtimeMode, "auto-accept-edits");
       assert.equal(allowed.maxRuntimeMode, "auto-accept-edits");
+    }),
+  );
+});
+
+it.layer(
+  layerWithPolicy(undefined, () =>
+    Effect.fail(new ProjectStore.ProjectStoreV2Error({ operation: "get", cause: "locked" })),
+  ),
+)("RuntimePolicyV2 when the project cannot be read", (it) => {
+  it.effect("runs a worktree turn with the default project settings", () =>
+    Effect.gen(function* () {
+      const policy = yield* RuntimePolicy.RuntimePolicyV2;
+      const now = yield* DateTime.now;
+      const resolve = (worktreePath: string | null) =>
+        policy.resolve({ thread: makeThread({ now, worktreePath }), modelSelection });
+
+      const worktree = yield* resolve("/worktree");
+      assert.equal(worktree.cwd, "/worktree");
+      assert.isUndefined(worktree.leanClaudeStartup);
+      const unresolved = yield* resolve(null).pipe(Effect.flip);
+      assert.equal(unresolved._tag, "RuntimePolicyResolveError");
     }),
   );
 });

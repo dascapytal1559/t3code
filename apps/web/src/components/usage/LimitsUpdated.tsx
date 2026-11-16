@@ -11,10 +11,6 @@ export function onClientClock(checkedAt: string, environmentId: EnvironmentId | 
   return new Date(serverMs - toServerClock(environmentId, 0)).toISOString();
 }
 
-/** The server that stamped an account's `checkedAt`; null for a hub-only account. */
-export const limitsEnvironmentOf = (account: Pick<LimitAccount, "environments">) =>
-  account.environments[0]?.environmentId ?? null;
-
 /** How long ago limits were read, such as "3m ago"; checks pause while no window is in front. */
 export function useLimitsAge(
   checkedAt: string | null,
@@ -31,7 +27,7 @@ export function useLimitsAge(
 export function oldestCheckedAt(accounts: ReadonlyArray<LimitAccount>): string | null {
   return accounts.reduce<string | null>((oldest, account) => {
     if (account.limits.unavailable) return oldest;
-    const checkedAt = onClientClock(account.limits.checkedAt, limitsEnvironmentOf(account));
+    const checkedAt = onClientClock(account.limits.checkedAt, account.checkedBy);
     return oldest === null || Date.parse(checkedAt) < Date.parse(oldest) ? checkedAt : oldest;
   }, null);
 }

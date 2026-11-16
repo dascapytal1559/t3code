@@ -61,8 +61,8 @@ export function makeSubagentChildThread(input: {
   readonly createdBy: OrchestrationV2Actor;
   readonly creationSource: OrchestrationV2CreationSource;
 }): OrchestrationV2AppThread {
-  // A launch binds environment and instructions to that thread's own task, not to work it
-  // delegates; the remote parent delegated the parent thread, not its subagents.
+  // A launch binds environment, instructions and where it counted to that thread's own task,
+  // not to work it delegates; the remote parent delegated the parent thread, not its subagents.
   const {
     environment: _environment,
     instructions: _instructions,
@@ -72,6 +72,8 @@ export function makeSubagentChildThread(input: {
     statusLabel: _statusLabel,
     statusLabelSince: _statusLabelSince,
     alertRunId: _alertRunId,
+    usageOrigin: _usageOrigin,
+    causedBy: _causedBy,
     ...parentThread
   } = input.parentThread;
   return {

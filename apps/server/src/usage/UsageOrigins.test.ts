@@ -991,6 +991,22 @@ describe("UsageOrigins.read", () => {
         });
       }
 
+      // A session a phone-typed turn started in a terminal days before the window, still running.
+      yield* seedThread({ id: "elder", createdAt: "2026-08-02T00:00:00.000Z" });
+      yield* seedRun({
+        id: "elder",
+        ordinal: 1,
+        threadId: "elder",
+        sessionId: "elder-session",
+        startedAt: "2026-08-02T00:00:00.000Z",
+        completedAt: "2026-08-02T00:10:00.000Z",
+        message: {
+          createdBy: "user",
+          creationSource: "web",
+          origin: { surface: "web", deviceType: "mobile" },
+        },
+      });
+
       const origins = yield* UsageOrigins;
       const snapshot = yield* origins.read(
         Date.parse("2026-08-07T00:00:00.000Z"),
@@ -1117,6 +1133,12 @@ describe("UsageOrigins.read", () => {
         registered: true,
       });
       assert.deepStrictEqual(at("probe", "2026-08-07T01:26:00Z"), { ...viaCrew, registered: true });
+      assert.deepStrictEqual(at("elder-tmux", "2026-08-07T02:00:00Z"), {
+        origin: "phone",
+        basis: "stamp",
+        reason: "typed",
+        registered: true,
+      });
       assert.deepStrictEqual(at("my-terminal", "2026-08-07T03:01:00Z"), {
         origin: "computer",
         basis: "terminal",
@@ -1176,6 +1198,11 @@ describe("UsageOrigins.read", () => {
                       },
                       { sessionId: "probe", startedAt: "2026-08-07T01:25:00Z", threadId: "worker" },
                       { sessionId: "my-terminal", startedAt: "2026-08-07T03:00:00Z" },
+                      {
+                        sessionId: "elder-tmux",
+                        startedAt: "2026-08-02T00:05:00Z",
+                        threadId: "elder",
+                      },
                       { sessionId: "old-session", startedAt: "2026-08-07T00:30:00Z" },
                       { sessionId: "fm-only", startedAt: "2026-08-07T01:00:00Z", fmHome: "/fm" },
                     ].map(({ startedAt, ...entry }) => ({
@@ -1395,7 +1422,7 @@ describe("UsageOrigins born labelled", () => {
             "agent-bound 01:31 phone inherited",
           ],
         );
-        // Deleting the scheduled task deletes the origin its runs counted to.
+        // Deleting the scheduled task leaves its past runs counted where they were.
         const sql = yield* SqlClient.SqlClient;
         yield* sql`INSERT INTO scheduled_tasks ${sql.insert({
           task_id: "task-daily",
@@ -1416,7 +1443,12 @@ describe("UsageOrigins born labelled", () => {
           run_count: 0,
         })}`;
         yield* sql`DELETE FROM scheduled_tasks WHERE task_id = 'task-daily'`;
-        assert.deepStrictEqual(yield* sql`SELECT task_id FROM usage_scheduled_task_origins`, []);
+        const afterDelete = new UsageOriginIndex(yield* origins.read(time("00:00"), time("23:59")));
+        const daily = afterDelete.lookup({
+          sessionId: "daily-session",
+          timestampMs: time("07:01"),
+        });
+        assert.strictEqual(`${daily.origin} ${daily.reason}`, "phone inherited");
         assert.isNull(yield* origins.originAt("gone", time("01:00")));
       }).pipe(
         Effect.provide(

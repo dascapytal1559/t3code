@@ -208,21 +208,28 @@ it.effect("binds work a thread sends only from that thread's own turn", () =>
     const threads = {
       getThreadShell: (threadId: ThreadId) => Effect.succeed(liveThreadShell(threadId)),
     };
-    const bind = (fromThread: ThreadId) =>
-      bindUsageOrigin(threads, { threadId: fromThread }, caller).pipe(
+    const asked: Array<readonly [string, number]> = [];
+    const bind = (fromThread: ThreadId, at?: string) =>
+      bindUsageOrigin(
+        threads,
+        { threadId: fromThread, ...(at === undefined ? {} : { at }) },
+        caller,
+      ).pipe(
         Effect.provide(
           Layer.mock(UsageOrigins.UsageOrigins)({
-            originAt: (threadId) =>
-              Effect.succeed({
-                key: {
-                  origin: "phone",
-                  basis: "stamp",
-                  reason: "typed",
-                  root: { threadId, messageId: "message:typed" },
-                },
-                reroots: true,
-                runId: null,
-              }),
+            originAt: (threadId, atMs) =>
+              Effect.sync(() => asked.push([threadId, atMs])).pipe(
+                Effect.as({
+                  key: {
+                    origin: "phone",
+                    basis: "stamp",
+                    reason: "typed",
+                    root: { threadId, messageId: "message:typed" },
+                  },
+                  reroots: true,
+                  runId: null,
+                }),
+              ),
           }),
         ),
       );
@@ -231,6 +238,12 @@ it.effect("binds work a thread sends only from that thread's own turn", () =>
       code: "invalid_request",
       message: "fromThread: an agent in a thread speaks only for its own thread.",
     });
-    expect((yield* bind(caller))?.key.root?.threadId).toBe(caller);
+    // A thread's agent cannot pick an earlier typed turn to re-root what it sends.
+    expect(yield* Effect.flip(bind(caller, "1970-01-01T00:00:00.000Z"))).toMatchObject({
+      code: "invalid_request",
+    });
+    expect(asked).toEqual([]);
+    yield* bind(caller);
+    expect(asked).toEqual([[caller, DateTime.toEpochMillis(yield* DateTime.now)]]);
   }),
 );
