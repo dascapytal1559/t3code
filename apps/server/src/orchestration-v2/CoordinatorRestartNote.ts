@@ -117,7 +117,10 @@ const logNoteFailure = <A, E, R>(effect: Effect.Effect<A, E, R>, threadId: Threa
 const sendNote = Effect.fn("CoordinatorRestartNote.sendNote")(
   function* (startedAt: string, coordinatorId: ThreadId, text: string) {
     const threads = yield* ThreadManagementService.ThreadManagementService;
-    const causedBy = (yield* threads.restartedFor)?.causedBy;
+    // It counts where the work the restart installs counts; an older request names its cause.
+    const request = yield* threads.restartedFor;
+    const usageOrigin = request?.usageOrigin;
+    const causedBy = usageOrigin === undefined ? request?.causedBy : undefined;
     const messageId = MessageId.make(`message:restart-note:${coordinatorId}:${startedAt}`);
     const { messages } = yield* threads.getThreadRecords(coordinatorId, ["messages"], {
       messageIds: [messageId],
@@ -140,6 +143,7 @@ const sendNote = Effect.fn("CoordinatorRestartNote.sendNote")(
       createdBy: "agent",
       creationSource: "server",
       ...(causedBy === undefined ? {} : { causedBy }),
+      ...(usageOrigin === undefined ? {} : { usageOrigin }),
     });
   },
   (effect, _startedAt, threadId) => logNoteFailure(effect, threadId),

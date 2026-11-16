@@ -106,11 +106,13 @@ const RoutingSetTool = Tool.make("t3_routing_set", {
 }).annotate(Tool.Destructive, true);
 const RestartRequestTool = Tool.make("t3_restart_request", {
   ...shared,
+  dependencies: [...shared.dependencies, UsageOrigins.UsageOrigins],
   description:
     "Ask T3 to wait for a restart (e.g. installing a build). Running turns finish; new messages queue held and send after it. T3 never restarts itself: restart it once `t3_restart_status` reports `drained`. `causedBy`: the prompt whose work it installs.",
   parameters: Schema.Struct({
     reason: RestartRequest.fields.reason,
     causedBy: Schema.optional(OrchestratorMcpCausedBy),
+    fromThread: Schema.optional(OrchestratorMcpFromThread),
   }),
   success: RestartRequestStatus,
 }).annotate(Tool.Destructive, true);

@@ -165,6 +165,8 @@ export const UsageOriginReasonUsage = Schema.Struct({
   folder: Schema.optional(Schema.Literal(true)),
   /** Matched by the session's own registration at start. */
   registered: Schema.optional(Schema.Literal(true)),
+  /** Decided by a recorded cause (a thread's, message's or claim's `causedBy`), not a value. */
+  cause: Schema.optional(Schema.Literal(true)),
   /** No device evidence: the usage counts to the computer only by default. */
   byDefault: Schema.Boolean,
   provider: UsageProviderKind,

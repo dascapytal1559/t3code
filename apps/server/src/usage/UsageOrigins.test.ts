@@ -103,17 +103,20 @@ describe("resolveMessageOrigin", () => {
     const brief = causal("brief", { ...fromMcp, crew: true, causedBy: "lead" });
     const direct = causal("direct", { ...fromMcp, causedBy: "computer" });
     const byId = messages([phone, computer, lead, brief, direct]);
+    // Decided by following recorded causes, which the watchdog names.
     assert.deepStrictEqual(resolveMessageOrigin(brief, byId), {
       origin: "phone",
       basis: "stamp",
       via: "crew",
       reason: "inherited",
+      cause: true,
     });
     assert.deepStrictEqual(resolveMessageOrigin(direct, byId), {
       origin: "computer",
       basis: "stamp",
       via: "agent",
       reason: "inherited",
+      cause: true,
     });
     // A human prompt is a root even if something named a cause for it.
     const typed = causal("typed", { surface: "web", deviceType: "desktop", causedBy: "phone" });
@@ -136,12 +139,18 @@ describe("resolveMessageOrigin", () => {
     );
     const byId = messages([phone, missing, left, right, scheduled, fromServer, uncaused, ...hops]);
     // A recorded cause that reaches no device is told apart from no cause at all.
-    const untraced = { origin: "crew", basis: "stamp", reason: "untracedCause" } as const;
+    const untraced = {
+      origin: "crew",
+      basis: "stamp",
+      reason: "untracedCause",
+      cause: true,
+    } as const;
     assert.deepStrictEqual(resolveMessageOrigin(missing, byId), untraced);
     assert.deepStrictEqual(resolveMessageOrigin(left, byId), {
       origin: "agent",
       basis: "stamp",
       reason: "untracedCause",
+      cause: true,
     });
     assert.deepStrictEqual(resolveMessageOrigin(fromServer, byId), untraced);
     assert.deepStrictEqual(resolveMessageOrigin(uncaused, byId), {
@@ -155,16 +164,17 @@ describe("resolveMessageOrigin", () => {
       basis: "stamp",
       via: "agent",
       reason: "inherited",
+      cause: true,
     });
     assert.deepStrictEqual(resolveMessageOrigin(hops[MAX_CAUSE_DEPTH]!, byId), {
       origin: "agent",
       basis: "stamp",
       reason: "untracedCause",
+      cause: true,
     });
   });
 
   describe("UsageOriginIndex", () => {
-    const late = { origin: "unknown", basis: "default", reason: "lateRecord" } as const;
     const unregistered = {
       origin: "unknown",
       basis: "default",
@@ -185,10 +195,10 @@ describe("resolveMessageOrigin", () => {
       });
       const at = (sessionId: string, timestampMs: number) =>
         index.lookup({ sessionId, timestampMs });
-      // A T3 session's record outside its turns, and a session T3 never ran, say why they miss.
-      assert.deepStrictEqual(at("s", 999), late);
+      // A T3 session's record outside its turns counts with its nearest turn; one T3 never ran
+      // says why it misses.
+      assert.deepStrictEqual(at("s", 999), phone);
       assert.deepStrictEqual(at("s", 1_000), phone);
-      // Late records within the grace still belong to the finished turn.
       assert.deepStrictEqual(at("s", 1_900), phone);
       assert.deepStrictEqual(at("s", 2_000), agent);
       assert.deepStrictEqual(at("s", 10 * 60 * 1000), agent);
@@ -317,8 +327,8 @@ describe("resolveMessageOrigin", () => {
         at("grok", afterGrace, "/tmp/claude-501/-proj/lead/scratchpad"),
         byFolder(phone),
       );
-      // A terminal resume of a T3 session long after its turn ended is not T3's, even in its worktree.
-      assert.deepStrictEqual(at("w2", 6_000 + 6 * 60 * 1000, "/wt/worker"), late);
+      // A T3 session's record long after its turn ended still counts with that turn.
+      assert.deepStrictEqual(at("w2", 6_000 + 60 * 60 * 1000, "/wt/worker"), computer);
     });
   });
 
@@ -370,6 +380,7 @@ describe("resolveMessageOrigin", () => {
     assert.deepStrictEqual(resolveMessageOrigin(launch, byId, claimOfRun), {
       ...journal,
       via: "crew",
+      cause: true,
     });
     // A recorded cause wins over the claim; an unclaimed run keeps the prompt's own origin.
     assert.deepStrictEqual(resolveMessageOrigin(steer, byId, claimOfRun), {
@@ -377,6 +388,7 @@ describe("resolveMessageOrigin", () => {
       basis: "stamp",
       via: "agent",
       reason: "inherited",
+      cause: true,
     });
     assert.deepStrictEqual(resolveMessageOrigin(unclaimed, byId, claimOfRun), {
       origin: "agent",
@@ -391,6 +403,7 @@ describe("resolveMessageOrigin", () => {
     assert.deepStrictEqual(resolveMessageOrigin(worker, byId, claimOfRun), {
       ...upkeep,
       via: "crew",
+      cause: true,
     });
     // A chain ending at an unclaimed unknown prompt counts to a claim on a run along the way.
     assert.deepStrictEqual(resolveMessageOrigin(workerWake, byId, claimOfRun), {
@@ -400,6 +413,7 @@ describe("resolveMessageOrigin", () => {
     assert.deepStrictEqual(resolveMessageOrigin(subWorker, byId, claimOfRun), {
       ...journal,
       via: "crew",
+      cause: true,
     });
     // So does a prompt whose recorded cause is missing.
     assert.deepStrictEqual(resolveMessageOrigin(orphan, byId, claimOfRun), {
@@ -450,7 +464,12 @@ describe("resolveMessageOrigin", () => {
     assert.deepStrictEqual(resolve(wake), { ...upkeep, basis: "notification", via: "agent" });
     assert.deepStrictEqual(resolve(restartNote), { ...upkeep, basis: "server" });
     assert.deepStrictEqual(resolve(relay), { ...upkeep, basis: "stamp", via: "agent" });
-    assert.deepStrictEqual(resolve(worker), { ...upkeep, basis: "notification", via: "crew" });
+    assert.deepStrictEqual(resolve(worker), {
+      ...upkeep,
+      basis: "notification",
+      via: "crew",
+      cause: true,
+    });
     assert.deepStrictEqual(resolve(typed), { origin: "phone", basis: "stamp", reason: "typed" });
     assert.deepStrictEqual(resolve(oddDevice), {
       origin: "unknown",
@@ -459,7 +478,7 @@ describe("resolveMessageOrigin", () => {
     });
     const journal = { origin: "phone", basis: "claim", reason: "journal", claim: "run" } as const;
     assert.deepStrictEqual(resolve(named), { ...journal, via: "agent" });
-    assert.deepStrictEqual(resolve(followUp), { ...journal, via: "agent" });
+    assert.deepStrictEqual(resolve(followUp), { ...journal, via: "agent", cause: true });
     assert.deepStrictEqual(resolve(lostCause), {
       origin: "agent",
       basis: "notification",
@@ -531,7 +550,7 @@ const seedThread = (input: {
   environment?: Record<string, string>;
   createdAt?: string;
   coordinator?: true;
-  usageOrigin?: Record<string, string>;
+  usageOrigin?: Record<string, unknown>;
 }) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
@@ -978,8 +997,15 @@ describe("UsageOrigins.read", () => {
         Date.parse("2026-08-08T00:00:00.000Z"),
       );
       const index = new UsageOriginIndex(snapshot);
-      const at = (sessionId: string, iso: string, cwd?: string) =>
-        index.lookup({ sessionId, timestampMs: Date.parse(iso), cwd });
+      // Root prompts have a case of their own below.
+      const at = (sessionId: string, iso: string, cwd?: string) => {
+        const { root: _root, ...key } = index.lookup({
+          sessionId,
+          timestampMs: Date.parse(iso),
+          cwd,
+        });
+        return key;
+      };
       assert.deepStrictEqual(at("lead-session", "2026-08-07T01:01:00Z"), {
         origin: "phone",
         basis: "stamp",
@@ -987,11 +1013,13 @@ describe("UsageOrigins.read", () => {
       });
       const uncausedCrew = { origin: "crew", basis: "stamp", reason: "noCause" } as const;
       assert.deepStrictEqual(at("worker-session", "2026-08-07T01:06:00Z"), uncausedCrew);
+      // Decided by following recorded causes, which the watchdog names.
       const viaCrew = {
         origin: "phone",
         basis: "stamp",
         via: "crew",
         reason: "inherited",
+        cause: true,
       } as const;
       assert.deepStrictEqual(at("caused-session", "2026-08-07T01:08:00Z"), viaCrew);
       assert.deepStrictEqual(at("worker-session", "2026-08-07T01:21:00Z"), viaCrew);
@@ -1003,7 +1031,10 @@ describe("UsageOrigins.read", () => {
         claim: "run",
       } as const;
       assert.deepStrictEqual(at("worker-session", "2026-08-07T01:41:00Z"), journal);
-      assert.deepStrictEqual(at("journal-session", "2026-08-07T01:51:00Z"), journal);
+      assert.deepStrictEqual(at("journal-session", "2026-08-07T01:51:00Z"), {
+        ...journal,
+        cause: true,
+      });
       const upkeep = {
         origin: "computer",
         basis: "claim",
@@ -1026,6 +1057,7 @@ describe("UsageOrigins.read", () => {
         via: "agent",
         reason: "inherited",
         claim: "session",
+        cause: true,
       });
       assert.deepStrictEqual(at("removed", "2026-08-07T03:00:00Z"), unregistered);
       const fromPhone = {
@@ -1034,6 +1066,7 @@ describe("UsageOrigins.read", () => {
         via: "agent",
         reason: "inherited",
         claim: "run",
+        cause: true,
       } as const;
       assert.deepStrictEqual(at("fm-session", "2026-08-07T04:01:00Z"), fromPhone);
       assert.deepStrictEqual(at("fm-session", "2026-08-07T04:11:00Z"), fromPhone);
@@ -1047,6 +1080,7 @@ describe("UsageOrigins.read", () => {
         ...filed,
         basis: "notification",
         via: "crew",
+        cause: true,
       });
       assert.deepStrictEqual(at("fm-session", "2026-08-07T04:31:00Z"), {
         ...filed,
@@ -1064,9 +1098,10 @@ describe("UsageOrigins.read", () => {
       assert.deepStrictEqual(at("scheduled-worker-session", "2026-08-07T05:06:00Z"), {
         ...upkeep,
         via: "crew",
+        cause: true,
       });
       assert.deepStrictEqual(at("worker-subagent-session", "2026-08-07T01:31:00Z"), uncausedCrew);
-      const cyclePhone = { ...journal, via: "agent" } as const;
+      const cyclePhone = { ...journal, via: "agent", cause: true } as const;
       assert.deepStrictEqual(at("cycle-session", "2026-08-07T06:01:00Z"), cyclePhone);
       assert.deepStrictEqual(at("cycle-session", "2026-08-07T06:11:00Z"), cyclePhone);
       // A CLI run inside the worker's worktree counts to the worker's turn then.
@@ -1343,6 +1378,148 @@ describe("UsageOrigins born labelled", () => {
           ],
         );
         assert.isNull(yield* origins.originAt("gone", time("01:00")));
+      }).pipe(
+        Effect.provide(
+          usageOriginsLayer.pipe(
+            Layer.provide(
+              Layer.mock(UsageSessionRegister.UsageSessionRegister)({
+                read: () => Effect.succeed([]),
+              }),
+            ),
+            Layer.provideMerge(UsageClaims.layer),
+            Layer.provideMerge(Layer.merge(Sqlite.layerMemory, NodeServices.layer)),
+          ),
+        ),
+      ),
+  );
+
+  it.effect(
+    "binds children, continuations and claims by value, with the typed prompt at their root",
+    () =>
+      Effect.gen(function* () {
+        const origins = yield* UsageOrigins;
+        const claims = yield* UsageClaims.UsageClaims;
+        // What the tools store: the calling thread's turn, bound by value.
+        const bindAt = (threadId: string, clock: string) =>
+          origins.originAt(threadId, time(clock)).pipe(
+            Effect.map((bound) => {
+              assert.isNotNull(bound);
+              return bound!;
+            }),
+          );
+        const bornAt = (threadId: string, clock: string) =>
+          bindAt(threadId, clock).pipe(Effect.map((bound) => storedOrigin(bound.key)));
+        const rootOf = (key: { root?: { messageId: string } }) => key.root?.messageId ?? "-";
+        yield* seedThread({ id: "firstmate", coordinator: true });
+
+        // A worker launched from a phone turn, then steered from a computer turn.
+        yield* run("fm-phone", 1, "firstmate", "01:00", "01:10", phone);
+        const worker = yield* bornAt("firstmate", "01:01");
+        assert.strictEqual(rootOf(worker), "message-fm-phone");
+        yield* seedThread({
+          id: "worker",
+          crewOf: "firstmate",
+          createdAt: iso("01:01"),
+          usageOrigin: worker,
+        });
+        yield* run("w1", 1, "worker", "01:01", "01:30", fromMcp);
+        yield* run("fm-computer", 2, "firstmate", "02:00", "02:10", computer);
+        const steer = yield* bindAt("firstmate", "02:01");
+        yield* run("w2", 2, "worker", "02:01", "02:20", {
+          ...fromMcp,
+          usageOrigin: storedOrigin(steer.key),
+        });
+        // In that turn the worker delegates a child: born where the worker counts now, not
+        // where it was born.
+        const child = yield* bornAt("worker", "02:05");
+        yield* seedThread({ id: "child", createdAt: iso("02:05"), usageOrigin: child });
+        yield* run("child-1", 1, "child", "02:05", "02:15", wake);
+
+        // A thread he typed on his phone creates a thread, which delegates one in turn.
+        yield* seedThread({ id: "mine", createdAt: iso("03:00") });
+        yield* run("mine-1", 1, "mine", "03:00", "03:30", phone);
+        const created = yield* bornAt("mine", "03:05");
+        yield* seedThread({ id: "created", createdAt: iso("03:05"), usageOrigin: created });
+        yield* run("created-1", 1, "created", "03:05", "03:20", fromMcp);
+        const grandchild = yield* bornAt("created", "03:10");
+        yield* seedThread({ id: "grandchild", createdAt: iso("03:10"), usageOrigin: grandchild });
+        yield* run("grandchild-1", 1, "grandchild", "03:10", "03:15", wake);
+        // FirstMate names a wake for that work: the claim keeps its root too.
+        yield* run("fm-wake", 4, "firstmate", "03:25", "03:30", wake);
+        const { origin: device, ...binding } = yield* bornAt("created", "03:25");
+        assert.isTrue(device === "phone");
+        yield* claims.claim({
+          target: { kind: "run", runId: "run-fm-wake" },
+          value: { device: "phone", bound: binding },
+        });
+
+        // A reply typed on the worker's box from the phone moves it while no turn of it runs.
+        yield* run("fm-reply", 3, "firstmate", "03:00", "03:02", {
+          ...phone,
+          crewNote: { threadId: "worker", kind: "reply" },
+        });
+
+        // A phone turn the restart cut, and its continuation, bound as the server binds it.
+        yield* run("fm-cut", 5, "firstmate", "04:00", "04:05", phone);
+        const resumed = yield* bornAt("firstmate", "04:05");
+        const restarted = { createdBy: "agent", creationSource: "server", notification: {} };
+        yield* run("fm-cont", 6, "firstmate", "04:06", "04:10", {
+          ...restarted,
+          usageOrigin: resumed,
+        });
+        // A continuation in the worker counts where it was bound, and moves nothing.
+        yield* run("w-cont", 3, "worker", "05:00", "05:05", {
+          ...restarted,
+          usageOrigin: storedOrigin(steer.key),
+        });
+        yield* run("w4", 4, "worker", "06:00", "06:10", wake);
+
+        const snapshot = yield* origins.read(time("00:00"), time("23:59"));
+        // Sessions T3 does not run: reviews the worker and FirstMate started.
+        const index = new UsageOriginIndex({
+          ...snapshot,
+          registrations: [
+            { sessionId: "review", startedAtMs: time("02:06"), threadId: "worker" },
+            { sessionId: "fm-review", startedAtMs: time("02:01"), threadId: "firstmate" },
+          ],
+        });
+        const counted = (sessionId: string, clock: string) => {
+          const key = index.lookup({ sessionId, timestampMs: time(clock) });
+          return `${sessionId} ${clock} ${key.origin} ${key.reason} ${rootOf(key)}${key.registered ? " registered" : ""}`;
+        };
+        assert.deepStrictEqual(
+          [
+            counted("child-session", "02:06"),
+            counted("created-session", "03:06"),
+            counted("grandchild-session", "03:11"),
+            counted("firstmate-session", "03:26"),
+            // 30 minutes after the worker's turn ended, then after the reply moved it.
+            counted("worker-session", "02:50"),
+            counted("worker-session", "03:40"),
+            counted("review", "02:30"),
+            counted("review", "03:10"),
+            counted("fm-review", "03:10"),
+            counted("firstmate-session", "04:07"),
+            counted("worker-session", "05:01"),
+            counted("worker-session", "06:01"),
+          ],
+          [
+            "child-session 02:06 computer inherited message-fm-computer",
+            "created-session 03:06 phone inherited message-mine-1",
+            "grandchild-session 03:11 phone inherited message-mine-1",
+            "firstmate-session 03:26 phone inherited message-mine-1",
+            "worker-session 02:50 computer inherited message-fm-computer",
+            "worker-session 03:40 phone inherited message-fm-reply",
+            "review 02:30 computer inherited message-fm-computer registered",
+            "review 03:10 phone inherited message-fm-reply registered",
+            "fm-review 03:10 computer typed message-fm-computer registered",
+            "firstmate-session 04:07 phone inherited message-fm-cut",
+            "worker-session 05:01 computer inherited message-fm-computer",
+            "worker-session 06:01 phone inherited message-fm-reply",
+          ],
+        );
+        // Bound by value: nothing here followed a recorded cause.
+        assert.isFalse(snapshot.turns.some((turn) => turn.key.cause === true));
       }).pipe(
         Effect.provide(
           usageOriginsLayer.pipe(

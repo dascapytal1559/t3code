@@ -12,7 +12,8 @@ import * as Upload from "../../../assets/AttachmentUpload.ts";
 import * as Claims from "../../../orchestration-v2/AttachmentClaims.ts";
 import * as ThreadMessageIntake from "../../../orchestration-v2/ThreadMessageIntake.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
-import { newCommandId, readThread, unavailable } from "../../threadAccess.ts";
+import * as UsageOrigins from "../../../usage/UsageOrigins.ts";
+import { bindUsageOrigin, newCommandId, readThread, unavailable } from "../../threadAccess.ts";
 import { AttachmentToolkit } from "./tools.ts";
 
 export function resolveAttachmentReferences(
@@ -88,7 +89,7 @@ export const layer = McpToolAccess.toLayer(
         (input) => [input.threadId],
         (input) =>
           Effect.gen(function* () {
-            const { caller, projection } = yield* readThread(input.threadId, ["messages"]);
+            const { caller, threads, projection } = yield* readThread(input.threadId, ["messages"]);
             if (projection.thread.archivedAt !== null)
               return yield* new OrchestratorMcpFailure({
                 code: "invalid_request",
@@ -98,6 +99,8 @@ export const layer = McpToolAccess.toLayer(
               input.attachments,
               projection.messages.flatMap((message) => message.attachments),
             );
+            // Only a send from a turn typed then moves the work it reaches, as t3_thread_send.
+            const bound = yield* bindUsageOrigin(threads, undefined, caller?.id);
             const commandId = yield* newCommandId();
             const messageId = MessageId.make(commandId);
             const result = yield* ThreadMessageIntake.sendToThread({
@@ -106,6 +109,9 @@ export const layer = McpToolAccess.toLayer(
               commandId,
               messageId,
               ...(caller === undefined ? {} : { senderThreadId: caller.id }),
+              ...(bound?.reroots === true
+                ? { usageOrigin: UsageOrigins.storedOrigin(bound.key) }
+                : {}),
               text: input.message ?? "",
               attachments,
               mode: "auto",

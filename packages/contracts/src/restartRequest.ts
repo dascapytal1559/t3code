@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema";
 
 import { IsoDateTime, NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
-import { OrchestrationV2CausedBy } from "./orchestrationV2.ts";
+import { OrchestrationV2CausedBy, OrchestrationV2UsageOrigin } from "./orchestrationV2.ts";
 
 /**
  * A pending request to restart this T3 server, such as FirstMate installing a new build. While one
@@ -15,6 +15,8 @@ export const RestartRequest = Schema.Struct({
   requestedAt: IsoDateTime,
   /** The prompt whose work the restart installs; the restart note and continuations count to it. */
   causedBy: Schema.optional(OrchestrationV2CausedBy),
+  /** Fork: where the work it installs counts, bound by value when it was requested. */
+  usageOrigin: Schema.optional(OrchestrationV2UsageOrigin),
 });
 export type RestartRequest = typeof RestartRequest.Type;
 

@@ -397,7 +397,7 @@ export class UsageAggregator {
   }
 
   #tallyReason(key: UsageOriginKey, record: UsageRecord, costUsd: number): void {
-    const link = `${key.claim ?? ""}\u0000${key.folder === true ? "f" : ""}${key.registered === true ? "r" : ""}`;
+    const link = `${key.claim ?? ""}\u0000${key.folder === true ? "f" : ""}${key.registered === true ? "r" : ""}${key.cause === true ? "c" : ""}`;
     const reasonKey = `${key.origin}\u0000${key.reason}\u0000${link}\u0000${record.provider}`;
     let row = this.#originReasons.get(reasonKey);
     if (row === undefined) {
@@ -407,6 +407,7 @@ export class UsageAggregator {
         ...(key.claim === undefined ? {} : { claim: key.claim }),
         ...(key.folder === true ? { folder: true as const } : {}),
         ...(key.registered === true ? { registered: true as const } : {}),
+        ...(key.cause === true ? { cause: true as const } : {}),
         byDefault: usageOriginCountsByDefault(key.reason),
         provider: record.provider,
         tokens: 0,

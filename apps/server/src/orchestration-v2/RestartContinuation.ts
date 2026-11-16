@@ -4,14 +4,18 @@ import {
   CommandId,
   isOrchestrationV2WorkActive,
   latestProviderTurnForAttempt,
+  type OrchestrationV2AppThread,
   type OrchestrationV2CausedBy,
   type OrchestrationV2ConversationMessage,
   type OrchestrationV2Run,
+  type RestartRequest,
   type RunId,
   type ThreadId,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import type {
   ProjectionRecordField,
   ProjectionRecordFilter,
@@ -20,6 +24,7 @@ import type {
 } from "./ProjectionStore.ts";
 
 import * as ServerSettings from "../serverSettings.ts";
+import * as UsageOrigins from "../usage/UsageOrigins.ts";
 import { isNativeMaintenanceCommand } from "./CommandPolicy.ts";
 import {
   notifyCoordinatorUnlessResumed,
@@ -255,6 +260,42 @@ function cutRunCause(
   return undefined;
 }
 
+/**
+ * Where a resumed turn counts, by value: where the cut turn counted when it was cut. A cut turn
+ * that only counted as upkeep, in a thread with no origin of its own, counts where the work the
+ * restart installs counts. Undefined when Usage cannot say; the caller then names causes.
+ */
+const continuationOrigin = Effect.fn("RestartContinuation.continuationOrigin")(function* (
+  thread: Pick<OrchestrationV2AppThread, "id" | "usageOrigin" | "causedBy">,
+  source: OrchestrationV2Run,
+  request: RestartRequest | null,
+) {
+  const origins = yield* Effect.serviceOption(UsageOrigins.UsageOrigins);
+  if (Option.isNone(origins)) return undefined;
+  const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
+  const atMs =
+    source.completedAt === null
+      ? nowMs
+      : Math.min(DateTime.toEpochMillis(source.completedAt), nowMs);
+  const bound = yield* origins.value.originAt(thread.id, atMs).pipe(
+    Effect.catchCause((cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? Effect.interrupt
+        : Effect.logWarning("Usage could not read where a cut turn counted", {
+            threadId: thread.id,
+            cause,
+          }).pipe(Effect.as(null)),
+    ),
+  );
+  const cut =
+    bound !== null && (bound.key.origin === "phone" || bound.key.origin === "computer")
+      ? UsageOrigins.storedOrigin(bound.key)
+      : undefined;
+  if (cut !== undefined && cut.reason !== "upkeep") return cut;
+  const ownless = thread.usageOrigin === undefined && thread.causedBy === undefined;
+  return (ownless ? request?.usageOrigin : undefined) ?? cut;
+});
+
 export const continueRestartedRun = Effect.fn("RestartContinuation.continueRestartedRun")(
   function* (input: {
     readonly threadId: ThreadId;
@@ -348,11 +389,13 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
           : `${noteText}\n\n${CONTINUE_PROMPT}`;
     const restartNote = yield* resumedCoordinatorNote(projection.thread);
     const text = restartNote === undefined ? resumeText : `${restartNote}\n\n${resumeText}`;
+    const request = yield* threads.restartedFor;
+    const usageOrigin = yield* continuationOrigin(projection.thread, source, request);
     const causedBy =
-      cutRunCause(source, sourceMessage) ??
-      (projection.thread.causedBy === undefined
-        ? (yield* threads.restartedFor)?.causedBy
-        : undefined);
+      usageOrigin !== undefined
+        ? undefined
+        : (cutRunCause(source, sourceMessage) ??
+          (projection.thread.causedBy === undefined ? request?.causedBy : undefined));
     yield* threads
       .dispatch({
         type: "message.dispatch",
@@ -374,6 +417,7 @@ export const continueRestartedRun = Effect.fn("RestartContinuation.continueResta
         createdBy: "agent",
         creationSource: "server",
         ...(causedBy === undefined ? {} : { causedBy }),
+        ...(usageOrigin === undefined ? {} : { usageOrigin }),
         restartContinuationOfRunId: input.sourceRunId,
       })
       .pipe(

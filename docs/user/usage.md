@@ -78,7 +78,9 @@ history. To see how much of the computer's share is there only by default, and w
 A session-start hook makes every Claude, Codex, and Grok session on the server's machine register
 itself in `<T3 home>/userdata/session-register` (the T3 home is `~/.t3` unless you set
 `T3CODE_HOME`). A session started by a T3 agent, such as a review or a child CLI run, then counts
-to the turn its thread was running when it started, wherever it ran. A session started with no T3
+to the turn its thread was running when it started, wherever it ran. If you move that agent's work
+to your other device while the session runs, by typing to it, the session's later usage moves too.
+A session started with no T3
 thread or FirstMate task behind it, such as one you start in a terminal, counts to **Computer**.
 Sessions T3 runs itself are unaffected. Registration needs no running server and never delays or
 fails a session.
