@@ -1364,7 +1364,11 @@ that ends interrupted, failed or cancelled expires every pending request it
 raised. A turn that completes still closes only its questions, because a
 background subagent's approval can still be live then. These requests close as
 `expired`, not `cancelled`, and the guard that keeps a just-committed answer from
-being overwritten covers every request kind. Code: `expireTurnRequests` in
+being overwritten covers every request kind. A question the adapter keeps open
+past the turn (upstream's `retainedRuntimeRequestIds`, such as a background
+OpenCode subagent's) stays pending either way; upstream's own question-only
+`dismissNativeUserInputs` is folded into this function on syncs. Code:
+`expireTurnRequests` in
 `apps/server/src/orchestration-v2/ProviderEventIngestor.ts` and
 `guardRequestClosures` in `EventSink.ts`.
 
@@ -1483,8 +1487,7 @@ bytes) in IndexedDB, keyed by entry id, with no budget or recompression; the
 entry holds only `media` metadata. Composer files are still stashed as pending
 upload references. The entry is written only after its bytes are, so a refused
 write stashes nothing; the async "saving N images" step and
-`finalizeEntryImages` are gone. Entries saved the old way still restore. Stash
-menu rows read context chips by their label rather than their link markup. Code:
+`finalizeEntryImages` are gone. Entries saved the old way still restore. Code:
 `apps/web/src/promptStashMedia.ts`, `stashQueuedMessage` in
 `apps/web/src/components/chat/promptStashActions.ts`, and the Stash button in
 `QueuedRunsControl.tsx`. On syncs, upstream changes to `compressImageForStash`
