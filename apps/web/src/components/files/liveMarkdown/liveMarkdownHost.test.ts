@@ -13,6 +13,9 @@ describe("where a file's images load from", () => {
   it.each([
     ["https://t3.codes/a.png", { kind: "url", url: "https://t3.codes/a.png" }],
     ["media/chart.svg", { kind: "asset", key: "relative:/work/reports/media/chart.svg" }],
+    // Obsidian's Markdown links encode a name with spaces; CommonMark can also bracket it.
+    ["Pasted%20image%201.png", { kind: "asset", key: "relative:/work/reports/Pasted image 1.png" }],
+    ["<Pasted image 1.png>", { kind: "asset", key: "relative:/work/reports/Pasted image 1.png" }],
     ["/elsewhere/shot.png", { kind: "asset", key: "absolute:/elsewhere/shot.png" }],
     // Video and audio in image syntax are not drawn in the editor.
     ["clip.mp4", { kind: "blocked" }],

@@ -52,7 +52,6 @@ class OutlineTracker implements PluginValue {
   private headings: EditorHeading[] = [];
   private headingsOutdated = true;
   private snapshot = NO_OUTLINE;
-  private stale = true;
   private rebuild: ReturnType<typeof setTimeout> | undefined;
   private readonly listeners = new Set<() => void>();
   private readonly onScroll = () => this.changed();
@@ -73,9 +72,12 @@ class OutlineTracker implements PluginValue {
     if (update.docChanged || update.selectionSet || update.geometryChanged) this.changed();
   }
 
-  /** The outline as it is now; the same object until it changes. */
+  /**
+   * The outline as last measured; the same object until it changes. React reads it
+   * while rendering, so it never reads layout: that would run the editor's update
+   * there, and its plugins call back into React.
+   */
   current(): OutlineSnapshot {
-    if (this.stale) this.refresh();
     return this.snapshot;
   }
 
@@ -97,7 +99,6 @@ class OutlineTracker implements PluginValue {
   }
 
   private changed() {
-    this.stale = true;
     if (this.listeners.size === 0) return;
     // Layout cannot be read during an update, so the section is found in the measure phase.
     this.view.requestMeasure({
@@ -111,7 +112,6 @@ class OutlineTracker implements PluginValue {
 
   /** Brings the snapshot up to date and says whether it changed. */
   private refresh(): boolean {
-    this.stale = false;
     if (this.headingsOutdated) {
       this.headings = headingsOf(this.view.state);
       this.headingsOutdated = false;
