@@ -33,6 +33,7 @@ import { projectEnvironment } from "../state/projects";
 import { threadEnvironment } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
 import { useNewThreadHandler } from "./useHandleNewThread";
+import { useTellCoordinator } from "./useTellCoordinator";
 import { refreshArchivedThreadsForEnvironment } from "../lib/archivedThreadsState";
 import { releaseComposerDraftUploads } from "../lib/composerDraftUploads";
 import { announce } from "../lib/announce";
@@ -312,6 +313,7 @@ export function useThreadActions() {
   const unsnoozeThreadMutation = useOrchestrationCommand(threadEnvironment.unsnooze, {
     reportFailure: false,
   });
+  const tellCoordinator = useTellCoordinator();
   const markThreadUnread = useMarkThreadUnread();
   const createProjectFromThread = useAtomCommand(projectEnvironment.createFromThread, {
     reportFailure: false,
@@ -719,7 +721,7 @@ export function useThreadActions() {
     }
     ThreadUndo.invalidate("settle", scopedThreadKey(target));
     // reason "user" pins active until real activity, suppressing auto-settle.
-    return unsettleThreadMutation({
+    const result = await unsettleThreadMutation({
       environmentId: target.environmentId,
       input: {
         threadId: target.threadId,
@@ -727,6 +729,8 @@ export function useThreadActions() {
         ...(restoreUnsettledAt === undefined ? {} : { restoreUnsettledAt }),
       },
     });
+    if (result._tag === "Success") tellCoordinator(target, { kind: "unsettled" });
+    return result;
   };
 
   const setThreadAutoSettle = async (target: ScopedThreadRef, enabled: boolean) => {
@@ -840,6 +844,7 @@ export function useThreadActions() {
     if (wokeAt !== null) {
       markThreadVisited(scopedThreadKey(target), wokeAt);
     }
+    tellCoordinator(target, { kind: "settled" });
     showThreadUndoNotice({
       action: "Settled",
       claim: action,
@@ -915,10 +920,12 @@ export function useThreadActions() {
       );
     }
     ThreadUndo.invalidate("snooze", scopedThreadKey(target));
-    return unsnoozeThreadMutation({
+    const result = await unsnoozeThreadMutation({
       environmentId: target.environmentId,
       input: { threadId: target.threadId, reason: "user" },
     });
+    if (result._tag === "Success") tellCoordinator(target, { kind: "unsnoozed" });
+    return result;
   };
 
   const snoozeThread = async (target: ScopedThreadRef, snoozedUntil: string) => {
@@ -953,6 +960,7 @@ export function useThreadActions() {
       action.finish();
       return result;
     }
+    tellCoordinator(target, { kind: "snoozed", snoozedUntil });
     showThreadUndoNotice({
       action: "Snoozed",
       claim: action,
@@ -975,11 +983,16 @@ export function useThreadActions() {
             return sendPin(target, step.orderKey === undefined ? {} : { orderKey: step.orderKey });
           case "reorderActive":
             return reorderActiveThread(target, step.orderKey);
-          case "snooze":
-            return snoozeThreadMutation({
+          case "snooze": {
+            const result = await snoozeThreadMutation({
               environmentId: target.environmentId,
               input: { threadId: target.threadId, snoozedUntil: step.snoozedUntil },
             });
+            if (result._tag === "Success") {
+              tellCoordinator(target, { kind: "snoozed", snoozedUntil: step.snoozedUntil });
+            }
+            return result;
+          }
         }
       },
       (result) => result._tag === "Success",

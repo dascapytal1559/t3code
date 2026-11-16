@@ -203,27 +203,7 @@ export function buildThreadActionMenuItems(
           },
         ]
       : []),
-    ...(state.supports.autoSettleOptOut
-      ? [
-          {
-            id: "auto-settle" as const,
-            label: "Auto-settle behavior",
-            icon: "timer",
-            children: [
-              {
-                id: "auto-settle:enabled" as const,
-                label: "Follow settings",
-                checked: state.autoSettleEnabled,
-              },
-              {
-                id: "auto-settle:disabled" as const,
-                label: "Never",
-                checked: !state.autoSettleEnabled,
-              },
-            ],
-          },
-        ]
-      : []),
+    // Fork: no "Auto-settle behavior" here; settling is the captain's own action (fork/README.md).
     {
       id: "copy",
       label: "Copy",
@@ -239,18 +219,13 @@ export function buildThreadActionMenuItems(
       ],
     },
     { id: "project-settings", label: "Project settings", icon: "settings" },
-    {
-      id: "archive",
-      label: "Archive thread",
-      icon: "archive",
-      disabled: state.isRunning,
-      separatorBefore: true,
-    },
+    // Fork: no "Archive thread" here; archiving is FirstMate's, and the captain settles.
     {
       id: "delete",
       label: "Delete",
       destructive: true,
       icon: "trash",
+      separatorBefore: true,
     },
   ];
   return state.canOperate

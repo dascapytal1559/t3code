@@ -13,7 +13,7 @@ import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
 import { ContextWindowMeter } from "./ContextWindowMeter";
-import { formatCrewReply } from "./CrewReply.logic";
+import { coordinatorMessageInput, formatCrewReply } from "./CrewReply.logic";
 
 /**
  * Upstream's composer wrapper, left out on a FirstMate worker's thread. A component, not a
@@ -47,19 +47,11 @@ export function CrewReply(props: {
     setSending(true);
     const result = await startTurn({
       environmentId: thread.environmentId,
-      input: {
-        threadId: coordinator.id,
-        message: {
-          messageId: newMessageId(),
-          role: "user",
-          text: formatCrewReply({ thread, text: sent }),
-          attachments: [],
-        },
-        runtimeMode: coordinator.runtimeMode,
-        interactionMode: coordinator.interactionMode,
-        // Behind the coordinator's running turn, or at once when it is idle.
-        dispatchMode: "queue",
-      },
+      input: coordinatorMessageInput({
+        coordinator,
+        messageId: newMessageId(),
+        text: formatCrewReply({ thread, text: sent }),
+      }),
     });
     setSending(false);
     if (result._tag === "Failure") {

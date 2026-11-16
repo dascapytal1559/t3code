@@ -424,7 +424,7 @@ every other thread. Upstream code it touches, for syncs: two guards in
 and on the initial title in `message.dispatch` (`isPrimaryCoordinator`).
 
 No card in the sidebar, crew or not, has hover Snooze or Settle; the context
-menu still has Snooze, and snoozing takes a thread out of the group. Upstream
+menu still has both, and snoozing or settling takes a thread out of the group. Upstream
 shows both on hover so a thread is put away in one click; the captain asked
 for them off so a stray click cannot put a standing agent's thread away
 ("We don't need the hover to settle or snooze"). Upstream's hover
@@ -567,28 +567,30 @@ the message in `CrewReply.logic.ts`, and `CrewRunControls.tsx` beside them. For
 syncs: `CrewComposerGate` stands where upstream's `<div className="relative">`
 wraps the composer, so the composer's own lines keep upstream's indentation.
 
-## Snoozed stays at the bottom, with no Settled
+## The captain settles; FirstMate archives
 
-<img src="media/snoozed-pinned.jpg" width="256" alt="The sidebar: FirstMate with four workers, the top-level threads with a settled one among them, and the Snoozed row with its count at the bottom">
+<img src="media/snoozed-pinned.jpg" width="256" alt="The sidebar: FirstMate with a worker, the active threads, then the Snoozed row and the Settled section with their counts at the bottom">
+<img src="media/settle-menu.jpg" width="272" alt="A worker card's right-click menu with Settle thread and Snooze, and no Archive">
 
-Upstream collects finished threads in a Settled section at the end of the
-list, and its Snoozed row scrolls with the list. The captain puts a thread away
-by archiving it and does not use Settled ("we're still not gonna need
-settled"), so the web and desktop sidebar has no Settled section. The Snoozed
-row, with its count and chevron, is pinned to the bottom of the thread list,
-just above the usage readout, so a long list scrolls under it instead of
-pushing it out of sight. Opening it scrolls the list to its end, where the
-snoozed rows are; scrolled back up, the open row stays pinned.
+The captain puts a thread away by settling it, because settling can be undone
+and archiving is something done to a thread rather than by him: "Archive is
+something you do, and what I do is I settle." FirstMate archives a worker's
+thread when it cleans the worker up. So on web and desktop the thread menus
+(the card's context menu, a multi-selection's menu and the chat header's) offer
+Settle and Un-settle and no Archive thread, and the sidebar keeps upstream's
+Settled section at its end, where settled threads wait to be found and
+un-settled. Archive stays on MCP (`t3_thread_organize`) and wherever upstream
+uses it internally; Settings › Archived threads still lists and restores them.
+The menus also leave out upstream's per-thread Auto-settle behavior, since
+settling is his own act; the server's auto-settle settings still apply if
+turned on, and his are off. This reverses the 11/14 choice to drop Settled and
+archive instead ("we're still not gonna need settled").
 
-A settled thread lists among the active ones, so nothing drops out of sight.
-The thread menus (the card's context menu, a multi-selection's menu and the
-chat header's) leave out Settle, Un-settle and Auto-settle behavior. Upstream's
-settle paths still work: `Mod+Shift+S` settles and un-settles, a settled
-thread's chat still shows its Settled line with Un-settle, and MCP and the
-auto-settle setting still settle threads. The server does not offer clients
-upstream's older-settled trim (`shellOlderSettled`), so every unarchived thread
-reaches the list however many are settled; the mobile app's Settled shelf then
-lists them all too.
+The Snoozed row, with its count and chevron, is pinned to the bottom of the
+thread list, just above the usage readout, so a long list scrolls under it
+instead of pushing it out of sight. Opening it scrolls its last row into view,
+which leaves the Settled section just below. It pins to the bottom only, so
+scrolling down through Settled carries it away like any section header.
 
 The sidebar's shift guard, which drops a press on a row that just moved or
 appeared without the user's input, leaves the pinned header alone: it never
@@ -596,15 +598,50 @@ slides under the pointer, and its position as the guard reads it follows the
 scroll, so a press on it after a scroll was dropped.
 
 Upstream code it touches, for syncs: the `SIDEBAR_SETTLED_SHELF` switch
-(`apps/web/src/components/sidebar/settledShelf.ts`), read by
-`partitionSidebarThreads`, the older-settled scopes, the list items and both
-context menus in `Sidebar.tsx`, and by `useThreadActionMenu.ts`; the Snoozed
-header's sticky classes and `toggleSnoozedShelfAndReveal` in `Sidebar.tsx`;
-the drag projection in `Sidebar.drag.ts`, which leaves the pinned header
-where the browser put it; `readTops` in `Sidebar.shiftGuard.ts`, which skips
-sticky rows; and the `shellOlderSettled` capability left out of the server's
-descriptor (`ServerEnvironment.ts`) and config (`ws.ts`). Upstream's Settled shelf tests do not apply: the
-11/14 sync dropped "sidebar settled pagination" from `Sidebar.browser.test.tsx`.
+(`apps/web/src/components/sidebar/settledShelf.ts`, now on), read by
+`partitionSidebarThreads`, `getFallbackThreadIdAfterDelete`, the older-settled
+scopes, the list items and the multi-selection menu in `Sidebar.tsx`,
+`settledOutOfSight` in `CommandPalette.logic.ts`, and both single-thread menus;
+the Archive thread and Auto-settle behavior items left out of
+`buildThreadActionMenuItems` (`threadActionMenu.logic.ts`), whose handlers
+stay; the Snoozed header's sticky classes and `toggleSnoozedShelfAndReveal` in
+`Sidebar.tsx`; the drag projection in `Sidebar.drag.ts`, which leaves the
+pinned header where the browser put it; and `readTops` in
+`Sidebar.shiftGuard.ts`, which skips sticky rows.
+
+### Settling or snoozing a worker tells FirstMate
+
+When the captain settles, un-settles, snoozes or wakes a crew thread (the
+membership the [message box](#a-crewmates-message-box-sends-to-firstmate)
+uses), the client posts one ordinary user message to its coordinator, sent the
+way that box sends: queued behind a running turn, or starting one when the
+coordinator is idle; the worker gets nothing. FirstMate keeps its records of
+the workers in step that way. The message reads:
+
+```
+**Settled · <worker thread title>**
+kept-thread: <worker thread id>
+thread-action: settled
+```
+
+The other headings and action lines are `**Un-settled · …**` with
+`unsettled`, `**Snoozed · …**` with `snoozed until <ISO 8601 UTC, seconds>`
+(just `snoozed` when indefinite), and `**Un-snoozed · …**` with `unsnoozed`.
+Every client path sends it: the menus, a multi-selection (one message per
+thread), `Mod+Shift+S`, the chat's Un-settle and Wake now, dragging a thread
+out of Settled or Snoozed, and Undo, which sends the reverse action. Only the
+client's own actions send it, so a settle, snooze or archive made over MCP
+(FirstMate's own) or by the server's sweeps (auto-settle, a snooze waking on
+time or on new activity) never echoes back. Threads that are not crew, and
+FirstMate's own thread, send nothing. A failed send shows "Could not tell
+FirstMate"; the settle or snooze itself stands. Mobile is not covered: the
+captain's phone runs the App Store app.
+
+Code: `useTellCoordinator` in `apps/web/src/hooks/useTellCoordinator.ts`,
+called from `settleThread`, `unsettleThread`, `snoozeThread`, `unsnoozeThread`
+and the Undo snooze step in `useThreadActions.ts`, and from the chat's
+Un-settle and Wake in `useThreadLifecycle.tsx`; the message is
+`formatCrewThreadAction` in `apps/web/src/components/chat/CrewReply.logic.ts`.
 
 ## Indefinite snooze
 

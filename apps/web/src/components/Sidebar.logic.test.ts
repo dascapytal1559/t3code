@@ -694,6 +694,7 @@ describe("getFallbackThreadIdAfterDelete", () => {
       { snoozedUntil: "2099-01-01T00:00:00.000Z", snoozedAt: "2026-03-09T10:06:00.000Z" },
     ],
     ["delegated", { id: ThreadId.make("thread-delegated") }],
+    ["settled", { settledOverride: "settled", settledAt: "2026-03-09T10:06:00.000Z" }],
     [
       "side chat",
       {
@@ -747,33 +748,6 @@ describe("getFallbackThreadIdAfterDelete", () => {
     });
 
     expect(fallbackThreadId).toBe(ThreadId.make("thread-visible"));
-  });
-
-  it("falls back to a settled thread, which the sidebar without a Settled shelf lists as active", () => {
-    const fallbackThreadId = getFallbackThreadIdAfterDelete({
-      threads: [
-        makeThread({
-          id: ThreadId.make("thread-visible"),
-          createdAt: "2026-03-09T10:01:00.000Z",
-        }),
-        makeThread({
-          id: ThreadId.make("thread-settled"),
-          createdAt: "2026-03-09T10:02:00.000Z",
-          settledOverride: "settled",
-          settledAt: "2026-03-09T10:06:00.000Z",
-        }),
-        makeThread({
-          id: ThreadId.make("thread-active"),
-          createdAt: "2026-03-09T10:03:00.000Z",
-        }),
-      ],
-      deletedThreadId: ThreadId.make("thread-active"),
-      sortOrder: "created_at",
-      now: "2026-03-09T10:10:00.000Z",
-      delegatedUnderParent: new Set(),
-    });
-
-    expect(fallbackThreadId).toBe(ThreadId.make("thread-settled"));
   });
 });
 

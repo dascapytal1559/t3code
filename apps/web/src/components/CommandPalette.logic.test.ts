@@ -44,11 +44,11 @@ describe("opening a project's latest thread", () => {
       now: "2026-06-01T00:00:00.000Z",
     })?.id;
 
-  it("opens the newest thread even when settled, as the sidebar without a Settled shelf lists it", () => {
+  it("passes over a settled thread, which the sidebar puts on its Settled shelf", () => {
     const older = thread("older", "2026-05-01T00:00:00.000Z");
     const settled = thread("settled", "2026-05-02T00:00:00.000Z", { settledOverride: "settled" });
-    expect(latest([older, settled])).toBe("settled");
-    expect(latest([older, settled], new Set([`${environmentId}:${projectId}`]))).toBe("settled");
+    expect(latest([older, settled])).toBe("older");
+    expect(latest([older, settled], new Set([`${environmentId}:${projectId}`]))).toBe("older");
   });
 
   it("passes over a thread snoozed into the future", () => {

@@ -1407,12 +1407,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       scopedProjectGroups.length > 0 || (group.pinned && !group.archived),
   });
   const toggleCrewTree = useStableCallback(toggleCrewShelf);
-  // Fork: Snoozed is the list's last section, so its opened rows sit at the very end.
+  // Fork: the Snoozed header is pinned to the bottom, so opening it scrolls its rows into view.
   const toggleSnoozedShelfAndReveal = () => {
     if (snoozedShelfExpanded) return toggleSnoozedShelf();
     flushSync(toggleSnoozedShelf);
-    const viewport = sidebarContentRef.current?.closest("[data-slot=scroll-area-viewport]");
-    viewport?.scrollTo({ top: viewport.scrollHeight });
+    const rows = sidebarContentRef.current?.querySelectorAll(
+      '[data-sidebar-parent="shelf:snoozed"]',
+    );
+    rows?.[rows.length - 1]?.scrollIntoView({ block: "nearest" });
   };
   const lastCrewThread = visibleCrewThreads.at(-1);
   // The crew toggle, and so the guide line, follows the last coordinator card.
@@ -2737,7 +2739,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               canTurnIntoProject: canTurnThreadIntoProject(threadRef),
               supports: {
                 settlement: SIDEBAR_SETTLED_SHELF && configLoaded,
-                autoSettleOptOut: SIDEBAR_SETTLED_SHELF && supportsAutoSettleOptOut,
+                autoSettleOptOut: supportsAutoSettleOptOut,
                 snooze: configLoaded,
                 pinning: configLoaded,
                 titleRegeneration: configLoaded,
@@ -3688,7 +3690,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 marker="snoozed-header"
                                 // Fork: pinned above the usage readout however long the list grows.
                                 className={cn(
-                                  "sticky top-0 bottom-0 z-[15] mx-0 bg-sidebar px-0.5 surface-grain",
+                                  "sticky bottom-0 z-[15] mx-0 bg-sidebar px-0.5 surface-grain",
                                   workingThreads.length === 0 && "mt-auto",
                                 )}
                                 label="Snoozed"

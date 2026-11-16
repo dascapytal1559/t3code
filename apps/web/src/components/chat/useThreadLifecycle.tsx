@@ -35,6 +35,7 @@ import {
   isBackgroundWorkStopPending,
 } from "@t3tools/client-runtime/state/thread-execution";
 import { useAcknowledgeThreadWoke, useThreadActions } from "../../hooks/useThreadActions";
+import { useTellCoordinator } from "../../hooks/useTellCoordinator";
 import { settleAndAdvance } from "../../settleAndAdvance";
 import type { ChatShortcutCommands } from "./useChatShortcuts";
 import { resolveThreadLastVisitedAt } from "../Sidebar.logic";
@@ -237,6 +238,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
   const unsettleThreadMutation = useOrchestrationCommand(threadEnvironment.unsettle, {
     reportFailure: false,
   });
+  const tellCoordinator = useTellCoordinator();
   const [unsettlingThreadKey, setUnsettlingThreadKey] = useState<string | null>(null);
   const isUnsettling = unsettlingThreadKey !== null && unsettlingThreadKey === activeThreadKey;
   const handleUnsettleActiveThread = async () => {
@@ -252,6 +254,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
       environmentId: activeThreadRef.environmentId,
       input: { threadId: activeThreadRef.threadId, reason: "user" },
     });
+    if (result._tag === "Success") tellCoordinator(activeThreadRef, { kind: "unsettled" });
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);
       toastManager.add(
@@ -297,6 +300,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
           environmentId: activeThreadRef.environmentId,
           input: { threadId: activeThreadRef.threadId, reason: "user" },
         });
+    if (result._tag === "Success") tellCoordinator(activeThreadRef, { kind: "unsnoozed" });
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
       const error = squashAtomCommandFailure(result);
       toastManager.add(

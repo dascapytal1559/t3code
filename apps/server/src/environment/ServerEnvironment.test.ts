@@ -120,8 +120,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ServerEnvironmen
           worktreesDirectory: true,
           threadAutoSettlementScope: true,
         });
-        // Fork: clients that opt into the settled trim drop older settled threads from the list.
-        expect(descriptor.capabilities.shellOlderSettled).toBeUndefined();
       }
     }),
   );

@@ -19,6 +19,7 @@ const commands = vi.hoisted(() => ({
   snooze: vi.fn(),
   unsnooze: vi.fn(),
   reorderActive: vi.fn(),
+  startTurn: vi.fn(),
 }));
 const router = vi.hoisted(() => {
   const listeners = new Set<(event: { action: { type: string } }) => void>();
@@ -59,6 +60,9 @@ vi.mock("../uiStateStore", () => ({ useUiStateStore: () => vi.fn() }));
 vi.mock("../lib/announce", () => ({ announce: vi.fn(), cancelAnnouncement: vi.fn() }));
 vi.mock("../lib/archivedThreadsState", () => ({ refreshArchivedThreadsForEnvironment: vi.fn() }));
 const threadShell = vi.hoisted(() => ({
+  id: "thread",
+  archivedAt: null,
+  crewOf: undefined as string | undefined,
   title: "Thread",
   pinOrderKey: "a0",
   pinnedAt: null as string | null,
@@ -74,7 +78,20 @@ const shellLoaded = vi.hoisted(() => ({ current: true }));
 vi.mock("../state/entities", async (original) => ({
   ...(await original<typeof import("../state/entities")>()),
   readEnvironmentServerConfigLoaded: () => true,
-  readThreadShell: () => (shellLoaded.current ? threadShell : null),
+  readThreadShell: (ref: { threadId: string }) =>
+    ref.threadId === coordinatorShell.id
+      ? coordinatorShell
+      : shellLoaded.current
+        ? threadShell
+        : null,
+}));
+const coordinatorShell = vi.hoisted(() => ({
+  id: "firstmate",
+  environmentId: "undo-env",
+  archivedAt: null,
+  coordinator: true,
+  runtimeMode: "full-access",
+  interactionMode: "default",
 }));
 vi.mock("../state/use-atom-command", () => ({
   useAtomCommand: (command: unknown) => {
@@ -99,6 +116,8 @@ vi.mock("../state/use-atom-command", () => ({
         return commands.unsnooze;
       case threadEnvironment.reorderActive:
         return commands.reorderActive;
+      case threadEnvironment.startTurn:
+        return commands.startTurn;
       default:
         return vi.fn();
     }
@@ -127,6 +146,7 @@ beforeEach(() => {
   threadShell.activeOrderKey = null;
   threadShell.unsettledAt = null;
   threadShell.snoozedUntil = null;
+  threadShell.crewOf = undefined;
   shellLoaded.current = true;
 });
 afterEach(() => {
@@ -156,6 +176,29 @@ describe("concurrent thread action Undo", () => {
       expect(commands[inverse]).toHaveBeenCalledOnce();
     },
   );
+});
+
+// Fork: FirstMate keeps records of its workers, so the captain's own changes reach it.
+describe("telling a crew thread's coordinator", () => {
+  const sentTexts = () =>
+    commands.startTurn.mock.calls.map(([call]) => {
+      expect(call.input).toMatchObject({ threadId: "firstmate", dispatchMode: "queue" });
+      return call.input.message.text.split("\n").at(-1);
+    });
+
+  it("sends one message for a settle and one for its Undo", async () => {
+    threadShell.crewOf = "firstmate";
+    await useThreadActions().settleThread(target);
+    await currentUndo()();
+    expect(sentTexts()).toEqual(["thread-action: settled", "thread-action: unsettled"]);
+  });
+
+  it("sends nothing for a thread that is not crew", async () => {
+    const actions = useThreadActions();
+    await actions.settleThread(target);
+    await actions.snoozeThread(target, "2099-01-01T09:00:00.000Z");
+    expect(commands.startTurn).not.toHaveBeenCalled();
+  });
 });
 
 describe("pin", () => {

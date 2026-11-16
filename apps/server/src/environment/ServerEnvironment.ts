@@ -296,8 +296,7 @@ export const make = Effect.gen(function* () {
       mcpApprovalCodes: true,
       mcpHostedApproval: true,
       shellThreadFamilies: true,
-      // Fork: no `shellOlderSettled`. The sidebar has no Settled shelf to page older settled
-      // threads into, so snapshots keep every unarchived thread.
+      shellOlderSettled: true,
     },
   };
 

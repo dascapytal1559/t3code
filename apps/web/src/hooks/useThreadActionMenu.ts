@@ -122,8 +122,7 @@ export function useThreadActionMenu(input: {
       const configLoaded = readEnvironmentServerConfigLoaded(threadRef.environmentId);
       const supports = {
         settlement: SIDEBAR_SETTLED_SHELF && configLoaded,
-        autoSettleOptOut:
-          SIDEBAR_SETTLED_SHELF && readEnvironmentSupportsAutoSettleOptOut(threadRef.environmentId),
+        autoSettleOptOut: readEnvironmentSupportsAutoSettleOptOut(threadRef.environmentId),
         snooze: configLoaded,
         pinning: configLoaded,
         titleRegeneration: configLoaded,
