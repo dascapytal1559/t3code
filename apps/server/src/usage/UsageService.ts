@@ -5,6 +5,7 @@ import {
   type ServerSettings as ServerSettingsValue,
   type UsageProviderKind,
   type UsageSource,
+  type UsageOriginReasonUsage,
   type UsagePricing,
   type UsageSummary,
   type UsageSummaryInput,
@@ -175,6 +176,10 @@ export class UsageService extends Context.Service<
   UsageService,
   {
     readonly readSummary: (input: UsageSummaryInput) => Effect.Effect<UsageSummary, UsageReadError>;
+    /** The window's usage by why it counts to the phone or computer; fails when origins are unreadable. */
+    readonly readOriginReasons: (
+      input: Pick<UsageSummaryInput, "sinceDay" | "untilDay" | "timeZone">,
+    ) => Effect.Effect<readonly UsageOriginReasonUsage[], UsageReadError>;
     readonly refreshRates: Effect.Effect<UsagePricing>;
   }
 >()("t3/usage/UsageService") {}
@@ -709,6 +714,8 @@ export const make = Effect.gen(function* () {
     /** Every transcript path the walk listed, in walk order, whatever its mtime. */
     readonly walked?: readonly string[];
     readonly refreshing?: true;
+    /** A provider account's history (the reader names its own volume), not this machine's transcripts. */
+    readonly account?: true;
   }
 
   const archiveFields = (archive: UsageArchiveLabel | undefined) =>
@@ -911,6 +918,7 @@ export const make = Effect.gen(function* () {
                   provider: reader.provider,
                   volumeId: resolved,
                   ...(sourceId === undefined ? {} : { physicalSourceId: sourceId }),
+                  ...(volumeId === undefined ? {} : { account: true as const }),
                 }),
               ),
             ),
@@ -1037,8 +1045,14 @@ export const make = Effect.gen(function* () {
       { concurrency: 3 },
     );
     const originIndex = origins === null ? null : new UsageOrigins.UsageOriginIndex(origins);
-    const archivedDirs = new Set(
-      scannedDirs.flatMap((scanned) => (scanned.hostId === undefined ? [] : [scanned.dir])),
+    const recordSources = new Map(
+      scannedDirs.flatMap((scanned): [string, UsageOrigins.UsageRecordSource][] =>
+        scanned.account === true
+          ? [[scanned.dir, "account"]]
+          : scanned.hostId === undefined
+            ? []
+            : [[scanned.dir, "archive"]],
+      ),
     );
 
     const priceOverrides = createOverrideRateTable(settings.usagePriceOverrides);
@@ -1144,14 +1158,14 @@ export const make = Effect.gen(function* () {
               UsageOrigins.settleOrigin(
                 originIndex.lookup(record),
                 record.timestampMs,
-                sourcePath !== undefined && archivedDirs.has(sourcePath),
+                (sourcePath === undefined ? undefined : recordSources.get(sourcePath)) ?? "live",
               ),
           }),
     });
     for (const prompt of origins?.prompts ?? []) {
       aggregator.countPrompt(
         prompt.createdAtMs,
-        UsageOrigins.settleOrigin(prompt.key, prompt.createdAtMs, false),
+        UsageOrigins.settleOrigin(prompt.key, prompt.createdAtMs, "live"),
       );
     }
     let resolvedAny = false;
@@ -1314,7 +1328,7 @@ export const make = Effect.gen(function* () {
       scanDurationMs: Math.max(0, finishedAtMs - startedAtMs),
       ...(input.modelFilter === undefined ? {} : { modelFilter: input.modelFilter }),
     } satisfies UsageSummary;
-    return { summary, fromMemory };
+    return { summary, originReasons: aggregated.originReasons ?? null, fromMemory };
   });
 
   const readWindow = Effect.fn("UsageService.readWindow")(function* (
@@ -1322,14 +1336,16 @@ export const make = Effect.gen(function* () {
     settings: ServerSettingsValue,
     provisional: boolean,
   ) {
-    const { summary, fromMemory } = yield* scanSummary(input, settings, provisional);
+    const scanned = yield* scanSummary(input, settings, provisional);
     // With nothing marked refreshing the client would keep a saved answer as final.
-    return fromMemory && !summary.sources.some((source) => source.refreshing === true)
-      ? (yield* scanSummary(input, settings, false)).summary
-      : summary;
+    return scanned.fromMemory &&
+      !scanned.summary.sources.some((source) => source.refreshing === true)
+      ? yield* scanSummary(input, settings, false)
+      : scanned;
   });
 
-  const inflightScans = new Map<string, Deferred.Deferred<UsageSummary, UsageReadError>>();
+  type WindowRead = Effect.Success<ReturnType<typeof readWindow>>;
+  const inflightScans = new Map<string, Deferred.Deferred<WindowRead, UsageReadError>>();
 
   const scanKey = (
     input: UsageSummaryInput,
@@ -1349,9 +1365,7 @@ export const make = Effect.gen(function* () {
       input.modelFilter ?? null,
     ]);
 
-  const readSummary = Effect.fn("UsageService.readSummary")(function* (
-    requested: UsageSummaryInput,
-  ) {
+  const readShared = Effect.fn("UsageService.readShared")(function* (requested: UsageSummaryInput) {
     const { modelFilter: requestedFilter, ...unfiltered } = requested;
     const modelFilter = canonicalModelFilter(requestedFilter);
     const input = modelFilter === undefined ? unfiltered : { ...unfiltered, modelFilter };
@@ -1364,7 +1378,7 @@ export const make = Effect.gen(function* () {
         if (existing !== undefined) return existing;
 
         // Register and fork atomically so cancellation cannot leave a Deferred without a scan.
-        const created = Deferred.makeUnsafe<UsageSummary, UsageReadError>();
+        const created = Deferred.makeUnsafe<WindowRead, UsageReadError>();
         inflightScans.set(key, created);
         // Detach so caller departure cannot cancel shared scans; finished scans warm the cache.
         // Register writes before releasing waiters, but start writing after delivering their summary.
@@ -1383,7 +1397,26 @@ export const make = Effect.gen(function* () {
     return yield* Deferred.await(deferred);
   });
 
-  return { readSummary, refreshRates, awaitPersisted } as const;
+  const readSummary = Effect.fn("UsageService.readSummary")(function* (
+    requested: UsageSummaryInput,
+  ) {
+    return (yield* readShared(requested)).summary;
+  });
+
+  const readOriginReasons = Effect.fn("UsageService.readOriginReasons")(function* (
+    window: Pick<UsageSummaryInput, "sinceDay" | "untilDay" | "timeZone">,
+  ) {
+    const { originReasons } = yield* readShared(window);
+    if (originReasons === null) {
+      return yield* new UsageReadError({
+        reason: "scanFailed",
+        detail: "Could not read the origins of T3 prompts.",
+      });
+    }
+    return originReasons;
+  });
+
+  return { readSummary, readOriginReasons, refreshRates, awaitPersisted } as const;
 });
 
 export const layer = Layer.effect(UsageService, make);

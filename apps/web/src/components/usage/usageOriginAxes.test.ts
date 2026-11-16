@@ -23,7 +23,7 @@ const basis = (
 });
 
 describe("originAxes", () => {
-  it("splits each device by who sent it, gathers usage with no recorded parent, and leaves out the rest", () => {
+  it("splits each device by who sent it and counts everything without phone evidence to the computer", () => {
     const origins: MergedOrigins = {
       rows: [
         row("phone", [
@@ -51,20 +51,16 @@ describe("originAxes", () => {
       unlinkedTokens: 3000,
     };
 
-    // Usage with no recorded parent is Unknown, whether a server sends it as unknown or, before
-    // Unknown had its own category, as computer.
+    // Older servers send agent, crew and unknown rows; agent and crew work is coordinated.
     expect(originAxes(origins)).toEqual({
       phone: {
         direct: { costUsd: 1300, totalTokens: 650 },
         coordinated: { costUsd: 600, totalTokens: 300 },
       },
       computer: {
-        direct: { costUsd: 1800, totalTokens: 900 },
-        coordinated: { costUsd: 2, totalTokens: 1 },
+        direct: { costUsd: 2 * (900 + 40 + 150 + 20 + 5000 + 700), totalTokens: 6810 },
+        coordinated: { costUsd: 2 * (1 + 8 + 400 + 70 + 1000 + 30), totalTokens: 1509 },
       },
-      unknown: { costUsd: 156, totalTokens: 78 },
-      beforeOrigins: { costUsd: 10000, totalTokens: 5000 },
-      archive: { costUsd: 1400, totalTokens: 700 },
     });
   });
 });

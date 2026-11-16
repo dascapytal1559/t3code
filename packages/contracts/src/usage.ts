@@ -75,16 +75,17 @@ export type UsageBucket = typeof UsageBucket.Type;
 /**
  * Where the T3 prompt that started a run came from. An agent's prompt whose recorded cause
  * chain reaches a phone or computer prompt counts there. `crew` is agent-sent work in a
- * FirstMate crew thread with no such chain.
+ * FirstMate crew thread with no such chain. Settled usage is only phone or computer; older
+ * servers also send agent, crew and unknown rows, which count to the computer.
  */
 export const UsageOrigin = Schema.Literals(["phone", "computer", "agent", "crew", "unknown"]);
 export type UsageOrigin = typeof UsageOrigin.Type;
 
 /**
- * How the origin was read: the client `stamp`, else creation fields (`nativeApp`, `sender`,
- * `notification`, `server`, `unstamped`, `noPrompt`), `claim` from an agent's usage claim, or
- * `terminal` for a session started with no thread or task behind it. Unknown `default` has no
- * recorded parent; `beforeOrigins` and `archive` never trace. Older clients drop unknown bases.
+ * How the origin was read: the `stamp`, creation fields (`nativeApp`, `sender`, `notification`,
+ * `server`, `unstamped`, `noPrompt`), an agent's `claim`, or `terminal` (a session started with no
+ * thread or task behind it). Usage with no device evidence counts to the computer as `default`,
+ * `beforeOrigins` or `archive`. Older clients drop unknown bases.
  */
 export const UsageOriginBasis = Schema.Literals([
   "stamp",
@@ -111,6 +112,67 @@ export const USAGE_ORIGINS_RECORDED_SINCE = "2026-11-07T10:41:00.000Z";
  */
 export const UsageOriginVia = Schema.Literals(["agent", "crew"]);
 export type UsageOriginVia = typeof UsageOriginVia.Type;
+
+/**
+ * Why usage counts where it does. Device evidence: `typed`, `inherited` (its recorded causes reach
+ * a typed prompt), `journal` and `upkeep` (a claim named the phone or computer), `terminal`. Every
+ * other reason names what is missing, and that usage counts to the computer by default.
+ */
+export const UsageOriginReason = Schema.Literals([
+  "typed",
+  "inherited",
+  "journal",
+  "upkeep",
+  "terminal",
+  "unregisteredSession",
+  "unmatchedRegistration",
+  "lateRecord",
+  "unnamedTurn",
+  "noCause",
+  "untracedCause",
+  "noPrompt",
+  "unknownDevice",
+  "serverPrompt",
+  "unstamped",
+  "beforeStamps",
+  "archive",
+  "accountOnly",
+]);
+export type UsageOriginReason = typeof UsageOriginReason.Type;
+
+const DEVICE_EVIDENCE: ReadonlySet<UsageOriginReason> = new Set([
+  "typed",
+  "inherited",
+  "journal",
+  "upkeep",
+  "terminal",
+]);
+
+/** Usage with this reason has no device evidence and counts to the computer only by default. */
+export const usageOriginCountsByDefault = (reason: UsageOriginReason): boolean =>
+  !DEVICE_EVIDENCE.has(reason);
+
+/** The kind of usage claim that decided where usage counts. */
+export const UsageOriginClaimKind = Schema.Literals(["run", "session", "directory"]);
+export type UsageOriginClaimKind = typeof UsageOriginClaimKind.Type;
+
+/** Usage of one provider by why it counts where it does; the rows partition the period's usage. */
+export const UsageOriginReasonUsage = Schema.Struct({
+  origin: UsageOrigin,
+  reason: UsageOriginReason,
+  claim: Schema.optional(UsageOriginClaimKind),
+  /** Matched to a T3 turn by the folder the session ran in. */
+  folder: Schema.optional(Schema.Literal(true)),
+  /** Matched by the session's own registration at start. */
+  registered: Schema.optional(Schema.Literal(true)),
+  /** No device evidence: the usage counts to the computer only by default. */
+  byDefault: Schema.Boolean,
+  provider: UsageProviderKind,
+  tokens: NonNegativeInt,
+  costUsd: Schema.Number,
+  records: NonNegativeInt,
+});
+export type UsageOriginReasonUsage = typeof UsageOriginReasonUsage.Type;
 
 /** Usage of records inside a T3 run, by the origin of the run's starting message. */
 export const UsageOriginUsage = Schema.Struct({

@@ -8,7 +8,10 @@ import {
   ProviderInstanceId,
   RunId,
   ThreadId,
+  UsageDay,
+  UsageReadError,
   type OrchestrationV2ThreadShell,
+  type UsageOriginReason,
 } from "@t3tools/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -16,7 +19,9 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
+import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 
 import * as ServerSecretStore from "../../../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../../../config.ts";
@@ -28,6 +33,7 @@ import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandE
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as Settings from "../../../serverSettings.ts";
 import * as UsageClaims from "../../../usage/UsageClaims.ts";
+import * as UsageService from "../../../usage/UsageService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import { liveThreadShell } from "../../McpToolAccess.testkit.ts";
@@ -37,6 +43,7 @@ import { EnvironmentToolkit } from "./tools.ts";
 const environmentId = EnvironmentId.make("environment:preferences");
 const threadId = ThreadId.make("thread:preferences");
 const wakeRun = RunId.make("run:wake");
+const decodeUsageDay = Schema.decodeSync(UsageDay);
 
 const layerServerEnvironment = Layer.mock(Environment.ServerEnvironment)({
   getDescriptor: Effect.succeed({
@@ -209,6 +216,105 @@ it.effect("refuses a preferences update when the caller's turn ends while it wai
       ),
     );
   }),
+);
+
+it.effect(
+  "t3_usage_reasons reads the window in the asked zone, totals what counts by default, and fails loudly",
+  () =>
+    Effect.gen(function* () {
+      const windows: unknown[] = [];
+      const row = (reason: UsageOriginReason, tokens: number, byDefault: boolean) => ({
+        origin: "computer" as const,
+        reason,
+        byDefault,
+        provider: "claude" as const,
+        tokens,
+        costUsd: 0,
+        records: 1,
+      });
+      const layerUsage = Layer.mock(UsageService.UsageService)({
+        readOriginReasons: (window) =>
+          window.untilDay === "2026-01-01"
+            ? Effect.fail(
+                new UsageReadError({
+                  reason: "scanFailed",
+                  detail: "Could not read the origins of T3 prompts.",
+                }),
+              )
+            : Effect.sync(() => {
+                windows.push(window);
+                return [row("upkeep", 10, false), row("unregisteredSession", 30, true)];
+              }),
+      });
+      const reasons = ({
+        untilDay,
+        ...params
+      }: {
+        readonly days?: number;
+        readonly untilDay?: string;
+        readonly timeZone?: string;
+      }) =>
+        Effect.gen(function* () {
+          const toolkit = yield* EnvironmentToolkit;
+          const window =
+            untilDay === undefined ? params : { ...params, untilDay: decodeUsageDay(untilDay) };
+          return yield* toolkit.handle("t3_usage_reasons", window).pipe(
+            Stream.unwrap,
+            Stream.runCollect,
+            Effect.map((results) => results.at(-1)?.result),
+          );
+        }).pipe(Effect.provide(layerUsage));
+
+      expect(
+        yield* reasons({ days: 3, untilDay: "2026-11-16", timeZone: "Australia/Sydney" }),
+      ).toEqual({
+        sinceDay: "2026-11-14",
+        untilDay: "2026-11-16",
+        timeZone: "Australia/Sydney",
+        tokens: 40,
+        byDefaultTokens: 30,
+        rows: [row("unregisteredSession", 30, true), row("upkeep", 10, false)],
+      });
+      // Today is the zone's own date: already the 17th in Auckland.
+      yield* TestClock.setTime(Date.parse("2026-11-16T12:00:00Z"));
+      yield* reasons({ timeZone: "Pacific/Auckland" });
+      expect(windows.at(-1)).toEqual({
+        sinceDay: "2026-11-11",
+        untilDay: "2026-11-17",
+        timeZone: "Pacific/Auckland",
+      });
+      expect(yield* reasons({ timeZone: "Mars/Olympus" })).toMatchObject({
+        code: "invalid_request",
+      });
+      // A watchdog must not read an unreadable window as zero.
+      expect(yield* reasons({ untilDay: "2026-01-01", timeZone: "UTC" })).toMatchObject({
+        code: "orchestration_error",
+        message: expect.stringContaining("Could not read the origins"),
+      });
+    }).pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(EnvironmentHandlers.layer).pipe(
+          Layer.provideMerge(
+            Layer.mergeAll(
+              ThreadCommandExecutor.layer,
+              layerServerEnvironment,
+              Layer.mock(Orchestrator.OrchestratorV2)({}),
+              Layer.mock(ThreadManagement.ThreadManagementService)({}),
+              Layer.mock(Settings.ServerSettingsService)({}),
+              Layer.succeed(McpInvocationContext.McpInvocationContext, {
+                environmentId,
+                requestNamespace: "client:firstmate",
+                thread: undefined,
+                client: { sessionId: "firstmate", label: "FirstMate", access: "full-access" },
+                capabilities: new Set(["orchestration" as const]),
+                issuedAt: 0,
+              }),
+            ),
+          ),
+          Layer.provideMerge(Layer.merge(SqlitePersistence.layerMemory, NodeServices.layer)),
+        ),
+      ),
+    ),
 );
 
 it.effect(

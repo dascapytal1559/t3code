@@ -2,13 +2,16 @@ import {
   OrchestratorMcpFailure,
   type ServerSettings,
   type ServerSettingsPatch,
+  UsageDay,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import * as Environment from "../../../environment/ServerEnvironment.ts";
 import * as UsageClaims from "../../../usage/UsageClaims.ts";
+import * as UsageService from "../../../usage/UsageService.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
 import * as Settings from "../../../serverSettings.ts";
@@ -19,6 +22,7 @@ import { EnvironmentToolkit } from "./tools.ts";
 
 const invalidRequest = (message: string) =>
   new OrchestratorMcpFailure({ code: "invalid_request", message });
+const decodeUsageDay = Schema.decodeSync(UsageDay);
 
 export function preferences(settings: ServerSettings) {
   const {
@@ -113,6 +117,41 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
     }),
   ),
   t3_restart_status: McpToolAccess.reads(() => access.pipe(Effect.andThen(restartStatus))),
+  t3_usage_reasons: McpToolAccess.reads(({ days = 7, untilDay, timeZone }) =>
+    Effect.gen(function* () {
+      yield* access;
+      const zoneId = timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const zone = DateTime.zoneMakeNamed(zoneId);
+      if (Option.isNone(zone)) {
+        return yield* invalidRequest(`timeZone ${zoneId} is not an IANA time zone.`);
+      }
+      const lastDay =
+        untilDay ??
+        decodeUsageDay(DateTime.formatIsoDate(DateTime.setZone(yield* DateTime.now, zone.value)));
+      const sinceDay = decodeUsageDay(
+        DateTime.formatIsoDateUtc(
+          DateTime.subtract(DateTime.makeUnsafe(`${lastDay}T00:00:00Z`), { days: days - 1 }),
+        ),
+      );
+      const rows = yield* (yield* UsageService.UsageService)
+        .readOriginReasons({ sinceDay, untilDay: lastDay, timeZone: zoneId })
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new OrchestratorMcpFailure({ code: "orchestration_error", message: error.message }),
+          ),
+        );
+      const sorted = rows.toSorted((a, b) => b.tokens - a.tokens);
+      return {
+        sinceDay,
+        untilDay: lastDay,
+        timeZone: zoneId,
+        tokens: sorted.reduce((sum, row) => sum + row.tokens, 0),
+        byDefaultTokens: sorted.reduce((sum, row) => sum + (row.byDefault ? row.tokens : 0), 0),
+        rows: sorted,
+      };
+    }),
+  ),
   t3_restart_cancel: McpToolAccess.writesEnvironment(() =>
     Effect.gen(function* () {
       yield* access;

@@ -592,7 +592,7 @@ describe("working folder from a transcript's path", () => {
       result.records.map((record) => record.cwd),
       [scratch],
     );
-    const worker = { origin: "phone", basis: "stamp", via: "crew" } as const;
+    const worker = { origin: "phone", basis: "stamp", via: "crew", reason: "inherited" } as const;
     const index = new UsageOriginIndex({
       turns: [
         {
@@ -609,7 +609,7 @@ describe("working folder from a transcript's path", () => {
     });
     assert.deepStrictEqual(
       result.records.map((record) => index.lookup(record)),
-      [worker],
+      [{ ...worker, folder: true }],
     );
   });
 });

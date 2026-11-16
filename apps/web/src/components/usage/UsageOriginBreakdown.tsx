@@ -1,4 +1,3 @@
-import { USAGE_ORIGINS_RECORDED_SINCE } from "@t3tools/contracts";
 import { formatPercent } from "@t3tools/shared/usageFormat";
 import type { MergedOrigins } from "@t3tools/shared/usageMerge";
 import type { CSSProperties, ReactNode } from "react";
@@ -6,11 +5,6 @@ import type { CSSProperties, ReactNode } from "react";
 import { cn } from "../../lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { originAxes, type OriginDevice } from "./usageOriginAxes";
-
-const ORIGINS_RECORDED_SINCE_LABEL = new Date(USAGE_ORIGINS_RECORDED_SINCE).toLocaleDateString(
-  undefined,
-  { day: "numeric", month: "short" },
-);
 
 // Amber and blue: no provider on the Usage page uses either hue.
 const DEVICE: Record<OriginDevice, { readonly label: string; readonly color: string }> = {
@@ -25,17 +19,13 @@ const DEVICE: Record<OriginDevice, { readonly label: string; readonly color: str
 };
 const DEVICES: readonly OriginDevice[] = ["phone", "computer"];
 const NEUTRAL_INK = "color-mix(in oklab, var(--foreground) 70%, var(--background))";
-// Dimmer than the key's Direct grey, so Unknown never reads as direct usage.
-const UNKNOWN: CSSProperties = {
-  backgroundColor: "color-mix(in oklab, var(--foreground) 38%, var(--background))",
-};
 
 const stripes = (color: string) =>
   `repeating-linear-gradient(135deg, ${color} 0 3px, color-mix(in oklab, ${color} 35%, var(--background)) 3px 6px)`;
 const SOLID: CSSProperties = { backgroundColor: "var(--origin)" };
 const STRIPED: CSSProperties = { backgroundImage: stripes("var(--origin)") };
 
-/** Usage by the device it traces to, then usage with no recorded parent, in the shape of the "by type" bars. */
+/** Usage by the device it traces to, in the shape of the "by type" bars; with no phone evidence, the computer. */
 export function UsageOriginBreakdown({
   label,
   origins,
@@ -53,33 +43,25 @@ export function UsageOriginBreakdown({
     const coordinated = valueOf(axes[key].coordinated);
     return { key, direct, coordinated, total: direct + coordinated };
   });
-  const unknown = valueOf(axes.unknown);
-  const total = parts.reduce((sum, part) => sum + part.total, unknown);
+  const total = parts.reduce((sum, part) => sum + part.total, 0);
   if (total <= 0) return null;
-  const untraceable = [
-    { value: valueOf(axes.beforeOrigins), label: `before ${ORIGINS_RECORDED_SINCE_LABEL}` },
-    { value: valueOf(axes.archive), label: "archived from other machines" },
-  ].flatMap(({ value, label }) => (value > 0 ? [`${format(value)} ${label}`] : []));
 
-  const segments = [
-    ...parts.flatMap((part) => [
-      {
-        id: `${part.key}-direct`,
-        value: part.direct,
-        className: DEVICE[part.key].color,
-        style: SOLID,
-        name: `${DEVICE[part.key].label} direct`,
-      },
-      {
-        id: `${part.key}-coordinated`,
-        value: part.coordinated,
-        className: DEVICE[part.key].color,
-        style: STRIPED,
-        name: `${DEVICE[part.key].label} coordinated`,
-      },
-    ]),
-    { id: "unknown", value: unknown, className: undefined, style: UNKNOWN, name: "Unknown" },
-  ];
+  const segments = parts.flatMap((part) => [
+    {
+      id: `${part.key}-direct`,
+      value: part.direct,
+      className: DEVICE[part.key].color,
+      style: SOLID,
+      name: `${DEVICE[part.key].label} direct`,
+    },
+    {
+      id: `${part.key}-coordinated`,
+      value: part.coordinated,
+      className: DEVICE[part.key].color,
+      style: STRIPED,
+      name: `${DEVICE[part.key].label} coordinated`,
+    },
+  ]);
 
   return (
     <div className="flex min-w-0 flex-col gap-2.5">
@@ -92,13 +74,12 @@ export function UsageOriginBreakdown({
       </div>
       <div
         role="img"
-        aria-label={`${label}: ${[
-          ...parts.map(
+        aria-label={`${label}: ${parts
+          .map(
             (part) =>
               `${DEVICE[part.key].label} ${format(part.direct)} direct, ${format(part.coordinated)} coordinated`,
-          ),
-          `Unknown ${format(unknown)}`,
-        ].join("; ")}`}
+          )
+          .join("; ")}`}
         className="flex h-2 gap-0.5"
       >
         {segments
@@ -142,16 +123,6 @@ export function UsageOriginBreakdown({
               </Swatch>
             </span>
           ))}
-        {unknown > 0 ? (
-          <Swatch style={UNKNOWN}>
-            <span className="text-muted-foreground">Unknown</span>
-            <span className="text-foreground">{format(unknown)}</span>
-            <span className="text-muted-foreground">{formatPercent(unknown / total, 0)}</span>
-          </Swatch>
-        ) : null}
-        {untraceable.length > 0 ? (
-          <span className="text-muted-foreground">Can't trace: {untraceable.join(" · ")}</span>
-        ) : null}
       </div>
     </div>
   );

@@ -16,11 +16,14 @@ import {
   ServerSettingsPatch,
   ThreadId,
   TrimmedNonEmptyString,
+  UsageDay,
+  UsageOriginReasonUsage,
 } from "@t3tools/contracts";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 import * as UsageClaims from "../../../usage/UsageClaims.ts";
+import * as UsageService from "../../../usage/UsageService.ts";
 import * as ServerEnvironment from "../../../environment/ServerEnvironment.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
@@ -133,6 +136,27 @@ const UsageClaimTool = Tool.make("t3_usage_claim", {
     device: Schema.NullOr(Schema.Literals(["phone", "computer"])),
   }),
 }).annotate(Tool.Destructive, false);
+const UsageReasonsTool = Tool.make("t3_usage_reasons", {
+  ...shared,
+  dependencies: [...shared.dependencies, UsageService.UsageService],
+  description:
+    "Read Usage tokens by why they count to the phone or computer. `byDefault` rows lack device evidence and count to the computer; `reason` says what is missing. Window: `days` (7) ending `untilDay` (today) in `timeZone` (the server's).",
+  parameters: Schema.Struct({
+    days: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 366 }))),
+    untilDay: Schema.optional(UsageDay),
+    timeZone: Schema.optional(TrimmedNonEmptyString),
+  }),
+  success: Schema.Struct({
+    sinceDay: UsageDay,
+    untilDay: UsageDay,
+    timeZone: Schema.String,
+    tokens: Schema.Number,
+    byDefaultTokens: Schema.Number,
+    rows: Schema.Array(UsageOriginReasonUsage),
+  }),
+})
+  .annotate(Tool.Readonly, true)
+  .annotate(Tool.Destructive, false);
 const RestartStatusTool = Tool.make("t3_restart_status", {
   ...shared,
   description: "Read the pending restart. `activeTurns` counts every running turn, yours too.",
@@ -154,4 +178,5 @@ export const EnvironmentToolkit = Toolkit.make(
   RestartStatusTool,
   RestartCancelTool,
   UsageClaimTool,
+  UsageReasonsTool,
 );

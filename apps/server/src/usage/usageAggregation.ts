@@ -1,15 +1,17 @@
 // @effect-diagnostics globalDate:off
-import type {
-  UsageBucket,
-  UsageCategoryCost,
-  UsageDay,
-  UsageModelFilter,
-  UsageModelSelector,
-  UsageOriginPrompts,
-  UsageOrigins,
-  UsageProviderKind,
-  UsageResolution,
-  UsageTokenTotals,
+import {
+  usageOriginCountsByDefault,
+  type UsageBucket,
+  type UsageCategoryCost,
+  type UsageDay,
+  type UsageModelFilter,
+  type UsageModelSelector,
+  type UsageOriginPrompts,
+  type UsageOriginReasonUsage,
+  type UsageOrigins,
+  type UsageProviderKind,
+  type UsageResolution,
+  type UsageTokenTotals,
 } from "@t3tools/contracts";
 
 import { EMPTY_TOTALS, type UsageRecord } from "@t3tools/provider-core/server/usage";
@@ -85,6 +87,10 @@ export interface AggregateOptions {
     sourcePath: string | undefined,
   ) => UsageOriginKey | null;
 }
+
+type MutableOriginReasonUsage = {
+  -readonly [K in keyof UsageOriginReasonUsage]: UsageOriginReasonUsage[K];
+};
 
 interface MutableOriginUsage {
   readonly key: UsageOriginKey;
@@ -165,6 +171,8 @@ export function canonicalModelFilter(
 export interface AggregateResult {
   readonly buckets: readonly UsageBucket[];
   readonly origins?: UsageOrigins;
+  /** The same usage as `origins` by why it counts where it does; kept on the server. */
+  readonly originReasons?: readonly UsageOriginReasonUsage[];
   readonly duplicatesDropped: number;
   readonly outOfWindow: number;
 }
@@ -259,6 +267,7 @@ export class UsageAggregator {
   #outOfWindow = 0;
   readonly #originUsage: Map<string, MutableOriginUsage> | null;
   readonly #originPrompts: Map<string, UsageOriginPrompts> | null;
+  readonly #originReasons = new Map<string, MutableOriginReasonUsage>();
 
   constructor(options: AggregateOptions) {
     this.#options = options;
@@ -382,8 +391,38 @@ export class UsageAggregator {
         origin.totals.outputTokens += record.totals.outputTokens;
         origin.totals.reasoningTokens += record.totals.reasoningTokens;
         origin.costUsd += priced.costUsd;
+        this.#tallyReason(key, record, priced.costUsd);
       }
     }
+  }
+
+  #tallyReason(key: UsageOriginKey, record: UsageRecord, costUsd: number): void {
+    const link = `${key.claim ?? ""}\u0000${key.folder === true ? "f" : ""}${key.registered === true ? "r" : ""}`;
+    const reasonKey = `${key.origin}\u0000${key.reason}\u0000${link}\u0000${record.provider}`;
+    let row = this.#originReasons.get(reasonKey);
+    if (row === undefined) {
+      row = {
+        origin: key.origin,
+        reason: key.reason,
+        ...(key.claim === undefined ? {} : { claim: key.claim }),
+        ...(key.folder === true ? { folder: true as const } : {}),
+        ...(key.registered === true ? { registered: true as const } : {}),
+        byDefault: usageOriginCountsByDefault(key.reason),
+        provider: record.provider,
+        tokens: 0,
+        costUsd: 0,
+        records: 0,
+      };
+      this.#originReasons.set(reasonKey, row);
+    }
+    // reasoningTokens is a subset of outputTokens.
+    row.tokens +=
+      record.totals.uncachedInputTokens +
+      record.totals.cachedInputTokens +
+      record.totals.cacheCreationTokens +
+      record.totals.outputTokens;
+    row.costUsd += costUsd;
+    row.records += 1;
   }
 
   /** Counts a T3 prompt sent inside the window; needs `attributeOrigin`. */
@@ -518,7 +557,10 @@ export class UsageAggregator {
       buckets,
       ...(this.#originUsage === null || this.#originPrompts === null
         ? {}
-        : { origins: finishOrigins(this.#originUsage, this.#originPrompts) }),
+        : {
+            origins: finishOrigins(this.#originUsage, this.#originPrompts),
+            originReasons: [...this.#originReasons.values()].map((row) => ({ ...row })),
+          }),
       duplicatesDropped: this.#duplicatesDropped,
       outOfWindow: this.#outOfWindow,
     };

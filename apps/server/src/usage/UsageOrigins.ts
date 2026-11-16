@@ -2,6 +2,8 @@ import {
   USAGE_ORIGINS_RECORDED_SINCE,
   type UsageOrigin,
   type UsageOriginBasis,
+  type UsageOriginClaimKind,
+  type UsageOriginReason,
   type UsageOriginVia,
 } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
@@ -22,6 +24,14 @@ export interface UsageOriginKey {
   readonly basis: UsageOriginBasis;
   /** Set when the origin is the root of a recorded cause chain: who sent the prompt itself. */
   readonly via?: UsageOriginVia;
+  /** Why it counts there; not sent to clients, only to the reasons figure. */
+  readonly reason: UsageOriginReason;
+  /** The claim that decided it, if one did. */
+  readonly claim?: UsageOriginClaimKind;
+  /** Matched to a T3 turn by the folder its session ran in. */
+  readonly folder?: true;
+  /** Matched by the session's own registration at start. */
+  readonly registered?: true;
 }
 
 /** The stored provenance of one message; null fields were never recorded. */
@@ -55,26 +65,33 @@ export function classifyMessageOrigin(message: OriginMessage): UsageOriginKey {
 function recordedOrigin(message: OriginMessage): UsageOriginKey {
   const { surface, deviceType } = message;
   if (surface !== null || deviceType !== null) {
-    if (surface === "mcp" || deviceType === "bot") return { origin: "agent", basis: "stamp" };
+    if (surface === "mcp" || deviceType === "bot") {
+      return { origin: "agent", basis: "stamp", reason: "noCause" };
+    }
     if (deviceType === "mobile" || deviceType === "tablet" || surface === "mobile") {
-      return { origin: "phone", basis: "stamp" };
+      return { origin: "phone", basis: "stamp", reason: "typed" };
     }
     if (deviceType === "desktop" || surface === "desktop") {
-      return { origin: "computer", basis: "stamp" };
+      return { origin: "computer", basis: "stamp", reason: "typed" };
     }
-    return { origin: "unknown", basis: "stamp" };
+    return { origin: "unknown", basis: "stamp", reason: "unknownDevice" };
   }
-  if (message.notification) return { origin: "agent", basis: "notification" };
-  if (message.creationSource === "mobile") return { origin: "phone", basis: "nativeApp" };
+  if (message.notification)
+    return { origin: "agent", basis: "notification", reason: "unnamedTurn" };
+  if (message.creationSource === "mobile") {
+    return { origin: "phone", basis: "nativeApp", reason: "typed" };
+  }
   if (
     message.createdBy === "agent" ||
     message.creationSource === "mcp" ||
     message.creationSource === "provider"
   ) {
-    return { origin: "agent", basis: "sender" };
+    return { origin: "agent", basis: "sender", reason: "noCause" };
   }
-  if (message.creationSource === "server") return { origin: "unknown", basis: "server" };
-  return { origin: "unknown", basis: "unstamped" };
+  if (message.creationSource === "server") {
+    return { origin: "unknown", basis: "server", reason: "serverPrompt" };
+  }
+  return { origin: "unknown", basis: "unstamped", reason: "unstamped" };
 }
 
 const sentByAgent = (key: UsageOriginKey): key is UsageOriginKey & { origin: UsageOriginVia } =>
@@ -100,7 +117,7 @@ export function resolveMessageOrigin(
     const claimed = prompt.runId === null ? undefined : claimOfRun(prompt.runId);
     return claimed === undefined
       ? undefined
-      : { origin: claimed.origin, basis: claimed.basis, via };
+      : { origin: claimed.origin, basis: claimed.basis, via, reason: claimed.reason, claim: "run" };
   };
   const direct = classifyMessageOrigin(message);
   if (!sentByAgent(direct))
@@ -115,7 +132,9 @@ export function resolveMessageOrigin(
     const cause = causeOf(causeId);
     if (cause === undefined) break;
     const root = classifyMessageOrigin(cause);
-    if (isDevice(root)) return { origin: root.origin, basis: root.basis, via: direct.origin };
+    if (isDevice(root)) {
+      return { origin: root.origin, basis: root.basis, via: direct.origin, reason: "inherited" };
+    }
     visited.push(cause);
     if (!sentByAgent(root)) break;
     current = cause;
@@ -124,30 +143,40 @@ export function resolveMessageOrigin(
     const claimed = claimedFor(prompt, direct.origin);
     if (claimed !== undefined) return claimed;
   }
-  return direct;
+  return message.causedBy === null ? direct : { ...direct, reason: "untracedCause" };
 }
 
-const NO_PROMPT: UsageOriginKey = { origin: "unknown", basis: "noPrompt" };
+const NO_PROMPT: UsageOriginKey = { origin: "unknown", basis: "noPrompt", reason: "noPrompt" };
+
+/** Where a usage record came from: this machine's transcripts, an archive, or a provider account. */
+export type UsageRecordSource = "live" | "archive" | "account";
 
 /**
- * Where usage counts once nothing more is recorded. Usage with no recorded parent is unknown
- * `default`, its own category until a cause or claim links it. Usage from before T3 recorded
- * devices, or copied from another machine's archive, can never trace, so it keeps that label.
+ * Where usage counts once nothing more is recorded: with no phone or computer evidence, the
+ * computer, keeping why in `reason` and, for agent work, who sent it. Usage that can never trace
+ * (before T3 recorded devices, another machine's archive, an account's history) says so in its basis.
  */
 export function settleOrigin(
-  key: UsageOriginKey | null,
+  key: UsageOriginKey,
   timestampMs: number,
-  archived: boolean,
+  source: UsageRecordSource,
 ): UsageOriginKey {
-  if (key !== null && isDevice(key)) return key;
-  if (archived) return { origin: "unknown", basis: "archive" };
+  if (isDevice(key)) return key;
+  if (source !== "live") {
+    return {
+      origin: "computer",
+      basis: "archive",
+      reason: source === "account" ? "accountOnly" : "archive",
+    };
+  }
   if (timestampMs < ORIGINS_RECORDED_SINCE_MS) {
-    return { origin: "unknown", basis: "beforeOrigins" };
+    return { origin: "computer", basis: "beforeOrigins", reason: "beforeStamps" };
   }
   return {
-    origin: "unknown",
+    ...key,
+    origin: "computer",
     basis: "default",
-    ...(key !== null && sentByAgent(key) ? { via: key.origin } : {}),
+    ...(sentByAgent(key) ? { via: key.origin } : {}),
   };
 }
 
@@ -188,10 +217,17 @@ export interface OriginRegistration {
   readonly sessionId: string;
   readonly startedAtMs: number;
   readonly threadId?: string;
+  /** FirstMate work naming no thread T3 knows: never traced by, only reported apart. */
+  readonly unmatched?: true;
 }
 
 /** A session started with no T3 thread or FirstMate task behind it: you, in a terminal. */
-const TERMINAL_ORIGIN: DeviceOriginKey = { origin: "computer", basis: "terminal" };
+const TERMINAL_ORIGIN: DeviceOriginKey = {
+  origin: "computer",
+  basis: "terminal",
+  reason: "terminal",
+  registered: true,
+};
 
 export interface UsageOriginSnapshot {
   readonly turns: readonly OriginTurn[];
@@ -212,6 +248,15 @@ const LATE_RECORD_GRACE_MS = 5 * 60 * 1000;
 
 // The session-start hook stamps whole seconds, so a session may have started up to a second later.
 const REGISTER_STAMP_SLACK_MS = 999;
+
+const missed = (reason: UsageOriginReason): UsageOriginKey => ({
+  origin: "unknown",
+  basis: "default",
+  reason,
+});
+const LATE_RECORD = missed("lateRecord");
+const UNREGISTERED_SESSION = missed("unregisteredSession");
+const UNMATCHED_REGISTRATION = missed("unmatchedRegistration");
 
 /** The last item that started at or before the time; items are sorted by start. */
 function startedBy<T extends { readonly startedAtMs: number }>(
@@ -267,6 +312,7 @@ export class UsageOriginIndex {
   readonly #claimsBySession = new Map<string, SessionClaim[]>();
   // A session resumed later registers again, from wherever it was resumed.
   readonly #registrationsBySession = new Map<string, OriginRegistration[]>();
+  readonly #unmatchedSessions = new Set<string>();
   /** Deepest first; a claim wins a tie with a worktree. */
   readonly #folders: { readonly directory: string; readonly owner: FolderOwner }[];
   // Records repeat their folder thousands of times; its owner does not depend on the time.
@@ -280,14 +326,16 @@ export class UsageOriginIndex {
       appendTo(this.#turnsByThread, turn.threadId, [turn]);
     }
     for (const registration of snapshot.registrations) {
-      appendTo(this.#registrationsBySession, registration.sessionId, [registration]);
+      if (registration.unmatched === true) this.#unmatchedSessions.add(registration.sessionId);
+      else appendTo(this.#registrationsBySession, registration.sessionId, [registration]);
     }
     const folders: { directory: string; owner: FolderOwner }[] = [];
     for (const claim of snapshot.claims) {
+      const key: UsageOriginKey = { ...claim.key, claim: claim.kind };
       if (claim.kind === "session") {
         const startedAtMs = claim.fromMs ?? Number.NEGATIVE_INFINITY;
-        appendTo(this.#claimsBySession, claim.target, [{ startedAtMs, key: claim.key }]);
-      } else folders.push({ directory: claim.target, owner: { kind: "claim", key: claim.key } });
+        appendTo(this.#claimsBySession, claim.target, [{ startedAtMs, key }]);
+      } else folders.push({ directory: claim.target, owner: { kind: "claim", key } });
     }
     for (const { threadId, directory } of snapshot.worktrees) {
       if (!this.#turnsByWorktree.has(directory)) {
@@ -303,7 +351,8 @@ export class UsageOriginIndex {
     this.#folders = folders.toSorted((a, b) => b.directory.length - a.directory.length);
   }
 
-  lookup(record: OriginRecord): UsageOriginKey | null {
+  /** A record that matches no T3 work gets an unknown key saying why. */
+  lookup(record: OriginRecord): UsageOriginKey {
     const own = this.#turnsBySession.get(record.sessionId);
     const turn = own === undefined ? undefined : startedBy(own, record.timestampMs);
     if (
@@ -317,7 +366,7 @@ export class UsageOriginIndex {
     const claimed = claims === undefined ? undefined : startedBy(claims, record.timestampMs);
     if (claimed !== undefined) return claimed.key;
     // A T3 session's record outside its turns is someone resuming it elsewhere, such as a terminal.
-    if (own !== undefined) return null;
+    if (own !== undefined) return LATE_RECORD;
     const registered = this.#registrationsBySession.get(record.sessionId);
     const registration =
       registered === undefined ? undefined : startedBy(registered, record.timestampMs);
@@ -328,17 +377,22 @@ export class UsageOriginIndex {
         turns === undefined
           ? undefined
           : startedBy(turns, registration.startedAtMs + REGISTER_STAMP_SLACK_MS);
-      if (starter !== undefined) return starter.key;
+      if (starter !== undefined) return { ...starter.key, registered: true };
     }
-    if (record.cwd === undefined) return null;
-    const owner = this.#ownerOf(record.cwd);
-    if (owner === null) return null;
+    // A registration that names no turn still says the session announced itself.
+    const miss =
+      registered === undefined && !this.#unmatchedSessions.has(record.sessionId)
+        ? UNREGISTERED_SESSION
+        : UNMATCHED_REGISTRATION;
+    const owner = record.cwd === undefined ? null : this.#ownerOf(record.cwd);
+    if (owner === null) return miss;
     if (owner.kind === "claim") return owner.key;
     const turns =
       owner.kind === "session"
         ? this.#turnsBySession.get(owner.sessionId)
         : this.#turnsByWorktree.get(owner.directory);
-    return (turns && startedBy(turns, record.timestampMs)?.key) ?? null;
+    const key = turns && startedBy(turns, record.timestampMs)?.key;
+    return key === undefined ? miss : { ...key, folder: true };
   }
 
   #ownerOf(cwd: string): FolderOwner | null {
@@ -466,7 +520,9 @@ const make = Effect.gen(function* () {
       const threadId = taskThread?.thread_id ?? entry.threadId;
       if (threadId !== undefined) return [{ ...started, threadId }];
       // FirstMate work with no thread T3 knows stays untraced rather than counting as a terminal.
-      return entry.fmTaskId === undefined && entry.fmHome === undefined ? [started] : [];
+      return entry.fmTaskId === undefined && entry.fmHome === undefined
+        ? [started]
+        : [{ ...started, unmatched: true }];
     });
   });
 
@@ -619,7 +675,9 @@ const make = Effect.gen(function* () {
         resolving.push(runId);
         const key = claimKey(claim);
         resolving.pop();
-        const settled = isDevice(key) ? { origin: key.origin, basis: key.basis } : undefined;
+        const settled = isDevice(key)
+          ? { origin: key.origin, basis: key.basis, reason: key.reason }
+          : undefined;
         if (cycleAt >= depth) settledRunClaims.set(runId, settled);
         cycleAt = Math.min(outerCycleAt, cycleAt < depth ? cycleAt : Number.POSITIVE_INFINITY);
         return settled;
@@ -628,9 +686,15 @@ const make = Effect.gen(function* () {
         resolveMessageOrigin(message, (id) => causes.get(id), claimOfRun);
       const claimKey = (claim: UsageClaims.StoredUsageClaim): UsageOriginKey => {
         const message = claimMessage(claim);
-        return message === null
-          ? { origin: claim.device ?? "computer", basis: "claim", via: "agent" }
-          : originOf(message);
+        if (message !== null) return originOf(message);
+        // FirstMate claims the phone for voice-journal work and the computer for upkeep.
+        const origin = claim.device ?? "computer";
+        return {
+          origin,
+          basis: "claim",
+          via: "agent",
+          reason: origin === "phone" ? "journal" : "upkeep",
+        };
       };
 
       const turns: OriginTurn[] = [];
@@ -651,7 +715,7 @@ const make = Effect.gen(function* () {
           key:
             isDevice(own) || claimed === undefined
               ? own
-              : { ...claimed, via: sentByAgent(own) ? own.origin : "agent" },
+              : { ...claimed, via: sentByAgent(own) ? own.origin : "agent", claim: "run" },
         });
       });
       const prompts: OriginPrompt[] = [];

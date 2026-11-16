@@ -1902,6 +1902,12 @@ describe("UsageService", () => {
         assert.deepStrictEqual(after.state.calls, [
           { sinceMs: CURSOR_NOW - HOUR_MS, untilMs: CURSOR_NOW + 2 * 60 * 1000 },
         ]);
+        // An account's history names no session T3 ran: computer by default, as account-only.
+        const reasons = yield* restarted.readOriginReasons(WINDOW);
+        assert.deepStrictEqual(
+          reasons.map((row) => [row.provider, row.origin, row.reason, row.byDefault, row.tokens]),
+          [["cursor", "computer", "accountOnly", true, 12]],
+        );
       }).pipe(
         Effect.provide(
           layerService({

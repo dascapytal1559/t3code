@@ -57,15 +57,15 @@ saved totals first, then updates them when Cursor's API responds.
 If recent work is missing or a new model shows no cost, refresh to rescan session history and
 update model pricing.
 
-On web and desktop, **Tokens by origin** (or **Cost by origin**) splits usage between **Phone**,
-**Computer** and **Unknown**. Each device splits into **Direct** (prompts you typed, solid) and
+On web and desktop, **Tokens by origin** (or **Cost by origin**) splits usage between **Phone**
+and **Computer**. Each device splits into **Direct** (prompts you typed, solid) and
 **Coordinated** (prompts an agent sent on behalf of one you typed, hatched). A run counts toward
 the message that started it; messages sent while it runs do not split it. Phone includes
 tablets. Sessions an agent runs outside T3, such as a CLI run in its worktree, count with the
-agent's turn. **Unknown** (grey) is usage nothing recorded a parent for, such as agent work with
-no recorded cause; an agent can claim it for the prompt or device behind it. Usage from before T3
-recorded the sending device (7 Nov 2026) and archived history from other machines can never
-trace, so the bar leaves it out and the legend lists it under **Can't trace**.
+agent's turn. Usage with no sign of the phone counts to the computer, including agent work with
+no recorded cause, usage from before T3 recorded the sending device (7 Nov 2026) and archived
+history. To see how much of the computer's share is there only by default, and why, run
+`t3 usage reasons`.
 
 ## Count agent sessions T3 does not run
 

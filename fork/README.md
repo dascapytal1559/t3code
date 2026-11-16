@@ -150,8 +150,10 @@ defaults to `["~/.t3-usage-archive"]` and can be changed in
 The captain wants to see the prompts he sent from his phone and the work they
 started, so the Usage page on web and desktop has a **Tokens by origin** bar
 (Cost by origin): the period's usage split between phone and computer, direct
-or coordinated, and Unknown for usage with no recorded parent. It is built from
-what T3 records (see
+or coordinated. Usage with no phone evidence counts to the computer; in the
+captain's words, "the computer is sort of its true back end … ever since we
+have T3 code we're starting to add phone label to what would otherwise be
+computer". It is built from what T3 records (see
 [Messages record which client sent them](#messages-record-which-client-sent-them))
 and what agents claim.
 
@@ -202,15 +204,29 @@ and what agents claim.
   the latest turn started there by any thread, since slots are reused. A
   record of a T3 session past its turn, such as a terminal resume, never
   traces by folder.
-- Usage still without a phone or computer settles in `settleOrigin`: with no
-  recorded parent it is `unknown`/`default`, keeping `via` for agent work.
-  (Fork builds before this sent it as computer `default`; the web counts any
-  `default` row as Unknown.) Two kinds can never trace and keep a label
-  instead: anything before `USAGE_ORIGINS_RECORDED_SINCE` (7 Nov 2026, when
-  device stamps shipped) is `unknown`/`beforeOrigins`, and archived history
-  from other machines is `unknown`/`archive`. The bar shows phone, computer
-  and a grey Unknown segment; the legend lists the other two under "Can't
-  trace".
+- Usage still without a phone or computer settles in `settleOrigin` to the
+  computer: `computer`/`default`, keeping `via` for agent work. Usage that can
+  never trace says so in its basis: anything before
+  `USAGE_ORIGINS_RECORDED_SINCE` (7 Nov 2026, when device stamps shipped) is
+  `computer`/`beforeOrigins`, and archived history from other machines and
+  account-only usage (a provider account's history, such as Cursor's) are
+  `computer`/`archive`. The web folds every row that is not phone into the
+  computer, so older servers' `unknown`, `agent` and `crew` rows count there
+  too; usage in no origin row stays out of the bar.
+- Every settled record also carries a `reason`, kept on the server: `typed`,
+  `inherited`, `journal`, `upkeep` or `terminal` when there is device
+  evidence, else what is missing (`unregisteredSession`,
+  `unmatchedRegistration` for a registered session whose thread or task
+  matched no turn, `lateRecord`, `unnamedTurn`, `noCause`, `untracedCause`,
+  `noPrompt`, `unknownDevice`, `serverPrompt`, `unstamped`, `beforeStamps`,
+  `archive`, `accountOnly`), plus the claim kind (`run`, `session`,
+  `directory`) that decided it and whether a registration or a folder matched it. The
+  read-only MCP tool `t3_usage_reasons` (`days`, default 7, ending `untilDay`
+  in `timeZone`) returns those tokens per provider, marks the no-evidence rows
+  `byDefault` and totals them in `byDefaultTokens`, and fails rather than
+  answer zero when origins cannot be read. `t3 usage reasons` prints the same
+  figure from the shell (`--json` for the raw rows), signing in to the running
+  server like `t3 thread`.
 - The scan cache keeps each record's `cwd` from the fork's v16. Moving from v15
   re-parses live Claude and Codex transcripts changed since 28 Oct 2026, when T3
   turns began; older files keep their saved records, which cannot trace by
@@ -228,8 +244,9 @@ origin, basis, `via`, provider and source with no day, so the payload stays smal
 and clients merge the rows with the same source ownership as buckets. The mobile app gets the merged
 figures but does not show them yet. Code: `apps/server/src/usage/UsageOrigins.ts`
 (classifier, cause chains, SQL, turn index), `attributeOrigin` and `countPrompt` in
-`usageAggregation.ts`, `mergeOrigins` in `packages/shared/src/usageMerge.ts`,
-and `apps/web/src/components/usage/UsageOriginBreakdown.tsx`.
+`usageAggregation.ts`, `readOriginReasons` in `UsageService.ts`, `mergeOrigins`
+in `packages/shared/src/usageMerge.ts`, `apps/server/src/cli/usage.ts`, and
+`apps/web/src/components/usage/UsageOriginBreakdown.tsx`.
 
 ## Claude banked resets on macOS
 

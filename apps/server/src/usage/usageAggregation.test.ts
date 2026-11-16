@@ -187,11 +187,11 @@ describe("UsageAggregator", () => {
       modelFilter: { exclude: [{ model: "claude-excluded" }] },
       attributeOrigin: (item) =>
         item.sessionId === "phone-session"
-          ? { origin: "phone", basis: "stamp" }
+          ? { origin: "phone", basis: "stamp", reason: "typed" }
           : item.sessionId === "crew-session"
-            ? { origin: "crew", basis: "sender" }
+            ? { origin: "computer", basis: "default", via: "crew", reason: "noCause" }
             : item.sessionId === "caused-crew-session"
-              ? { origin: "phone", basis: "stamp", via: "crew" }
+              ? { origin: "phone", basis: "stamp", via: "crew", reason: "inherited", folder: true }
               : null,
     });
     for (const item of [
@@ -205,17 +205,20 @@ describe("UsageAggregator", () => {
     ]) {
       aggregator.add(item, "/claude");
     }
-    aggregator.countPrompt(Date.parse("2026-08-07T00:00:00Z"), { origin: "phone", basis: "stamp" });
-    aggregator.countPrompt(Date.parse("2026-08-08T00:00:00Z"), { origin: "phone", basis: "stamp" });
-    aggregator.countPrompt(Date.parse("2026-07-30T00:00:00Z"), { origin: "phone", basis: "stamp" });
+    const typed = { origin: "phone", basis: "stamp", reason: "typed" } as const;
+    aggregator.countPrompt(Date.parse("2026-08-07T00:00:00Z"), typed);
+    aggregator.countPrompt(Date.parse("2026-08-08T00:00:00Z"), typed);
+    aggregator.countPrompt(Date.parse("2026-07-30T00:00:00Z"), typed);
     aggregator.countPrompt(Date.parse("2026-08-07T00:00:00Z"), {
       origin: "phone",
       basis: "stamp",
       via: "crew",
+      reason: "inherited",
     });
     aggregator.countPrompt(Date.parse("2026-08-07T00:00:00Z"), {
-      origin: "unknown",
-      basis: "unstamped",
+      origin: "computer",
+      basis: "default",
+      reason: "unstamped",
     });
     const result = aggregator.finish();
 
@@ -224,8 +227,9 @@ describe("UsageAggregator", () => {
     // Keyed usage is counted in finish(), after the unkeyed records.
     expect(result.origins?.usage).toEqual([
       {
-        origin: "crew",
-        basis: "sender",
+        origin: "computer",
+        basis: "default",
+        via: "crew",
         provider: "claude",
         sourcePath: "/claude",
         totals: record().totals,
@@ -252,7 +256,33 @@ describe("UsageAggregator", () => {
     expect(result.origins?.prompts).toEqual([
       { origin: "phone", basis: "stamp", prompts: 2 },
       { origin: "phone", basis: "stamp", via: "crew", prompts: 1 },
-      { origin: "unknown", basis: "unstamped", prompts: 1 },
+      { origin: "computer", basis: "default", prompts: 1 },
+    ]);
+    // The same usage by why it counts there, with no via split and the folder match kept.
+    const reason = { provider: "claude", tokens: 1160, records: 1 } as const;
+    expect(result.originReasons).toEqual([
+      {
+        ...reason,
+        origin: "computer",
+        reason: "noCause",
+        byDefault: true,
+        costUsd: expect.closeTo(recordCost),
+      },
+      {
+        ...reason,
+        origin: "phone",
+        reason: "inherited",
+        folder: true,
+        byDefault: false,
+        costUsd: expect.closeTo(recordCost),
+      },
+      {
+        ...reason,
+        origin: "phone",
+        reason: "typed",
+        byDefault: false,
+        costUsd: expect.closeTo(recordCost),
+      },
     ]);
   });
 

@@ -20,6 +20,7 @@ import {
   UsageOrigins,
   type CausalMessage,
   type OriginMessage,
+  type UsageOriginKey,
 } from "./UsageOrigins.ts";
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -49,39 +50,42 @@ const messages = (list: ReadonlyArray<CausalMessage>) => {
 describe("classifyMessageOrigin", () => {
   it("buckets stamps by device and leaves older messages unknown unless their creation says more", () => {
     const cases: ReadonlyArray<readonly [Partial<OriginMessage>, string]> = [
-      [{ surface: "web", deviceType: "mobile" }, "phone/stamp"],
-      [{ surface: "web", deviceType: "tablet" }, "phone/stamp"],
-      [{ creationSource: "mobile", surface: "mobile", deviceType: "mobile" }, "phone/stamp"],
-      [{ surface: "desktop", deviceType: "desktop" }, "computer/stamp"],
-      [{ surface: "web", deviceType: "desktop" }, "computer/stamp"],
-      [{ surface: "web", deviceType: "unknown" }, "unknown/stamp"],
+      [{ surface: "web", deviceType: "mobile" }, "phone/stamp/typed"],
+      [{ surface: "web", deviceType: "tablet" }, "phone/stamp/typed"],
+      [{ creationSource: "mobile", surface: "mobile", deviceType: "mobile" }, "phone/stamp/typed"],
+      [{ surface: "desktop", deviceType: "desktop" }, "computer/stamp/typed"],
+      [{ surface: "web", deviceType: "desktop" }, "computer/stamp/typed"],
+      [{ surface: "web", deviceType: "unknown" }, "unknown/stamp/unknownDevice"],
       [
         { createdBy: "agent", creationSource: "mcp", surface: "mcp", deviceType: "bot" },
-        "agent/stamp",
+        "agent/stamp/noCause",
       ],
-      [{ creationSource: "mobile" }, "phone/nativeApp"],
-      [{ createdBy: "agent", creationSource: "mcp" }, "agent/sender"],
-      [{ createdBy: "agent", creationSource: "provider" }, "agent/sender"],
-      [{ createdBy: "agent", creationSource: "server" }, "agent/sender"],
+      [{ creationSource: "mobile" }, "phone/nativeApp/typed"],
+      [{ createdBy: "agent", creationSource: "mcp" }, "agent/sender/noCause"],
+      [{ createdBy: "agent", creationSource: "provider" }, "agent/sender/noCause"],
+      [{ createdBy: "agent", creationSource: "server" }, "agent/sender/noCause"],
       // Background-task updates the provider posts never carry a stamp.
       [
         { createdBy: "agent", creationSource: "provider", notification: true },
-        "agent/notification",
+        "agent/notification/unnamedTurn",
       ],
-      [{ createdBy: "agent", creationSource: "server", notification: true }, "agent/notification"],
-      [{ crew: true, createdBy: "agent", notification: true }, "crew/notification"],
-      [{ creationSource: "web" }, "unknown/unstamped"],
-      [{ creationSource: "server" }, "unknown/server"],
-      [{ createdBy: null, creationSource: null }, "unknown/unstamped"],
-      [{ crew: true, createdBy: "agent", creationSource: "mcp" }, "crew/sender"],
-      [{ crew: true, surface: "mcp", deviceType: "bot" }, "crew/stamp"],
+      [
+        { createdBy: "agent", creationSource: "server", notification: true },
+        "agent/notification/unnamedTurn",
+      ],
+      [{ crew: true, createdBy: "agent", notification: true }, "crew/notification/unnamedTurn"],
+      [{ creationSource: "web" }, "unknown/unstamped/unstamped"],
+      [{ creationSource: "server" }, "unknown/server/serverPrompt"],
+      [{ createdBy: null, creationSource: null }, "unknown/unstamped/unstamped"],
+      [{ crew: true, createdBy: "agent", creationSource: "mcp" }, "crew/sender/noCause"],
+      [{ crew: true, surface: "mcp", deviceType: "bot" }, "crew/stamp/noCause"],
       // A prompt the captain types into a crew thread is still his device's.
-      [{ crew: true, surface: "web", deviceType: "mobile" }, "phone/stamp"],
-      [{ crew: true, creationSource: "web" }, "unknown/unstamped"],
+      [{ crew: true, surface: "web", deviceType: "mobile" }, "phone/stamp/typed"],
+      [{ crew: true, creationSource: "web" }, "unknown/unstamped/unstamped"],
     ];
     for (const [input, expected] of cases) {
-      const { origin, basis } = classifyMessageOrigin(message(input));
-      assert.strictEqual(`${origin}/${basis}`, expected, JSON.stringify(input));
+      const { origin, basis, reason } = classifyMessageOrigin(message(input));
+      assert.strictEqual(`${origin}/${basis}/${reason}`, expected, JSON.stringify(input));
     }
   });
 });
@@ -100,17 +104,20 @@ describe("resolveMessageOrigin", () => {
       origin: "phone",
       basis: "stamp",
       via: "crew",
+      reason: "inherited",
     });
     assert.deepStrictEqual(resolveMessageOrigin(direct, byId), {
       origin: "computer",
       basis: "stamp",
       via: "agent",
+      reason: "inherited",
     });
     // A human prompt is a root even if something named a cause for it.
     const typed = causal("typed", { surface: "web", deviceType: "desktop", causedBy: "phone" });
     assert.deepStrictEqual(resolveMessageOrigin(typed, byId), {
       origin: "computer",
       basis: "stamp",
+      reason: "typed",
     });
   });
 
@@ -125,27 +132,45 @@ describe("resolveMessageOrigin", () => {
       causal(`hop-${index}`, { ...fromMcp, causedBy: index === 0 ? "phone" : `hop-${index - 1}` }),
     );
     const byId = messages([phone, missing, left, right, scheduled, fromServer, uncaused, ...hops]);
-    const crew = { origin: "crew", basis: "stamp" };
-    assert.deepStrictEqual(resolveMessageOrigin(missing, byId), crew);
-    assert.deepStrictEqual(resolveMessageOrigin(left, byId), { origin: "agent", basis: "stamp" });
-    assert.deepStrictEqual(resolveMessageOrigin(fromServer, byId), crew);
-    assert.deepStrictEqual(resolveMessageOrigin(uncaused, byId), crew);
+    // A recorded cause that reaches no device is told apart from no cause at all.
+    const untraced = { origin: "crew", basis: "stamp", reason: "untracedCause" } as const;
+    assert.deepStrictEqual(resolveMessageOrigin(missing, byId), untraced);
+    assert.deepStrictEqual(resolveMessageOrigin(left, byId), {
+      origin: "agent",
+      basis: "stamp",
+      reason: "untracedCause",
+    });
+    assert.deepStrictEqual(resolveMessageOrigin(fromServer, byId), untraced);
+    assert.deepStrictEqual(resolveMessageOrigin(uncaused, byId), {
+      origin: "crew",
+      basis: "stamp",
+      reason: "noCause",
+    });
     // MAX_CAUSE_DEPTH hops reach the phone; one more does not.
     assert.deepStrictEqual(resolveMessageOrigin(hops[MAX_CAUSE_DEPTH - 1]!, byId), {
       origin: "phone",
       basis: "stamp",
       via: "agent",
+      reason: "inherited",
     });
     assert.deepStrictEqual(resolveMessageOrigin(hops[MAX_CAUSE_DEPTH]!, byId), {
       origin: "agent",
       basis: "stamp",
+      reason: "untracedCause",
     });
   });
 
   describe("UsageOriginIndex", () => {
+    const late = { origin: "unknown", basis: "default", reason: "lateRecord" } as const;
+    const unregistered = {
+      origin: "unknown",
+      basis: "default",
+      reason: "unregisteredSession",
+    } as const;
+
     it("credits a record to its session's turn running at the time", () => {
-      const phone = { origin: "phone", basis: "stamp" } as const;
-      const agent = { origin: "agent", basis: "stamp" } as const;
+      const phone = { origin: "phone", basis: "stamp", reason: "typed" } as const;
+      const agent = { origin: "agent", basis: "stamp", reason: "noCause" } as const;
       const index = new UsageOriginIndex({
         turns: [
           { sessionId: "s", threadId: "t", startedAtMs: 2_000, completedAtMs: null, key: agent },
@@ -157,20 +182,29 @@ describe("resolveMessageOrigin", () => {
       });
       const at = (sessionId: string, timestampMs: number) =>
         index.lookup({ sessionId, timestampMs });
-      assert.strictEqual(at("s", 999), null);
+      // A T3 session's record outside its turns, and a session T3 never ran, say why they miss.
+      assert.deepStrictEqual(at("s", 999), late);
       assert.deepStrictEqual(at("s", 1_000), phone);
       // Late records within the grace still belong to the finished turn.
       assert.deepStrictEqual(at("s", 1_900), phone);
       assert.deepStrictEqual(at("s", 2_000), agent);
       assert.deepStrictEqual(at("s", 10 * 60 * 1000), agent);
-      assert.strictEqual(at("other", 1_200), null);
+      assert.deepStrictEqual(at("other", 1_200), unregistered);
     });
 
     it("credits sessions outside T3 by claim, then by registration, then by their folder", () => {
-      const phone = { origin: "phone", basis: "stamp" } as const;
-      const computer = { origin: "computer", basis: "stamp" } as const;
-      const claimed = { origin: "phone", basis: "stamp", via: "agent" } as const;
-      const late = 1_000 + 6 * 60 * 1000;
+      const phone = { origin: "phone", basis: "stamp", reason: "typed" } as const;
+      const computer = { origin: "computer", basis: "stamp", reason: "typed" } as const;
+      const claimed = {
+        origin: "phone",
+        basis: "stamp",
+        via: "agent",
+        reason: "inherited",
+      } as const;
+      const byFolder = (key: UsageOriginKey): UsageOriginKey => ({ ...key, folder: true });
+      const bySession = (key: UsageOriginKey): UsageOriginKey => ({ ...key, claim: "session" });
+      const byDirectory: UsageOriginKey = { ...claimed, claim: "directory" };
+      const afterGrace = 1_000 + 6 * 60 * 1000;
       const index = new UsageOriginIndex({
         turns: [
           {
@@ -220,43 +254,68 @@ describe("resolveMessageOrigin", () => {
           // Stamped in whole seconds: started in the same second as the thread's turn.
           { sessionId: "child", startedAtMs: 19_500, threadId: "next-worker" },
           { sessionId: "lost", startedAtMs: 100, threadId: "unknown-thread" },
+          // FirstMate work whose task names no thread T3 knows.
+          { sessionId: "fm-lost", startedAtMs: 100, unmatched: true },
           // T3 runs this session itself, so its registration says nothing more.
           { sessionId: "w2", startedAtMs: 0 },
         ],
       });
       const at = (sessionId: string, timestampMs: number, cwd?: string) =>
         index.lookup({ sessionId, timestampMs, cwd });
-      assert.deepStrictEqual(at("pipeline-session", 9_000), claimed);
-      assert.deepStrictEqual(at("pipeline-session", -1), claimed);
+      assert.deepStrictEqual(at("pipeline-session", 9_000), bySession(claimed));
+      assert.deepStrictEqual(at("pipeline-session", -1), bySession(claimed));
       // Each record counts to the latest claim started by then; before the first, as unclaimed.
-      assert.deepStrictEqual(at("engine", 10_000), phone);
-      assert.deepStrictEqual(at("engine", 19_999), phone);
-      assert.deepStrictEqual(at("engine", 25_000), computer);
-      assert.deepStrictEqual(at("engine", 9_999, "/runs/pipeline"), claimed);
-      assert.strictEqual(at("engine", 9_999), null);
+      assert.deepStrictEqual(at("engine", 10_000), bySession(phone));
+      assert.deepStrictEqual(at("engine", 19_999), bySession(phone));
+      assert.deepStrictEqual(at("engine", 25_000), bySession(computer));
+      assert.deepStrictEqual(at("engine", 9_999, "/runs/pipeline"), byDirectory);
+      assert.deepStrictEqual(at("engine", 9_999), unregistered);
       // A claim with no start covers the session until a later one starts.
-      assert.deepStrictEqual(at("resumed", 9_999), claimed);
-      assert.deepStrictEqual(at("resumed", 10_000), computer);
+      assert.deepStrictEqual(at("resumed", 9_999), bySession(claimed));
+      assert.deepStrictEqual(at("resumed", 10_000), bySession(computer));
       // A registration counts to the turn its thread was running when the session started.
-      const terminal = { origin: "computer", basis: "terminal" } as const;
-      assert.deepStrictEqual(at("review", 9_000, "/wt/worker/nested"), computer);
+      const byRegistration = (key: UsageOriginKey): UsageOriginKey => ({
+        ...key,
+        registered: true,
+      });
+      const terminal = {
+        origin: "computer",
+        basis: "terminal",
+        reason: "terminal",
+        registered: true,
+      } as const;
+      assert.deepStrictEqual(at("review", 9_000, "/wt/worker/nested"), byRegistration(computer));
       assert.deepStrictEqual(at("review", 31_000), terminal);
       assert.deepStrictEqual(at("terminal", 9_000, "/wt/worker"), terminal);
-      assert.deepStrictEqual(at("child", 21_000), claimed);
-      assert.deepStrictEqual(at("lost", 2_000, "/wt/worker"), phone);
-      assert.deepStrictEqual(at("cli", 9_000, "/runs/pipeline/review"), claimed);
-      assert.strictEqual(at("cli", 9_000, "/runs/pipeline-other"), null);
+      assert.deepStrictEqual(at("child", 21_000), byRegistration(claimed));
+      assert.deepStrictEqual(at("lost", 2_000, "/wt/worker"), byFolder(phone));
+      // A registration naming no turn and nothing else to go by is reported apart from no registration.
+      assert.deepStrictEqual(at("lost", 2_000), {
+        origin: "unknown",
+        basis: "default",
+        reason: "unmatchedRegistration",
+      });
+      assert.deepStrictEqual(at("fm-lost", 2_000), {
+        origin: "unknown",
+        basis: "default",
+        reason: "unmatchedRegistration",
+      });
+      assert.deepStrictEqual(at("cli", 9_000, "/runs/pipeline/review"), byDirectory);
+      assert.deepStrictEqual(at("cli", 9_000, "/runs/pipeline-other"), unregistered);
       // A child run in a thread's worktree counts to that thread's latest turn by then.
-      assert.deepStrictEqual(at("cli", 2_000, "/wt/worker/backtest"), phone);
-      assert.deepStrictEqual(at("cli", 7_000, "/wt/worker"), computer);
-      assert.deepStrictEqual(at("cli", 21_000, "/wt/worker"), claimed);
-      assert.strictEqual(at("cli", -1, "/wt/worker"), null);
+      assert.deepStrictEqual(at("cli", 2_000, "/wt/worker/backtest"), byFolder(phone));
+      assert.deepStrictEqual(at("cli", 7_000, "/wt/worker"), byFolder(computer));
+      assert.deepStrictEqual(at("cli", 21_000, "/wt/worker"), byFolder(claimed));
+      assert.deepStrictEqual(at("cli", -1, "/wt/worker"), unregistered);
       // The deepest folder wins.
-      assert.deepStrictEqual(at("cli", 7_000, "/wt/worker/nested/x"), claimed);
+      assert.deepStrictEqual(at("cli", 7_000, "/wt/worker/nested/x"), byDirectory);
       // Claude names a session's scratchpad folder for the session.
-      assert.deepStrictEqual(at("grok", late, "/tmp/claude-501/-proj/lead/scratchpad"), phone);
+      assert.deepStrictEqual(
+        at("grok", afterGrace, "/tmp/claude-501/-proj/lead/scratchpad"),
+        byFolder(phone),
+      );
       // A terminal resume of a T3 session long after its turn ended is not T3's, even in its worktree.
-      assert.strictEqual(at("w2", 6_000 + 6 * 60 * 1000, "/wt/worker"), null);
+      assert.deepStrictEqual(at("w2", 6_000 + 6 * 60 * 1000, "/wt/worker"), late);
     });
   });
 
@@ -292,21 +351,21 @@ describe("resolveMessageOrigin", () => {
       orphan,
     ]);
     const claims = new Map([
-      ["run-wake", { origin: "phone", basis: "claim" } as const],
-      ["run-scheduled", { origin: "computer", basis: "claim" } as const],
-      ["run-worker-wake", { origin: "phone", basis: "claim" } as const],
-      ["run-orphan", { origin: "computer", basis: "claim" } as const],
+      ["run-wake", { origin: "phone", basis: "claim", reason: "journal" } as const],
+      ["run-scheduled", { origin: "computer", basis: "claim", reason: "upkeep" } as const],
+      ["run-worker-wake", { origin: "phone", basis: "claim", reason: "journal" } as const],
+      ["run-orphan", { origin: "computer", basis: "claim", reason: "upkeep" } as const],
     ]);
     const claimOfRun = (runId: string) => claims.get(runId);
+    const journal = { origin: "phone", basis: "claim", reason: "journal", claim: "run" } as const;
+    const upkeep = { origin: "computer", basis: "claim", reason: "upkeep", claim: "run" } as const;
     assert.deepStrictEqual(resolveMessageOrigin(wake, byId, claimOfRun), {
-      origin: "phone",
-      basis: "claim",
+      ...journal,
       via: "agent",
     });
     // Work the claimed turn caused inherits its device.
     assert.deepStrictEqual(resolveMessageOrigin(launch, byId, claimOfRun), {
-      origin: "phone",
-      basis: "claim",
+      ...journal,
       via: "crew",
     });
     // A recorded cause wins over the claim; an unclaimed run keeps the prompt's own origin.
@@ -314,75 +373,84 @@ describe("resolveMessageOrigin", () => {
       origin: "computer",
       basis: "stamp",
       via: "agent",
+      reason: "inherited",
     });
     assert.deepStrictEqual(resolveMessageOrigin(unclaimed, byId, claimOfRun), {
       origin: "agent",
       basis: "stamp",
+      reason: "noCause",
     });
     // An unknown prompt counts to its run's claim, and so does the work it causes.
     assert.deepStrictEqual(resolveMessageOrigin(scheduled, byId, claimOfRun), {
-      origin: "computer",
-      basis: "claim",
+      ...upkeep,
       via: "agent",
     });
     assert.deepStrictEqual(resolveMessageOrigin(worker, byId, claimOfRun), {
-      origin: "computer",
-      basis: "claim",
+      ...upkeep,
       via: "crew",
     });
     // A chain ending at an unclaimed unknown prompt counts to a claim on a run along the way.
     assert.deepStrictEqual(resolveMessageOrigin(workerWake, byId, claimOfRun), {
-      origin: "phone",
-      basis: "claim",
+      ...journal,
       via: "agent",
     });
     assert.deepStrictEqual(resolveMessageOrigin(subWorker, byId, claimOfRun), {
-      origin: "phone",
-      basis: "claim",
+      ...journal,
       via: "crew",
     });
     // So does a prompt whose recorded cause is missing.
     assert.deepStrictEqual(resolveMessageOrigin(orphan, byId, claimOfRun), {
-      origin: "computer",
-      basis: "claim",
+      ...upkeep,
       via: "agent",
     });
   });
 });
 
 describe("settleOrigin", () => {
-  it("keeps usage with no recorded parent as Unknown, and labels history that can never trace", () => {
+  it("counts usage with no device evidence to the computer, keeping why, and labels history that can never trace", () => {
     const recorded = Date.parse(USAGE_ORIGINS_RECORDED_SINCE);
-    const phone = { origin: "phone", basis: "stamp" } as const;
-    assert.deepStrictEqual(settleOrigin(phone, recorded - 1, false), phone);
-    assert.deepStrictEqual(settleOrigin(phone, recorded, true), phone);
-    assert.deepStrictEqual(settleOrigin(null, recorded, false), {
-      origin: "unknown",
-      basis: "default",
-    });
-    // Agent work keeps who sent it.
+    const phone = { origin: "phone", basis: "stamp", reason: "typed" } as const;
+    assert.deepStrictEqual(settleOrigin(phone, recorded - 1, "live"), phone);
+    assert.deepStrictEqual(settleOrigin(phone, recorded, "archive"), phone);
     assert.deepStrictEqual(
-      settleOrigin({ origin: "crew", basis: "notification" }, recorded, false),
-      {
-        origin: "unknown",
-        basis: "default",
-        via: "crew",
-      },
+      settleOrigin(
+        { origin: "unknown", basis: "default", reason: "unregisteredSession" },
+        recorded,
+        "live",
+      ),
+      { origin: "computer", basis: "default", reason: "unregisteredSession" },
     );
-    assert.deepStrictEqual(settleOrigin({ origin: "unknown", basis: "server" }, recorded, false), {
-      origin: "unknown",
-      basis: "default",
-    });
+    // Agent work keeps who sent it, and how it was matched.
     assert.deepStrictEqual(
-      settleOrigin({ origin: "agent", basis: "sender" }, recorded - 1, false),
-      {
-        origin: "unknown",
-        basis: "beforeOrigins",
-      },
+      settleOrigin(
+        { origin: "crew", basis: "notification", reason: "unnamedTurn", folder: true },
+        recorded,
+        "live",
+      ),
+      { origin: "computer", basis: "default", via: "crew", reason: "unnamedTurn", folder: true },
     );
-    assert.deepStrictEqual(settleOrigin(null, recorded, true), {
-      origin: "unknown",
+    assert.deepStrictEqual(
+      settleOrigin(
+        { origin: "unknown", basis: "server", reason: "serverPrompt" },
+        recorded,
+        "live",
+      ),
+      { origin: "computer", basis: "default", reason: "serverPrompt" },
+    );
+    assert.deepStrictEqual(
+      settleOrigin({ origin: "agent", basis: "sender", reason: "noCause" }, recorded - 1, "live"),
+      { origin: "computer", basis: "beforeOrigins", reason: "beforeStamps" },
+    );
+    const missed = { origin: "unknown", basis: "default", reason: "unregisteredSession" } as const;
+    assert.deepStrictEqual(settleOrigin(missed, recorded, "archive"), {
+      origin: "computer",
       basis: "archive",
+      reason: "archive",
+    });
+    assert.deepStrictEqual(settleOrigin(missed, recorded - 1, "account"), {
+      origin: "computer",
+      basis: "archive",
+      reason: "accountOnly",
     });
   });
 });
@@ -791,62 +859,97 @@ describe("UsageOrigins.read", () => {
       assert.deepStrictEqual(at("lead-session", "2026-08-07T01:01:00Z"), {
         origin: "phone",
         basis: "stamp",
+        reason: "typed",
       });
-      assert.deepStrictEqual(at("worker-session", "2026-08-07T01:06:00Z"), {
-        origin: "crew",
+      const uncausedCrew = { origin: "crew", basis: "stamp", reason: "noCause" } as const;
+      assert.deepStrictEqual(at("worker-session", "2026-08-07T01:06:00Z"), uncausedCrew);
+      const viaCrew = {
+        origin: "phone",
         basis: "stamp",
-      });
-      const viaCrew = { origin: "phone", basis: "stamp", via: "crew" } as const;
+        via: "crew",
+        reason: "inherited",
+      } as const;
       assert.deepStrictEqual(at("caused-session", "2026-08-07T01:08:00Z"), viaCrew);
       assert.deepStrictEqual(at("worker-session", "2026-08-07T01:21:00Z"), viaCrew);
-      const journal = { origin: "phone", basis: "claim", via: "crew" } as const;
+      const journal = {
+        origin: "phone",
+        basis: "claim",
+        via: "crew",
+        reason: "journal",
+        claim: "run",
+      } as const;
       assert.deepStrictEqual(at("worker-session", "2026-08-07T01:41:00Z"), journal);
       assert.deepStrictEqual(at("journal-session", "2026-08-07T01:51:00Z"), journal);
-      assert.deepStrictEqual(at("lead-session", "2026-08-07T02:01:00Z"), {
+      const upkeep = {
         origin: "computer",
         basis: "claim",
+        reason: "upkeep",
+        claim: "run",
+      } as const;
+      assert.deepStrictEqual(at("lead-session", "2026-08-07T02:01:00Z"), {
+        ...upkeep,
         via: "agent",
       });
-      assert.strictEqual(at("old-session", "2026-07-01T00:01:00Z"), null);
+      const unregistered = {
+        origin: "unknown",
+        basis: "default",
+        reason: "unregisteredSession",
+      } as const;
+      assert.deepStrictEqual(at("old-session", "2026-07-01T00:01:00Z"), unregistered);
       assert.deepStrictEqual(at("pipeline-session", "2026-08-07T03:00:00Z"), {
         origin: "phone",
         basis: "stamp",
         via: "agent",
+        reason: "inherited",
+        claim: "session",
       });
-      assert.strictEqual(at("removed", "2026-08-07T03:00:00Z"), null);
-      const fromPhone = { origin: "phone", basis: "stamp", via: "agent" } as const;
+      assert.deepStrictEqual(at("removed", "2026-08-07T03:00:00Z"), unregistered);
+      const fromPhone = {
+        origin: "phone",
+        basis: "stamp",
+        via: "agent",
+        reason: "inherited",
+        claim: "run",
+      } as const;
       assert.deepStrictEqual(at("fm-session", "2026-08-07T04:01:00Z"), fromPhone);
       assert.deepStrictEqual(at("fm-session", "2026-08-07T04:11:00Z"), fromPhone);
       assert.deepStrictEqual(at("scheduled-session", "2026-08-07T05:01:00Z"), {
-        origin: "computer",
-        basis: "claim",
+        ...upkeep,
         via: "agent",
       });
       assert.deepStrictEqual(at("scheduled-worker-session", "2026-08-07T05:06:00Z"), {
-        origin: "computer",
-        basis: "claim",
+        ...upkeep,
         via: "crew",
       });
-      assert.deepStrictEqual(at("worker-subagent-session", "2026-08-07T01:31:00Z"), {
-        origin: "crew",
-        basis: "stamp",
-      });
-      const cyclePhone = { origin: "phone", basis: "claim", via: "agent" } as const;
+      assert.deepStrictEqual(at("worker-subagent-session", "2026-08-07T01:31:00Z"), uncausedCrew);
+      const cyclePhone = { ...journal, via: "agent" } as const;
       assert.deepStrictEqual(at("cycle-session", "2026-08-07T06:01:00Z"), cyclePhone);
       assert.deepStrictEqual(at("cycle-session", "2026-08-07T06:11:00Z"), cyclePhone);
       // A CLI run inside the worker's worktree counts to the worker's turn then.
-      assert.deepStrictEqual(at("cli-session", "2026-08-07T01:25:00Z", "/wt/worker/runs"), viaCrew);
+      assert.deepStrictEqual(at("cli-session", "2026-08-07T01:25:00Z", "/wt/worker/runs"), {
+        ...viaCrew,
+        folder: true,
+      });
       // Registered sessions: by their task's latest thread in that home, then by their thread.
-      const phoneStamp = { origin: "phone", basis: "stamp" } as const;
-      assert.deepStrictEqual(at("task-review", "2026-08-07T07:06:00Z"), phoneStamp);
-      assert.deepStrictEqual(at("probe", "2026-08-07T01:26:00Z"), viaCrew);
+      assert.deepStrictEqual(at("task-review", "2026-08-07T07:06:00Z"), {
+        origin: "phone",
+        basis: "stamp",
+        reason: "typed",
+        registered: true,
+      });
+      assert.deepStrictEqual(at("probe", "2026-08-07T01:26:00Z"), { ...viaCrew, registered: true });
       assert.deepStrictEqual(at("my-terminal", "2026-08-07T03:01:00Z"), {
         origin: "computer",
         basis: "terminal",
+        reason: "terminal",
+        registered: true,
       });
       // T3's own session, though older than any turn read, and FirstMate work with no thread.
-      assert.strictEqual(at("old-session", "2026-08-07T01:00:00Z"), null);
-      assert.strictEqual(at("fm-only", "2026-08-07T01:01:00Z"), null);
+      assert.deepStrictEqual(at("old-session", "2026-08-07T01:00:00Z"), unregistered);
+      assert.deepStrictEqual(at("fm-only", "2026-08-07T01:01:00Z"), {
+        ...unregistered,
+        reason: "unmatchedRegistration",
+      });
       assert.deepStrictEqual(
         snapshot.prompts
           .map(({ key }) => `${key.origin}/${key.basis}/${key.via ?? "-"}`)
