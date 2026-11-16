@@ -42,6 +42,7 @@ import { Button } from "../ui/button";
 import { OpenAI } from "../Icons";
 import { Alert, AlertTitle } from "../ui/alert";
 import { Popover, PopoverCreateHandle, PopoverPopup, PopoverTrigger } from "../ui/popover";
+import { LimitsUpdated, oldestCheckedAt, useLimitsAge } from "./LimitsUpdated";
 import { PaceIcon, ResetCreditDialog, barColor, usePaceMark, useResetCredit } from "./UsageLimits";
 
 function accountInitials(email: string): string {
@@ -153,6 +154,7 @@ function SegmentPopover({
       ? account.environments.map((environment) => environment.label).join(", ")
       : account.sourceLabel;
   const credits = resetCreditsForWindow(account.limits.resetCredits, window);
+  const age = useLimitsAge(account.limits.checkedAt);
   const choices =
     redeem && account.redeem && credits?.availableCount
       ? resetCreditChoices(credits, account.redeem.input, now, true)
@@ -194,6 +196,7 @@ function SegmentPopover({
         {reset && reset.restoresPercent > 0 ? (
           <Row label="Restores">+{reset.restoresPercent}% of pool</Row>
         ) : null}
+        {age ? <Row label="Updated">{age}</Row> : null}
       </div>
       {choices.length > 0 && redeem ? (
         <div className="flex flex-col gap-1.5 border-t border-border/60 pt-2.5 text-muted-foreground">
@@ -602,6 +605,14 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
           iconClassName="size-4 text-foreground/80"
         />
         {label}
+        <LimitsUpdated
+          checkedAt={oldestCheckedAt(
+            pool.accounts.flatMap((account) =>
+              account.limits.unavailable ? [] : [account.limits],
+            ),
+          )}
+          className="ms-auto text-xs font-normal text-muted-foreground tabular-nums"
+        />
       </h2>
       {windows.map((window) => {
         const details =

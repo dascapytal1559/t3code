@@ -252,8 +252,9 @@ macOS too, so Claude accounts there show banked resets the way Codex does.
   resets show until Claude Code renews it. Redeeming is still a click.
 - macOS may ask once per account to allow the read ("Always Allow").
 
-When syncing, keep upstream's request, parsing and redemption code as is. The
-fork's part is `claudeKeychainService` and `readKeychainAccessToken`, called
+When syncing, keep upstream's request, parsing and redemption code as is, apart
+from the windows the fork also reads from that response (see
+[Usage limits stay current](#usage-limits-stay-current)). The fork's part is `claudeKeychainService` and `readKeychainAccessToken`, called
 from the darwin branch of `readAccessToken` in
 `apps/server/src/provider/claudeResetCredits.ts`, plus the `cliEnvironment`
 that `ClaudeDriver.ts` passes to it. If Claude Code changes how it names the
@@ -280,6 +281,39 @@ keeps upstream's reading and only adds a `kind` to each option (`kind` in
 `resetCreditsForWindow` in `packages/shared/src/usageLimits.ts` maps kinds to
 rows and treats an option with no known kind as refilling every row. If upstream
 lands per-window resets, take its version and drop the fork's `kind`.
+
+## Usage limits stay current
+
+Upstream reads Claude's 5-hour, weekly and per-model windows through the CLI
+(`get_usage`) and caches that probe for 5 minutes, so Refresh on the Usage page
+could show numbers up to 5 minutes old. Its periodic checks also pause while no
+window is in front, and nothing says how old the numbers are. Anthropic computes
+the numbers live on each read but limits how often it may be asked, so the fork
+keeps the 5-minute interval and changes the rest:
+
+- Claude's windows come from the `/api/oauth/usage` read that banked resets
+  already make on every check (`readClaudeOauthUsage` in
+  `apps/server/src/provider/claudeResetCredits.ts`, mapped by
+  `claudeOauthUsageRateLimits` in `claudeUsageLimits.ts`). Every check,
+  Refresh included, shows a fresh reading with no extra request. The CLI's
+  cached reading is the fallback when that read fails, and still supplies
+  monthly spend, which the read skips (`skip_spend=1`). The merge is in
+  `checkClaudeProviderStatus` (`ClaudeProvider.ts`).
+- A client coming back to the foreground gets one check if the last one is
+  older than the interval, and the interval restarts from it
+  (`foregroundReturns` in `apps/server/src/background/BackgroundPolicy.ts`,
+  passed through `ProviderHost`, handled by `refreshOnForegroundReturn` in
+  `packages/provider-core/src/server/managedProvider.ts`).
+- Web and desktop say how old the numbers are wherever they show limits: each
+  provider on the Usage page (its oldest account) and each account's popover,
+  the composer's usage panel, the thread details panel, and the sidebar bars'
+  tooltip (`apps/web/src/components/usage/LimitsUpdated.tsx`). The mobile app
+  is unchanged.
+
+When syncing, if upstream changes the usage read or Claude changes the response,
+check `claudeOauthUsageRateLimits` against a fresh body; its test holds a
+recorded one. If upstream adds its own foreground check or reading age, take
+upstream's and drop the fork's.
 
 ## App-bundled CLIs are updated by their app
 

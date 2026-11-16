@@ -278,7 +278,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
               catalog,
               scopedLimitNames,
               (version) =>
-                ClaudeResetCredits.readClaudeResetCredits(configDir, version, cliEnvironment).pipe(
+                ClaudeResetCredits.readClaudeOauthUsage(configDir, version, cliEnvironment).pipe(
                   Effect.provideService(HttpClient.HttpClient, httpClient),
                   Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
                   Effect.provideService(FileSystem.FileSystem, fileSystem),

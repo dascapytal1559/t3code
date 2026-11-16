@@ -8,6 +8,7 @@ import { formatUpcomingTimestamp } from "../../timestampFormat";
 import { Button } from "../ui/button";
 import { providerClients } from "../settings/providerDriverMeta";
 import { RedactedSensitiveText } from "../settings/RedactedSensitiveText";
+import { LimitsUpdated } from "../usage/LimitsUpdated";
 import { LimitWindows, ResetCredits } from "../usage/UsageLimits";
 import { ComposerBanner } from "./ComposerBanner";
 import type { ComposerBannerStackItem } from "./ComposerBannerStack";
@@ -129,13 +130,19 @@ function UsageLimitsBannerBody({
               {notice ? (
                 <span className="text-xs text-muted-foreground">{notice}</span>
               ) : (
-                <LimitWindows
-                  compact
-                  driver={account.driver}
-                  accentColor={account.accentColor}
-                  windows={account.limits.windows}
-                  now={now}
-                />
+                <>
+                  <LimitWindows
+                    compact
+                    driver={account.driver}
+                    accentColor={account.accentColor}
+                    windows={account.limits.windows}
+                    now={now}
+                  />
+                  <LimitsUpdated
+                    checkedAt={account.limits.checkedAt}
+                    className="text-xs text-muted-foreground tabular-nums"
+                  />
+                </>
               )}
               {externalUsage ? (
                 <Button

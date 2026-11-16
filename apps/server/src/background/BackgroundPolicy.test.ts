@@ -7,6 +7,7 @@ import {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Stream from "effect/Stream";
@@ -179,6 +180,37 @@ describe("BackgroundPolicy", () => {
       assert.equal(snapshot.activeForegroundLeaseCount, 0);
       assert.deepStrictEqual(snapshot.activeScopeKeys, ["vcs-status:/repo"]);
       assert.equal(yield* policy.shouldRunScopeWork({ type: "vcs-status", cwd: "/repo" }), false);
+    }).pipe(Effect.provide(layerFor(nominalHostPower))),
+  );
+
+  it.effect("announces each lease that comes back to the foreground, once per return", () =>
+    Effect.gen(function* () {
+      const policy = yield* BackgroundPolicy.BackgroundPolicy;
+      const announced = yield* policy.foregroundReturns.pipe(
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild({ startImmediately: true }),
+      );
+      const report = (cwd: string, inFront: boolean) =>
+        policy.reportClientActivity(
+          AuthSessionId.make("session-1"),
+          RpcClientId.make(1),
+          makeReport({
+            visible: inFront,
+            focused: inFront,
+            recentlyInteracted: inFront,
+            scopes: [{ type: "vcs-status", cwd }],
+          }),
+        );
+      yield* report("/first", true);
+      yield* report("/still-in-front", true);
+      yield* report("/away", false);
+      yield* report("/back", true);
+
+      assert.deepStrictEqual(Array.from(yield* Fiber.join(announced)), [
+        [{ type: "vcs-status", cwd: "/first" }],
+        [{ type: "vcs-status", cwd: "/back" }],
+      ]);
     }).pipe(Effect.provide(layerFor(nominalHostPower))),
   );
 

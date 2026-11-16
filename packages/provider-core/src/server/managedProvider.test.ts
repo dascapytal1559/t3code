@@ -1,5 +1,6 @@
 import { describe, it, assert } from "@effect/vitest";
 import {
+  type BackgroundScope,
   DEFAULT_SERVER_SETTINGS,
   ProviderDriverKind,
   ProviderInstanceId,
@@ -13,6 +14,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
+import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
@@ -98,9 +100,10 @@ const refreshedSnapshotSecond: ServerProvider = {
 };
 
 function layerProviderHost(input: {
-  readonly runBackgroundWork: boolean;
+  readonly runBackgroundWork: boolean | Effect.Effect<boolean>;
   readonly settings?: Pick<ProviderHost.ProviderHost["Service"], "settings">["settings"];
   readonly awaitServerReady?: Effect.Effect<void>;
+  readonly foregroundReturns?: ProviderHost.ProviderHost["Service"]["foregroundReturns"];
 }) {
   return Layer.succeed(
     ProviderHost.ProviderHost,
@@ -118,8 +121,12 @@ function layerProviderHost(input: {
         changes: Stream.empty,
         subscribe: Effect.succeed(Stream.empty),
       },
-      shouldRunBackgroundWork: () => Effect.succeed(input.runBackgroundWork),
+      shouldRunBackgroundWork: () =>
+        typeof input.runBackgroundWork === "boolean"
+          ? Effect.succeed(input.runBackgroundWork)
+          : input.runBackgroundWork,
       ...(input.awaitServerReady ? { awaitServerReady: input.awaitServerReady } : {}),
+      ...(input.foregroundReturns ? { foregroundReturns: input.foregroundReturns } : {}),
       resolveAttachmentPath: () => null,
       credentials: () => Effect.die("unused"),
     }),
@@ -373,6 +380,54 @@ describe("makeManagedServerProvider", () => {
         Layer.mergeAll(layerProviderHost({ runBackgroundWork: false }), TestClock.layer()),
       ),
     ),
+  );
+
+  it.effect("checks once when a client comes back after the interval, then restarts it", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const checks = yield* Queue.unbounded<number>();
+        const checkCalls = yield* Ref.make(0);
+        const inFront = yield* Ref.make(false);
+        const returns = yield* PubSub.unbounded<ReadonlyArray<BackgroundScope>>();
+        const comeBack = PubSub.publish(returns, [{ type: "provider-status" }]);
+        yield* makeManagedServerProvider<TestSettings>({
+          resolveMaintenance: () => Effect.succeed(maintenanceCapabilities),
+          getSettings: Effect.succeed({ enabled: true }),
+          streamSettings: Stream.empty,
+          haveSettingsChanged: (previous, next) => previous.enabled !== next.enabled,
+          refreshOnInterval: () => true,
+          initialSnapshot: () => Effect.succeed(initialSnapshot),
+          checkProvider: Ref.updateAndGet(checkCalls, (count) => count + 1).pipe(
+            Effect.tap((count) => Queue.offer(checks, count)),
+            Effect.as(refreshedSnapshot),
+          ),
+          refreshInterval: "5 minutes",
+        }).pipe(
+          Effect.provide(
+            layerProviderHost({
+              runBackgroundWork: Ref.get(inFront),
+              foregroundReturns: Stream.fromPubSub(returns),
+            }),
+          ),
+        );
+        assert.strictEqual(yield* Queue.take(checks), 1);
+
+        // Away: the 5-minute tick finds no client in front and skips.
+        yield* TestClock.adjust("6 minutes");
+        assert.strictEqual(yield* Ref.get(checkCalls), 1);
+
+        yield* Ref.set(inFront, true);
+        yield* comeBack;
+        assert.strictEqual(yield* Queue.take(checks), 2);
+        // A return right after a check does not check again.
+        yield* comeBack;
+        // The tick that was due at 10 minutes now waits a full interval from the return check.
+        yield* TestClock.adjust("4 minutes");
+        assert.strictEqual(yield* Ref.get(checkCalls), 2);
+        yield* TestClock.adjust("1 minute");
+        assert.strictEqual(yield* Queue.take(checks), 3);
+      }),
+    ).pipe(Effect.provide(TestClock.layer())),
   );
 
   it.effect("stops periodic recovery checks once the snapshot is ready", () =>

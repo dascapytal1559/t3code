@@ -44,6 +44,8 @@ export class ProviderHost extends Context.Service<
       readonly subscribe: Effect.Effect<Stream.Stream<ServerSettings>, never, Scope.Scope>;
     };
     readonly shouldRunBackgroundWork: (scope: BackgroundScope) => Effect.Effect<boolean>;
+    /** The scopes of each client that comes back to the foreground. */
+    readonly foregroundReturns?: Stream.Stream<ReadonlyArray<BackgroundScope>>;
     /** Completes once server startup finishes; first provider checks wait for it. */
     readonly awaitServerReady?: Effect.Effect<void>;
     /** Absolute attachment path, or null if the ID does not resolve inside attachmentsDir. */

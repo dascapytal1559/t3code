@@ -137,6 +137,68 @@ function readModelScoped(rateLimits: object): ReadonlyArray<ModelScopedWindow> {
   );
 }
 
+type ClaudeRateLimits = NonNullable<SDKControlGetUsageResponse["rate_limits"]>;
+
+const OauthWindow = Schema.Struct({
+  utilization: Schema.NullOr(Schema.Number),
+  resets_at: Schema.NullOr(Schema.String),
+});
+const decodeOauthUsage = Schema.decodeUnknownOption(
+  Schema.Struct({
+    five_hour: Schema.optional(Schema.NullOr(OauthWindow)),
+    seven_day: Schema.optional(Schema.NullOr(OauthWindow)),
+    extra_usage: Schema.optional(Schema.Unknown),
+    limits: Schema.optional(Schema.NullOr(Schema.Array(Schema.Unknown))),
+  }),
+);
+const decodeOauthExtraUsage = Schema.decodeUnknownOption(
+  Schema.NullOr(
+    Schema.Struct({
+      is_enabled: Schema.Boolean,
+      monthly_limit: Schema.NullOr(Schema.Number),
+      used_credits: Schema.NullOr(Schema.Number),
+      utilization: Schema.NullOr(Schema.Number),
+      currency: Schema.optionalKey(Schema.NullOr(Schema.String)),
+    }),
+  ),
+);
+const decodeOauthScopedLimit = Schema.decodeUnknownOption(
+  Schema.Struct({
+    kind: Schema.Literal("weekly_scoped"),
+    percent: Schema.optional(Schema.NullOr(Schema.Number)),
+    resets_at: Schema.optional(Schema.NullOr(Schema.String)),
+    scope: Schema.Struct({ model: Schema.Struct({ display_name: Schema.String }) }),
+  }),
+);
+
+/**
+ * The windows of a raw `/api/oauth/usage` body in the CLI's `get_usage` shape. The CLI builds
+ * `model_scoped` from the body's `weekly_scoped` limits; fields the body omits stay absent.
+ */
+export function claudeOauthUsageRateLimits(body: unknown): Partial<ClaudeRateLimits> | undefined {
+  const usage = Option.getOrUndefined(decodeOauthUsage(body));
+  if (!usage || (usage.five_hour === undefined && usage.seven_day === undefined)) return undefined;
+  const extraUsage =
+    usage.extra_usage === undefined ? undefined : decodeOauthExtraUsage(usage.extra_usage);
+  return {
+    five_hour: usage.five_hour ?? null,
+    seven_day: usage.seven_day ?? null,
+    model_scoped: (usage.limits ?? []).flatMap((entry) =>
+      Option.match(decodeOauthScopedLimit(entry), {
+        onNone: () => [],
+        onSome: (limit) => [
+          {
+            display_name: limit.scope.model.display_name,
+            utilization: limit.percent ?? null,
+            resets_at: limit.resets_at ?? null,
+          },
+        ],
+      }),
+    ),
+    ...(extraUsage && Option.isSome(extraUsage) ? { extra_usage: extraUsage.value } : {}),
+  };
+}
+
 function isoFromEpochSeconds(value: number | undefined): string | undefined {
   if (value === undefined || !Number.isFinite(value) || value <= 0) return undefined;
   const dt = DateTime.make(value * 1000);

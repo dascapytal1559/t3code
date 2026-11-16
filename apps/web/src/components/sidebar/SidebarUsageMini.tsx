@@ -13,6 +13,7 @@ import {
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
+import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { providerClients } from "../settings/providerDriverMeta";
 import { useSidebar } from "../ui/sidebar";
@@ -149,16 +150,15 @@ function UsageTooltip({ rows }: { readonly rows: readonly UsageRow[] }) {
   return (
     <div className="flex flex-col gap-2 text-xs">
       {rows.map((row) => {
-        const resetsIn = formatResetsIn(row.window, now);
+        const age = formatRelativeTimeLabel(row.account.limits.checkedAt, now);
+        const details = [formatResetsIn(row.window, now), age && `updated ${age}`].filter(Boolean);
         return (
           <div key={row.account.key} className="flex flex-col gap-0.5">
             <span className="text-foreground">
               {row.name} · {row.window.label} · {row.remaining}% left
               {row.timeLeft === null ? "" : ` · ${row.timeLeft}% of the window left`}
             </span>
-            {resetsIn ? (
-              <span className="text-muted-foreground tabular-nums">{resetsIn}</span>
-            ) : null}
+            <span className="text-muted-foreground tabular-nums">{details.join(" · ")}</span>
           </div>
         );
       })}

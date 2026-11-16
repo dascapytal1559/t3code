@@ -16,7 +16,9 @@ import * as DateTime from "effect/DateTime";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
+import * as Stream from "effect/Stream";
 
 import * as ServerSettings from "../serverSettings.ts";
 import * as HostPowerMonitor from "./HostPowerMonitor.ts";
@@ -36,6 +38,8 @@ export class BackgroundPolicy extends Context.Service<
     readonly snapshot: Effect.Effect<BackgroundPolicySnapshot>;
     readonly shouldRunScopeWork: (scope: BackgroundScope) => Effect.Effect<boolean>;
     readonly shouldRunOpportunisticWork: Effect.Effect<boolean>;
+    /** The scopes of each client lease that turns visible and focused or used after it was not. */
+    readonly foregroundReturns: Stream.Stream<ReadonlyArray<BackgroundScope>>;
   }
 >()("t3/background/BackgroundPolicy") {}
 
@@ -196,6 +200,10 @@ export const make = Effect.fn("background.policy.make")(function* () {
   const hostPowerMonitor = yield* HostPowerMonitor.HostPowerMonitor;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const leasesRef = yield* Ref.make(new Map<string, ClientActivityLease>());
+  const foregroundReturns = yield* Effect.acquireRelease(
+    PubSub.unbounded<ReadonlyArray<BackgroundScope>>(),
+    PubSub.shutdown,
+  );
 
   const backgroundActivitySettings = serverSettings.getSettings.pipe(
     Effect.map(resolveServerBackgroundActivitySettings),
@@ -232,7 +240,14 @@ export const make = Effect.fn("background.policy.make")(function* () {
       updatedAt: now,
       expiresAt,
     };
-    yield* Ref.update(leasesRef, (leases) => upsertClientActivityLease(leases, lease, now));
+    const returned = yield* Ref.modify(leasesRef, (leases) => {
+      const previous = leases.get(leaseKey(lease));
+      return [
+        isForegroundLease(lease, now) && !(previous && isForegroundLease(previous, now)),
+        upsertClientActivityLease(leases, lease, now),
+      ] as const;
+    });
+    if (returned) yield* PubSub.publish(foregroundReturns, lease.scopes);
   });
 
   const removeRpcClient: BackgroundPolicy["Service"]["removeRpcClient"] = (
@@ -291,6 +306,7 @@ export const make = Effect.fn("background.policy.make")(function* () {
     snapshot,
     shouldRunScopeWork,
     shouldRunOpportunisticWork,
+    foregroundReturns: Stream.fromPubSub(foregroundReturns),
   });
 });
 

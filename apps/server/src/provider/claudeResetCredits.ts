@@ -18,6 +18,8 @@ import * as ChildProcess from "effect/process/ChildProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
+import { claudeOauthUsageRateLimits } from "./claudeUsageLimits.ts";
+
 const API_BASE = "https://api.anthropic.com";
 const PROGRAM = "cedar_ember";
 const GRANT_ID = /^[a-z0-9_-]{1,40}$/;
@@ -51,9 +53,9 @@ const CedarEmber = Schema.Struct({
   grants: Schema.optional(Schema.Array(Schema.Unknown)),
   next_grant_id: Schema.optional(Schema.NullOr(Schema.String)),
 });
-const UsageResponse = Schema.Struct({
-  cedar_ember: Schema.optional(Schema.NullOr(Schema.Unknown)),
-});
+const decodeUsageResponse = Schema.decodeUnknownOption(
+  Schema.Struct({ cedar_ember: Schema.optional(Schema.NullOr(Schema.Unknown)) }),
+);
 const decodeCedarEmber = Schema.decodeUnknownOption(CedarEmber);
 const ClaimResponse = Schema.Struct({
   result: Schema.Literals([
@@ -252,23 +254,27 @@ const withClaudeHeaders = (token: string, version: string) =>
     "user-agent": `claude-cli/${version} (external, cli)`,
   });
 
-export const readClaudeResetCredits = Effect.fn("readClaudeResetCredits")(
+/** One usage read yields both the account's windows and its banked resets. */
+export const readClaudeOauthUsage = Effect.fn("readClaudeOauthUsage")(
   function* (configDir: string, version: string, cliEnvironment: NodeJS.ProcessEnv) {
     const token = yield* readAccessToken(configDir, cliEnvironment);
     if (!token) return undefined;
     const client = yield* HttpClient.HttpClient;
+    const now = yield* DateTime.now;
     const response = yield* client.execute(
       HttpClientRequest.get(`${API_BASE}/api/oauth/usage`, {
         urlParams: { cedar_ember: "1", skip_spend: "1" },
       }).pipe(withClaudeHeaders(token, version)),
     );
-    const body = yield* HttpClientResponse.schemaBodyJson(UsageResponse)(
-      yield* HttpClientResponse.filterStatusOk(response),
-    );
-    return claudeResetCreditsToContract(
-      body.cedar_ember,
-      DateTime.toEpochMillis(yield* DateTime.now),
-    );
+    const body = yield* (yield* HttpClientResponse.filterStatusOk(response)).json;
+    return {
+      checkedAt: DateTime.formatIso(now),
+      rateLimits: claudeOauthUsageRateLimits(body),
+      resetCredits: claudeResetCreditsToContract(
+        Option.getOrUndefined(decodeUsageResponse(body))?.cedar_ember,
+        DateTime.toEpochMillis(now),
+      ),
+    };
   },
   Effect.timeout("10 seconds"),
   Effect.orElseSucceed(() => undefined),

@@ -53,7 +53,7 @@ import {
   type CodexAppServerProviderSnapshot,
 } from "./CodexProvider.ts";
 import { BUNDLED_CLAUDE_MODEL_CATALOG } from "./ClaudeModelCatalog.ts";
-import { checkClaudeProviderStatus } from "./ClaudeProvider.ts";
+import { type ClaudeCapabilitiesProbe, checkClaudeProviderStatus } from "./ClaudeProvider.ts";
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as AntigravityInstallation from "./AntigravityInstallation.ts";
 import * as ModelManifest from "./ModelManifest.ts";
@@ -188,6 +188,8 @@ type TestClaudeCapabilities = {
   readonly apiProvider: string | undefined;
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
   readonly models?: ReadonlyArray<ModelInfo>;
+  readonly usage?: NonNullable<ClaudeCapabilitiesProbe["usage"]>;
+  readonly usageCheckedAt?: string;
 };
 
 function claudeCapabilities(overrides: Partial<TestClaudeCapabilities> = {}) {
@@ -4351,6 +4353,84 @@ it.layer(
           }),
         ),
       ),
+    );
+
+    it.effect(
+      "shows the per-check usage read over the cached probe, falling back to the probe",
+      () =>
+        Effect.gen(function* () {
+          const window = (utilization: number) => ({
+            utilization,
+            resets_at: "2026-11-16T04:00:00Z",
+          });
+          const capabilities = claudeCapabilities({
+            subscriptionType: "max",
+            usageCheckedAt: "2026-11-16T02:00:00.000Z",
+            usage: {
+              rate_limits_available: true,
+              rate_limits: {
+                five_hour: window(10),
+                seven_day: window(20),
+                extra_usage: {
+                  is_enabled: true,
+                  monthly_limit: 100,
+                  used_credits: 30,
+                  utilization: 30,
+                },
+              },
+            },
+          });
+          const check = (read: { readonly windows: boolean } | undefined) =>
+            checkClaudeProviderStatus(
+              defaultClaudeSettings,
+              capabilities,
+              undefined,
+              undefined,
+              BUNDLED_CLAUDE_MODEL_CATALOG,
+              undefined,
+              () =>
+                Effect.succeed(
+                  read && {
+                    checkedAt: "2026-11-16T02:04:00.000Z",
+                    rateLimits: read.windows
+                      ? { five_hour: window(15), seven_day: window(25), model_scoped: [] }
+                      : undefined,
+                    resetCredits: undefined,
+                  },
+                ),
+            );
+          const rows = (status: Effect.Success<ReturnType<typeof check>>) => [
+            status.usageLimits?.checkedAt,
+            status.usageLimits?.windows.map((entry) => [entry.id, entry.usedPercent]),
+          ];
+
+          assert.deepStrictEqual(rows(yield* check({ windows: true })), [
+            "2026-11-16T02:04:00.000Z",
+            [
+              ["five_hour", 15],
+              ["seven_day", 25],
+              ["monthly_spend", 30],
+            ],
+          ]);
+          for (const failedRead of [undefined, { windows: false }]) {
+            assert.deepStrictEqual(rows(yield* check(failedRead)), [
+              "2026-11-16T02:00:00.000Z",
+              [
+                ["five_hour", 10],
+                ["seven_day", 20],
+                ["monthly_spend", 30],
+              ],
+            ]);
+          }
+        }).pipe(
+          Effect.provide(
+            layerMockSpawner((args) => {
+              const joined = args.join(" ");
+              if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
+              throw new Error(`Unexpected args: ${joined}`);
+            }),
+          ),
+        ),
     );
   });
 });

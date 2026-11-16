@@ -1,9 +1,11 @@
 import {
+  type BackgroundScope,
   DEFAULT_PROVIDER_HEALTH_REFRESH_INTERVAL,
   type ServerProvider,
   ServerSettingsError,
 } from "@t3tools/contracts";
 import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
+import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
@@ -86,6 +88,10 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
   });
   const settingsRef = yield* Ref.make(initialSettings);
   const recheckPendingRef = yield* Ref.make(false);
+  const lastCheckAtRef = yield* Ref.make(0);
+  const recordCheck = Clock.currentTimeMillis.pipe(
+    Effect.flatMap((now) => Ref.set(lastCheckAtRef, now)),
+  );
   const enrichmentFiberRef = yield* Ref.make<Fiber.Fiber<void, unknown> | null>(null);
   const scope = yield* Effect.scope;
 
@@ -179,6 +185,7 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
     // A probe without usage must not erase a report published while its I/O was in flight.
     const usageBeforeProbe = (yield* Ref.get(snapshotStateRef)).snapshot.usageLimits;
     const probedSnapshot = yield* input.checkProvider;
+    yield* recordCheck;
     // One failed periodic check over a ready provider is often transient; recheck before showing it.
     if (
       options?.deferFailure === true &&
@@ -346,6 +353,7 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
       return;
     }
     const probed = yield* input.checkUsageLimits;
+    yield* recordCheck;
     const next = yield* Ref.modify(snapshotStateRef, (state) => {
       const usageLimits = resolveUsageLimitsAfterProbe({
         published: state.snapshot.usageLimits,
@@ -436,6 +444,41 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
       Effect.ignoreCause({ log: true }),
     ),
   ).pipe(Effect.forkScoped);
+
+  // Fork: periodic checks pause while no client is in front, so a client coming back gets one
+  // check once the last is older than the interval; the interval then restarts from it.
+  const refreshOnForegroundReturn = Effect.fn("ManagedServerProvider.refreshOnForegroundReturn")(
+    function* (scopes: ReadonlyArray<BackgroundScope>) {
+      const { snapshot, checked } = yield* Ref.get(snapshotStateRef);
+      const wanted = scopes.some(
+        (scope) =>
+          scope.type === "provider-status" &&
+          (scope.instanceId === undefined || scope.instanceId === snapshot.instanceId),
+      );
+      if (!checked || !wanted) return;
+      const intervalMs = Duration.toMillis(Duration.fromInputUnsafe(yield* getRefreshInterval));
+      if (intervalMs <= 0) return;
+      const ran = yield* refreshSemaphore.withPermits(1)(
+        Effect.gen(function* () {
+          const sinceLastCheck =
+            (yield* Clock.currentTimeMillis) - (yield* Ref.get(lastCheckAtRef));
+          if (sinceLastCheck < intervalMs || !(yield* shouldRefreshOnInterval)) return false;
+          yield* refreshOnInterval(true);
+          return true;
+        }),
+      );
+      if (ran) yield* Queue.offer(refreshIntervalChanges, undefined);
+    },
+  );
+  if (host.foregroundReturns) {
+    yield* host.foregroundReturns.pipe(
+      Stream.runForEach((scopes) =>
+        refreshOnForegroundReturn(scopes).pipe(Effect.ignoreCause({ log: true })),
+      ),
+      Effect.ignoreCause({ log: true }),
+      Effect.forkScoped,
+    );
+  }
 
   // Probes spawn provider CLIs; starting them during server startup slows the first client load.
   yield* (host.awaitServerReady ?? Effect.void).pipe(

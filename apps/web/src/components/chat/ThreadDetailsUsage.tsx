@@ -21,6 +21,7 @@ import { formatContextWindowTokens } from "../../lib/contextWindow";
 import { cn } from "../../lib/utils";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { LimitsUpdated } from "../usage/LimitsUpdated";
 import { formatContextWindowCompactionMessage } from "./compaction.logic";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 
@@ -75,7 +76,15 @@ export function ThreadDetailsUsage({
             tooltip={<span className="text-foreground">{notice}</span>}
           />
         ) : (
-          limits.windows.map((window) => <LimitRow key={window.id} window={window} now={now} />)
+          <>
+            {limits.windows.map((window) => (
+              <LimitRow key={window.id} window={window} now={now} />
+            ))}
+            <LimitsUpdated
+              checkedAt={limits.checkedAt}
+              className="col-span-3 px-2.5 pt-1 text-2xs text-muted-foreground tabular-nums"
+            />
+          </>
         )}
       </div>
     </ThreadDetailsSection>

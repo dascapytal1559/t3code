@@ -162,8 +162,8 @@ describe("claudeResetCreditsToContract", () => {
   });
 });
 
-effectIt.layer(NodeServices.layer)("readClaudeResetCredits", (it) => {
-  it.effect("reads the grants with the CLI's request", () =>
+effectIt.layer(NodeServices.layer)("readClaudeOauthUsage", (it) => {
+  it.effect("reads the windows and grants with the CLI's request", () =>
     Effect.gen(function* () {
       const { configDir } = yield* writeLogin;
       const client = HttpClient.make((request) => {
@@ -177,12 +177,13 @@ effectIt.layer(NodeServices.layer)("readClaudeResetCredits", (it) => {
           HttpClientResponse.fromWeb(
             request,
             Response.json({
+              five_hour: { utilization: 40, resets_at: null },
               cedar_ember: { eligible: true, next_grant_id: "grant_a", grants: [grant({})] },
             }),
           ),
         );
       });
-      const linux = yield* ClaudeResetCredits.readClaudeResetCredits(
+      const linux = yield* ClaudeResetCredits.readClaudeOauthUsage(
         configDir,
         "2.1.0",
         CLI_ENV,
@@ -191,7 +192,7 @@ effectIt.layer(NodeServices.layer)("readClaudeResetCredits", (it) => {
         Effect.provideService(HttpClient.HttpClient, client),
       );
       const login = keychain('{"claudeAiOauth":{"accessToken":"oauth-token","refreshToken":"r"}}');
-      const darwin = yield* ClaudeResetCredits.readClaudeResetCredits("/nowhere", "2.1.0", {
+      const darwin = yield* ClaudeResetCredits.readClaudeOauthUsage("/nowhere", "2.1.0", {
         USER: "alice",
         CLAUDE_CONFIG_DIR: "/Users/alice/.claude-work",
       }).pipe(
@@ -199,10 +200,12 @@ effectIt.layer(NodeServices.layer)("readClaudeResetCredits", (it) => {
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, login.spawner),
         Effect.provideService(HttpClient.HttpClient, client),
       );
-      expect([linux, darwin]).toEqual([
-        expect.objectContaining({ availableCount: 1, nextCreditId: "grant_a" }),
-        expect.objectContaining({ availableCount: 1, nextCreditId: "grant_a" }),
-      ]);
+      const read = {
+        checkedAt: expect.any(String),
+        rateLimits: expect.objectContaining({ five_hour: { utilization: 40, resets_at: null } }),
+        resetCredits: expect.objectContaining({ availableCount: 1, nextCreditId: "grant_a" }),
+      };
+      expect([linux, darwin]).toEqual([read, read]);
       expect(login.calls).toEqual([
         {
           command: "/usr/bin/security",
@@ -223,7 +226,7 @@ effectIt.layer(NodeServices.layer)("readClaudeResetCredits", (it) => {
     Effect.gen(function* () {
       const { configDir } = yield* writeLogin;
       const darwin = (stdout: string) =>
-        ClaudeResetCredits.readClaudeResetCredits(configDir, "2.1.0", CLI_ENV).pipe(
+        ClaudeResetCredits.readClaudeOauthUsage(configDir, "2.1.0", CLI_ENV).pipe(
           Effect.provideService(HostProcess.Platform, "darwin"),
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, keychain(stdout).spawner),
           Effect.provideService(HttpClient.HttpClient, refuseRequests),
@@ -231,7 +234,7 @@ effectIt.layer(NodeServices.layer)("readClaudeResetCredits", (it) => {
       const missing = yield* darwin("");
       const malformed = yield* darwin("not json");
       const tokenless = yield* darwin('{"claudeAiOauth":{"refreshToken":"r"}}');
-      const limited = yield* ClaudeResetCredits.readClaudeResetCredits(
+      const limited = yield* ClaudeResetCredits.readClaudeOauthUsage(
         configDir,
         "2.1.0",
         CLI_ENV,

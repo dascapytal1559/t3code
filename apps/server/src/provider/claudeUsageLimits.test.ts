@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { claudeRateLimitEventToUpdate, claudeUsageResponseToLimits } from "./claudeUsageLimits.ts";
+import {
+  claudeOauthUsageRateLimits,
+  claudeRateLimitEventToUpdate,
+  claudeUsageResponseToLimits,
+} from "./claudeUsageLimits.ts";
 
 const checkedAt = "2026-07-18T10:00:00.000Z";
 const noNames = { overageIncluded: undefined } as const;
@@ -283,5 +287,109 @@ describe("claudeRateLimitEventToUpdate", () => {
         },
       ],
     });
+  });
+});
+
+// Recorded from /api/oauth/usage?cedar_ember=1&skip_spend=1 (16 Nov 2026); unrelated null keys trimmed.
+const RECORDED_OAUTH_USAGE = {
+  five_hour: {
+    utilization: 100.0,
+    resets_at: "2026-11-16T03:40:00.108730+00:00",
+    limit_dollars: null,
+    used_dollars: null,
+    remaining_dollars: null,
+    locked_reason: null,
+  },
+  seven_day: {
+    utilization: 74.0,
+    resets_at: "2026-11-16T03:59:59.108754+00:00",
+    limit_dollars: null,
+    used_dollars: null,
+    remaining_dollars: null,
+    locked_reason: null,
+  },
+  seven_day_oauth_apps: null,
+  seven_day_opus: null,
+  seven_day_sonnet: null,
+  cedar_ember: {
+    eligible: false,
+    ineligible_reason: "surface",
+    at_limit: false,
+    exhausted: [],
+    grants: [],
+    next_grant_id: null,
+    weekly_resets_at: null,
+    cooldown_until: null,
+    event_props: null,
+  },
+  extra_usage: null,
+  limits: [
+    {
+      kind: "session",
+      group: "session",
+      percent: 100,
+      severity: "critical",
+      resets_at: "2026-11-16T03:40:00.108730+00:00",
+      scope: null,
+      is_active: true,
+    },
+    {
+      kind: "weekly_all",
+      group: "weekly",
+      percent: 74,
+      severity: "normal",
+      resets_at: "2026-11-16T03:59:59.108754+00:00",
+      scope: null,
+      is_active: false,
+    },
+    {
+      kind: "weekly_scoped",
+      group: "weekly",
+      percent: 96,
+      severity: "critical",
+      resets_at: "2026-11-16T04:00:00.108918+00:00",
+      scope: { model: { id: null, display_name: "Fable" }, surface: null },
+      is_active: false,
+    },
+  ],
+  spend: null,
+  seven_day_breakdown: {
+    as_of: "2026-11-16T02:59:34.129883+00:00",
+    window_started_at: "2026-11-09T03:59:59.108754+00:00",
+    rows: [{ key: "claude_code", display_name: "Claude Code", percent: 100 }],
+  },
+  weekly_scoped_shares: [
+    { limit_index: 2, used_percent_of_weekly: 48, allowance_percent_of_weekly: 50 },
+  ],
+};
+
+describe("claudeOauthUsageRateLimits", () => {
+  it("reads the CLI's get_usage windows from a recorded usage body", () => {
+    const rateLimits = claudeOauthUsageRateLimits(RECORDED_OAUTH_USAGE);
+    expect(rateLimits).toEqual({
+      five_hour: { utilization: 100, resets_at: "2026-11-16T03:40:00.108730+00:00" },
+      seven_day: { utilization: 74, resets_at: "2026-11-16T03:59:59.108754+00:00" },
+      model_scoped: [
+        { display_name: "Fable", utilization: 96, resets_at: "2026-11-16T04:00:00.108918+00:00" },
+      ],
+      extra_usage: null,
+    });
+    expect(
+      claudeUsageResponseToLimits({
+        checkedAt,
+        response: { rate_limits_available: true, rate_limits: rateLimits! },
+      }).limits.windows.map((window) => [window.id, window.usedPercent]),
+    ).toEqual([
+      ["five_hour", 100],
+      ["seven_day", 74],
+      ["seven_day_fable", 96],
+    ]);
+    // A body without windows, or with a window in an unknown shape, leaves the probe's reading.
+    expect(claudeOauthUsageRateLimits({ cedar_ember: RECORDED_OAUTH_USAGE.cedar_ember })).toBe(
+      undefined,
+    );
+    expect(
+      claudeOauthUsageRateLimits({ ...RECORDED_OAUTH_USAGE, five_hour: { utilization: "100" } }),
+    ).toBe(undefined);
   });
 });

@@ -8,7 +8,6 @@ import {
   type ServerProvider,
   type ServerProviderModel,
   type ServerProviderSlashCommand,
-  type ServerProviderResetCredits,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
@@ -60,6 +59,7 @@ import {
 } from "./Drivers/ClaudeSkills.ts";
 import type { ProviderWorkspaceSnapshot } from "@t3tools/provider-core/server/driver";
 import { makeUnavailableUsageLimits } from "@t3tools/provider-core/server/usageLimits";
+import type { readClaudeOauthUsage } from "./claudeResetCredits.ts";
 import {
   type ClaudeScopedLimitNames,
   claudeUsageResponseToLimits,
@@ -674,7 +674,9 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   modelCatalog: ClaudeModelCatalog = BUNDLED_CLAUDE_MODEL_CATALOG,
   /** Shared with the adapter so turn events reuse the scoped-bucket names this probe saw. */
   scopedLimitNames?: Ref.Ref<ClaudeScopedLimitNames>,
-  resolveResetCredits?: (version: string) => Effect.Effect<ServerProviderResetCredits | undefined>,
+  resolveOauthUsage?: (
+    version: string,
+  ) => Effect.Effect<Effect.Success<ReturnType<typeof readClaudeOauthUsage>>>,
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
@@ -867,25 +869,35 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       authMethod: capabilities.tokenSource,
       apiKeySource: capabilities.apiKeySource,
     });
-  const usageCheckedAt = capabilities.usageCheckedAt ?? checkedAt;
-  const usageLimits = !capabilities.usage
+  const probedUsage = capabilities.usage;
+  // Fork: the probe's usage is cached for minutes; this read runs on every check, as the reset read did.
+  const oauthUsage =
+    resolveOauthUsage &&
+    capabilities.subscriptionType &&
+    probedUsage?.rate_limits_available &&
+    probedUsage.rate_limits &&
+    parsedVersion
+      ? yield* resolveOauthUsage(parsedVersion)
+      : undefined;
+  const usage =
+    oauthUsage?.rateLimits && probedUsage?.rate_limits
+      ? {
+          // The direct read skips spend, so the probe's spend stays.
+          response: {
+            rate_limits_available: true,
+            rate_limits: { ...probedUsage.rate_limits, ...oauthUsage.rateLimits },
+          },
+          checkedAt: oauthUsage.checkedAt,
+        }
+      : probedUsage
+        ? { response: probedUsage, checkedAt: capabilities.usageCheckedAt ?? checkedAt }
+        : undefined;
+  const usageLimits = !usage
     ? makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" })
     : scopedLimitNames
-      ? yield* recordClaudeUsageResponse(scopedLimitNames, {
-          response: capabilities.usage,
-          checkedAt: usageCheckedAt,
-        })
-      : claudeUsageResponseToLimits({
-          response: capabilities.usage,
-          checkedAt: usageCheckedAt,
-        }).limits;
-  const resetCredits =
-    resolveResetCredits &&
-    capabilities.subscriptionType &&
-    !usageLimits.unavailable &&
-    parsedVersion
-      ? yield* resolveResetCredits(parsedVersion)
-      : undefined;
+      ? yield* recordClaudeUsageResponse(scopedLimitNames, usage)
+      : claudeUsageResponseToLimits(usage).limits;
+  const resetCredits = oauthUsage?.resetCredits;
   return buildServerProvider({
     presentation: CLAUDE_PRESENTATION,
     enabled: claudeSettings.enabled,
