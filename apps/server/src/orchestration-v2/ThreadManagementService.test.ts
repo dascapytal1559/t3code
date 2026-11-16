@@ -134,6 +134,20 @@ it("stamps authoritative provenance on commands that create threads or messages"
   expect(ThreadManagementService.withCreationProvenance(message, provenance)).not.toHaveProperty(
     "linkedSender",
   );
+
+  const fork: OrchestrationV2Command = {
+    type: "thread.fork",
+    createdBy: "user",
+    creationSource: "web",
+    commandId: CommandId.make("command:thread-management:fork"),
+    sourceThreadId: ThreadId.make("thread:thread-management:create"),
+    targetThreadId: ThreadId.make("thread:thread-management:fork"),
+    sourcePoint: { type: "latest_stable" },
+    usageOrigin: { origin: "phone", basis: "stamp", reason: "inherited" },
+  };
+  expect(ThreadManagementService.withCreationProvenance(fork, provenance)).not.toHaveProperty(
+    "usageOrigin",
+  );
 });
 
 const layerReceiptsTest = CommandReceiptStore.layer.pipe(

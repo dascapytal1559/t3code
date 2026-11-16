@@ -42,7 +42,7 @@ import { Button } from "../ui/button";
 import { OpenAI } from "../Icons";
 import { Alert, AlertTitle } from "../ui/alert";
 import { Popover, PopoverCreateHandle, PopoverPopup, PopoverTrigger } from "../ui/popover";
-import { LimitsUpdated, oldestCheckedAt, useLimitsAge } from "./LimitsUpdated";
+import { LimitsUpdated, limitsEnvironmentOf, oldestCheckedAt, useLimitsAge } from "./LimitsUpdated";
 import { PaceIcon, ResetCreditDialog, barColor, usePaceMark, useResetCredit } from "./UsageLimits";
 
 function accountInitials(email: string): string {
@@ -154,7 +154,7 @@ function SegmentPopover({
       ? account.environments.map((environment) => environment.label).join(", ")
       : account.sourceLabel;
   const credits = resetCreditsForWindow(account.limits.resetCredits, window);
-  const age = useLimitsAge(account.limits.checkedAt);
+  const age = useLimitsAge(account.limits.checkedAt, limitsEnvironmentOf(account));
   const choices =
     redeem && account.redeem && credits?.availableCount
       ? resetCreditChoices(credits, account.redeem.input, now, true)
@@ -606,11 +606,8 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
         />
         {label}
         <LimitsUpdated
-          checkedAt={oldestCheckedAt(
-            pool.accounts.flatMap((account) =>
-              account.limits.unavailable ? [] : [account.limits],
-            ),
-          )}
+          checkedAt={oldestCheckedAt(pool.accounts)}
+          environmentId={null}
           className="ms-auto text-xs font-normal text-muted-foreground tabular-nums"
         />
       </h2>

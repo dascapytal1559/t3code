@@ -1,4 +1,5 @@
 import type {
+  EnvironmentId,
   ProviderInstanceId,
   ServerProvider,
   ServerProviderUsageWindow,
@@ -42,10 +43,11 @@ type UsageTone = "error" | "warning" | null;
 
 /** The selected provider's limit windows. Each row reads as room left. */
 export function ThreadDetailsUsage({
+  environmentId,
   providerInstanceId,
   providers,
   sources,
-}: Omit<ThreadDetailsUsageInput, "contextWindow">) {
+}: Omit<ThreadDetailsUsageInput, "contextWindow"> & { readonly environmentId: EnvironmentId }) {
   const nowMinute = useNowMinute();
   const now = Date.parse(`${nowMinute}:00Z`);
   const report =
@@ -82,6 +84,7 @@ export function ThreadDetailsUsage({
             ))}
             <LimitsUpdated
               checkedAt={limits.checkedAt}
+              environmentId={environmentId}
               className="col-span-3 px-2.5 pt-1 text-2xs text-muted-foreground tabular-nums"
             />
           </>

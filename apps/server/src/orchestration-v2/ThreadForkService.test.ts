@@ -112,7 +112,10 @@ function makeSourceProjection(sourceRun: OrchestrationV2Run): OrchestrationV2Thr
 const planFork = (
   sourceRun: OrchestrationV2Run,
   sourceProjection = makeSourceProjection(sourceRun),
-  options: { readonly sideChat?: boolean } = {},
+  options: {
+    readonly sideChat?: boolean;
+    readonly usageOrigin?: NonNullable<OrchestrationV2AppThread["usageOrigin"]>;
+  } = {},
 ) =>
   Effect.gen(function* () {
     const service = yield* ThreadForkService.ThreadForkServiceV2;
@@ -152,12 +155,17 @@ it.effect("resets a fork's pin, snooze, settle and delegation state but keeps it
       historyOrigin: "v1_import",
       linkOrigin,
       tags: ["private"],
+      causedBy: { threadId: ThreadId.make("launcher"), messageId: MessageId.make("born-on-phone") },
+      usageOrigin: { origin: "phone", basis: "stamp", reason: "inherited" },
     };
     const sourceRun = makeSourceRun("completed");
-    const result = yield* planFork(sourceRun, {
-      ...makeSourceProjection(sourceRun),
-      thread: sourceThread,
-    });
+    const sourceProjection = { ...makeSourceProjection(sourceRun), thread: sourceThread };
+    const result = yield* planFork(sourceRun, sourceProjection);
+    assert.isUndefined(result.targetThread.causedBy);
+    assert.isUndefined(result.targetThread.usageOrigin);
+    const forkingTurn = { origin: "computer", basis: "stamp", reason: "inherited" };
+    const bound = yield* planFork(sourceRun, sourceProjection, { usageOrigin: forkingTurn });
+    assert.deepEqual(bound.targetThread.usageOrigin, forkingTurn);
 
     assert.isNull(result.targetThread.snoozedUntil);
     assert.isNull(result.targetThread.snoozedAt);

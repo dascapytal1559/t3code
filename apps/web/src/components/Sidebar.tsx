@@ -972,7 +972,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const { isMobile, setOpenMobile } = useSidebar();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
-  const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const {
@@ -983,12 +982,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     pinThread,
     unpinThread,
     confirmAndUnpinThread,
-    setThreadAutoSettle,
     turnThreadIntoProject,
     reorderPinnedThread,
     reorderActiveThread,
     markThreadUnread,
-    archiveThread,
     deleteThread,
   } = useThreadActions();
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
@@ -2686,9 +2683,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           projectByKey.get(`${thread.environmentId}:${thread.projectId}`)?.workspaceRoot ??
           null;
         const configLoaded = serverConfigs.has(thread.environmentId);
-        const supportsAutoSettleOptOut =
-          serverConfigs.get(thread.environmentId)?.environment.capabilities
-            .threadAutoSettleOptOut === true;
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const isSettled = settledThreadKeysRef.current.has(threadKey);
         const isSnoozed = snoozedThreadKeysRef.current.has(threadKey);
@@ -2724,7 +2718,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                   : null,
               isPinned,
               isSettled,
-              autoSettleEnabled: thread.autoSettleDisabledAt == null,
               isSnoozed,
               canSnoozeNow: canSnooze(thread, { now: new Date().toISOString() }),
               isRegeneratingTitle,
@@ -2735,7 +2728,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               canTurnIntoProject: canTurnThreadIntoProject(threadRef),
               supports: {
                 settlement: SIDEBAR_SETTLED_SHELF && configLoaded,
-                autoSettleOptOut: supportsAutoSettleOptOut,
                 snooze: configLoaded,
                 pinning: configLoaded,
                 titleRegeneration: configLoaded,
@@ -2833,24 +2825,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             }
             return;
           }
-          case "auto-settle:enabled":
-          case "auto-settle:disabled": {
-            const result = await setThreadAutoSettle(
-              threadRef,
-              clicked.value === "auto-settle:enabled",
-            );
-            if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-              const error = squashAtomCommandFailure(result);
-              toastManager.add(
-                stackedThreadToast({
-                  type: "error",
-                  title: "Failed to update auto-settle",
-                  description: error instanceof Error ? error.message : "An error occurred.",
-                }),
-              );
-            }
-            return;
-          }
           case "rename":
             startThreadRename(threadRef, thread.title);
             return;
@@ -2897,34 +2871,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           case "copy-thread-id":
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
             return;
-          case "archive": {
-            if (confirmThreadArchive) {
-              const confirmed = await settlePromise(() =>
-                api.dialogs.confirm(`Archive thread "${thread.title}"?`),
-              );
-              if (confirmed._tag === "Failure" || !confirmed.value) return;
-            }
-            let didArchive = false;
-            const result = await archiveThread(threadRef, {
-              onArchived: () => {
-                didArchive = true;
-              },
-            });
-            if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-              const error = squashAtomCommandFailure(result);
-              toastManager.add(
-                stackedThreadToast({
-                  type: "error",
-                  title: didArchive
-                    ? "Thread archived, but navigation failed"
-                    : "Failed to archive thread",
-                  description: error instanceof Error ? error.message : "An error occurred.",
-                }),
-              );
-              return;
-            }
-            return;
-          }
           case "delete": {
             if (confirmThreadDelete) {
               const confirmed = await settlePromise(() =>

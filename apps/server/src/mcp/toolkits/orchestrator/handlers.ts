@@ -8,7 +8,7 @@ import * as PeerLinkRequests from "../../../peer/PeerLinkRequests.ts";
 import * as PeerLinks from "../../../peer/PeerLinks.ts";
 import * as RemoteDelegation from "../../../peer/RemoteDelegation.ts";
 import * as UsageOrigins from "../../../usage/UsageOrigins.ts";
-import { bindUsageOrigin, loadCaller, readCaller } from "../../threadAccess.ts";
+import { bindUsageOrigin, bornFromCaller, loadCaller, readCaller } from "../../threadAccess.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
@@ -35,13 +35,6 @@ const bindScheduledTask = Effect.fn("mcp.bindScheduledTask")(function* (
           : Effect.logWarning("Usage could not bind a scheduled task's origin", { taskId, cause }),
       ),
     );
-});
-
-/** Work the caller's turn creates is born where that turn counts now, as a launch is. */
-const bornFromCaller = Effect.gen(function* () {
-  const { caller, threads } = yield* loadCaller();
-  const bound = yield* bindUsageOrigin(threads, undefined, caller?.id);
-  return bound === null ? undefined : UsageOrigins.storedOrigin(bound.key);
 });
 
 const handlers = {

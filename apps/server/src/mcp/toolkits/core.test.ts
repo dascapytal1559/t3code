@@ -1358,6 +1358,7 @@ it.effect.each([
         Layer.provide(
           Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
         ),
+        Layer.provide(UsageOrigins.layerTest),
         Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
         Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
         Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),

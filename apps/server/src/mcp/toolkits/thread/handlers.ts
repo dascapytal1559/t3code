@@ -17,6 +17,7 @@ import * as McpToolAccess from "../../McpToolAccess.ts";
 import { isApprovalKind, listPendingRequests, pendingApproval } from "../../pendingRequests.ts";
 import {
   assertFullAccess,
+  bornFromCaller,
   dispatchFailure,
   newCommandId,
   readCaller,
@@ -219,6 +220,7 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
             return { sequence: result.sequence, targetThreadId };
           }
           const targetThreadId = ThreadId.make(`${commandId}:fork`);
+          const usageOrigin = yield* bornFromCaller;
           const result = yield* threads
             .dispatch({
               type: "thread.fork",
@@ -227,6 +229,7 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
               targetThreadId,
               sourcePoint,
               ...(input.title === undefined ? {} : { title: input.title }),
+              ...(usageOrigin === undefined ? {} : { usageOrigin }),
               createdBy: "agent",
               creationSource: "mcp",
             })

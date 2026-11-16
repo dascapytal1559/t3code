@@ -114,11 +114,11 @@ export function withCreationProvenance(
       } = command;
       return { ...rest, ...provenance, ...(origin === undefined ? {} : { origin }) };
     }
-    case "delegated_task.request": {
+    case "delegated_task.request":
+    case "thread.fork": {
       const { usageOrigin: _usageOrigin, ...rest } = command;
       return { ...rest, ...provenance };
     }
-    case "thread.fork":
     case "thread.merge_back":
       return { ...command, ...provenance };
     default:

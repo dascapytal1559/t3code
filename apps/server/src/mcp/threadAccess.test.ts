@@ -15,7 +15,13 @@ import * as Layer from "effect/Layer";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
 import { liveThreadShell } from "./McpToolAccess.testkit.ts";
-import { assertTargetWithinLimits, readThread, verifyCause } from "./threadAccess.ts";
+import * as UsageOrigins from "../usage/UsageOrigins.ts";
+import {
+  assertTargetWithinLimits,
+  bindUsageOrigin,
+  readThread,
+  verifyCause,
+} from "./threadAccess.ts";
 import type { ProjectionRecordFilter } from "../orchestration-v2/ProjectionStore.ts";
 
 const bareId = ThreadId.make("5d0b4a3e-8c1f-4a52-9d37-2f6c7e1b9a04");
@@ -192,5 +198,39 @@ it.effect("accepts a cause only for a prompt that exists in the named thread and
     expect(yield* verify({ threadId: ThreadId.make("thread:missing"), messageId: prompt })).toBe(
       "causedBy: thread thread:missing was not found.",
     );
+  }),
+);
+
+it.effect("binds work a thread sends only from that thread's own turn", () =>
+  Effect.gen(function* () {
+    const caller = ThreadId.make("thread:caller");
+    const other = ThreadId.make("thread:other");
+    const threads = {
+      getThreadShell: (threadId: ThreadId) => Effect.succeed(liveThreadShell(threadId)),
+    };
+    const bind = (fromThread: ThreadId) =>
+      bindUsageOrigin(threads, { threadId: fromThread }, caller).pipe(
+        Effect.provide(
+          Layer.mock(UsageOrigins.UsageOrigins)({
+            originAt: (threadId) =>
+              Effect.succeed({
+                key: {
+                  origin: "phone",
+                  basis: "stamp",
+                  reason: "typed",
+                  root: { threadId, messageId: "message:typed" },
+                },
+                reroots: true,
+                runId: null,
+              }),
+          }),
+        ),
+      );
+
+    expect(yield* Effect.flip(bind(other))).toMatchObject({
+      code: "invalid_request",
+      message: "fromThread: an agent in a thread speaks only for its own thread.",
+    });
+    expect((yield* bind(caller))?.key.root?.threadId).toBe(caller);
   }),
 );

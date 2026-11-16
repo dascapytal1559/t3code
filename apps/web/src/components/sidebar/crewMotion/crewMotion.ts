@@ -239,20 +239,27 @@ export function playCrewExit(row: HTMLElement, options: CrewMotionOptions) {
   }
   const home = coordinatorCard(row);
   const bridge = bridgeFrom(row.previousElementSibling);
-  const stage: CrewExitStage = {
-    ...parts,
-    ...spaceBelow(row, list, -1),
-    bridge,
-    distanceHome: () => (home === null ? 0 : layoutTop(copy) - home.getBoundingClientRect().bottom),
-  };
-  claimListPass();
-  const over = [
-    ...inherited.map((animation) => animation.finished),
-    ...unfold.exit(stage).map((animation) => animation?.finished),
-    options.traceLight ? traceLight.exit(stage) : undefined,
-  ];
-  void Promise.allSettled(over).then(() => {
+  const cleanUp = () => {
     copy.remove();
     bridge?.remove();
-  });
+  };
+  try {
+    const stage: CrewExitStage = {
+      ...parts,
+      ...spaceBelow(row, list, -1),
+      bridge,
+      distanceHome: () =>
+        home === null ? 0 : layoutTop(copy) - home.getBoundingClientRect().bottom,
+    };
+    claimListPass();
+    const over = [
+      ...inherited.map((animation) => animation.finished),
+      ...unfold.exit(stage).map((animation) => animation?.finished),
+      options.traceLight ? traceLight.exit(stage) : undefined,
+    ];
+    void Promise.allSettled(over).then(cleanUp);
+  } catch (error) {
+    cleanUp();
+    throw error;
+  }
 }

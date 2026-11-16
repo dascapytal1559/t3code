@@ -3734,6 +3734,8 @@ export const OrchestrationV2Command = Schema.Union([
     title: Schema.optional(TrimmedNonEmptyString),
     sideChat: Schema.optional(Schema.Boolean),
     createdAt: Schema.optional(Schema.DateTimeUtc),
+    /** Fork: where Usage counts the fork from birth. Only the server sets this. */
+    usageOrigin: Schema.optional(OrchestrationV2UsageOrigin),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.merge_back"),

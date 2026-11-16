@@ -140,6 +140,7 @@ function UsageLimitsBannerBody({
                   />
                   <LimitsUpdated
                     checkedAt={account.limits.checkedAt}
+                    environmentId={environmentId}
                     className="text-xs text-muted-foreground tabular-nums"
                   />
                 </>

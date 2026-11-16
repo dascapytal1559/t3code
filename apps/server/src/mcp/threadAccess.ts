@@ -324,6 +324,13 @@ export const bindUsageOrigin = Effect.fn("mcp.bindUsageOrigin")(function* (
   );
 });
 
+/** Work the caller's turn creates is born where that turn counts now, as a launch is. */
+export const bornFromCaller = Effect.gen(function* () {
+  const { caller, threads } = yield* loadCaller();
+  const bound = yield* bindUsageOrigin(threads, undefined, caller?.id);
+  return bound === null ? undefined : UsageOrigins.storedOrigin(bound.key);
+});
+
 export const newCommandId = Effect.fn("mcp.newCommandId")(function* () {
   const random = yield* SecureRandom.SecureRandom;
   return CommandId.make(`mcp:${yield* random.uuidV4()}`);

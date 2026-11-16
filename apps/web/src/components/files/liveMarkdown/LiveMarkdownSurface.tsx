@@ -189,10 +189,12 @@ export default function LiveMarkdownSurface({
   const searchEntries = useAtomQueryRunner(projectEnvironment.searchEntries, {
     reportFailure: false,
   });
-  const embedKeys = useRef(new Set<string>());
+  const embedLookups = useRef(new Map<string, number>());
   const lookUpEmbed = useEffectEvent((key: string) => {
     const target = imageEmbedTargetOf(key);
     if (target === null) return;
+    const lookup = (embedLookups.current.get(key) ?? 0) + 1;
+    embedLookups.current.set(key, lookup);
     if (!readEnvironmentScope(environmentId, AuthFilesystemReadScope)) return;
     void findImageEmbed(target, baseDir, cwd, {
       files: async (paths) => {
@@ -212,6 +214,7 @@ export default function LiveMarkdownSurface({
         return result._tag === "Success" ? result.value.entries : [];
       },
     }).then((path) => {
+      if (embedLookups.current.get(key) !== lookup) return;
       if (path === null) {
         setEmbedFiles((files) => {
           if (!files.has(key)) return files;
@@ -228,7 +231,6 @@ export default function LiveMarkdownSurface({
   });
   const imageNeeded = useEffectEvent((key: string) => {
     if (imageEmbedTargetOf(key) === null) return addImageKey(key);
-    embedKeys.current.add(key);
     lookUpEmbed(key);
   });
   const lookedUpAt = useRef(workspaceMutationId);
@@ -236,7 +238,7 @@ export default function LiveMarkdownSurface({
   useEffect(() => {
     if (lookedUpAt.current === workspaceMutationId) return;
     lookedUpAt.current = workspaceMutationId;
-    for (const key of embedKeys.current) lookUpEmbed(key);
+    for (const key of embedLookups.current.keys()) lookUpEmbed(key);
   }, [workspaceMutationId]);
   const offerOutline = useEffectEvent((source: MarkdownOutlineSource | null) =>
     onOutlineSource(source),

@@ -9,6 +9,7 @@ import {
   OrchestrationV2ProviderTurnTokenUsage,
   OrchestrationV2Run,
   OrchestrationV2ThreadProjection,
+  OrchestrationV2UsageOrigin,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -60,6 +61,8 @@ export interface ThreadForkServiceV2Shape {
     readonly targetThreadId: ThreadId;
     readonly title?: string;
     readonly sideChat?: boolean;
+    /** Where Usage counts the fork from birth: the turn that forked it, not the source's birth. */
+    readonly usageOrigin?: OrchestrationV2UsageOrigin;
     readonly createdBy: OrchestrationV2Actor;
     readonly creationSource: OrchestrationV2CreationSource;
     readonly createdAt: DateTime.Utc;
@@ -99,8 +102,8 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
           cause: forkableSourceRunStatusError(sourceRun),
         });
       }
-      // The coordinator pin (one per project), the crew link, its card label and the remote
-      // parent's delegation name the source thread's role only.
+      // The coordinator pin (one per project), the crew link, its card label, the remote
+      // parent's delegation and where its launch counted name the source thread's role only.
       const {
         coordinator: _coordinator,
         crewOf: _crewOf,
@@ -108,10 +111,13 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
         statusLabelSince: _statusLabelSince,
         alertRunId: _alertRunId,
         delegatedFrom: _delegatedFrom,
+        causedBy: _causedBy,
+        usageOrigin: _usageOrigin,
         ...inherited
       } = input.sourceProjection.thread;
       const targetThread: OrchestrationV2AppThread = {
         ...inherited,
+        ...(input.usageOrigin === undefined ? {} : { usageOrigin: input.usageOrigin }),
         // PR context follows the conversation; watching remains the source thread's responsibility.
         pullRequests: input.sourceProjection.thread.pullRequests?.map(
           ({ watch: _watch, ...link }) => link,

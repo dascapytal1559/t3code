@@ -31,6 +31,7 @@ import * as ProviderRegistry from "../../../provider/ProviderRegistry.ts";
 import * as ThreadSearch from "../../../orchestration-v2/ThreadSearch.ts";
 import * as ScheduledTaskService from "../../../scheduledTasks/ScheduledTaskService.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
+import * as UsageOrigins from "../../../usage/UsageOrigins.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
 const ThreadOrganizeTool = Tool.make("t3_thread_organize", {
@@ -185,6 +186,7 @@ const ThreadConfigureTool = Tool.make("t3_thread_configure", {
 
 const ThreadTransferTool = Tool.make("t3_thread_transfer", {
   ...commandTool,
+  dependencies: [...commandTool.dependencies, UsageOrigins.UsageOrigins],
   description:
     "Move context between threads. Omit `threadId` for this thread. fork: copy it from `sourcePoint` (default latest stable run) into a new thread with the same setup; no turn runs yet. merge_back: merge it from `sourcePoint` into a related `targetThreadId` in the same project. status: its context transfers.",
   parameters: Schema.Struct({
