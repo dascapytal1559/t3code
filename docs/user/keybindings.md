@@ -175,7 +175,7 @@ shortcut; assign one in **Settings → Keybindings**.
 **Regenerate title** in the thread menu. It has no default shortcut.
 
 `thread.undo` (`mod+z` by default) reverses the actions shown in the notice at the
-bottom of the sidebar, such as unpin, settle, snooze, archive, or discarding a
+bottom of the sidebar, such as unpin, settle, snooze, or discarding a
 draft. Consecutive
 actions of the same kind undo together. The notice remains available for five
 seconds after the latest action. Right after an action, the shortcut works even

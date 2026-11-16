@@ -62,10 +62,9 @@ and worktree while you stay in the new thread composer. This requires a Git proj
 
 Pin a thread from its menu to keep it above your active work.
 
-On web and desktop, unpinning, settling, snoozing, and archiving a thread each show
+On web and desktop, unpinning, settling, and snoozing a thread each show
 a notification with **Undo** for five seconds. Undo restores the thread's previous
-state, including its pinned position, and reopens an archived thread you were
-viewing. Discarding an unsent draft from the sidebar works the same way: Undo brings
+state, including its pinned position. Discarding an unsent draft from the sidebar works the same way: Undo brings
 back its text and attachments. `mod+z` triggers the most recent Undo, even from the composer; see
 [Keybindings](./keybindings.md#commands-with-special-behavior).
 
@@ -196,7 +195,7 @@ but an old closed or merged pull request does not settle work you
 resumed after it closed. Only your own messages count as resuming. A turn that
 finished background work or a pull request watch starts on its own does not.
 
-To keep one thread out of the settled shelf no matter how long it sits idle, open its menu,
+On mobile, to keep one thread out of the settled shelf no matter how long it sits idle, open its menu,
 choose **Auto-settle behavior**, and pick **Never**. The current option is checked. Pick
 **Follow settings** to return to the rules in **Settings → Threads**. While those rules are off,
 a thread on **Follow settings** does not settle automatically either. Manual settle, snooze, and

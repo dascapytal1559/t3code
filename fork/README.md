@@ -194,13 +194,14 @@ and what agents claim.
 - T3 binds by value, through `UsageOrigins.originAt`: where a thread's work
   counted at a moment, read from the turn running then (or ended up to five
   minutes before), segment by segment, else, between turns, a work thread's
-  origin or a coordinator's upkeep. `t3_thread_launch`, `delegate_task` and
-  `create_threads` store it on each new thread as `usageOrigin` (reason
-  `typed` stored as `inherited`), so a delegated child no longer copies its
-  parent's birth. `t3_thread_send` and `t3_thread_send_attachments` store it
-  on the message only when the sender's segment was started by a prompt typed
-  in that turn or is a voice-journal claim (`reroots`), so only typed input
-  moves work. `schedule_task` stores the creating turn's origin in the fork
+  origin or a coordinator's upkeep. `t3_thread_launch`, `delegate_task`,
+  `create_threads` and `t3_thread_transfer`'s fork store it on each new thread
+  as `usageOrigin` (reason `typed` stored as `inherited`), so a delegated child
+  or a fork no longer copies its parent's birth; a provider's own subagent
+  child drops its parent's `usageOrigin` and `causedBy` too. `t3_thread_send`
+  and `t3_thread_send_attachments` store it on the message only when the
+  sender's segment was started by a prompt typed in that turn or is a
+  voice-journal claim (`reroots`), so only typed input moves work. `schedule_task` stores the creating turn's origin in the fork
   table `usage_scheduled_task_origins`, and an edit from a typed turn rebinds
   it. `t3_restart_request` binds when given `fromThread` and keeps the value on
   the request; the restart note carries it, and each restart continuation
@@ -213,8 +214,9 @@ and what agents claim.
   up by it. The calling thread is the MCP caller's own thread; a caller
   outside threads, such as FirstMate's scripts, names it as
   `fromThread: { threadId, at? }`, with `at` when a job that outlived its turn
-  began. A thread's agent may name only itself. Callers that name neither
-  bind nothing, and a read failure or a bug in Usage never holds work back.
+  began. A thread's agent may name only itself, and never with `at`. Callers
+  that name neither bind nothing, and a read failure or a bug in Usage never
+  holds work back.
 - Tokens are joined before aggregation: a transcript record's native
   `sessionId` finds the provider thread (`nativeThreadRef.nativeId`), and its
   timestamp the turn running then. A record outside its session's turns (a
@@ -737,9 +739,9 @@ handlers in `useThreadActionMenu.ts` and `Sidebar.tsx`, `archiveThread` and
 `setThreadAutoSettle` in `useThreadActions.ts`, and the Archive confirmation
 setting in `SettingsPanels.tsx` removed (mobile keeps its Archive and
 Auto-settle); the Snoozed header's sticky classes and
-`toggleSnoozedShelfAndReveal` in `Sidebar.tsx`; the drag projection in `Sidebar.drag.ts`, which leaves the
-pinned header where the browser put it; and `readTops` in
-`Sidebar.shiftGuard.ts`, which skips sticky rows.
+`toggleSnoozedShelfAndReveal` in `Sidebar.tsx`; the drag projection in
+`Sidebar.drag.ts`, which leaves the pinned header where the browser put it;
+and `readTops` in `Sidebar.shiftGuard.ts`, which skips sticky rows.
 
 ### Settling or snoozing a worker tells FirstMate
 
