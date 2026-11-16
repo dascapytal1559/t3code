@@ -268,6 +268,25 @@ and what agents claim.
   `computer`/`archive`. The web folds every row that is not phone into the
   computer, so older servers' `unknown`, `agent` and `crew` rows count there
   too; usage in no origin row stays out of the bar.
+- A day's labels are written down once (`UsageClose.ts`). After a Usage read,
+  when the open tail (since "closed through", or since
+  `USAGE_ORIGINS_RECORDED_SINCE` before the first close) is longer than 48
+  hours, the server reads the UTC days it spans and labels every record and
+  prompt older than 24 hours by the rules above, in fork tables:
+  `usage_closed_session_labels` (a row each time a session's label changes,
+  read at each record and at each of its turns' segments and ends, with the
+  turn's run and whether it was typed), `usage_closed_prompt_labels` (one per
+  prompt) and `usage_close` ("closed through"). Rows keep the label before
+  settling plus the `device` it counts to. The close reads every record back
+  through the new rows in the same transaction and rolls back, with a warning
+  in the log, if any differs. From then on a record at or before "closed
+  through" takes its session's latest row (then settles as below), and a
+  prompt its row; only the open tail runs the rules above, so a later claim or
+  code change never re-labels a closed day. A session with no row by then (a
+  transcript found late) still runs them. `originAt` at a closed time answers
+  from the thread's sessions' rows within a turn and its grace, and as upkeep
+  for a coordinator between turns; a work thread between turns still reads its
+  timeline, since a run claim on its last turn names only that run.
 - Every settled record also carries a `reason`, kept on the server: `typed`,
   `inherited`, `journal`, `upkeep` or `terminal` when there is device
   evidence, else what is missing (`unregisteredSession`,

@@ -71,7 +71,8 @@ background checks, count to the computer as upkeep unless FirstMate says what th
 Usage with no sign of the phone counts to the computer, including agent work with
 no recorded cause, usage from before T3 recorded the sending device (7 Nov 2026) and archived
 history. To see how much of the computer's share is there only by default, and why, run
-`t3 usage reasons`.
+`t3 usage reasons`. Once usage is more than a day old, its origin is final: the server writes it
+down within a day or two and reads it back from then on, so nothing done later changes it.
 
 ## Count agent sessions T3 does not run
 
