@@ -219,6 +219,7 @@ it.effect(
       const toolkit = yield* EnvironmentToolkit;
       const claim = (params: {
         readonly sessionId?: string;
+        readonly from?: string;
         readonly directory?: string;
         readonly threadId?: ThreadId;
         readonly runId?: RunId;
@@ -245,6 +246,8 @@ it.effect(
         [{ runId: wakeRun, device: "computer" }, "threadId goes with runId"],
         [{ sessionId: "pipeline", threadId, device: "computer" }, "threadId goes with runId"],
         [{ threadId, runId: RunId.make("run:elsewhere"), device: "computer" }, "not a run of"],
+        [{ sessionId: "pipeline", from: "after lunch", device: "computer" }, "ISO 8601"],
+        [{ directory: "/runs/one", from: "2026-11-16T00:00:00Z", device: "computer" }, "from goes"],
       ] as const) {
         expect(yield* claim(params)).toMatchObject({
           code: "invalid_request",
@@ -275,6 +278,25 @@ it.effect(
         device: null,
       });
       expect(yield* claims.read).toEqual([]);
+
+      // A session resumed for other work, claimed from that work's start.
+      expect(
+        yield* claim({ sessionId: "engine", from: "2026-11-16T12:00:00+11:00", device: "phone" }),
+      ).toEqual({
+        sessionId: "engine",
+        from: "2026-11-16T01:00:00.000Z",
+        causedBy: null,
+        device: "phone",
+      });
+      expect(yield* claims.read).toEqual([
+        {
+          kind: "session",
+          target: "engine",
+          fromMs: Date.parse("2026-11-16T01:00:00Z"),
+          causeMessageId: null,
+          device: "phone",
+        },
+      ]);
     }).pipe(
       Effect.provide(
         McpToolAccess.HandlersLayer.layer(EnvironmentHandlers.layer).pipe(

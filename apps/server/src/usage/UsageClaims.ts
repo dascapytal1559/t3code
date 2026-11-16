@@ -10,11 +10,12 @@ import * as SqlClient from "effect/sql/SqlClient";
 import type * as SqlError from "effect/sql/SqlError";
 
 /**
- * A provider session, by its native id; every session whose working folder is inside a folder;
- * or one T3 run (turn), whose run id the caller checked against its thread.
+ * A provider session, by its native id, from a start time or whole; every session whose working
+ * folder is inside a folder; or one T3 run (turn), whose run id the caller checked against its
+ * thread.
  */
 export type UsageClaimTarget =
-  | { readonly kind: "session"; readonly sessionId: string }
+  | { readonly kind: "session"; readonly sessionId: string; readonly from?: DateTime.Utc }
   | { readonly kind: "directory"; readonly directory: string }
   | { readonly kind: "run"; readonly runId: string };
 
@@ -29,15 +30,17 @@ export interface StoredUsageClaim {
   readonly kind: UsageClaimTarget["kind"];
   /** The session id, the resolved folder, or the run id. */
   readonly target: string;
+  /** A session claim's start, in epoch ms; absent, it covers the whole session. */
+  readonly fromMs?: number;
   readonly causeMessageId: string | null;
   readonly device: UsageClaimDevice | null;
 }
 
 /**
  * Work Usage can't trace on its own, claimed by an agent: sessions run outside T3 (a pipeline, a
- * child CLI run), or a turn whose prompt has no cause (a wake, upkeep, a voice journal). Claiming
- * again replaces the value; a null value removes the claim. Folders are stored resolved, as
- * transcripts record them.
+ * child CLI run), or a turn whose prompt has no cause (a wake, upkeep, a voice journal). A session
+ * keeps one claim per start time. Claiming the same target again replaces the value; a null value
+ * removes the claim. Folders are stored resolved, as transcripts record them.
  */
 export class UsageClaims extends Context.Service<
   UsageClaims,
@@ -56,9 +59,17 @@ export class UsageClaims extends Context.Service<
 interface ClaimRow {
   readonly target_kind: string;
   readonly target: string;
+  readonly claimed_from: string;
   readonly cause_message_id: string | null;
   readonly device: string | null;
 }
+
+// A claim with no start is stored from "", since SQLite never matches NULL keys on conflict.
+const NO_START = "";
+const claimedFrom = (target: UsageClaimTarget) =>
+  target.kind === "session" && target.from !== undefined
+    ? DateTime.formatIso(target.from)
+    : NO_START;
 
 const targetKey = (target: UsageClaimTarget) =>
   target.kind === "session"
@@ -97,11 +108,13 @@ const make = Effect.gen(function* () {
   }) {
     const target = yield* resolveTarget(input.target);
     const key = targetKey(target);
+    const from = claimedFrom(target);
     if (input.value === null) {
       const keys =
         input.target.kind === "directory" ? [key, path.resolve(input.target.directory)] : [key];
       yield* sql`
-        DELETE FROM usage_claims WHERE target_kind = ${target.kind} AND target IN ${sql.in(keys)}
+        DELETE FROM usage_claims
+        WHERE target_kind = ${target.kind} AND target IN ${sql.in(keys)} AND claimed_from = ${from}
       `;
       return { target, value: null };
     }
@@ -110,10 +123,11 @@ const make = Effect.gen(function* () {
     const device = "device" in input.value ? input.value.device : null;
     yield* sql`
       INSERT INTO usage_claims
-        (target_kind, target, cause_thread_id, cause_run_id, cause_message_id, device, claimed_at)
-      VALUES (${target.kind}, ${key}, ${cause?.threadId ?? null}, ${cause?.runId ?? null},
-        ${cause?.messageId ?? null}, ${device}, ${claimedAt})
-      ON CONFLICT (target_kind, target) DO UPDATE SET
+        (target_kind, target, claimed_from, cause_thread_id, cause_run_id, cause_message_id,
+          device, claimed_at)
+      VALUES (${target.kind}, ${key}, ${from}, ${cause?.threadId ?? null},
+        ${cause?.runId ?? null}, ${cause?.messageId ?? null}, ${device}, ${claimedAt})
+      ON CONFLICT (target_kind, target, claimed_from) DO UPDATE SET
         cause_thread_id = excluded.cause_thread_id,
         cause_run_id = excluded.cause_run_id,
         cause_message_id = excluded.cause_message_id,
@@ -124,16 +138,24 @@ const make = Effect.gen(function* () {
   });
 
   const read = sql<ClaimRow>`
-    SELECT target_kind, target, cause_message_id, device FROM usage_claims
+    SELECT target_kind, target, claimed_from, cause_message_id, device FROM usage_claims
   `.pipe(
     NodeSqliteClient.readOnly,
     Effect.map((rows) =>
       rows.flatMap((row): StoredUsageClaim[] => {
         const kind = row.target_kind;
         const device = row.device === "phone" || row.device === "computer" ? row.device : null;
+        const fromMs = row.claimed_from === NO_START ? undefined : Date.parse(row.claimed_from);
         if (kind !== "session" && kind !== "directory" && kind !== "run") return [];
         if ((row.cause_message_id === null) === (device === null)) return [];
-        return [{ kind, target: row.target, causeMessageId: row.cause_message_id, device }];
+        if (Number.isNaN(fromMs)) return [];
+        const claimed: StoredUsageClaim = {
+          kind,
+          target: row.target,
+          causeMessageId: row.cause_message_id,
+          device,
+        };
+        return [fromMs === undefined ? claimed : { ...claimed, fromMs }];
       }),
     ),
     Effect.withSpan("UsageClaims.read"),

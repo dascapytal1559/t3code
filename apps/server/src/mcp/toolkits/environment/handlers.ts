@@ -3,7 +3,9 @@ import {
   type ServerSettings,
   type ServerSettingsPatch,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Environment from "../../../environment/ServerEnvironment.ts";
 import * as UsageClaims from "../../../usage/UsageClaims.ts";
@@ -119,12 +121,25 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
     }),
   ),
   t3_usage_claim: McpToolAccess.writesEnvironment(
-    ({ sessionId, directory, threadId, runId, causedBy, device }) =>
+    ({ sessionId, from, directory, threadId, runId, causedBy, device }) =>
       Effect.gen(function* () {
         const { threads } = yield* access;
         const path = yield* Path.Path;
+        const start = from === undefined ? undefined : DateTime.make(from);
+        if (start !== undefined && Option.isNone(start))
+          return yield* invalidRequest("from must be an ISO 8601 time.");
+        if (start !== undefined && sessionId === undefined)
+          return yield* invalidRequest("from goes only with sessionId.");
         const targets: UsageClaims.UsageClaimTarget[] = [
-          ...(sessionId === undefined ? [] : [{ kind: "session" as const, sessionId }]),
+          ...(sessionId === undefined
+            ? []
+            : [
+                {
+                  kind: "session" as const,
+                  sessionId,
+                  ...(start === undefined ? {} : { from: start.value }),
+                },
+              ]),
           ...(directory === undefined ? [] : [{ kind: "directory" as const, directory }]),
           ...(runId === undefined ? [] : [{ kind: "run" as const, runId }]),
         ];
@@ -155,7 +170,12 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
           .pipe(Effect.mapError(unavailable));
         return {
           ...(claimed.target.kind === "session"
-            ? { sessionId: claimed.target.sessionId }
+            ? {
+                sessionId: claimed.target.sessionId,
+                ...(claimed.target.from === undefined
+                  ? {}
+                  : { from: DateTime.formatIso(claimed.target.from) }),
+              }
             : claimed.target.kind === "directory"
               ? { directory: claimed.target.directory }
               : { threadId, runId }),

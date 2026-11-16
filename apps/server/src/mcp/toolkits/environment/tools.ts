@@ -2,6 +2,7 @@ import {
   BackgroundActivityProfile,
   BackgroundActivityProfileSelection,
   ExecutionEnvironmentDescriptor,
+  IsoDateTime,
   ModelRouting,
   Objectives,
   OrchestrationV2CausedBy,
@@ -112,9 +113,10 @@ const UsageClaimTool = Tool.make("t3_usage_claim", {
   ...shared,
   dependencies: [...shared.dependencies, UsageClaims.UsageClaims, Path.Path],
   description:
-    "Count work Usage can't trace on its own. Target one of: `sessionId` (native id) or an absolute `directory`, for sessions run outside T3 (a pipeline, a CLI run); `threadId` + `runId`, for a turn whose prompt has no cause (a wake). Give `causedBy` (the prompt behind it) or `device` (`computer` for upkeep, `phone` for a voice journal); work a claimed turn causes inherits it. Claiming again replaces it; `causedBy: null` removes it. Your own worktree needs no claim.",
+    "Count work Usage can't trace on its own. Target one of: `sessionId` (native id) or an absolute `directory`, for sessions run outside T3 (a pipeline, a CLI run); `threadId` + `runId`, for a turn whose prompt has no cause (a wake). Give `causedBy` (the prompt behind it) or `device` (`computer` for upkeep, `phone` for a voice journal); work a claimed turn causes inherits it. `from` (ISO time) claims a session from then until a later `from`. Claiming again replaces it; `causedBy: null` removes it. Your own worktree needs no claim.",
   parameters: Schema.Struct({
     sessionId: Schema.optional(TrimmedNonEmptyString),
+    from: Schema.optional(IsoDateTime),
     directory: Schema.optional(TrimmedNonEmptyString),
     threadId: Schema.optional(ThreadId),
     runId: Schema.optional(RunId),
@@ -123,6 +125,7 @@ const UsageClaimTool = Tool.make("t3_usage_claim", {
   }),
   success: Schema.Struct({
     sessionId: Schema.optional(Schema.String),
+    from: Schema.optional(IsoDateTime),
     directory: Schema.optional(Schema.String),
     threadId: Schema.optional(ThreadId),
     runId: Schema.optional(RunId),

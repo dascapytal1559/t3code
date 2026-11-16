@@ -185,8 +185,12 @@ and what agents claim.
   FirstMate wake), and a value of `causedBy` (counts like an agent prompt with
   that cause) or `device` (counts straight to `phone` or `computer`, basis
   `claim`: FirstMate marks upkeep `computer` and voice-journal work `phone`).
-  Claims live in the fork table `usage_claims`; claiming again replaces one,
-  `causedBy: null` removes it. A claimed turn counts there unless its own
+  A session claim may take `from` (an ISO time), for a session resumed for
+  different work, such as FirstMate's supervision engine: a record counts to
+  the session's latest claim started by then, and a record before every start
+  traces as if unclaimed; a claim with no `from` covers the whole session.
+  Claims live in the fork table `usage_claims`, one per target and start;
+  claiming again replaces one, `causedBy: null` removes it. A claimed turn counts there unless its own
   prompt already traces. `t3_thread_read`'s `recentRuns` carry each run's
   `userMessageId`, a wake's notification included, so an agent can name a
   wake turn as `causedBy` for work it launches.

@@ -174,6 +174,8 @@ export interface OriginWorktree {
 export interface OriginClaim {
   readonly kind: "session" | "directory";
   readonly target: string;
+  /** A session claim's start; absent, it covers the whole session. */
+  readonly fromMs?: number | undefined;
   readonly key: UsageOriginKey;
 }
 
@@ -193,16 +195,24 @@ export interface OriginRecord {
 // Records written this long after a turn ended belong to no T3 turn, such as a terminal resume.
 const LATE_RECORD_GRACE_MS = 5 * 60 * 1000;
 
-/** The last turn that started at or before the time; turns are sorted by start. */
-function turnStartedBy(turns: readonly OriginTurn[], timestampMs: number): OriginTurn | undefined {
+/** The last item that started at or before the time; items are sorted by start. */
+function startedBy<T extends { readonly startedAtMs: number }>(
+  items: readonly T[],
+  timestampMs: number,
+): T | undefined {
   let low = 0;
-  let high = turns.length;
+  let high = items.length;
   while (low < high) {
     const middle = (low + high) >>> 1;
-    if (turns[middle]!.startedAtMs <= timestampMs) low = middle + 1;
+    if (items[middle]!.startedAtMs <= timestampMs) low = middle + 1;
     else high = middle;
   }
-  return turns[low - 1];
+  return items[low - 1];
+}
+
+interface SessionClaim {
+  readonly startedAtMs: number;
+  readonly key: UsageOriginKey;
 }
 
 function isWithin(cwd: string, directory: string): boolean {
@@ -216,25 +226,27 @@ type FolderOwner =
   | { readonly kind: "worktree"; readonly directory: string }
   | { readonly kind: "claim"; readonly key: UsageOriginKey };
 
-const byStart = (a: OriginTurn, b: OriginTurn) => a.startedAtMs - b.startedAtMs;
+const byStart = (a: { startedAtMs: number }, b: { startedAtMs: number }) =>
+  a.startedAtMs - b.startedAtMs;
 
-function appendTo<K>(index: Map<K, OriginTurn[]>, key: K, turns: readonly OriginTurn[]): void {
+function appendTo<K, T>(index: Map<K, T[]>, key: K, items: readonly T[]): void {
   const list = index.get(key);
-  if (list === undefined) index.set(key, [...turns]);
-  else list.push(...turns);
+  if (list === undefined) index.set(key, [...items]);
+  else list.push(...items);
 }
 
 /**
  * Matches a transcript record to the T3 work it belongs to: the turn of its own native session
- * running at the time, else a claim on its session, else its working folder. A folder inside a
- * session's own folder (Claude names its scratchpad for the session), a thread's worktree, or a
- * claimed folder counts to the latest turn there, or to the claim; the deepest folder wins.
+ * running then, else its session's latest claim started by then, else its working folder. A folder
+ * inside a session's own folder (Claude names its scratchpad for the session), a thread's worktree,
+ * or a claimed folder counts to the latest turn there, or to the claim; the deepest folder wins.
  */
 export class UsageOriginIndex {
   readonly #turnsBySession = new Map<string, OriginTurn[]>();
   // Worktree slots are reused, so a folder holds the turns of every thread that worked there.
   readonly #turnsByWorktree = new Map<string, OriginTurn[]>();
-  readonly #claimedSessions = new Map<string, UsageOriginKey>();
+  // A claim with no start covers the session from its beginning.
+  readonly #claimsBySession = new Map<string, SessionClaim[]>();
   /** Deepest first; a claim wins a tie with a worktree. */
   readonly #folders: { readonly directory: string; readonly owner: FolderOwner }[];
   // Records repeat their folder thousands of times; its owner does not depend on the time.
@@ -248,8 +260,10 @@ export class UsageOriginIndex {
     }
     const folders: { directory: string; owner: FolderOwner }[] = [];
     for (const claim of snapshot.claims) {
-      if (claim.kind === "session") this.#claimedSessions.set(claim.target, claim.key);
-      else folders.push({ directory: claim.target, owner: { kind: "claim", key: claim.key } });
+      if (claim.kind === "session") {
+        const startedAtMs = claim.fromMs ?? Number.NEGATIVE_INFINITY;
+        appendTo(this.#claimsBySession, claim.target, [{ startedAtMs, key: claim.key }]);
+      } else folders.push({ directory: claim.target, owner: { kind: "claim", key: claim.key } });
     }
     for (const { threadId, directory } of snapshot.worktrees) {
       if (!this.#turnsByWorktree.has(directory)) {
@@ -259,12 +273,13 @@ export class UsageOriginIndex {
     }
     for (const turns of this.#turnsBySession.values()) turns.sort(byStart);
     for (const turns of this.#turnsByWorktree.values()) turns.sort(byStart);
+    for (const claims of this.#claimsBySession.values()) claims.sort(byStart);
     this.#folders = folders.toSorted((a, b) => b.directory.length - a.directory.length);
   }
 
   lookup(record: OriginRecord): UsageOriginKey | null {
     const own = this.#turnsBySession.get(record.sessionId);
-    const turn = own === undefined ? undefined : turnStartedBy(own, record.timestampMs);
+    const turn = own === undefined ? undefined : startedBy(own, record.timestampMs);
     if (
       turn !== undefined &&
       (turn.completedAtMs === null ||
@@ -272,8 +287,9 @@ export class UsageOriginIndex {
     ) {
       return turn.key;
     }
-    const claimed = this.#claimedSessions.get(record.sessionId);
-    if (claimed !== undefined) return claimed;
+    const claims = this.#claimsBySession.get(record.sessionId);
+    const claimed = claims === undefined ? undefined : startedBy(claims, record.timestampMs);
+    if (claimed !== undefined) return claimed.key;
     // A T3 session's record outside its turns is someone resuming it elsewhere, such as a terminal.
     if (own !== undefined || record.cwd === undefined) return null;
     const owner = this.#ownerOf(record.cwd);
@@ -283,7 +299,7 @@ export class UsageOriginIndex {
       owner.kind === "session"
         ? this.#turnsBySession.get(owner.sessionId)
         : this.#turnsByWorktree.get(owner.directory);
-    return (turns && turnStartedBy(turns, record.timestampMs)?.key) ?? null;
+    return (turns && startedBy(turns, record.timestampMs)?.key) ?? null;
   }
 
   #ownerOf(cwd: string): FolderOwner | null {
@@ -465,7 +481,7 @@ const make = Effect.gen(function* () {
         claim.causeMessageId === null
           ? null
           : {
-              id: `usage-claim:${claim.kind}:${claim.target}`,
+              id: `usage-claim:${claim.kind}:${claim.target}:${claim.fromMs ?? ""}`,
               runId: null,
               createdBy: "agent",
               creationSource: "mcp",
@@ -552,7 +568,14 @@ const make = Effect.gen(function* () {
         claims: claimRows.flatMap((claim): OriginClaim[] =>
           claim.kind === "run"
             ? []
-            : [{ kind: claim.kind, target: claim.target, key: claimKey(claim) }],
+            : [
+                {
+                  kind: claim.kind,
+                  target: claim.target,
+                  fromMs: claim.fromMs,
+                  key: claimKey(claim),
+                },
+              ],
         ),
       } satisfies UsageOriginSnapshot;
     },

@@ -203,11 +203,26 @@ describe("resolveMessageOrigin", () => {
           { kind: "session", target: "pipeline-session", key: claimed },
           { kind: "directory", target: "/runs/pipeline", key: claimed },
           { kind: "directory", target: "/wt/worker/nested", key: claimed },
+          // A session resumed for different work, claimed from each start; listed out of order.
+          { kind: "session", target: "engine", fromMs: 20_000, key: computer },
+          { kind: "session", target: "engine", fromMs: 10_000, key: phone },
+          { kind: "session", target: "resumed", key: claimed },
+          { kind: "session", target: "resumed", fromMs: 10_000, key: computer },
         ],
       });
       const at = (sessionId: string, timestampMs: number, cwd?: string) =>
         index.lookup({ sessionId, timestampMs, cwd });
       assert.deepStrictEqual(at("pipeline-session", 9_000), claimed);
+      assert.deepStrictEqual(at("pipeline-session", -1), claimed);
+      // Each record counts to the latest claim started by then; before the first, as unclaimed.
+      assert.deepStrictEqual(at("engine", 10_000), phone);
+      assert.deepStrictEqual(at("engine", 19_999), phone);
+      assert.deepStrictEqual(at("engine", 25_000), computer);
+      assert.deepStrictEqual(at("engine", 9_999, "/runs/pipeline"), claimed);
+      assert.strictEqual(at("engine", 9_999), null);
+      // A claim with no start covers the session until a later one starts.
+      assert.deepStrictEqual(at("resumed", 9_999), claimed);
+      assert.deepStrictEqual(at("resumed", 10_000), computer);
       assert.deepStrictEqual(at("cli", 9_000, "/runs/pipeline/review"), claimed);
       assert.strictEqual(at("cli", 9_000, "/runs/pipeline-other"), null);
       // A child run in a thread's worktree counts to that thread's latest turn by then.
