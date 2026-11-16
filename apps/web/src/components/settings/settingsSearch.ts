@@ -374,6 +374,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["latex tex katex equations formulas markdown"],
   },
   {
+    id: "crew-trace-light",
+    title: "Crew trace light",
+    to: "/settings/appearance",
+    searchTerms: ["firstmate worker crewmate sidebar tree line animation motion glow accent"],
+  },
+  {
     id: "panel-animations",
     title: "Panel animations",
     to: "/settings/appearance",

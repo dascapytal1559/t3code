@@ -518,6 +518,61 @@ second coordinator. Code: `apps/server/src/orchestration-v2/CoordinatorRestartNo
 and its two calls in `continueRestartedRun`
 (`apps/server/src/orchestration-v2/RestartContinuation.ts`).
 
+## Motion when FirstMate starts or finishes a worker
+
+<img src="media/crew-motion.jpg" width="640" alt="Six moments of a second worker joining the crew tree with the trace light on: a space opens under FirstMate, a blue light runs down the line just ahead of the branch it draws, and the card snaps in with a faint blue wash">
+
+A worker's card used to appear under FirstMate in one frame. Now a space
+opens, the branch draws down into it, and the card snaps in on a small spring.
+When the worker's thread is archived or deleted, the same motion plays
+backwards on a copy of the card: the card un-snaps, the branch un-draws, and the
+space shuts. Several workers starting together enter 110 ms apart. Several
+leaving together fold away as one tree, and the line never comes apart while
+they do: when the last card leaves, the row above gets its trunk back for the
+length of the exit, built from the tree's own element so it cannot sit a pixel
+off (`createCrewTreeTrunk` in
+`apps/web/src/components/sidebar/SidebarCrewTree.tsx`).
+
+It plays once per thread, only for a thread created in the last six seconds by
+its server's clock, and only for a row on screen, so a reload, a scroll or
+opening the crew tree never replays it. With reduced motion the card fades in
+over 180 ms and leaves at once. Every animation is a finite Web Animation that
+ends by itself, and none of them changes the layout: they move, clip, fade or
+recolour what is already laid out.
+
+**Crew trace light** (Settings → Appearance, off by default,
+`crewTraceLightEnabled`) adds an accent light on top without changing any of
+that timing. On the way in it rides the tip of the branch as it draws, the
+branch stays the accent colour for a moment and then cools, and the card gets
+an accent wash. On the way out it rides the branch back up and carries on up
+the line to FirstMate's card. Reduced motion drops the light too.
+
+The timeline is one table that both directions read (`UNFOLD` in
+`apps/web/src/components/sidebar/crewMotion/crewMotion.logic.ts`).
+`crewMotion.ts` beside it sets the stage, `unfold.ts` is the motion and
+`traceLight.ts` the light. Mobile has no crew tree, so it has neither the
+motion nor the setting.
+
+Upstream code it touches, for syncs:
+
+- `apps/web/src/components/Sidebar.motion.ts`: the list motion's copy of a
+  leaving row is now made by `copyRowForMotion`, which the crew motion also
+  uses, and the list motion skips every such copy when it measures rows
+  (`rowsOf`, where upstream checks its own `exiting` map). Without that, the
+  next unrelated list change fades a worker's card back in where it used to
+  be. A copy also loses `data-sidebar-row`, so keyboard navigation cannot land
+  on one.
+- `apps/web/src/components/Sidebar.tsx`: the list motion sits out a commit in
+  which a crew motion started (`crewMotionClaimsListPass`), so rows never move
+  twice.
+- `apps/web/src/components/sidebar/SidebarThreadRow.tsx`: the
+  `useCrewRowMotion` call, the `lineRef` it hands the crew gutter, and
+  `data-crew-coordinator` on FirstMate's row.
+- The setting: `crewTraceLightEnabled` in `ClientSettingsSchema` and
+  `ClientSettingsPatch` (`packages/contracts/src/settings.ts`), its row in
+  `AppearanceSettingsPanel.tsx`, its search entry in `settingsSearch.ts`, and
+  its two lines in `SettingsPanels.tsx` (changed-settings label and reset).
+
 ## A crewmate's message box sends to FirstMate
 
 <img src="media/crew-reply.jpg" width="560" alt="The box at the foot of a worker's thread, holding a typed reply, with the context ring and a Send to FirstMate button">

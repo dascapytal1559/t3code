@@ -218,6 +218,7 @@ import {
 } from "./Sidebar.drag";
 import { SidebarPointerSensor } from "./Sidebar.pointer";
 import { createSidebarListMotion } from "./Sidebar.motion";
+import { crewMotionClaimsListPass } from "./sidebar/crewMotion/crewMotion";
 import { createSidebarShiftGuard } from "./Sidebar.shiftGuard";
 import {
   pickSnoozePreset,
@@ -2100,7 +2101,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     // Shelf rows would travel over stationary headers below the bottom-anchored shelf.
     const shelvesUnchanged = previousShelfExpansionKeyRef.current === shelfExpansionKey;
     previousShelfExpansionKeyRef.current = shelfExpansionKey;
-    listMotionRef.current?.update(listMotionPass.animate && shelvesUnchanged);
+    listMotionRef.current?.update(
+      listMotionPass.animate && shelvesUnchanged && !crewMotionClaimsListPass(),
+    );
   }, [listMotionPass, shelfExpansionKey]);
   const handleThreadDragOver = (event: DragOverEvent) => {
     const target = event.over

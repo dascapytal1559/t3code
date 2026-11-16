@@ -5,6 +5,37 @@ const MAX_FADED_ROWS_PER_UPDATE = 40;
 
 type RowPosition = { top: number; left: number; width: number; height: number };
 
+// Fork: copies of rows that a motion animates out of the list. They sit in the list but are not
+// rows, whichever motion made them: the crew motion's copies outlive the pass that made them.
+const rowCopies = new WeakSet<Element>();
+
+/** An inert copy of a row that tests, selection, keyboard and assistive tech cannot take for it. */
+export function copyRowForMotion(node: HTMLElement): HTMLElement {
+  const clone = node.cloneNode(true) as HTMLElement;
+  for (const element of [clone, ...clone.querySelectorAll("*")]) {
+    for (const attribute of Array.from(element.attributes)) {
+      if (
+        (attribute.name === "id" && element.namespaceURI !== "http://www.w3.org/2000/svg") ||
+        attribute.name === "data-thread-item" ||
+        attribute.name === "data-thread-selection-safe" ||
+        attribute.name === "data-sidebar-row" ||
+        attribute.name === "data-testid"
+      ) {
+        element.removeAttribute(attribute.name);
+      }
+    }
+  }
+  clone.setAttribute("aria-hidden", "true");
+  clone.inert = true;
+  rowCopies.add(clone);
+  return clone;
+}
+
+const rowsOf = (parent: HTMLElement) =>
+  Array.from(parent.children).filter(
+    (node): node is HTMLElement => node instanceof HTMLElement && !rowCopies.has(node),
+  );
+
 function progress(animation: Animation) {
   return animation.playState === "finished"
     ? 1
@@ -39,21 +70,7 @@ export function createSidebarListMotion(parent: HTMLUListElement) {
   };
   const fadeOut = (node: HTMLElement, position: RowPosition, travel: number) => {
     if (position.height === 0) return;
-    const clone = node.cloneNode(true) as HTMLElement;
-    for (const element of [clone, ...clone.querySelectorAll("*")]) {
-      for (const attribute of Array.from(element.attributes)) {
-        if (
-          (attribute.name === "id" && element.namespaceURI !== "http://www.w3.org/2000/svg") ||
-          attribute.name === "data-thread-item" ||
-          attribute.name === "data-thread-selection-safe" ||
-          attribute.name === "data-testid"
-        ) {
-          element.removeAttribute(attribute.name);
-        }
-      }
-    }
-    clone.setAttribute("aria-hidden", "true");
-    clone.inert = true;
+    const clone = copyRowForMotion(node);
     Object.assign(clone.style, {
       position: "absolute",
       top: `${position.top + remainingOffset(node)}px`,
@@ -127,17 +144,15 @@ export function createSidebarListMotion(parent: HTMLUListElement) {
         return;
       }
       const next = new Map(
-        Array.from(parent.children)
-          .filter((node): node is HTMLElement => node instanceof HTMLElement && !exiting.has(node))
-          .map((node) => [
-            node,
-            {
-              top: node.offsetTop,
-              left: node.offsetLeft,
-              width: node.offsetWidth,
-              height: node.offsetHeight,
-            },
-          ]),
+        rowsOf(parent).map((node) => [
+          node,
+          {
+            top: node.offsetTop,
+            left: node.offsetLeft,
+            width: node.offsetWidth,
+            height: node.offsetHeight,
+          },
+        ]),
       );
       let fadeCount = 0;
       if (positions !== null) {
@@ -238,9 +253,7 @@ export function createSidebarListMotion(parent: HTMLUListElement) {
       suspend();
       const origin = parent.getBoundingClientRect().top;
       released = new Map(
-        Array.from(parent.children)
-          .filter((node): node is HTMLElement => node instanceof HTMLElement && !exiting.has(node))
-          .map((node) => [node, node.getBoundingClientRect().top - origin]),
+        rowsOf(parent).map((node) => [node, node.getBoundingClientRect().top - origin]),
       );
     },
     suspend,

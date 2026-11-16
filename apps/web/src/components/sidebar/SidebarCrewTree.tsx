@@ -1,3 +1,5 @@
+import type { RefObject } from "react";
+
 import { cn } from "~/lib/utils";
 
 /** Where a crewmate row sits under its coordinator: on the tree's guide line, or indented alone. */
@@ -22,19 +24,48 @@ export const CREW_TREE_INDENT_CLASS_NAME = "ps-[calc(var(--sidebar-row-content-i
 export const CREW_TREE_GUTTER_WIDTH_CLASS_NAME =
   "w-[calc(var(--sidebar-row-content-inset)_+_1rem)]";
 
+const CREW_TREE_ROW_TRUNK_CLASS_NAME = cn(CREW_TREE_TRUNK_CLASS_NAME, "inset-y-0");
+
+// How the crew motion finds the pieces of a row's guide line.
+const PART = "data-crew-tree-part";
+export const crewTreePart = (row: Element, part: "trunk" | "elbow") =>
+  row.querySelector<HTMLElement>(`[${PART}="${part}"]`);
+
+/**
+ * The trunk a branch row draws, built outside React. The crew motion hangs it on a row that just
+ * became the last one, so the line it adds is this very element and cannot sit a pixel off.
+ */
+export function createCrewTreeTrunk(document: Document): HTMLElement {
+  const trunk = document.createElement("span");
+  trunk.className = CREW_TREE_ROW_TRUNK_CLASS_NAME;
+  return trunk;
+}
+
 /** The guide line beside a crewmate row; clicking it collapses the crew. */
-export function CrewTreeGutter(props: { last: boolean; onToggle: () => void }) {
+export function CrewTreeGutter({
+  last,
+  onToggle,
+  lineRef,
+}: {
+  last: boolean;
+  onToggle: () => void;
+  lineRef?: RefObject<HTMLDivElement | null>;
+}) {
   return (
     <div
+      ref={lineRef}
       aria-hidden
       data-crew-tree
       data-testid="sidebar-crew-tree-line"
       className={cn("absolute inset-y-0 start-0 cursor-pointer", CREW_TREE_GUTTER_WIDTH_CLASS_NAME)}
-      onClick={props.onToggle}
+      onClick={onToggle}
     >
-      {props.last ? null : <span className={cn(CREW_TREE_TRUNK_CLASS_NAME, "inset-y-0")} />}
+      {last ? null : (
+        <span data-crew-tree-part="trunk" className={CREW_TREE_ROW_TRUNK_CLASS_NAME} />
+      )}
       {/* One stroke that turns into the row on the card's corner radius. */}
       <span
+        data-crew-tree-part="elbow"
         className={cn(
           CREW_TREE_COLOR_CLASS_NAME,
           CREW_TREE_LINE_START_CLASS_NAME,

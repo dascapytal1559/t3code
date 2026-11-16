@@ -116,6 +116,7 @@ import {
   type CrewTreePlace,
 } from "./SidebarCrewTree";
 import { resolveCrewStatusLabel, showsCoordinatorAge } from "./coordinatorGroup.logic";
+import { useCrewRowMotion } from "./crewMotion/useCrewRowMotion";
 import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
@@ -679,6 +680,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       releaseLease?.();
     };
   };
+  const crewLineRef = useCrewRowMotion(
+    thread,
+    props.crewTree === "branch" || props.crewTree === "last",
+  );
   const isRegeneratingTitle = thread.titleRegeneration != null;
   const {
     heading,
@@ -1466,6 +1471,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   return (
     <li
       data-thread-item={threadKey}
+      data-crew-coordinator={props.coordinator ? "" : undefined}
       {...sortableRootProps}
       {...(fileDropHandlers ?? {})}
       // The hints are the rendered heights inside py-0.5. Revealing the open thread measures rows
@@ -1488,7 +1494,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       {props.crewTree !== undefined &&
       props.crewTree !== "indent" &&
       props.onCrewTreeToggle !== undefined ? (
-        <CrewTreeGutter last={props.crewTree === "last"} onToggle={props.onCrewTreeToggle} />
+        <CrewTreeGutter
+          last={props.crewTree === "last"}
+          onToggle={props.onCrewTreeToggle}
+          lineRef={crewLineRef}
+        />
       ) : null}
       <Tooltip disabled={isRenaming || snoozeMenuOpen || sortable?.isDragging}>
         <TooltipTrigger

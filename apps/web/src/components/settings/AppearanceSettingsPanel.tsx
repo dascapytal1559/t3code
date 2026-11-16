@@ -374,6 +374,31 @@ export function AppearanceSettingsPanel() {
             />
           }
         />
+        <SettingsRow
+          {...searchableSetting("crew-trace-light")}
+          description="When FirstMate starts or finishes a worker, a light runs along the tree's line between them. The card's own motion plays either way."
+          resetAction={
+            settings.crewTraceLightEnabled !== DEFAULT_UNIFIED_SETTINGS.crewTraceLightEnabled ? (
+              <SettingResetButton
+                label="crew trace light"
+                onClick={() =>
+                  updateSettings({
+                    crewTraceLightEnabled: DEFAULT_UNIFIED_SETTINGS.crewTraceLightEnabled,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.crewTraceLightEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ crewTraceLightEnabled: Boolean(checked) })
+              }
+              aria-label="Crew trace light"
+            />
+          }
+        />
         <AdvancedSettings
           targetIds={[
             searchableSetting("panel-animations").id,
