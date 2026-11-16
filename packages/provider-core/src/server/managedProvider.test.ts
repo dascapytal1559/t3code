@@ -388,6 +388,7 @@ describe("makeManagedServerProvider", () => {
         const checks = yield* Queue.unbounded<number>();
         const checkCalls = yield* Ref.make(0);
         const inFront = yield* Ref.make(false);
+        const held = yield* Ref.make<Deferred.Deferred<void> | null>(null);
         const returns = yield* PubSub.unbounded<ReadonlyArray<BackgroundScope>>();
         const comeBack = PubSub.publish(returns, [{ type: "provider-status" }]);
         yield* makeManagedServerProvider<TestSettings>({
@@ -397,7 +398,9 @@ describe("makeManagedServerProvider", () => {
           haveSettingsChanged: (previous, next) => previous.enabled !== next.enabled,
           refreshOnInterval: () => true,
           initialSnapshot: () => Effect.succeed(initialSnapshot),
-          checkProvider: Ref.updateAndGet(checkCalls, (count) => count + 1).pipe(
+          checkProvider: Ref.get(held).pipe(
+            Effect.flatMap((gate) => (gate === null ? Effect.void : Deferred.await(gate))),
+            Effect.andThen(Ref.updateAndGet(checkCalls, (count) => count + 1)),
             Effect.tap((count) => Queue.offer(checks, count)),
             Effect.as(refreshedSnapshot),
           ),
@@ -426,6 +429,23 @@ describe("makeManagedServerProvider", () => {
         assert.strictEqual(yield* Ref.get(checkCalls), 2);
         yield* TestClock.adjust("1 minute");
         assert.strictEqual(yield* Queue.take(checks), 3);
+
+        // Away again; the return check is still running when the next tick falls due.
+        yield* Ref.set(inFront, false);
+        yield* TestClock.adjust("6 minutes");
+        const gate = yield* Deferred.make<void>();
+        yield* Ref.set(held, gate);
+        yield* Ref.set(inFront, true);
+        yield* comeBack;
+        yield* TestClock.adjust("4 minutes");
+        yield* Ref.set(held, null);
+        yield* Deferred.succeed(gate, undefined);
+        assert.strictEqual(yield* Queue.take(checks), 4);
+        // That tick waited behind the return check and does not check again right after it.
+        yield* TestClock.adjust("4 minutes");
+        assert.strictEqual(yield* Ref.get(checkCalls), 4);
+        yield* TestClock.adjust("5 minutes");
+        assert.strictEqual(yield* Queue.take(checks), 5);
       }),
     ).pipe(Effect.provide(TestClock.layer())),
   );

@@ -246,17 +246,28 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
           if (!runs.some((run) => run.id === runId))
             return yield* invalidRequest(`run ${runId} is not a run of thread ${threadId}.`);
         }
-        const value: UsageClaims.UsageClaimValue | null =
-          device !== undefined
-            ? { device }
-            : fromThread !== undefined
-              ? yield* boundClaim(threads, fromThread)
-              : causedBy === null || causedBy === undefined
-                ? null
-                : { causedBy: yield* verifyCause(threads, causedBy) };
-        const claimed = yield* (yield* UsageClaims.UsageClaims)
-          .claim({ target, value, ifUnclaimed: ifUnclaimed === true })
-          .pipe(Effect.mapError(unavailable));
+        const claims = yield* UsageClaims.UsageClaims;
+        const existing =
+          ifUnclaimed === true
+            ? yield* claims.stored(target).pipe(Effect.mapError(unavailable))
+            : undefined;
+        const claimed =
+          existing !== undefined
+            ? { ...existing, kept: true }
+            : yield* claims
+                .claim({
+                  target,
+                  value:
+                    device !== undefined
+                      ? { device }
+                      : fromThread !== undefined
+                        ? yield* boundClaim(threads, fromThread)
+                        : causedBy === null || causedBy === undefined
+                          ? null
+                          : { causedBy: yield* verifyCause(threads, causedBy) },
+                  ifUnclaimed: ifUnclaimed === true,
+                })
+                .pipe(Effect.mapError(unavailable));
         return {
           ...(claimed.target.kind === "session"
             ? {

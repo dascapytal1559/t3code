@@ -416,6 +416,14 @@ it.effect(
       expect(
         yield* claim({ sessionId: "pipeline", device: "computer", ifUnclaimed: true }),
       ).toEqual({ sessionId: "pipeline", causedBy: prompt, device: null, kept: true });
+      // A kept claim needs no value, so a task that counts to no device does not refuse it.
+      expect(
+        yield* claim({
+          sessionId: "pipeline",
+          fromThread: { threadId: lostTask },
+          ifUnclaimed: true,
+        }),
+      ).toEqual({ sessionId: "pipeline", causedBy: prompt, device: null, kept: true });
       expect(yield* claim({ sessionId: "pipeline", causedBy: null })).toEqual({
         sessionId: "pipeline",
         causedBy: null,

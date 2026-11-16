@@ -93,6 +93,15 @@ export class UsageClaims extends Context.Service<
       },
       SqlError.SqlError
     >;
+    /** The claim already on a target, if any. */
+    readonly stored: (target: UsageClaimTarget) => Effect.Effect<
+      | {
+          readonly target: UsageClaimTarget;
+          readonly value: UsageClaimValue;
+        }
+      | undefined,
+      SqlError.SqlError
+    >;
     readonly read: Effect.Effect<ReadonlyArray<StoredUsageClaim>, SqlError.SqlError>;
     /** The claims on these runs. */
     readonly readRuns: (
@@ -171,6 +180,19 @@ const make = Effect.gen(function* () {
         )
       : Effect.succeed(target);
 
+  const storedOn = (target: UsageClaimTarget) =>
+    sql<StoredValueRow>`
+      SELECT cause_thread_id, cause_run_id, cause_message_id, device, bound_json FROM usage_claims
+      WHERE target_kind = ${target.kind} AND target = ${targetKey(target)}
+        AND claimed_from = ${claimedFrom(target)}
+    `.pipe(Effect.map(([row]) => (row === undefined ? null : storedValue(row))));
+
+  const stored = Effect.fn("UsageClaims.stored")(function* (input: UsageClaimTarget) {
+    const target = yield* resolveTarget(input);
+    const value = yield* storedOn(target);
+    return value === null ? undefined : { target, value };
+  });
+
   const claim = Effect.fn("UsageClaims.claim")(function* (input: {
     readonly target: UsageClaimTarget;
     readonly value: UsageClaimValue | null;
@@ -215,11 +237,7 @@ const make = Effect.gen(function* () {
       RETURNING target
     `;
     if (written.length > 0) return { target, value: input.value, kept: false };
-    const [stored] = yield* sql<StoredValueRow>`
-      SELECT cause_thread_id, cause_run_id, cause_message_id, device, bound_json FROM usage_claims
-      WHERE target_kind = ${target.kind} AND target = ${key} AND claimed_from = ${from}
-    `;
-    return { target, value: stored === undefined ? null : storedValue(stored), kept: true };
+    return { target, value: yield* storedOn(target), kept: true };
   });
 
   const storedClaims = (rows: ReadonlyArray<ClaimRow>) =>
@@ -256,7 +274,7 @@ const make = Effect.gen(function* () {
     return storedClaims(rows);
   });
 
-  return UsageClaims.of({ claim, read, readRuns });
+  return UsageClaims.of({ claim, stored, read, readRuns });
 });
 
 export const layer = Layer.effect(UsageClaims, make);

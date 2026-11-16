@@ -176,6 +176,17 @@ export const UsageOriginReasonUsage = Schema.Struct({
 });
 export type UsageOriginReasonUsage = typeof UsageOriginReasonUsage.Type;
 
+/** Usage by reason over a window of days, largest first, as `t3_usage_reasons` reports it. */
+export const UsageOriginReasons = Schema.Struct({
+  sinceDay: UsageDay,
+  untilDay: UsageDay,
+  timeZone: Schema.String,
+  tokens: Schema.Number,
+  byDefaultTokens: Schema.Number,
+  rows: Schema.Array(UsageOriginReasonUsage),
+});
+export type UsageOriginReasons = typeof UsageOriginReasons.Type;
+
 /** Usage of records inside a T3 run, by the origin of the run's starting message. */
 export const UsageOriginUsage = Schema.Struct({
   origin: UsageOrigin,

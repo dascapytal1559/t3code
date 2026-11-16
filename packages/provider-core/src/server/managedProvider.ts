@@ -419,21 +419,25 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
     Effect.all([getRefreshInterval, Ref.getAndSet(recheckPendingRef, false)]).pipe(
       Effect.flatMap(([configuredInterval, recheckPending]) => {
         const refreshInterval = recheckPending ? FAILED_CHECK_RECHECK_DELAY : configuredInterval;
+        const intervalMs = Duration.toMillis(Duration.fromInputUnsafe(refreshInterval));
         // @effect-diagnostics-next-line raceFirstWithSleepToTimeout:off - races the interval against a settings-change signal, not a timeout
         return Effect.raceFirst(
-          Effect.sleep(
-            Duration.toMillis(Duration.fromInputUnsafe(refreshInterval)) <= 0
-              ? "60 seconds"
-              : refreshInterval,
-          ).pipe(Effect.as(true)),
+          Effect.sleep(intervalMs <= 0 ? "60 seconds" : refreshInterval).pipe(Effect.as(true)),
           Queue.take(refreshIntervalChanges).pipe(Effect.as(false)),
         ).pipe(
           Effect.flatMap((intervalElapsed) =>
-            intervalElapsed && Duration.toMillis(Duration.fromInputUnsafe(refreshInterval)) > 0
+            intervalElapsed && intervalMs > 0
               ? shouldRefreshOnInterval.pipe(
                   Effect.flatMap((shouldRefresh) =>
                     shouldRefresh
-                      ? refreshSemaphore.withPermits(1)(refreshOnInterval(!recheckPending))
+                      ? refreshSemaphore.withPermits(1)(
+                          Effect.gen(function* () {
+                            const sinceLastCheck =
+                              (yield* Clock.currentTimeMillis) - (yield* Ref.get(lastCheckAtRef));
+                            if (sinceLastCheck < intervalMs) return;
+                            yield* refreshOnInterval(!recheckPending);
+                          }),
+                        )
                       : Effect.void,
                   ),
                 )

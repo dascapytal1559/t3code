@@ -18,7 +18,7 @@ import {
   ThreadId,
   TrimmedNonEmptyString,
   UsageDay,
-  UsageOriginReasonUsage,
+  UsageOriginReasons,
 } from "@t3tools/contracts";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
@@ -159,14 +159,7 @@ const UsageReasonsTool = Tool.make("t3_usage_reasons", {
     untilDay: Schema.optional(UsageDay),
     timeZone: Schema.optional(TrimmedNonEmptyString),
   }),
-  success: Schema.Struct({
-    sinceDay: UsageDay,
-    untilDay: UsageDay,
-    timeZone: Schema.String,
-    tokens: Schema.Number,
-    byDefaultTokens: Schema.Number,
-    rows: Schema.Array(UsageOriginReasonUsage),
-  }),
+  success: UsageOriginReasons,
 })
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false);

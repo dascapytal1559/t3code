@@ -22,19 +22,19 @@ const bindScheduledTask = Effect.fn("mcp.bindScheduledTask")(function* (
   taskId: string,
   onlyIfTyped: boolean,
 ) {
-  const { caller, threads } = yield* loadCaller();
-  const bound = yield* bindUsageOrigin(threads, undefined, caller?.id);
-  if (bound === null || (onlyIfTyped && !bound.reroots)) return;
-  const origins = yield* UsageOrigins.UsageOrigins;
-  yield* origins
-    .bindScheduledTask(taskId, bound.key)
-    .pipe(
-      Effect.catchCause((cause) =>
-        Cause.hasInterruptsOnly(cause)
-          ? Effect.interrupt
-          : Effect.logWarning("Usage could not bind a scheduled task's origin", { taskId, cause }),
-      ),
-    );
+  yield* Effect.gen(function* () {
+    const { caller, threads } = yield* loadCaller();
+    const bound = yield* bindUsageOrigin(threads, undefined, caller?.id);
+    if (bound === null || (onlyIfTyped && !bound.reroots)) return;
+    const origins = yield* UsageOrigins.UsageOrigins;
+    yield* origins.bindScheduledTask(taskId, bound.key);
+  }).pipe(
+    Effect.catchCause((cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? Effect.interrupt
+        : Effect.logWarning("Usage could not bind a scheduled task's origin", { taskId, cause }),
+    ),
+  );
 });
 
 const handlers = {

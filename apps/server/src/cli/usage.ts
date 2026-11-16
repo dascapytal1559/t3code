@@ -1,22 +1,12 @@
-import { UsageDay, UsageOriginReasonUsage } from "@t3tools/contracts";
+import { type UsageOriginReasonUsage, UsageOriginReasons } from "@t3tools/contracts";
 import { formatPercent, formatTokens } from "@t3tools/shared/usageFormat";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
 import { Command, Flag } from "effect/cli";
 
 import { projectLocationFlags } from "./config.ts";
 import { jsonFlag, printJson, reportThreadErrors, withThreadTools } from "./thread.ts";
-
-const UsageReasonsResult = Schema.Struct({
-  sinceDay: UsageDay,
-  untilDay: UsageDay,
-  timeZone: Schema.String,
-  tokens: Schema.Number,
-  byDefaultTokens: Schema.Number,
-  rows: Schema.Array(UsageOriginReasonUsage),
-});
 
 const REASON_LABELS: Record<UsageOriginReasonUsage["reason"], string> = {
   typed: "typed",
@@ -40,7 +30,7 @@ const REASON_LABELS: Record<UsageOriginReasonUsage["reason"], string> = {
 };
 
 /** One line per origin and reason, providers summed; claim kind, folder matches and causes noted. */
-function formatUsageReasons(result: typeof UsageReasonsResult.Type): readonly string[] {
+function formatUsageReasons(result: UsageOriginReasons): readonly string[] {
   const lines = new Map<string, { label: string; tokens: number; byDefault: boolean }>();
   for (const row of result.rows) {
     const label = [
@@ -108,7 +98,7 @@ const usageReasonsCommand = Command.make("reasons", {
               onSome: (timeZone) => ({ timeZone }),
             }),
           },
-          UsageReasonsResult,
+          UsageOriginReasons,
         );
         if (flags.json) return yield* printJson(result);
         for (const line of formatUsageReasons(result)) yield* Console.log(line);
