@@ -43,6 +43,51 @@ export const ensureForkSchema = Effect.fn("ensureForkSchema")(function* () {
       bound_at TEXT NOT NULL
     )
   `;
+  // The daily close: labels written down once and read as stored from then on. A session's label
+  // from each time it changes, each prompt's label, and how far they are written (one row).
+  // `device` is where the label counts; the other columns are the label as Usage read it.
+  const labelColumns = sql.literal(`
+      device TEXT NOT NULL CHECK (device IN ('phone', 'computer')),
+      origin TEXT NOT NULL,
+      basis TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      via TEXT,
+      claim TEXT,
+      folder INTEGER NOT NULL DEFAULT 0,
+      registered INTEGER NOT NULL DEFAULT 0,
+      cause INTEGER NOT NULL DEFAULT 0,
+      root_thread_id TEXT,
+      root_message_id TEXT`);
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS usage_closed_session_labels (
+      session_id TEXT NOT NULL,
+      from_ms INTEGER NOT NULL,
+      ${labelColumns},
+      run_id TEXT,
+      typed INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (session_id, from_ms)
+    )
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS usage_closed_prompt_labels (
+      message_id TEXT PRIMARY KEY,
+      thread_id TEXT,
+      created_at_ms INTEGER NOT NULL,
+      ${labelColumns}
+    )
+  `;
+  yield* sql`
+    CREATE INDEX IF NOT EXISTS usage_closed_prompt_labels_created_idx
+      ON usage_closed_prompt_labels (created_at_ms)
+  `;
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS usage_close (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      closed_from_ms INTEGER NOT NULL,
+      closed_through_ms INTEGER NOT NULL,
+      closed_at TEXT NOT NULL
+    )
+  `;
   yield* sql.withTransaction(
     Effect.gen(function* () {
       // SQLite can't change a CHECK or primary key in place, so an older table is rebuilt once.

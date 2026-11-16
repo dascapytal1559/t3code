@@ -1613,3 +1613,185 @@ describe("UsageOrigins born labelled", () => {
       ),
   );
 });
+
+describe("UsageOrigins daily close", () => {
+  const phone = {
+    createdBy: "user",
+    creationSource: "web",
+    origin: { surface: "web", deviceType: "mobile" },
+  };
+  const fromMcp = {
+    createdBy: "agent",
+    creationSource: "mcp",
+    origin: { surface: "mcp", deviceType: "bot" },
+  };
+  const wake = {
+    createdBy: "agent",
+    creationSource: "provider",
+    notification: { source: { kind: "background_task" }, outcome: "completed" },
+  };
+  // After T3 began recording devices, which is where closes start.
+  const iso = (clock: string) => `2026-11-20T${clock}:00.000Z`;
+  const time = (clock: string) => Date.parse(iso(clock));
+  const run = (
+    id: string,
+    ordinal: number,
+    threadId: string,
+    from: string,
+    to: string,
+    message: Record<string, unknown>,
+  ) =>
+    seedRun({
+      id,
+      ordinal,
+      threadId,
+      sessionId: `${threadId}-session`,
+      startedAt: iso(from),
+      completedAt: iso(to),
+      message,
+    });
+  const label = (key: UsageOriginKey | undefined) =>
+    key === undefined
+      ? "none"
+      : `${key.origin} ${key.reason}${key.claim === undefined ? "" : ` ${key.claim} claim`}${key.folder ? " folder" : ""} ${key.root?.messageId ?? "-"}`;
+  const layer = usageOriginsLayer.pipe(
+    Layer.provide(
+      Layer.mock(UsageSessionRegister.UsageSessionRegister)({ read: () => Effect.succeed([]) }),
+    ),
+    Layer.provideMerge(UsageClaims.layer),
+    Layer.provideMerge(Layer.merge(Sqlite.layerMemory, NodeServices.layer)),
+  );
+
+  it.effect(
+    "writes a day's labels down once, and a later claim or bind reads what was written",
+    () =>
+      Effect.gen(function* () {
+        const origins = yield* UsageOrigins;
+        const claims = yield* UsageClaims.UsageClaims;
+        yield* seedThread({ id: "firstmate", coordinator: true });
+        // A worker launched from a turn typed on the phone, and a later upkeep wake.
+        yield* run("fm-phone", 1, "firstmate", "01:00", "01:10", phone);
+        const launch = yield* origins.originAt("firstmate", time("01:01"));
+        yield* seedThread({
+          id: "worker",
+          crewOf: "firstmate",
+          createdAt: iso("01:01"),
+          usageOrigin: storedOrigin(launch!.key),
+        });
+        yield* run("w1", 1, "worker", "01:01", "01:30", fromMcp);
+        yield* run("fm-wake", 2, "firstmate", "02:00", "02:10", wake);
+        const records = [
+          { sessionId: "firstmate-session", timestampMs: time("01:05") },
+          { sessionId: "firstmate-session", timestampMs: time("01:12") },
+          { sessionId: "firstmate-session", timestampMs: time("02:05") },
+          { sessionId: "worker-session", timestampMs: time("01:10") },
+          { sessionId: "worker-session", timestampMs: time("01:45") },
+          { sessionId: "worker-session", timestampMs: time("02:30") },
+        ];
+        // Binding in a turn, just after one ended (the grace), and well after.
+        const bindTimes = [
+          ["firstmate", "01:05"],
+          ["firstmate", "01:12"],
+          ["firstmate", "01:40"],
+          ["firstmate", "02:05"],
+          ["worker", "01:10"],
+          ["worker", "01:33"],
+          ["worker", "01:50"],
+        ] as const;
+        const bindAll = Effect.forEach(bindTimes, ([threadId, clock]) =>
+          origins.originAt(threadId, time(clock)),
+        );
+        const boundBefore = yield* bindAll;
+        const live = new UsageOriginIndex(yield* origins.read(time("00:00"), time("23:59")));
+
+        const closed = yield* origins.close(time("12:00"), records);
+        assert.deepStrictEqual(closed, {
+          closed: true,
+          span: { fromMs: Date.parse(USAGE_ORIGINS_RECORDED_SINCE), throughMs: time("12:00") },
+          records: 6,
+          // A row where each turn's label starts and ends; records inside them add none.
+          sessionRows: 6,
+          promptRows: 3,
+        });
+        // A second close of the same time writes nothing.
+        assert.deepStrictEqual(yield* origins.close(time("12:00"), records), {
+          closed: false,
+          why: "notDue",
+        });
+
+        // A claim made after the day closed: the live reader moves, the closed day does not.
+        yield* claims.claim({
+          target: { kind: "run", runId: "run-fm-wake" },
+          value: { device: "phone" },
+        });
+        const span = yield* origins.closedSpan;
+        assert.isNotNull(span);
+        const stored = yield* origins.readClosed({
+          span: span!,
+          sessionIds: ["firstmate-session", "worker-session"],
+          sinceMs: time("00:00"),
+          untilMs: time("23:59"),
+        });
+        const relabelled = new UsageOriginIndex(yield* origins.read(time("00:00"), time("23:59")));
+        assert.deepStrictEqual(
+          records.map((record) => [
+            label(stored.labels.labelAt(record)),
+            label(live.lookup(record)),
+            label(relabelled.lookup(record)),
+          ]),
+          [
+            [
+              "phone typed message-fm-phone",
+              "phone typed message-fm-phone",
+              "phone typed message-fm-phone",
+            ],
+            [
+              "phone typed message-fm-phone",
+              "phone typed message-fm-phone",
+              "phone typed message-fm-phone",
+            ],
+            ["computer upkeep -", "computer upkeep -", "phone journal run claim -"],
+            [
+              "phone inherited message-fm-phone",
+              "phone inherited message-fm-phone",
+              "phone inherited message-fm-phone",
+            ],
+            [
+              "phone inherited message-fm-phone",
+              "phone inherited message-fm-phone",
+              "phone inherited message-fm-phone",
+            ],
+            [
+              "phone inherited message-fm-phone",
+              "phone inherited message-fm-phone",
+              "phone inherited message-fm-phone",
+            ],
+          ],
+        );
+        assert.strictEqual(stored.prompts.length, 3);
+        // Binding at a closed time answers from the stored labels, as it answered before.
+        assert.deepStrictEqual(yield* bindAll, boundBefore);
+      }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect("rolls a close back when a label reads back differently", () =>
+    Effect.gen(function* () {
+      const origins = yield* UsageOrigins;
+      const sql = yield* SqlClient.SqlClient;
+      yield* seedThread({ id: "worker", worktreePath: "/wt/worker", createdAt: iso("01:00") });
+      yield* run("w1", 1, "worker", "01:00", "01:30", phone);
+      // One session, two folders at the same moment: one label per time cannot hold both.
+      const outcome = yield* origins.close(time("12:00"), [
+        { sessionId: "stray", timestampMs: time("01:10"), cwd: "/wt/worker/src" },
+        { sessionId: "stray", timestampMs: time("01:10"), cwd: "/elsewhere" },
+      ]);
+      assert.deepStrictEqual(outcome, { closed: false, why: "differs" });
+      assert.isNull(yield* origins.closedSpan);
+      const [rows] = yield* sql<{ readonly count: number }>`
+        SELECT (SELECT count(*) FROM usage_closed_session_labels)
+          + (SELECT count(*) FROM usage_closed_prompt_labels) AS count
+      `;
+      assert.strictEqual(rows?.count, 0);
+    }).pipe(Effect.provide(layer)),
+  );
+});

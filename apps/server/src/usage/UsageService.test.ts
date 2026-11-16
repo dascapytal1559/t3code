@@ -18,6 +18,7 @@ import {
   EnvironmentId,
   ProviderDriverKind,
   ProviderInstanceId,
+  USAGE_ORIGINS_RECORDED_SINCE,
   UsageDay,
   type UsageSource,
   type UsageSummary,
@@ -1919,6 +1920,72 @@ describe("UsageService", () => {
         ),
       );
     }),
+  );
+
+  it.effect(
+    "closes days older than a day after a read, and reads them as written from then on",
+    () =>
+      Effect.gen(function* () {
+        const { transcript, settings, home } = yield* setup;
+        const line = (id: number, timestamp: string, outputTokens: number) =>
+          `${encodeUnknownJsonString({
+            type: "assistant",
+            timestamp,
+            requestId: `req_${id}`,
+            sessionId: "session-1",
+            message: {
+              id: `msg_${id}`,
+              model: "claude-fable-5",
+              usage: { input_tokens: 0, output_tokens: outputTokens },
+            },
+          })}\n`;
+        // One record in a day that will close, one in the day before now, which stays open.
+        yield* Effect.promise(() =>
+          NodeFSP.writeFile(
+            transcript,
+            line(1, "2026-11-10T10:00:00Z", 5) + line(2, "2026-11-12T10:00:00Z", 7),
+          ),
+        );
+        const window: UsageSummaryInput = {
+          timeZone: "UTC",
+          sinceDay: UsageDay.make("2026-11-10"),
+          untilDay: UsageDay.make("2026-11-12"),
+        };
+        yield* TestClock.setTime(Date.parse("2026-11-13T00:00:00Z"));
+        yield* Effect.gen(function* () {
+          const claims = yield* UsageClaims.UsageClaims;
+          const origins = yield* UsageOrigins.UsageOrigins;
+          const claimSession = (device: "phone" | "computer") =>
+            claims.claim({
+              target: { kind: "session", sessionId: "session-1" },
+              value: { device },
+            });
+          yield* claimSession("phone");
+          const service = yield* UsageService.make;
+          assert.isNull(yield* origins.closedSpan);
+          yield* service.readSummary(window);
+          yield* service.awaitPersisted;
+          assert.deepStrictEqual(yield* origins.closedSpan, {
+            fromMs: Date.parse(USAGE_ORIGINS_RECORDED_SINCE),
+            throughMs: Date.parse("2026-11-12T00:00:00Z"),
+          });
+          // Claimed again after the close: only the open day follows the new claim.
+          yield* claimSession("computer");
+          const reasons = yield* service.readOriginReasons(window);
+          assert.deepStrictEqual(
+            reasons
+              .map((row) => [row.origin, row.reason, row.claim, row.tokens])
+              .toSorted((a, b) => String(a[0]).localeCompare(String(b[0]))),
+            [
+              ["computer", "upkeep", "session", 7],
+              ["phone", "journal", "session", 5],
+            ],
+          );
+        }).pipe(
+          Effect.scoped,
+          Effect.provide(layerService({ prefix: "usage-service-close", home, settings })),
+        );
+      }),
   );
 
   it.effect("reads the Cursor account of an API key or T3 sign-in instead of a CLI login", () =>

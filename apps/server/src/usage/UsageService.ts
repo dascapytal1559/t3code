@@ -9,6 +9,7 @@ import {
   type UsagePricing,
   type UsageSummary,
   type UsageSummaryInput,
+  UsageDay,
   UsageReadError,
 } from "@t3tools/contracts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -42,6 +43,7 @@ import type {
 } from "@t3tools/provider-core/server/usage";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import { canonicalModelFilter, resolveModelAliases, UsageAggregator } from "./usageAggregation.ts";
+import * as UsageClose from "./UsageClose.ts";
 import * as UsageOrigins from "./UsageOrigins.ts";
 import {
   discoverUsageArchive,
@@ -559,13 +561,13 @@ export const make = Effect.gen(function* () {
     }
   }).pipe(persistLock.withPermit, Effect.withSpan("UsageService.persistCaches"));
 
+  // Background writes: saved caches, and closes of Usage's labels.
   const pendingPersists = new Set<Fiber.Fiber<void>>();
-  const schedulePersist = Effect.forkDetach(persistCaches).pipe(
-    Effect.map((fiber) => {
-      pendingPersists.add(fiber);
-      fiber.addObserver(() => pendingPersists.delete(fiber));
-    }),
-  );
+  const trackPending = (fiber: Fiber.Fiber<void>) => {
+    pendingPersists.add(fiber);
+    fiber.addObserver(() => pendingPersists.delete(fiber));
+  };
+  const schedulePersist = Effect.forkDetach(persistCaches).pipe(Effect.map(trackPending));
   const awaitPersisted = Effect.suspend(() => Fiber.awaitAll([...pendingPersists])).pipe(
     Effect.asVoid,
   );
@@ -1032,19 +1034,29 @@ export const make = Effect.gen(function* () {
       );
       return { scannedDirs: scanned, fromMemory };
     });
-    const [{ scannedDirs, fromMemory }, , origins] = yield* Effect.all(
+    // Usage still loads without origins; the summary then omits them.
+    const unlessUnreadable = <A>(effect: Effect.Effect<A, UsageOrigins.UsageOriginsReadError>) =>
+      effect.pipe(
+        Effect.tapError((error) => Effect.logWarning(error.message, error.cause)),
+        Effect.orElseSucceed(() => null),
+      );
+    // Labels a close wrote down are read as stored; only the open tail is worked out here.
+    const closedSpan = yield* unlessUnreadable(usageOrigins.closedSpan);
+    const isClosedAt = (atMs: number) => UsageClose.isClosed(closedSpan, atMs);
+    const liveSinceMs =
+      closedSpan === null || windowStartMs < closedSpan.fromMs
+        ? windowStartMs
+        : Math.max(windowStartMs, closedSpan.throughMs + 1);
+    const [{ scannedDirs, fromMemory }, , liveOrigins] = yield* Effect.all(
       [
         collect,
         provisional ? Effect.void : ensureRates(false),
-        // Usage still loads without origins; the summary then omits them.
-        usageOrigins.read(windowStartMs, windowEndMs).pipe(
-          Effect.tapError((error) => Effect.logWarning(error.message, error.cause)),
-          Effect.orElseSucceed(() => null),
-        ),
+        liveSinceMs < windowEndMs
+          ? unlessUnreadable(usageOrigins.read(liveSinceMs, windowEndMs))
+          : Effect.succeed(UsageOrigins.EMPTY_SNAPSHOT),
       ],
       { concurrency: 3 },
     );
-    const originIndex = origins === null ? null : new UsageOrigins.UsageOriginIndex(origins);
     const recordSources = new Map(
       scannedDirs.flatMap((scanned): [string, UsageOrigins.UsageRecordSource][] =>
         scanned.account === true
@@ -1138,6 +1150,66 @@ export const make = Effect.gen(function* () {
     // A saved answer prices with saved rates and the full scan after it refetches.
     if (!fromMemory) yield* refreshForUnlistedModels(rateModels);
 
+    const closedRecords: UsageRecord[] = [];
+    if (liveOrigins !== null && closedSpan !== null) {
+      for (const files of filesByDir) {
+        for (const file of files) {
+          for (const record of file.records) {
+            if (
+              record.timestampMs >= windowStartMs &&
+              record.timestampMs < windowEndMs &&
+              isClosedAt(record.timestampMs)
+            )
+              closedRecords.push(record);
+          }
+        }
+      }
+    }
+    const overlapsClosed =
+      closedSpan !== null &&
+      windowStartMs <= closedSpan.throughMs &&
+      windowEndMs > closedSpan.fromMs;
+    const closed =
+      liveOrigins === null || closedSpan === null || !overlapsClosed
+        ? null
+        : yield* unlessUnreadable(
+            usageOrigins.readClosed({
+              span: closedSpan,
+              sessionIds: [...new Set(closedRecords.map((record) => record.sessionId))],
+              sinceMs: windowStartMs,
+              untilMs: windowEndMs,
+            }),
+          );
+    // A transcript found after its day closed has no stored label: it is worked out live.
+    const orphaned =
+      closed !== null &&
+      liveSinceMs > windowStartMs &&
+      closedRecords.some((record) => closed.labels.labelAt(record) === undefined);
+    const orphanOrigins =
+      orphaned && closedSpan !== null
+        ? yield* unlessUnreadable(
+            usageOrigins.read(windowStartMs, Math.min(windowEndMs, closedSpan.throughMs + 1)),
+          )
+        : liveOrigins;
+    const liveIndex = liveOrigins === null ? null : new UsageOrigins.UsageOriginIndex(liveOrigins);
+    const orphanIndex =
+      orphanOrigins === liveOrigins
+        ? liveIndex
+        : orphanOrigins === null
+          ? null
+          : new UsageOrigins.UsageOriginIndex(orphanOrigins);
+    const labelOf =
+      liveIndex === null || orphanIndex === null || (closed === null && overlapsClosed)
+        ? null
+        : (record: UsageRecord) =>
+            isClosedAt(record.timestampMs)
+              ? (closed?.labels.labelAt(record) ?? orphanIndex.lookup(record))
+              : liveIndex.lookup(record);
+    // What a close can write down next: this read's records after the last close.
+    const openRecords: UsageOrigins.OriginRecord[] | null =
+      labelOf === null || input.modelFilter !== undefined ? null : [];
+    const closedThroughMs = closedSpan?.throughMs ?? UsageClose.CLOSE_FROM_MS - 1;
+
     const summaryPricing = pricing();
 
     const aggregator = new UsageAggregator({
@@ -1151,18 +1223,30 @@ export const make = Effect.gen(function* () {
       modelAliases,
       rateModel: (provider, model) => providerRateModels.get(provider)?.(model),
       ...(input.modelFilter === undefined ? {} : { modelFilter: input.modelFilter }),
-      ...(originIndex === null
+      ...(labelOf === null
         ? {}
         : {
-            attributeOrigin: (record: UsageRecord, sourcePath: string | undefined) =>
-              UsageOrigins.settleOrigin(
-                originIndex.lookup(record),
+            attributeOrigin: (record: UsageRecord, sourcePath: string | undefined) => {
+              if (openRecords !== null && record.timestampMs > closedThroughMs) {
+                const { sessionId, timestampMs, cwd } = record;
+                openRecords.push({ sessionId, timestampMs, cwd });
+              }
+              return UsageOrigins.settleOrigin(
+                labelOf(record),
                 record.timestampMs,
                 (sourcePath === undefined ? undefined : recordSources.get(sourcePath)) ?? "live",
-              ),
+              );
+            },
           }),
     });
-    for (const prompt of origins?.prompts ?? []) {
+    const prompts =
+      labelOf === null
+        ? []
+        : [
+            ...(liveOrigins?.prompts ?? []).filter((prompt) => !isClosedAt(prompt.createdAtMs)),
+            ...(closed?.prompts ?? []),
+          ];
+    for (const prompt of prompts) {
       aggregator.countPrompt(
         prompt.createdAtMs,
         UsageOrigins.settleOrigin(prompt.key, prompt.createdAtMs, "live"),
@@ -1328,7 +1412,7 @@ export const make = Effect.gen(function* () {
       scanDurationMs: Math.max(0, finishedAtMs - startedAtMs),
       ...(input.modelFilter === undefined ? {} : { modelFilter: input.modelFilter }),
     } satisfies UsageSummary;
-    return { summary, originReasons: aggregated.originReasons ?? null, fromMemory };
+    return { summary, originReasons: aggregated.originReasons ?? null, fromMemory, openRecords };
   });
 
   const readWindow = Effect.fn("UsageService.readWindow")(function* (
@@ -1385,7 +1469,9 @@ export const make = Effect.gen(function* () {
         yield* readWindow(input, settings, provisional).pipe(
           Effect.onExit((exit) =>
             Effect.sync(() => inflightScans.delete(key)).pipe(
-              Effect.andThen(Exit.isSuccess(exit) ? schedulePersist : Effect.void),
+              Effect.andThen(
+                Exit.isSuccess(exit) ? Effect.andThen(schedulePersist, scheduleClose) : Effect.void,
+              ),
               Effect.andThen(Deferred.done(created, exit)),
             ),
           ),
@@ -1396,6 +1482,42 @@ export const make = Effect.gen(function* () {
     );
     return yield* Deferred.await(deferred);
   });
+
+  /**
+   * Writes down every label older than a day once the open tail is longer than two days. It reads
+   * the UTC days that tail spans, so it does not depend on which window a client asked for.
+   */
+  const closeDue = Effect.gen(function* () {
+    const span = yield* usageOrigins.closedSpan;
+    const nowMs = yield* Clock.currentTimeMillis;
+    const afterMs = span?.throughMs ?? UsageClose.CLOSE_FROM_MS - 1;
+    if (nowMs - afterMs <= UsageClose.CLOSE_DUE_MS) return;
+    const throughMs = nowMs - UsageClose.CLOSE_AGE_MS;
+    const utcDay = (ms: number) =>
+      UsageDay.make(DateTime.formatIso(DateTime.makeUnsafe(ms)).slice(0, 10));
+    const read = yield* readShared({
+      timeZone: "UTC",
+      sinceDay: utcDay(afterMs + 1),
+      untilDay: utcDay(throughMs),
+      awaitRefresh: true,
+    });
+    // A source still refreshing has not given all its records yet.
+    if (read.openRecords === null || read.summary.sources.some((source) => source.refreshing))
+      return;
+    const outcome = yield* usageOrigins.close(throughMs, read.openRecords);
+    if (outcome.closed) yield* Effect.logInfo("Usage closed its labels", outcome);
+  });
+  const closeLock = yield* Semaphore.make(1);
+  const layerScope = yield* Effect.scope;
+  // The read that triggers a close returns first; a close already running is not queued again.
+  const scheduleClose: Effect.Effect<void> = closeDue.pipe(
+    closeLock.withPermitsIfAvailable(1),
+    Effect.catchCause((cause) => Effect.logWarning("Usage could not close its labels", cause)),
+    Effect.asVoid,
+    Effect.withSpan("UsageService.closeDue"),
+    Effect.forkIn(layerScope),
+    Effect.map(trackPending),
+  );
 
   const readSummary = Effect.fn("UsageService.readSummary")(function* (
     requested: UsageSummaryInput,

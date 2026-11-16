@@ -16,6 +16,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as UsageClaims from "./UsageClaims.ts";
+import * as UsageClose from "./UsageClose.ts";
 import * as UsageSessionRegister from "./UsageSessionRegister.ts";
 
 const ORIGINS_RECORDED_SINCE_MS = Date.parse(USAGE_ORIGINS_RECORDED_SINCE);
@@ -400,6 +401,7 @@ function turnSegments(turn: TurnFacts, resolver: OriginResolver): OriginSegment[
   const segment = (startedAtMs: number, key: UsageOriginKey, typed: boolean): OriginSegment => ({
     sessionId: turn.sessionId,
     threadId: turn.threadId,
+    runId: turn.runId,
     startedAtMs,
     completedAtMs: turn.completedAtMs,
     key,
@@ -484,14 +486,19 @@ function promptOrigin(message: CausalMessage, resolver: OriginResolver): UsageOr
 export interface OriginTurn {
   readonly sessionId: string;
   readonly threadId: string;
+  readonly runId?: string | null;
   readonly startedAtMs: number;
   readonly completedAtMs: number | null;
   readonly key: UsageOriginKey;
+  /** A typed prompt (or a voice journal) decided it, so work bound from it re-roots. */
+  readonly typed?: boolean;
 }
 
 export interface OriginPrompt {
   readonly createdAtMs: number;
   readonly key: UsageOriginKey;
+  readonly messageId?: string;
+  readonly threadId?: string;
 }
 
 /** A T3 thread's own worktree: sessions working inside it are that thread's work. */
@@ -544,6 +551,15 @@ export interface UsageOriginSnapshot {
   /** Work threads with turns here; a coordinator has none. */
   readonly timelines?: readonly OriginTimeline[];
 }
+
+/** Nothing to label by: a window entirely closed reads no live origins. */
+export const EMPTY_SNAPSHOT: UsageOriginSnapshot = {
+  turns: [],
+  prompts: [],
+  worktrees: [],
+  claims: [],
+  registrations: [],
+};
 
 export interface OriginRecord {
   readonly sessionId: string;
@@ -667,14 +683,10 @@ export class UsageOriginIndex {
 
   /** A record that matches no T3 work gets an unknown key saying why. */
   lookup(record: OriginRecord): UsageOriginKey {
+    const running = this.turnAt(record);
+    if (running !== undefined) return running.key;
     const own = this.#turnsBySession.get(record.sessionId);
     const turn = own === undefined ? undefined : startedBy(own, record.timestampMs);
-    if (
-      turn !== undefined &&
-      (turn.completedAtMs === null || record.timestampMs <= turn.completedAtMs)
-    ) {
-      return turn.key;
-    }
     const claims = this.#claimsBySession.get(record.sessionId);
     const claimed = claims === undefined ? undefined : startedBy(claims, record.timestampMs);
     if (claimed !== undefined) return claimed.key;
@@ -713,6 +725,16 @@ export class UsageOriginIndex {
         : this.#turnsByWorktree.get(owner.directory);
     const key = turns && startedBy(turns, record.timestampMs)?.key;
     return key === undefined ? miss : { ...key, folder: true };
+  }
+
+  /** The part of its session's turn the record fell in, if one was running then. */
+  turnAt(record: OriginRecord): OriginTurn | undefined {
+    const own = this.#turnsBySession.get(record.sessionId);
+    const turn = own === undefined ? undefined : startedBy(own, record.timestampMs);
+    return turn !== undefined &&
+      (turn.completedAtMs === null || record.timestampMs <= turn.completedAtMs)
+      ? turn
+      : undefined;
   }
 
   /**
@@ -777,6 +799,26 @@ export class UsageOrigins extends Context.Service<
       taskId: string,
       key: UsageOriginKey,
     ) => Effect.Effect<void, UsageOriginsReadError>;
+    /** How far labels are written down; null before the first close. */
+    readonly closedSpan: Effect.Effect<UsageClose.ClosedSpan | null, UsageOriginsReadError>;
+    /** These sessions' stored labels, and the prompts labelled in the window's closed part. */
+    readonly readClosed: (input: {
+      readonly span: UsageClose.ClosedSpan;
+      readonly sessionIds: readonly string[];
+      readonly sinceMs: number;
+      readonly untilMs: number;
+    }) => Effect.Effect<
+      { readonly labels: UsageClose.ClosedLabels; readonly prompts: readonly OriginPrompt[] },
+      UsageOriginsReadError
+    >;
+    /**
+     * Writes down the label of every record and prompt after the last close through `throughMs`,
+     * as Usage reads them now, then reads them back; anything read back differently rolls it back.
+     */
+    readonly close: (
+      throughMs: number,
+      records: readonly OriginRecord[],
+    ) => Effect.Effect<CloseOutcome, UsageOriginsReadError>;
   }
 >()("t3/usage/UsageOrigins") {}
 
@@ -795,6 +837,36 @@ export const storedOrigin = (key: UsageOriginKey) =>
         ...rootOf(key),
       }
     : undefined;
+
+export type CloseOutcome =
+  | {
+      readonly closed: true;
+      readonly span: UsageClose.ClosedSpan;
+      readonly records: number;
+      readonly sessionRows: number;
+      readonly promptRows: number;
+    }
+  | { readonly closed: false; readonly why: "notDue" | "superseded" | "differs" };
+
+/**
+ * Where a thread's work counted at a closed time, from its sessions' stored labels, newest first:
+ * the turn running then or ended within the bind grace, else a coordinator's upkeep. Undefined
+ * for a work thread between its turns: its timeline says where the work counts, and a record's
+ * label there can be a claim on its last run, which names that run only.
+ */
+function closedBound(
+  rows: readonly UsageClose.ClosedSessionLabel[],
+  atMs: number,
+  coordinator: boolean,
+): BoundOrigin | undefined {
+  if (rows.length === 0) return undefined;
+  const turnAt = rows.findIndex((row) => row.runId !== null);
+  const turn = rows[turnAt];
+  // The first row after a turn's own starts when that turn ended.
+  if (turn !== undefined && (turnAt === 0 || atMs < rows[turnAt - 1]!.fromMs + BIND_GRACE_MS))
+    return { key: turn.key, reroots: turn.typed, runId: turn.runId };
+  return coordinator ? { key: NO_PROMPT_UPKEEP, reroots: false, runId: null } : undefined;
+}
 
 const StoredRoot = Schema.Struct({ threadId: Schema.String, messageId: Schema.String });
 
@@ -919,6 +991,7 @@ const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const claims = yield* UsageClaims.UsageClaims;
   const register = yield* UsageSessionRegister.UsageSessionRegister;
+  const store = UsageClose.makeClosedStore(sql);
 
   // T3's own sessions register too, and are dropped: T3 knows them turn by turn. A FirstMate task
   // resolves to the thread it runs in, named by that thread's bound environment.
@@ -1431,9 +1504,7 @@ const make = Effect.gen(function* () {
         promptsSinceMs: sinceMs,
         registrations,
       });
-      const turns = facts.turns.flatMap((turn) =>
-        turnSegments(turn, facts.resolver).map(({ typed: _typed, ...segment }) => segment),
-      );
+      const turns = facts.turns.flatMap((turn) => turnSegments(turn, facts.resolver));
       const workThreads = new Set(
         facts.turns.flatMap((turn) => (turn.coordinator ? [] : [turn.threadId])),
       );
@@ -1446,7 +1517,14 @@ const make = Effect.gen(function* () {
       const prompts = facts.promptMessages.flatMap((message): OriginPrompt[] =>
         message.createdAtMs === undefined
           ? []
-          : [{ createdAtMs: message.createdAtMs, key: promptOrigin(message, facts.resolver) }],
+          : [
+              {
+                createdAtMs: message.createdAtMs,
+                key: promptOrigin(message, facts.resolver),
+                messageId: message.id,
+                ...(message.threadId === undefined ? {} : { threadId: message.threadId }),
+              },
+            ],
       );
       return {
         turns,
@@ -1478,6 +1556,11 @@ const make = Effect.gen(function* () {
         FROM orchestration_v2_projection_threads WHERE thread_id = ${threadId}
       `.pipe(NodeSqliteClient.readOnly);
       if (thread === undefined) return null;
+      if (UsageClose.isClosed(yield* store.span, atMs)) {
+        const rows = yield* store.threadLabels(threadId, atMs);
+        const bound = closedBound(rows, atMs, thread.coordinator === 1);
+        if (bound !== undefined) return bound;
+      }
       const facts = yield* collect({
         turnsSinceMs: atMs - TURN_LOOKBACK_MS,
         untilMs: atMs + 1,
@@ -1536,7 +1619,111 @@ const make = Effect.gen(function* () {
     Effect.mapError((cause) => new UsageOriginsReadError({ cause })),
   );
 
-  return UsageOrigins.of({ read, originAt, bindScheduledTask });
+  const closedSpan = store.span.pipe(
+    Effect.mapError((cause) => new UsageOriginsReadError({ cause })),
+  );
+
+  const readClosed = Effect.fn("UsageOrigins.readClosed")(
+    function* (input: {
+      readonly span: UsageClose.ClosedSpan;
+      readonly sessionIds: readonly string[];
+      readonly sinceMs: number;
+      readonly untilMs: number;
+    }) {
+      const [rows, prompts] = yield* Effect.all([
+        store.sessionLabels(input.sessionIds, input.span.throughMs),
+        store.promptLabels(
+          Math.max(input.sinceMs, input.span.fromMs),
+          Math.min(input.untilMs, input.span.throughMs + 1),
+        ),
+      ]);
+      return { labels: new UsageClose.ClosedLabels(rows), prompts };
+    },
+    Effect.mapError((cause) => new UsageOriginsReadError({ cause })),
+  );
+
+  const close = Effect.fn("UsageOrigins.close")(
+    function* (throughMs: number, records: readonly OriginRecord[]) {
+      const span = yield* store.span;
+      const afterMs = span?.throughMs ?? UsageClose.CLOSE_FROM_MS - 1;
+      if (throughMs <= afterMs) return { closed: false, why: "notDue" } satisfies CloseOutcome;
+      const inSpan = (atMs: number) => atMs > afterMs && atMs <= throughMs;
+      const snapshot = yield* read(afterMs + 1, throughMs + 1);
+      const index = new UsageOriginIndex(snapshot);
+      const closing = records.filter((record) => inSpan(record.timestampMs));
+      const sessions = UsageClose.closedSessionLabels(
+        index,
+        snapshot.turns,
+        closing,
+        afterMs,
+        throughMs,
+      );
+      const prompts = snapshot.prompts.flatMap((prompt): UsageClose.ClosedPromptLabel[] =>
+        prompt.messageId === undefined || !inSpan(prompt.createdAtMs)
+          ? []
+          : [{ ...prompt, messageId: prompt.messageId }],
+      );
+      const next = { fromMs: span?.fromMs ?? UsageClose.CLOSE_FROM_MS, throughMs };
+      const closedAt = DateTime.formatIso(yield* DateTime.now);
+      return yield* sql
+        .withTransaction(
+          Effect.gen(function* () {
+            const current = yield* store.span;
+            if ((current?.throughMs ?? UsageClose.CLOSE_FROM_MS - 1) !== afterMs)
+              return yield* new UsageClose.CloseSuperseded();
+            yield* store.write({ span: next, closedAt, sessions, prompts });
+            // Read back through the stored rows, as the reader will.
+            const sessionIds = [...new Set(closing.map((record) => record.sessionId))];
+            const stored = new UsageClose.ClosedLabels(
+              yield* store.sessionLabels(sessionIds, throughMs),
+            );
+            const differing = UsageClose.differingRecords(stored, index, closing).length;
+            const storedPrompts = new Map(
+              (yield* store.promptLabels(afterMs + 1, throughMs + 1)).map((prompt) => [
+                prompt.messageId,
+                prompt.key,
+              ]),
+            );
+            const differingPrompts =
+              prompts.filter(
+                (prompt) => !UsageClose.sameKey(storedPrompts.get(prompt.messageId), prompt.key),
+              ).length + Math.abs(storedPrompts.size - prompts.length);
+            if (differing > 0 || differingPrompts > 0)
+              return yield* new UsageClose.ClosedLabelsDiffer({
+                records: differing,
+                prompts: differingPrompts,
+              });
+            return {
+              closed: true,
+              span: next,
+              records: closing.length,
+              sessionRows: sessions.length,
+              promptRows: prompts.length,
+            } satisfies CloseOutcome;
+          }),
+        )
+        .pipe(
+          Effect.catchTags({
+            CloseSuperseded: () =>
+              Effect.succeed({ closed: false, why: "superseded" } satisfies CloseOutcome),
+            ClosedLabelsDiffer: (error) =>
+              Effect.logWarning(error.message, { throughMs }).pipe(
+                Effect.as({ closed: false, why: "differs" } satisfies CloseOutcome),
+              ),
+          }),
+        );
+    },
+    Effect.mapError((cause) => new UsageOriginsReadError({ cause })),
+  );
+
+  return UsageOrigins.of({
+    read,
+    originAt,
+    bindScheduledTask,
+    closedSpan,
+    readClosed,
+    close,
+  });
 });
 
 export const layer = Layer.effect(UsageOrigins, make);
