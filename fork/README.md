@@ -196,7 +196,7 @@ and what agents claim.
   wake turn as `causedBy` for work it launches.
 - A record in no T3 turn of its own session traces by claim, then by folder.
   A session or folder claim counts as above. Otherwise the
-  record's working folder (`cwd`, kept by the scanner for Claude and Codex)
+  record's working folder (`cwd`, kept by the scanner for Claude, Codex and Grok)
   decides: a folder named for a T3 session's native id (Claude's scratchpad),
   a thread's worktree, or a claimed folder, deepest first. A worktree counts to
   the latest turn started there by any thread, since slots are reused. A
@@ -217,8 +217,11 @@ and what agents claim.
   folder. Upstream's own v16 (Codex baseline time) arrived the next night, so
   the fork reads it as v17 and a fork v16 Codex file re-parses once; upstream's
   v17 (Grok turns keyed by time) is the fork's v18, so Grok files from a fork
-  v16 or v17 cache re-parse once. On syncs, an upstream cache bump becomes the
-  fork's next number, never upstream's.
+  v16 or v17 cache re-parse once. Grok lines carry no folder, so its reader
+  decodes the session's group folder name (or reads the `.cwd` file Grok writes
+  for a name over 255 bytes); the fork's v19 re-parses Grok files changed since
+  28 Oct once to add it. On syncs, an upstream cache bump becomes the fork's next
+  number, never upstream's.
 
 The server sends `origins` on `UsageSummary` (optional; usage rows keyed by
 origin, basis, `via`, provider and source with no day, so the payload stays small),

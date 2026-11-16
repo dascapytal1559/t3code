@@ -1,3 +1,7 @@
+// @effect-diagnostics nodeBuiltinImport:off - the usage scanner reads transcripts with node:fs.
+import * as NodeFSP from "node:fs/promises";
+import * as NodePath from "node:path";
+
 import type { UsageTokenTotals } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
@@ -182,6 +186,26 @@ function parseGrokRecord(parsed: unknown): readonly UsageRecord[] {
   return results;
 }
 
+function decodedFolder(name: string): string | undefined {
+  try {
+    const decoded = decodeURIComponent(name);
+    return NodePath.isAbsolute(decoded) ? decoded : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+// Grok files a session under `sessions/<encodeURIComponent(cwd)>/<id>/`; a name over 255 bytes is
+// a slug plus a hash instead, with the path in that folder's `.cwd` file.
+export async function grokSessionCwd(updatesPath: string): Promise<string | undefined> {
+  const group = NodePath.dirname(NodePath.dirname(updatesPath));
+  const named = decodedFolder(NodePath.basename(group));
+  if (named !== undefined) return named;
+  const recorded = await NodeFSP.readFile(NodePath.join(group, ".cwd"), "utf8").catch(() => null);
+  const cwd = recorded?.replace(/\r?\n$/, "");
+  return cwd !== undefined && NodePath.isAbsolute(cwd) ? cwd : undefined;
+}
+
 export const grokUsageFormat: TranscriptUsageFormat<void> = {
   selectFields: {
     timestamp: true,
@@ -194,6 +218,7 @@ export const grokUsageFormat: TranscriptUsageFormat<void> = {
   usageMarkers: ['"turn_completed"'],
   parseLine: (line) => parseGrokLine(line),
   parseProjected: (projected) => parseGrokRecord(projected),
+  fileCwd: grokSessionCwd,
 };
 
 export const grokUsageReader: ProviderUsageReader<GrokSettings, Path.Path> = {

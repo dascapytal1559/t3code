@@ -10,6 +10,7 @@ import { afterEach, assert, beforeEach, describe, it } from "@effect/vitest";
 import { totalTokens, type TranscriptUsageFormat } from "@t3tools/provider-core/server/usage";
 import * as Schema from "effect/Schema";
 
+import { UsageOriginIndex } from "./UsageOrigins.ts";
 import { TEST_FORMATS } from "./usageTestFormats.ts";
 import {
   listTranscriptFiles,
@@ -558,6 +559,57 @@ describe("readTranscriptRecords resume", () => {
     assert.strictEqual(result.records[0]?.model, "gpt-5.2-codex");
     assert.strictEqual(result.records[0]?.sessionId, "codex-session-1");
     assert.strictEqual(result.position.resumeOffset, Buffer.byteLength(content));
+  });
+});
+
+describe("working folder from a transcript's path", () => {
+  it("traces a Grok CLI session to the worktree it ran in, by the folder Grok filed it under", async () => {
+    const worktree = "/Users/me/.treehouse/repo/11/repo";
+    const scratch = `${worktree}/.t3/critics`;
+    const path = NodePath.join(dir, "sessions", encodeURIComponent(scratch), "s", "updates.jsonl");
+    await NodeFSP.mkdir(NodePath.dirname(path), { recursive: true });
+    const turn = {
+      method: "_x.ai/session/update",
+      params: {
+        sessionId: "grok-cli-session",
+        _meta: { agentTimestampMs: 5_000 },
+        update: {
+          sessionUpdate: "turn_completed",
+          prompt_id: "p1",
+          usage: {
+            inputTokens: 10,
+            outputTokens: 2,
+            modelUsage: { "grok-4.7": { inputTokens: 10, outputTokens: 2 } },
+          },
+        },
+      },
+    };
+    await NodeFSP.writeFile(path, `${JSON.stringify(turn)}\n`);
+
+    const result = await readTranscriptRecords(path, TEST_FORMATS.grok);
+    assert.isNotNull(result);
+    assert.deepStrictEqual(
+      result.records.map((record) => record.cwd),
+      [scratch],
+    );
+    const worker = { origin: "phone", basis: "stamp", via: "crew" } as const;
+    const index = new UsageOriginIndex({
+      turns: [
+        {
+          sessionId: "worker",
+          threadId: "worker",
+          startedAtMs: 0,
+          completedAtMs: null,
+          key: worker,
+        },
+      ],
+      worktrees: [{ threadId: "worker", directory: worktree }],
+      claims: [],
+    });
+    assert.deepStrictEqual(
+      result.records.map((record) => index.lookup(record)),
+      [worker],
+    );
   });
 });
 

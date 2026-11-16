@@ -75,6 +75,8 @@ export interface TranscriptUsageFormat<State> {
     readonly initial: () => State;
     readonly schema: Schema.Codec<State, unknown>;
   };
+  /** The working folder a transcript's path names, for formats whose lines record none. */
+  readonly fileCwd?: (filePath: string) => Promise<string | undefined>;
   /** Enable cross-file deduplication when session records can appear in multiple files. */
   readonly sharedSessionsAcrossFiles?: true;
 }

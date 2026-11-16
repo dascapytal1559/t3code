@@ -10,7 +10,7 @@ import { CLAUDE_SYNTHETIC_MODEL } from "../provider/Drivers/claudeUsage.ts";
 import { mergeUsageCopies } from "./usageAggregation.ts";
 import { GUARD_LENGTH, type TranscriptParsePosition } from "./usageTranscriptReader.ts";
 
-const USAGE_SCAN_CACHE_VERSION = 18 as const;
+const USAGE_SCAN_CACHE_VERSION = 19 as const;
 const SPEED_COMPATIBLE_SINCE_VERSION = 4;
 // T3 turns began on 28 Oct 2026, so only transcripts written since can trace by working folder.
 const CWD_TRACEABLE_SINCE_MS = Date.parse("2026-10-28T00:00:00Z");
@@ -20,8 +20,9 @@ const CWD_TRACEABLE_SINCE_MS = Date.parse("2026-10-28T00:00:00Z");
  * replace it, dropping saved usage for deleted transcripts. Separate files keep
  * the newer one; older files are removed once it is saved.
  */
-export const SCAN_CACHE_FILE_NAME = "usage-scan-cache-v18.json";
+export const SCAN_CACHE_FILE_NAME = "usage-scan-cache-v19.json";
 export const LEGACY_SCAN_CACHE_FILE_NAMES = [
+  "usage-scan-cache-v18.json",
   "usage-scan-cache-v17.json",
   "usage-scan-cache-v16.json",
   "usage-scan-cache-v15.json",
@@ -338,15 +339,16 @@ export function decodeScanCache(
     ) {
       continue;
     }
-    // Re-parse incompatible state: v13 Claude 1-hour cache writes; v14 Codex request ledgers;
-    // v15 repairs rewound Codex counters (clean v14 entries stay served); the fork's v16 records
-    // working folders, so files T3 turns could have written re-parse; v17 is upstream's v16;
-    // v18 is upstream's v17, which keys Grok turns by time.
+    // Re-parse incompatible state: v13 Claude 1-hour cache writes; v14 Codex request ledgers; v15
+    // repairs rewound Codex counters (clean v14 entries stay served); the fork's v16 (Claude and
+    // Codex) and v19 (Grok) keep working folders, so files T3 turns could have written re-parse;
+    // v17 is upstream's v16; v18 is upstream's v17, which keys Grok turns by time.
     const legacy =
       (entry.p === "claude" && version < 13) ||
       ((entry.p === "claude" || entry.p === "codex") &&
         version < 16 &&
         entry.m >= CWD_TRACEABLE_SINCE_MS) ||
+      (entry.p === "grok" && version < 19 && entry.m >= CWD_TRACEABLE_SINCE_MS) ||
       (entry.p === "grok" && version < 18) ||
       (format.state !== undefined &&
         (version < 6 ||

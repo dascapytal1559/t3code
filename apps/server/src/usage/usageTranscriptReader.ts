@@ -467,9 +467,14 @@ export async function readTranscriptRecords<State>(
       guardHash = fnv1a(window);
     }
 
+    const cwd = await format.fileCwd?.(filePath);
+    const withCwd = (list: UsageRecord[]) =>
+      cwd === undefined
+        ? list
+        : list.map((record) => (record.cwd === undefined ? { ...record, cwd } : record));
     return {
-      records,
-      tailRecords,
+      records: withCwd(records),
+      tailRecords: withCwd(tailRecords),
       malformedRecords: format.readMalformedRecords?.(tailState) ?? 0,
       position: {
         resumeOffset: compressed ? 0 : resumeOffset,

@@ -1,6 +1,11 @@
+// @effect-diagnostics nodeBuiltinImport:off - session folders are real directories on disk.
+import * as NodeFSP from "node:fs/promises";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
+
 import { describe, expect, it } from "@effect/vitest";
 
-import { GROK_COST_USD_TICKS_PER_DOLLAR, parseGrokLine } from "./usage.ts";
+import { GROK_COST_USD_TICKS_PER_DOLLAR, grokSessionCwd, parseGrokLine } from "./usage.ts";
 
 describe("parseGrokLine", () => {
   function turnCompleted(overrides?: {
@@ -287,5 +292,29 @@ describe("parseGrokLine", () => {
 
     const records = parseGrokLine(line);
     expect(records[0]?.timestampMs).toBe(1_786_372_566_000);
+  });
+});
+
+describe("grokSessionCwd", () => {
+  it("reads the working folder from the session's group folder, or its .cwd file when long", async () => {
+    const sessions = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "grok-sessions-"));
+    const updates = (group: string) => NodePath.join(sessions, group, "019fec1a", "updates.jsonl");
+    try {
+      const scratch = "/Users/me/.treehouse/repo/11/repo/.t3/critic scratch";
+      expect(await grokSessionCwd(updates(encodeURIComponent(scratch)))).toBe(scratch);
+
+      const slug = "users-me-a-very-deep-folder-3f9a1c2b";
+      await NodeFSP.mkdir(NodePath.join(sessions, slug));
+      await NodeFSP.writeFile(
+        NodePath.join(sessions, slug, ".cwd"),
+        "/Users/me/a/very/deep/folder\n",
+      );
+      expect(await grokSessionCwd(updates(slug))).toBe("/Users/me/a/very/deep/folder");
+
+      expect(await grokSessionCwd(updates("users-me-no-cwd-file-1a2b3c4d"))).toBeUndefined();
+      expect(await grokSessionCwd(updates("%E0%A4%A"))).toBeUndefined();
+    } finally {
+      await NodeFSP.rm(sessions, { recursive: true, force: true });
+    }
   });
 });

@@ -341,22 +341,29 @@ describe("scan cache round trip", () => {
     });
   });
 
-  it("re-parses transcripts T3 turns could have written before working folders were kept", () => {
-    const recent = Date.parse("2026-11-01T00:00:00Z");
-    const original = cacheWith([
-      ["/recent.jsonl", recent, [record()]],
-      ["/old.jsonl", Date.parse("2026-10-01T00:00:00Z"), [record()]],
-    ]);
-    const v15 = { ...parse(makeScanCacheWriter()(original, {})), version: 15 };
+  it.each([
+    ["claude", 15],
+    ["grok", 18],
+  ] as const)(
+    "re-parses %s transcripts T3 turns could have written before cache v%i kept working folders",
+    (provider, version) => {
+      const recent = Date.parse("2026-11-01T00:00:00Z");
+      const original = cacheWith([
+        ["/recent.jsonl", recent, [record({ provider })]],
+        ["/old.jsonl", Date.parse("2026-10-01T00:00:00Z"), [record({ provider })]],
+      ]);
+      for (const [path, entry] of original) original.set(path, { ...entry, provider });
+      const encoded = { ...parse(makeScanCacheWriter()(original, {})), version };
 
-    const restored = decodeScanCache(JSON.parse(JSON.stringify(v15)), TEST_FORMAT_MAP);
-    expect(restored.get("/recent.jsonl")).toEqual({
-      ...original.get("/recent.jsonl"),
-      size: -1,
-      position: { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null },
-    });
-    expect(restored.get("/old.jsonl")).toEqual(original.get("/old.jsonl"));
-  });
+      const restored = decodeScanCache(JSON.parse(JSON.stringify(encoded)), TEST_FORMAT_MAP);
+      expect(restored.get("/recent.jsonl")).toEqual({
+        ...original.get("/recent.jsonl"),
+        size: -1,
+        position: { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null },
+      });
+      expect(restored.get("/old.jsonl")).toEqual(original.get("/old.jsonl"));
+    },
+  );
   // The fork's v17 is upstream's v16, so it predates time-keyed Grok turns too.
   it.each([
     ["s:p:grok-4.5", 16],
