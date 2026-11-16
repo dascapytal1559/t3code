@@ -606,6 +606,14 @@ export const ClaudeProviderCapabilitiesV2 = {
   threadConfig: { environment: true, instructions: true },
 } satisfies OrchestrationV2ProviderCapabilities;
 
+// Built-in tools whose description names one of these skills carry that skill's text themselves
+// when it is hidden, which changes the tool block every Claude session shares in the prompt cache.
+const CLAUDE_LEAN_STARTUP_SKILLS = [
+  "workflow-authoring",
+  "artifact-design",
+  "artifact-capabilities",
+] as const;
+
 const CLAUDE_CODE_PRESET_TOOLS = {
   type: "preset",
   preset: "claude_code",
@@ -2175,6 +2183,8 @@ export function makeClaudeQueryOptions(input: {
   readonly threadInstructions?: string;
   // Flag settings, because a user's settings.json env beats the process env in Claude Code.
   readonly toolSearchOverride?: "true";
+  /** Fork: besides T3's server, only this .mcp.json's (none when absent), and no skills list. */
+  readonly leanStartup?: { readonly mcpConfigPath?: string };
 }): ClaudeAgentSdkQueryOptions {
   const compiledSelection = compileClaudeModelSelection(input.modelSelection, input.modelCatalog);
   const {
@@ -2202,6 +2212,10 @@ export function makeClaudeQueryOptions(input: {
     extraArgs["thinking-display"] !== "omitted";
   if (requestThinkingSummaries && extraArgs["thinking-display"] === undefined) {
     extraArgs["thinking-display"] = "summarized";
+  }
+  // A path keeps the folder's MCP credentials out of argv, as T3's own server's are.
+  if (input.leanStartup?.mcpConfigPath !== undefined) {
+    extraArgs["mcp-config"] = input.leanStartup.mcpConfigPath;
   }
   const threadIdentity: ClaudeAgentSdkThreadIdentity = input.resume
     ? { resume: input.nativeThreadId }
@@ -2308,6 +2322,9 @@ export function makeClaudeQueryOptions(input: {
       : {}),
     ...(input.environment === undefined ? {} : { env: input.environment }),
     ...(input.mcpServers === undefined ? {} : { mcpServers: input.mcpServers }),
+    ...(input.leanStartup === undefined
+      ? {}
+      : { strictMcpConfig: true, skills: [...CLAUDE_LEAN_STARTUP_SKILLS] }),
     systemPrompt: {
       type: "preset" as const,
       preset: "claude_code" as const,
@@ -5647,6 +5664,16 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
     }
     return adapterOptions.environment[name];
   });
+  const leanClaudeStartup = Effect.fn("ClaudeAdapterV2.leanClaudeStartup")(function* (
+    cwd: string | null,
+  ) {
+    if (cwd === null) return {};
+    const mcpConfigPath = path.join(cwd, ".mcp.json");
+    return (yield* fileSystem.exists(mcpConfigPath).pipe(Effect.orElseSucceed(() => false)))
+      ? { mcpConfigPath }
+      : {};
+  });
+
   const resolveToolSearchOverride = (
     cwd: string | null,
     launchArgSettings: ClaudeSdkSettings | undefined,
@@ -12557,6 +12584,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 return pendingWake !== undefined && (yield* pendingWake) ? { continue: false } : {};
               }),
             );
+          const leanStartup =
+            turnInput.runtimePolicy.leanClaudeStartup === true
+              ? yield* leanClaudeStartup(turnInput.runtimePolicy.cwd)
+              : undefined;
           const mcpOverrides = claudeMcpQueryOverrides({
             mcpSession,
             readOnlySandbox:
@@ -12741,6 +12772,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ? {}
               : { threadInstructions: turnInput.runtimePolicy.instructions }),
             ...(toolSearchOverride === undefined ? {} : { toolSearchOverride }),
+            ...(leanStartup === undefined ? {} : { leanStartup }),
           });
           const resolvedTurnCwd = yield* fileSystem
             .realPath(turnInput.runtimePolicy.cwd ?? ".")

@@ -119,7 +119,7 @@ import {
   SHARED_WORKSPACE_RESTORE_MESSAGE,
 } from "./CheckpointRestoreSafety.ts";
 import { CheckpointServiceV2 } from "./CheckpointService.ts";
-import { startsFreshOnColdCache } from "./ColdCache.ts";
+import { coldClearMinContextTokens, startsFreshOnColdCache } from "./ColdCache.ts";
 import {
   CommandPolicyV2,
   followUpOwnerRun,
@@ -1830,6 +1830,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     return false;
   });
 
+  // Fork: a project the store can't read opts nothing in, so a message never fails on it.
+  const coldClearFloor = (thread: OrchestrationV2AppThread) =>
+    isPrimaryCoordinator(thread)
+      ? Effect.succeed(coldClearMinContextTokens(thread, undefined))
+      : projects.get(thread.projectId).pipe(
+          Effect.map((project) =>
+            coldClearMinContextTokens(thread, Option.getOrUndefined(project)),
+          ),
+          Effect.orElseSucceed(() => undefined),
+        );
+
   const freshContextEndsBackgroundWork = Effect.fn("Orchestrator.freshContextEndsBackgroundWork")(
     function* (
       projection: Pick<OrchestrationV2ThreadProjection, "providerSessions" | "providerThreads">,
@@ -2746,7 +2757,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         queuedMessage,
         queuedRun.freshContext === true,
       );
-      // Fork: a new exchange on a cold FirstMate thread starts fresh, like an armed /clear.
+      // Fork: a new exchange on a cold FirstMate or opted-in thread starts fresh, like an armed /clear.
       const coldClear =
         startsFreshOnColdCache(
           projection,
@@ -2760,7 +2771,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             manualContinuationOfRunId: queuedRun.manualContinuationOfRunId,
             steerFollowUpOfRunId: queuedRun.steerWhenReadyRunId,
           },
-          DateTime.toEpochMillis(now),
+          {
+            nowMs: DateTime.toEpochMillis(now),
+            minContextTokens: yield* coldClearFloor(projection.thread),
+          },
         ) && !(yield* freshContextEndsBackgroundWork(projection, activeProviderThread));
       const freshContext = queuedRun.freshContext === true || coldClear;
       const contextBoundary = freshContext ? ordinal : contextBoundaryOrdinal(projection);
@@ -8259,13 +8273,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         },
       });
     }
-    // Fork: a new exchange on a cold FirstMate thread starts fresh, like an armed /clear.
+    // Fork: a new exchange on a cold FirstMate or opted-in thread starts fresh, like an armed /clear.
     const coldClear =
       startsFreshOnColdCache(
         projection,
         activeProviderThread,
         { ...command, delegatedCompletion, providerInstanceId: modelSelection.instanceId },
-        DateTime.toEpochMillis(now),
+        {
+          nowMs: DateTime.toEpochMillis(now),
+          minContextTokens: yield* coldClearFloor(projection.thread),
+        },
       ) && !(yield* freshContextEndsBackgroundWork(projection, activeProviderThread));
     if (coldClear) freshContext = true;
     if (

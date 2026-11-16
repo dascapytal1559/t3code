@@ -8,8 +8,17 @@ export const ensureForkSchema = Effect.fn("ensureForkSchema")(function* () {
   const projectColumns = yield* sql<{ readonly name: string }>`
     PRAGMA table_info(projection_projects)
   `;
-  if (!projectColumns.some((column) => column.name === "agent_name")) {
+  const hasProjectColumn = (column: string) => projectColumns.some(({ name }) => name === column);
+  if (!hasProjectColumn("agent_name")) {
     yield* sql`ALTER TABLE projection_projects ADD COLUMN agent_name TEXT`;
+  }
+  if (!hasProjectColumn("cold_clear_min_tokens")) {
+    yield* sql`ALTER TABLE projection_projects ADD COLUMN cold_clear_min_tokens INTEGER`;
+  }
+  if (!hasProjectColumn("lean_claude_startup")) {
+    yield* sql`
+      ALTER TABLE projection_projects ADD COLUMN lean_claude_startup INTEGER NOT NULL DEFAULT 0
+    `;
   }
   // What an agent claimed for Usage: a session or folder run outside T3, or a T3 run (turn),
   // counted to the prompt that caused it or straight to a device. A session claim may start at a

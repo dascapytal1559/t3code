@@ -474,6 +474,32 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
     });
   });
 
+  it("starts lean with only the folder's MCP config and the skills built-in tools name", () => {
+    const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      nativeThreadId: "native-lean",
+      resume: false,
+      cwd: "/workspace",
+      leanStartup: { mcpConfigPath: "/workspace/.mcp.json" },
+    });
+    assert.isTrue(options.strictMcpConfig);
+    assert.deepEqual(options.skills, [
+      "workflow-authoring",
+      "artifact-design",
+      "artifact-capabilities",
+    ]);
+    assert.equal(options.extraArgs?.["mcp-config"], "/workspace/.mcp.json");
+    const full = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      nativeThreadId: "native-full",
+      resume: false,
+      cwd: "/workspace",
+    });
+    assert.isUndefined(full.strictMcpConfig);
+    assert.isUndefined(full.skills);
+    assert.isUndefined(full.extraArgs?.["mcp-config"]);
+  });
+
   it("sends the auto-compact window as the env var Claude Code prefers", () => {
     const options = ClaudeAdapterV2.makeClaudeQueryOptions({
       modelSelection: CLAUDE_TEST_MODEL_SELECTION,

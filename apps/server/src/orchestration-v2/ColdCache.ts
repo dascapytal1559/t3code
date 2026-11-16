@@ -1,4 +1,5 @@
 import {
+  isDelegatedAppThread,
   isPrimaryCoordinator,
   parseGoalCommand,
   type ChatAttachment,
@@ -17,13 +18,27 @@ import { isActiveRun, isNativeMaintenanceCommand } from "./CommandPolicy.ts";
 
 // FirstMate rebuilds about 71k tokens from its files at session start, so a
 // smaller session reloads cold for about the price of a fresh one.
-const MIN_CONTEXT_TOKENS = 100_000;
+const COORDINATOR_MIN_CONTEXT_TOKENS = 100_000;
 // Claude's longest prompt cache lifetime. A request served fully from cache
 // writes no cache entry, so its usage reports no expiry.
 const MAX_PROMPT_CACHE_TTL_MS = 60 * 60_000;
 
+/**
+ * Fork: the context size over which a cold session starts fresh, or undefined where the rule is
+ * off: always on for FirstMate's main thread, and on for a project's own threads when it opts in.
+ */
+export function coldClearMinContextTokens(
+  thread: Pick<OrchestrationV2AppThread, "coordinator" | "crewOf" | "lineage" | "delegatedFrom">,
+  project: { readonly coldClearMinTokens?: number | null | undefined } | undefined,
+): number | undefined {
+  if (isPrimaryCoordinator(thread)) return COORDINATOR_MIN_CONTEXT_TOKENS;
+  // Crew and delegated threads carry another agent's work, which a fresh session would lose.
+  if (thread.crewOf !== undefined || isDelegatedAppThread(thread)) return undefined;
+  return project?.coldClearMinTokens ?? undefined;
+}
+
 export interface ColdCacheRecords {
-  readonly thread: Pick<OrchestrationV2AppThread, "id" | "coordinator" | "crewOf">;
+  readonly thread: Pick<OrchestrationV2AppThread, "id">;
   readonly runs: ReadonlyArray<OrchestrationV2Run>;
   readonly providerTurns: ReadonlyArray<
     Pick<OrchestrationV2ProviderTurn, "providerThreadId" | "tokenUsage">
@@ -49,9 +64,9 @@ export interface ColdCacheInput {
 }
 
 /**
- * Fork: whether a run about to start on FirstMate's main thread should start a
- * fresh session because the prompt cache of the session it would resume has
- * expired. Only an input that begins a new exchange qualifies; one that
+ * Fork: whether a run about to start should start a fresh session because the prompt cache of
+ * the session it would resume has expired and that session is over `minContextTokens` (see
+ * `coldClearMinContextTokens`). Only an input that begins a new exchange qualifies; one that
  * continues work the old session started stays in it.
  */
 export function startsFreshOnColdCache(
@@ -63,9 +78,12 @@ export function startsFreshOnColdCache(
       >
     | undefined,
   input: ColdCacheInput,
-  nowMs: number,
+  {
+    nowMs,
+    minContextTokens,
+  }: { readonly nowMs: number; readonly minContextTokens: number | undefined },
 ): boolean {
-  if (!isPrimaryCoordinator(thread) || input.freshContext === true) return false;
+  if (minContextTokens === undefined || input.freshContext === true) return false;
   if (
     isNativeMaintenanceCommand(input) ||
     // Goal controls act on the old session's goal.
@@ -105,7 +123,7 @@ export function startsFreshOnColdCache(
     .filter((turn) => turn.providerThreadId === providerThread.id && turn.tokenUsage !== undefined)
     .map((turn) => turn.tokenUsage!)
     .toSorted((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0];
-  if (usage === undefined || usage.usedTokens <= MIN_CONTEXT_TOKENS) return false;
+  if (usage === undefined || usage.usedTokens <= minContextTokens) return false;
   const expiresMs =
     usage.promptCacheExpiresAt === undefined
       ? Date.parse(usage.updatedAt) + MAX_PROMPT_CACHE_TTL_MS

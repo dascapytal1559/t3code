@@ -19,6 +19,8 @@ import { useOrchestrationCommand } from "../state/use-orchestration-command";
 export type ProjectGroupUpdate = Partial<{
   title: string;
   agentName: string | null;
+  coldClearMinTokens: number | null;
+  leanClaudeStartup: boolean;
   faviconPath: string | null;
   projectIcon: ProjectIconOverride | null;
   pinned: boolean;

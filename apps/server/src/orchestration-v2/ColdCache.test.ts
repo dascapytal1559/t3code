@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
+  EnvironmentId,
   MessageId,
   type OrchestrationV2Notification,
   type OrchestrationV2ProviderTurnTokenUsage,
@@ -12,7 +13,12 @@ import {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 
-import { startsFreshOnColdCache, type ColdCacheInput, type ColdCacheRecords } from "./ColdCache.ts";
+import {
+  coldClearMinContextTokens,
+  startsFreshOnColdCache,
+  type ColdCacheInput,
+  type ColdCacheRecords,
+} from "./ColdCache.ts";
 
 const NOW_MS = Date.parse("2026-11-15T06:00:00.000Z");
 const MINUTE_MS = 60_000;
@@ -53,8 +59,13 @@ const USAGE = {
   promptCacheExpiresAt: iso(-MINUTE_MS),
   updatedAt: iso(-61 * MINUTE_MS),
 } satisfies OrchestrationV2ProviderTurnTokenUsage;
+type FloorThread = Parameters<typeof coldClearMinContextTokens>[0];
+const LOGGER: FloorThread = {
+  lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+};
+const FIRSTMATE: FloorThread = { ...LOGGER, coordinator: true };
 const COLD: ColdCacheRecords = {
-  thread: { id: threadId, coordinator: true },
+  thread: { id: threadId },
   runs: [RUN],
   providerTurns: [{ providerThreadId, tokenUsage: USAGE }],
   runtimeRequests: [],
@@ -74,10 +85,70 @@ const notification = (
   source: OrchestrationV2Notification["source"],
 ): OrchestrationV2Notification => ({ source, outcome: "updated", summary: "Woke" });
 type Case = readonly [string, ColdCacheRecords, Partial<ColdCacheInput>];
+const FIRSTMATE_FLOOR = {
+  nowMs: NOW_MS,
+  minContextTokens: coldClearMinContextTokens(FIRSTMATE, undefined),
+};
 const decide = (records: ColdCacheRecords, input: Partial<ColdCacheInput>) =>
-  startsFreshOnColdCache(records, PROVIDER_THREAD, { ...INPUT, ...input }, NOW_MS);
+  startsFreshOnColdCache(records, PROVIDER_THREAD, { ...INPUT, ...input }, FIRSTMATE_FLOOR);
+
+describe("coldClearMinContextTokens", () => {
+  const optedIn = { coldClearMinTokens: 60_000 };
+  it.each<
+    readonly [
+      string,
+      FloorThread,
+      Parameters<typeof coldClearMinContextTokens>[1],
+      number | undefined,
+    ]
+  >([
+    ["FirstMate's main thread", FIRSTMATE, undefined, 100_000],
+    ["FirstMate's main thread in a project that opts in", FIRSTMATE, optedIn, 100_000],
+    ["a thread in a project that opts in", LOGGER, optedIn, 60_000],
+    ["a thread in a project that doesn't", LOGGER, { coldClearMinTokens: null }, undefined],
+    ["a thread with no project record", LOGGER, undefined, undefined],
+    ["a secondmate", { ...FIRSTMATE, crewOf: ThreadId.make("thread:fm") }, optedIn, undefined],
+    ["a crew worker", { ...LOGGER, crewOf: ThreadId.make("thread:fm") }, optedIn, undefined],
+    [
+      "a subagent",
+      { lineage: { ...LOGGER.lineage, relationshipToParent: "subagent" } },
+      optedIn,
+      undefined,
+    ],
+    [
+      "a delegated task",
+      {
+        ...LOGGER,
+        delegatedFrom: {
+          environmentId: EnvironmentId.make("env:other"),
+          threadId: ThreadId.make("thread:parent"),
+          title: "Parent",
+        },
+      },
+      optedIn,
+      undefined,
+    ],
+  ])("for %s", (_name, thread, project, expected) => {
+    expect(coldClearMinContextTokens(thread, project)).toBe(expected);
+  });
+});
 
 describe("startsFreshOnColdCache", () => {
+  const atFloor = (usedTokens: number, minContextTokens: number | undefined) =>
+    startsFreshOnColdCache(withUsage({ ...USAGE, usedTokens }), PROVIDER_THREAD, INPUT, {
+      nowMs: NOW_MS,
+      minContextTokens,
+    });
+
+  it("starts fresh over a project's own floor, and not at or under it", () => {
+    expect(atFloor(60_001, 60_000)).toBe(true);
+    expect(atFloor(60_000, 60_000)).toBe(false);
+  });
+
+  it("keeps the old session where the rule is off", () => {
+    expect(atFloor(250_000, undefined)).toBe(false);
+  });
+
   it.each<Case>([
     ["a new message after the cache expired", COLD, {}],
     ["the moment the cache expires", withUsage({ ...USAGE, promptCacheExpiresAt: iso(0) }), {}],
@@ -99,7 +170,7 @@ describe("startsFreshOnColdCache", () => {
       { ...PROVIDER_THREAD, driver: ProviderDriverKind.make("codex") },
     ],
   ])("keeps the old session when it would resume %s", (_name, providerThread) => {
-    expect(startsFreshOnColdCache(COLD, providerThread, INPUT, NOW_MS)).toBe(false);
+    expect(startsFreshOnColdCache(COLD, providerThread, INPUT, FIRSTMATE_FLOOR)).toBe(false);
   });
 
   it.each<Case>([
@@ -123,12 +194,6 @@ describe("startsFreshOnColdCache", () => {
       "a switch to another provider",
       COLD,
       { providerInstanceId: ProviderInstanceId.make("codex") },
-    ],
-    ["an unpinned thread", { ...COLD, thread: { ...COLD.thread, coordinator: false } }, {}],
-    [
-      "a secondmate",
-      { ...COLD, thread: { ...COLD.thread, crewOf: ThreadId.make("thread:fm") } },
-      {},
     ],
     ["a running turn", { ...COLD, runs: [{ ...RUN, status: "running" }] }, {}],
     ["a turn waiting on an answer", { ...COLD, runs: [{ ...RUN, status: "waiting" }] }, {}],

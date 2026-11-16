@@ -219,37 +219,24 @@ export const layerFromProjectStore: Layer.Layer<
           ...threadConfigOf(input.thread),
           providerInstanceId: input.modelSelection.instanceId,
         });
-        const cwd =
-          input.thread.worktreePath ??
-          (yield* projects.get(input.thread.projectId).pipe(
-            Effect.mapError(
-              (cause) =>
-                new RuntimePolicyResolveError({
-                  projectId: input.thread.projectId,
-                  providerInstanceId: input.modelSelection.instanceId,
-                  cause,
-                }),
-            ),
-            Effect.flatMap(
-              Option.match({
-                onNone: () =>
-                  Effect.fail(
-                    new RuntimePolicyResolveError({
-                      projectId: input.thread.projectId,
-                      providerInstanceId: input.modelSelection.instanceId,
-                      cause: "Project not found.",
-                    }),
-                  ),
-                onSome: (project) => Effect.succeed(project.workspaceRoot),
-              }),
-            ),
-          ));
+        const resolveError = (cause: unknown) =>
+          new RuntimePolicyResolveError({
+            projectId: input.thread.projectId,
+            providerInstanceId: input.modelSelection.instanceId,
+            cause,
+          });
+        const project = Option.getOrUndefined(
+          yield* projects.get(input.thread.projectId).pipe(Effect.mapError(resolveError)),
+        );
+        const cwd = input.thread.worktreePath ?? project?.workspaceRoot;
+        if (cwd === undefined) return yield* resolveError("Project not found.");
         return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
           runtimeMode: effectiveRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
           interactionMode: input.thread.interactionMode,
           cwd,
           ...threadConfigOf(input.thread),
           ...(maxRuntimeMode === undefined ? {} : { maxRuntimeMode }),
+          ...(project?.leanClaudeStartup === true ? { leanClaudeStartup: true } : {}),
         });
       }),
     });

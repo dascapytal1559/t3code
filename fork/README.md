@@ -859,9 +859,15 @@ threads whose conversation is the only record of the work. On the pinned
 FirstMate thread, a new exchange that starts after the cache has expired starts
 in a fresh session. FirstMate keeps its state in files and rebuilds its context
 at session start, about 71k tokens, while reloading or compacting the old
-session re-sends all of it, 120k to 750k. Every other thread keeps upstream's
-behaviour. This relies on Compact idle threads being set to Never for that
-thread's provider.
+session re-sends all of it, 120k to 750k. A project can opt its own threads in
+with its own size floor (**Settings → Projects → Fresh session after cache
+expiry**, or `coldClearMinTokens` on `t3_project_update`; `null` turns it off),
+for a standing agent such as the life log, whose messages stand alone and whose
+fresh start is far smaller than FirstMate's. Crew, secondmate and delegated
+threads stay out even then, since their context is another agent's work, and
+FirstMate's own thread keeps its 100k whatever its project says. Every other
+thread keeps upstream's behaviour. This relies on Compact idle threads being set
+to Never for that thread's provider.
 
 The check runs when a run is about to start, at the two places a run starts, so
 every client and route is covered, the stock phone app included. It starts the
@@ -869,8 +875,9 @@ run exactly as an armed `/clear` does, which also retires the old session. Cold
 means the newest usage of the Claude session the run would resume reports a
 cache expiry at or before now; a request served fully from cache reports none, so its time plus one
 hour, Claude's longest cache lifetime, stands in. Other providers report no
-expiry and are never cold. It applies only when that session is over 100k
-tokens, since a smaller one reloads for about the price of a fresh start, and
+expiry and are never cold. It applies only when that session is over the floor
+(100k on FirstMate's thread), since a smaller one reloads for about the price of
+a fresh start, and
 when the run stays on the same provider. A message from any client or over MCP,
 T3's restart note and a scheduled task begin an exchange. These continue the old
 session instead: a steer, anything while a run is active or a question or
@@ -889,12 +896,45 @@ note. If Compact idle threads is turned on, its
 "When you return" compaction runs first, reloads the session and leaves it warm,
 so nothing clears.
 
-Code: `startsFreshOnColdCache` in
+Code: `coldClearMinContextTokens` and `startsFreshOnColdCache` in
 `apps/server/src/orchestration-v2/ColdCache.ts`, called where
 `startNextQueuedRun` and `message.dispatch` start a run in `Orchestrator.ts`;
 `freshContextReason` on user-message and notification turn items in
 `packages/contracts/src/orchestrationV2.ts`; and the divider's
-`cacheExpired` in `apps/web/src/components/chat/V2LifecycleRow.tsx`.
+`cacheExpired` in `apps/web/src/components/chat/V2LifecycleRow.tsx`. The
+project's floor is the `cold_clear_min_tokens` column, added by
+`apps/server/src/persistence/forkSchema.ts` like `agent_name`.
+
+## Lean Claude startup
+
+A project can start its Claude sessions lean (**Settings → Projects → Lean
+Claude startup**, or `leanClaudeStartup` on `t3_project_update`): only T3's
+own MCP server and the servers in the folder's own `.mcp.json`, and no skills
+list. Each fresh session writes its own startup to the prompt cache, so for a
+thread that starts fresh often (see the cold clear above) this is a recurring
+cost. On a copy of the life log's folder it cut a fresh session's first request
+from 51.6k to 39.2k tokens, and what it writes to the cache from 18.9k to 6.5k;
+the 32.7k before that is shared with every other T3 Claude session either way.
+
+Everything it trims comes after that shared prefix, and keeping it shared is the
+whole constraint: the tool block comes first in every request, so any change to
+it means the first request reads nothing from cache and writes all of it. So:
+
+- It passes `strictMcpConfig` with the folder's `.mcp.json` as `--mcp-config` (a
+  path, so the folder's credentials stay out of argv), which drops the user's
+  servers, plugins' servers and the claude.ai connectors. Servers listed there
+  load whether or not the user approved them for the folder.
+- T3's own server stays: two of its tools load up front into the tool block.
+- The skills option keeps three skills, not none: Claude Code writes a hidden
+  skill's text into any built-in tool whose description names it (with no
+  skills the Workflow tool grows from about 5k to 23k characters). If a Claude
+  Code update ties another tool to another skill, add it to
+  `CLAUDE_LEAN_STARTUP_SKILLS`.
+
+Only the Claude adapter reads the setting. Code:
+`makeClaudeQueryOptions` and `leanClaudeStartup` in
+`apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts`; the project
+flows to it through `RuntimePolicy.ts`.
 
 ## Bridge
 

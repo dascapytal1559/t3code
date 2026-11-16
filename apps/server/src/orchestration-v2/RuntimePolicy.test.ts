@@ -116,6 +116,7 @@ const layerWithPolicy = (policy?: ManagedPolicySummary) =>
             defaultThreadEnvMode: null,
             hasCustomTitle: false,
             autoPull: false,
+            leanClaudeStartup: true,
             faviconPath: null,
             projectIcon: null,
             scripts: [],
@@ -152,6 +153,22 @@ it.layer(layerTest)("RuntimePolicyV2", (it) => {
       assert.equal(acpPermissionDisposition(yield* resolve("auto-accept-edits"), request), "ask");
       assert.equal(acpPermissionDisposition(yield* resolve("full-access"), request), "allow");
     }),
+  );
+
+  it.effect(
+    "carries the project's lean Claude startup to threads in its folder and worktrees",
+    () =>
+      Effect.gen(function* () {
+        const policy = yield* RuntimePolicy.RuntimePolicyV2;
+        const now = yield* DateTime.now;
+        for (const worktreePath of [null, "/worktree"]) {
+          const resolved = yield* policy.resolve({
+            thread: makeThread({ now, worktreePath }),
+            modelSelection: { instanceId: providerInstanceId, model: "test-model" },
+          });
+          assert.isTrue(resolved.leanClaudeStartup);
+        }
+      }),
   );
 
   it.effect("runs a mode the provider does not offer in Supervised", () =>

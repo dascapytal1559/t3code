@@ -274,12 +274,16 @@ it.layer(layerTest)("ProjectService", (it) => {
         title: "Renamed",
         agentName: "Life log",
         autoPull: true,
+        coldClearMinTokens: 60_000,
+        leanClaudeStartup: true,
         projectIcon: { kind: "emoji", emoji: "🦊" },
         faviconPath: "/work/project/custom.svg",
         defaultThreadEnvMode: "worktree",
       });
       assert.equal(updated.title, "Renamed");
       assert.equal(updated.agentName, "Life log");
+      assert.equal(updated.coldClearMinTokens, 60_000);
+      assert.isTrue(updated.leanClaudeStartup);
       assert.equal(updated.createdAt, created.createdAt);
       assert.isTrue(updated.autoPull);
       assert.deepEqual(updated.projectIcon, { kind: "emoji", emoji: "🦊" });
@@ -295,18 +299,25 @@ it.layer(layerTest)("ProjectService", (it) => {
       assert.deepEqual(Option.getOrThrow(byId).projectIcon, updated.projectIcon);
       assert.equal(Option.getOrThrow(byId).faviconPath, updated.faviconPath);
       assert.equal(Option.getOrThrow(byId).defaultThreadEnvMode, "worktree");
-      assert.equal(Option.getOrThrow(yield* service.getShell(projectId)).agentName, "Life log");
+      const shell = Option.getOrThrow(yield* service.getShell(projectId));
+      assert.equal(shell.agentName, "Life log");
+      assert.equal(shell.coldClearMinTokens, 60_000);
+      assert.isTrue(shell.leanClaudeStartup);
       const reset = yield* service.update({
         commandId: CommandId.make("command:project:reset-appearance"),
         projectId,
         agentName: null,
         autoPull: false,
+        coldClearMinTokens: null,
+        leanClaudeStartup: false,
         projectIcon: null,
         faviconPath: null,
         defaultThreadEnvMode: null,
       });
       assert.isNull(reset.agentName);
       assert.isFalse(reset.autoPull);
+      assert.isNull(reset.coldClearMinTokens);
+      assert.isFalse(reset.leanClaudeStartup);
       assert.isNull(reset.projectIcon);
       assert.equal(
         (yield* waitForProject(

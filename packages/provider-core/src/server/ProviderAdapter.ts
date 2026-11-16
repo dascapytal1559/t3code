@@ -55,6 +55,8 @@ export const ProviderAdapterV2RuntimePolicy = Schema.Struct({
   environment: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   /** The thread's bound instructions, applied through the adapter's system or developer channel. */
   instructions: Schema.optional(Schema.String),
+  /** Fork: the project's lean Claude startup; other adapters ignore it. */
+  leanClaudeStartup: Schema.optional(Schema.Boolean),
   /**
    * The administrator's ceiling, when a managed policy sets one. `runtimeMode` is already under
    * it; adapters use it to refuse native mode choices a user makes beside T3 Code's own.

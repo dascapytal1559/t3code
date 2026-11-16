@@ -322,6 +322,19 @@ function ProjectDetail({
     void updateAllMembers({ agentName: next }, "Failed to save agent name");
   };
 
+  // Shown and typed in thousands of tokens; stored in tokens.
+  const coldClearMinTokens = filePickerProject.coldClearMinTokens ?? null;
+  const saveColdClearFloor = (value: string) => {
+    const thousands = Number(value.trim());
+    const next =
+      value.trim() === "" || !Number.isFinite(thousands) || thousands <= 0
+        ? null
+        : Math.round(thousands * 1000);
+    if (next === coldClearMinTokens) return;
+    void updateAllMembers({ coldClearMinTokens: next }, "Failed to save the cache-expiry setting");
+  };
+  const leanClaudeStartup = filePickerProject.leanClaudeStartup === true;
+
   const [faviconPickerOpen, setFaviconPickerOpen] = useComposerMenuState(!canEditGroup);
   const [iconPickerOpen, setIconPickerOpen] = useComposerMenuState(!canEditGroup);
   const [isSavingFavicon, setIsSavingFavicon] = useState(false);
@@ -605,6 +618,53 @@ function ProjectDetail({
                   if (event.nativeEvent.isComposing || event.keyCode === 229) return;
                   if (event.key === "Enter") event.currentTarget.blur();
                 }}
+              />
+            }
+          />
+          <SettingsRow
+            title="Fresh session after cache expiry"
+            description="Claude threads here start a fresh session at the first message after their prompt cache expired, when the conversation is over this many thousand tokens. Empty is off."
+            resetAction={
+              coldClearMinTokens !== null ? (
+                <SettingResetButton
+                  label="cache-expiry setting"
+                  disabled={!canEditGroup}
+                  onClick={() => saveColdClearFloor("")}
+                />
+              ) : null
+            }
+            control={
+              <Input
+                key={`${group.projectKey}:cold-clear:${coldClearMinTokens ?? ""}`}
+                size="sm"
+                className="w-full sm:w-32"
+                aria-label="Fresh session after cache expiry, thousands of tokens"
+                placeholder="Off"
+                inputMode="numeric"
+                disabled={!canEditGroup}
+                defaultValue={coldClearMinTokens === null ? "" : String(coldClearMinTokens / 1000)}
+                onBlur={(event) => saveColdClearFloor(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+                  if (event.key === "Enter") event.currentTarget.blur();
+                }}
+              />
+            }
+          />
+          <SettingsRow
+            title="Lean Claude startup"
+            description="Claude threads here start with only this folder's .mcp.json servers and T3's own, and no skills list, so a fresh session costs less."
+            control={
+              <Switch
+                checked={leanClaudeStartup}
+                disabled={!canEditGroup}
+                onCheckedChange={(checked) =>
+                  void updateAllMembers(
+                    { leanClaudeStartup: Boolean(checked) },
+                    "Failed to save lean Claude startup",
+                  )
+                }
+                aria-label="Lean Claude startup"
               />
             }
           />

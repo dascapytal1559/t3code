@@ -16,7 +16,8 @@ For FirstMate:
 - [Long sign-in](fork/README.md#firstmates-sign-in-lasts-10-years): FirstMate's sign-in lasts 10 years instead of 30 days, so it never needs renewing.
 - [Bridge](fork/README.md#bridge): your objectives and FirstMate's model routing, in the right panel's Bridge tab.
 - [Clean session close](fork/README.md#a-closed-claude-session-waits-for-its-cli-to-exit): a closed Claude session waits for its CLI to exit, so FirstMate's next one keeps its lock.
-- [Cold clear](fork/README.md#a-cold-firstmate-thread-starts-fresh): once FirstMate's prompt cache has expired, its next new exchange starts a fresh session instead of reloading the old one.
+- [Cold clear](fork/README.md#a-cold-firstmate-thread-starts-fresh): once FirstMate's prompt cache has expired, its next new exchange starts a fresh session instead of reloading the old one; a project can opt its own threads in with its own size floor.
+- [Lean Claude startup](fork/README.md#lean-claude-startup): a project can start Claude with only T3's and its folder's MCP servers, and no skills list.
 - [Edit any file](fork/README.md#firstmate-edits-files-in-any-project): FirstMate's thread edits files outside its project folder, which upstream opens read-only.
 
 Also:

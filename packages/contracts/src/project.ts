@@ -166,6 +166,10 @@ export const Project = Schema.Struct({
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   // Opt-in because background sync performs network I/O and may move the checkout.
   autoPull: Schema.optional(Schema.Boolean),
+  // Fork: a standing agent's cold session starts fresh over this size; null is off.
+  coldClearMinTokens: Schema.optional(Schema.NullOr(PositiveInt)),
+  // Fork: Claude starts with only T3's and the folder's MCP servers, and no skills list.
+  leanClaudeStartup: Schema.optional(Schema.Boolean),
   scripts: Schema.Array(ProjectScript),
   pinnedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
   archivedAt: Schema.optional(Schema.NullOr(IsoDateTime)),
@@ -200,6 +204,17 @@ export const ProjectUpdatePayload = Schema.Struct({
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   autoPull: Schema.optional(Schema.Boolean),
+  coldClearMinTokens: Schema.optional(
+    Schema.NullOr(PositiveInt).annotate({
+      description:
+        "Start fresh after the prompt cache expires, over this many tokens. null is off.",
+    }),
+  ),
+  leanClaudeStartup: Schema.optional(
+    Schema.Boolean.annotate({
+      description: "Claude loads only T3 and the folder's .mcp.json servers, no skills.",
+    }),
+  ),
   projectIcon: Schema.optional(Schema.NullOr(ProjectIconOverride)),
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),

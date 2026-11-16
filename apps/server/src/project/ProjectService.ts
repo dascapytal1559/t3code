@@ -204,6 +204,8 @@ export const make = Effect.gen(function* () {
     defaultModelSelection: row.defaultModelSelection,
     defaultThreadEnvMode: row.defaultThreadEnvMode,
     autoPull: row.autoPull,
+    coldClearMinTokens: row.coldClearMinTokens ?? null,
+    leanClaudeStartup: row.leanClaudeStartup ?? false,
     projectIcon: row.projectIcon,
     scripts: row.scripts,
     pinnedAt: row.pinnedAt,
@@ -443,6 +445,12 @@ export const make = Effect.gen(function* () {
           ? {}
           : { defaultModelSelection: input.defaultModelSelection }),
         ...(input.autoPull === undefined ? {} : { autoPull: input.autoPull }),
+        ...(input.coldClearMinTokens === undefined
+          ? {}
+          : { coldClearMinTokens: input.coldClearMinTokens }),
+        ...(input.leanClaudeStartup === undefined
+          ? {}
+          : { leanClaudeStartup: input.leanClaudeStartup }),
         ...(input.projectIcon === undefined ? {} : { projectIcon: input.projectIcon }),
         ...(input.faviconPath === undefined ? {} : { faviconPath: input.faviconPath }),
         ...(input.defaultThreadEnvMode === undefined

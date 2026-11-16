@@ -57,6 +57,7 @@ import * as EffectWorker from "../EffectWorker.ts";
 import * as EffectOutbox from "../EffectOutbox.ts";
 import * as ProjectionReplay from "./ProjectionReplay.ts";
 import * as ProjectionStore from "../ProjectionStore.ts";
+import type { UnsequencedProjectEvent } from "../../persistence/OrchestrationEventStore.ts";
 import * as ProviderAdapterRegistry from "../ProviderAdapterRegistry.ts";
 import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
 import {
@@ -3673,6 +3674,105 @@ describe("orchestration v2 provider switching", () => {
           );
         }).pipe(Effect.provide(harness));
       }),
+  );
+
+  it.live.each([
+    ["over its project's floor starts fresh", 200_000, true],
+    ["at its project's floor keeps its session", 250_000, false],
+    ["in a project that does not opt in keeps its session", null, false],
+  ] as const)("an unpinned thread with a cold cache %s", ([, floor, fresh]) =>
+    Effect.gen(function* () {
+      const key = `cold-cache-project-${floor ?? "off"}`;
+      const cwd = yield* checkpointWorkspace(key);
+      const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+      const harness = coldCacheHarness(key, cwd, {
+        cacheExpiresAt: COLD_CACHE_EXPIRY,
+        capturedTurns,
+        closedSessions: yield* Ref.make<ReadonlyArray<string>>([]),
+        nativeThreadGeneration: yield* Ref.make(0),
+      });
+      const threadId = ThreadId.make(`thread:${key}`);
+      const loggerProjectId = ProjectId.make(`project:${key}`);
+      yield* Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        const eventSink = yield* EventSink.EventSinkV2;
+        const acceptedAt = DateTime.makeUnsafe(Date.UTC(2026, 10, 16));
+        const occurredAt = DateTime.formatIso(acceptedAt);
+        const envelope = (name: string) =>
+          ({
+            eventId: EventId.make(`event:${key}:${name}`),
+            aggregateKind: "project",
+            aggregateId: loggerProjectId,
+            occurredAt,
+            commandId: CommandId.make(`command:${key}:${name}`),
+            causationEventId: null,
+            correlationId: null,
+            metadata: {},
+          }) as const;
+        const commit = (name: string, event: UnsequencedProjectEvent) =>
+          eventSink.commitProjectCommand({
+            commandId: CommandId.make(`command:${key}:${name}`),
+            projectId: loggerProjectId,
+            commandType: event.type,
+            acceptedAt,
+            event,
+          });
+        yield* commit("project", {
+          ...envelope("project"),
+          type: "project.created",
+          payload: {
+            projectId: loggerProjectId,
+            title: "Logger",
+            workspaceRoot: cwd,
+            defaultModelSelection: null,
+            scripts: [],
+            createdAt: occurredAt,
+            updatedAt: occurredAt,
+          },
+        });
+        yield* commit("floor", {
+          ...envelope("floor"),
+          type: "project.meta-updated",
+          payload: { projectId: loggerProjectId, coldClearMinTokens: floor, updatedAt: occurredAt },
+        });
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make(`command:${key}:create`),
+          threadId,
+          projectId: loggerProjectId,
+          title: "Logger",
+          modelSelection: CLAUDE_MODEL_SELECTION,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: cwd,
+        });
+        yield* orchestrator.dispatch(coldCacheMessage(key, "alpha", "web"));
+        yield* worker.drain();
+        yield* waitForIdle(threadId);
+        yield* orchestrator.dispatch(coldCacheMessage(key, "beta", "web"));
+        yield* worker.drain();
+        const projection = yield* waitForIdle(threadId);
+        const run = projection.runs.find(
+          (candidate) => candidate.userMessageId === `message:${key}:beta`,
+        )!;
+        const item = projection.turnItems.find(
+          (candidate) => candidate.type === "user_message" && candidate.runId === run.id,
+        );
+        assert.equal(run.freshContext === true, fresh);
+        assert.equal(
+          item?.type === "user_message" ? item.freshContextReason : "missing",
+          fresh ? "cache_expired" : undefined,
+        );
+        const turns = yield* Ref.get(capturedTurns);
+        const turnFor = (name: string) =>
+          turns.find((turn) => turn.text.endsWith(`Prompt ${name}`))!;
+        assert.equal(turnFor("beta").providerThreadId !== turnFor("alpha").providerThreadId, fresh);
+      }).pipe(Effect.provide(harness));
+    }),
   );
 
   it.live.each([

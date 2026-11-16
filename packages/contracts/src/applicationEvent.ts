@@ -7,6 +7,7 @@ import {
   EventId,
   IsoDateTime,
   NonNegativeInt,
+  PositiveInt,
   ProjectId,
   ProviderItemId,
   TrimmedNonEmptyString,
@@ -61,6 +62,8 @@ export const ApplicationProjectMetaUpdatedPayload = Schema.Struct({
   // Absent = leave unchanged; null = clear the override.
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   autoPull: Schema.optional(Schema.Boolean),
+  coldClearMinTokens: Schema.optional(Schema.NullOr(PositiveInt)),
+  leanClaudeStartup: Schema.optional(Schema.Boolean),
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   projectIcon: Schema.optional(Schema.NullOr(StoredProjectIcon)),
   scripts: Schema.optional(Schema.Array(ProjectScript)),

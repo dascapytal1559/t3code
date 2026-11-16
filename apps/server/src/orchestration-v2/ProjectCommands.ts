@@ -35,6 +35,8 @@ export interface ProjectMetaUpdateCommand {
   readonly defaultModelSelection?: ModelSelection | null;
   readonly defaultThreadEnvMode?: ThreadEnvMode | null;
   readonly autoPull?: boolean;
+  readonly coldClearMinTokens?: number | null;
+  readonly leanClaudeStartup?: boolean;
   readonly faviconPath?: string | null;
   readonly projectIcon?: ProjectIconOverride | null;
   readonly scripts?: ReadonlyArray<ProjectScript>;
@@ -209,6 +211,12 @@ export function planProjectCommand(input: {
             ? {}
             : { defaultThreadEnvMode: command.defaultThreadEnvMode }),
           ...(command.autoPull === undefined ? {} : { autoPull: command.autoPull }),
+          ...(command.coldClearMinTokens === undefined
+            ? {}
+            : { coldClearMinTokens: command.coldClearMinTokens }),
+          ...(command.leanClaudeStartup === undefined
+            ? {}
+            : { leanClaudeStartup: command.leanClaudeStartup }),
           ...(command.faviconPath === undefined ? {} : { faviconPath: command.faviconPath }),
           ...(command.projectIcon === undefined ? {} : { projectIcon: command.projectIcon }),
           ...(command.scripts === undefined ? {} : { scripts: command.scripts }),
