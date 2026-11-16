@@ -14,7 +14,7 @@ import {
   setImageUrls,
 } from "./livePreview";
 import { findReplace } from "./findReplace";
-import { liveMarkdownExtensions } from "./markdownSyntax";
+import { imageEmbedOf, liveMarkdownExtensions } from "./markdownSyntax";
 import { ImageWidget } from "./widgets";
 
 /** Web addresses load as they are; anything else is a file the app must sign a URL for. */
@@ -35,7 +35,12 @@ function editorOn(text: string, marker = "|"): EditorState {
     selection: { anchor: Math.max(caret, 0) },
     extensions: [
       markdown({ base: markdownLanguage, extensions: [...liveMarkdownExtensions] }),
-      livePreview({ resolveImage, onImageNeeded: () => {}, onOpenLink: () => {} }),
+      livePreview({
+        resolveImage,
+        resolveImageEmbed: (target) => ({ kind: "asset", key: `embed:${target}` }),
+        onImageNeeded: () => {},
+        onOpenLink: () => {},
+      }),
     ],
   });
   const focused = state.update({ effects: setFocused.of(caret >= 0) }).state;
@@ -266,6 +271,53 @@ describe("live preview", () => {
     const loaded: Drawn = { ...drawn(""), images: [] };
     summarize(signed, inlineDecorations(signed, whole), loaded);
     expect(loaded.images).toEqual(["/assets/signed"]);
+  });
+
+  it("draws an Obsidian picture embed once its file is found, and its source until then", () => {
+    const text = "![[Pasted image 1.png|300]] and ![[station-7]]";
+    const state = editorOn(text, "^");
+    const whole = [{ from: 0, to: state.doc.length }];
+    const needed: string[] = [];
+    const waiting: Drawn = { ...drawn(""), images: [] };
+    summarize(
+      state,
+      inlineDecorations(state, whole, (key) => needed.push(key)),
+      waiting,
+    );
+    // An embedded note is not a picture and is never asked for.
+    expect(needed).toEqual(["embed:Pasted image 1.png"]);
+    expect(waiting.images).toEqual([]);
+    expect(waiting.replaced).toEqual([]);
+
+    const found = state.update({
+      effects: setImageUrls.of(new Map([["embed:Pasted image 1.png", "/assets/signed"]])),
+    }).state;
+    const loaded: Drawn = { ...drawn(""), images: [] };
+    summarize(found, inlineDecorations(found, whole), loaded);
+    expect(loaded.images).toEqual(["/assets/signed"]);
+    expect(loaded.replaced).toEqual(["![[Pasted image 1.png|300]]"]);
+
+    const caret = editorOn(`${text}^`, "^");
+    const atCaret = caret.update({
+      effects: setImageUrls.of(new Map([["embed:Pasted image 1.png", "/assets/signed"]])),
+    }).state;
+    const editing: Drawn = { ...drawn(""), images: [] };
+    summarize(atCaret, inlineDecorations(atCaret, whole), editing);
+    expect(editing.images).toEqual(["/assets/signed"]);
+    expect(editing.dimmed).toContain("![[Pasted image 1.png|300]]");
+  });
+
+  it.each([
+    ["a.png", { target: "a.png", alt: "a.png", width: null, height: null }],
+    ["media/a.JPG|300", { target: "media/a.JPG", alt: "media/a.JPG", width: 300, height: null }],
+    ["a.webp|300x200", { target: "a.webp", alt: "a.webp", width: 300, height: 200 }],
+    ["a.svg|the map", { target: "a.svg", alt: "the map", width: null, height: null }],
+    ["a.gif|the map|120", { target: "a.gif", alt: "the map", width: 120, height: null }],
+    ["a.png#section", { target: "a.png", alt: "a.png", width: null, height: null }],
+    ["notes", null],
+    ["clip.mp4", null],
+  ])("reads the embed ![[%s]]", (inner, expected) => {
+    expect(imageEmbedOf(inner)).toEqual(expected);
   });
 
   it("draws a table as a table, and as its source while the caret is in it", () => {

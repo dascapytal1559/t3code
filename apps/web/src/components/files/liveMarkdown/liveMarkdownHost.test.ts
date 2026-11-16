@@ -1,7 +1,13 @@
 import { ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { imageAssetResource, imageSourceOf, linkUrlOf } from "./liveMarkdownHost";
+import {
+  findImageEmbed,
+  type ImageEmbedLookup,
+  imageAssetResource,
+  imageSourceOf,
+  linkUrlOf,
+} from "./liveMarkdownHost";
 
 describe("where a file's images load from", () => {
   it.each([
@@ -28,6 +34,54 @@ describe("where a file's images load from", () => {
       threadId,
       path: "/c:/x.png",
     });
+  });
+});
+
+describe("which file an Obsidian picture embed shows", () => {
+  /** A project at /work whose files are `files`; the search sees only `indexed`. */
+  function project(files: readonly string[], indexed = files) {
+    return {
+      files: async (paths: readonly string[]) =>
+        paths.map((path) => files.includes(path.slice("/work/".length))),
+      search: async (name: string) =>
+        indexed
+          .filter((path) => path.toLowerCase().includes(name.toLowerCase()))
+          .map((path) => ({ path, kind: "file" as const })),
+    } satisfies ImageEmbedLookup;
+  }
+  const find = (target: string, lookup: ImageEmbedLookup) =>
+    findImageEmbed(target, "/work/notes/daily", "/work", lookup);
+
+  it.each([
+    // The path from the note's folder wins over the same name anywhere else.
+    [
+      "media/a.png",
+      ["notes/daily/media/a.png", "notes/daily/a.png", "media/a.png"],
+      "/work/notes/daily/media/a.png",
+    ],
+    // Then the bare name in the note's own folder.
+    ["media/a.png", ["notes/daily/a.png", "media/a.png"], "/work/notes/daily/a.png"],
+    // Then the path from the project root.
+    ["media/a.png", ["media/a.png", "x/media/a.png"], "/work/media/a.png"],
+    // Then the shortest project path that ends in it, its case aside.
+    ["A.png", ["deep/er/a.png", "img/a.png", "img/ba.png"], "/work/img/a.png"],
+    ["media/a.png", ["x/y/media/a.png", "z/media/a.png"], "/work/z/media/a.png"],
+  ])("finds %s among %j at %s", async (target, files, expected) => {
+    expect(await find(target, project(files))).toBe(expected);
+  });
+
+  it("finds a picture beside the note in a gitignored folder, which the search never sees", async () => {
+    const lookup = project(["notes/daily/Pasted image 1.png"], []);
+    expect(await find("Pasted image 1.png", lookup)).toBe("/work/notes/daily/Pasted image 1.png");
+  });
+
+  it("finds nothing for a name no file has, or when files cannot be told apart", async () => {
+    expect(await find("gone.png", project(["img/here.png"]))).toBeNull();
+    const unreadable: ImageEmbedLookup = {
+      files: async () => null,
+      search: async () => [{ path: "gone.png", kind: "file" }],
+    };
+    expect(await find("gone.png", unreadable)).toBeNull();
   });
 });
 

@@ -4,6 +4,7 @@ import {
   type ScopedThreadRef,
   type ThreadId,
 } from "@t3tools/contracts";
+import { WORKSPACE_BASENAME_LOOKUP_LIMIT } from "@t3tools/client-runtime/workspace-basename-lookup";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { normalizeMarkdownLinkDestination } from "@t3tools/shared/markdownLinks";
 import { isHostPath, workspaceRelativeFilePath } from "@t3tools/shared/path";
@@ -15,6 +16,7 @@ import { resolveMarkdownFileLinkMeta } from "~/markdown-links";
 import { pickMarkdownFileCandidate } from "~/markdownFileHostPath";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { filesystemEnvironment } from "~/state/filesystem";
+import { projectEnvironment } from "~/state/projects";
 import { readEnvironmentScope } from "~/state/session";
 import { useAtomQueryRunner } from "~/state/use-atom-query-runner";
 
@@ -28,7 +30,15 @@ import {
   setProjectFileQueryData,
 } from "../projectFilesQueryState";
 import { createLiveMarkdownEditor, type LiveMarkdownEditor } from "./liveMarkdownEditor";
-import { imageAssetResource, imageSourceOf, linkUrlOf } from "./liveMarkdownHost";
+import {
+  findImageEmbed,
+  imageAssetResource,
+  imageEmbedFileKey,
+  imageEmbedSourceOf,
+  imageEmbedTargetOf,
+  imageSourceOf,
+  linkUrlOf,
+} from "./liveMarkdownHost";
 import { MarkdownOutlineColumn } from "./MarkdownOutlineColumn";
 import type { MarkdownOutlineSource } from "./outline";
 import "./liveMarkdown.css";
@@ -107,6 +117,10 @@ export default function LiveMarkdownSurface({
 
   // The editor names the images that come into view; the server signs a URL for each.
   const [imageKeys, setImageKeys] = useState<readonly string[]>([]);
+  const addImageKey = (key: string) =>
+    setImageKeys((keys) => (keys.includes(key) ? keys : [...keys, key]));
+  // Each picture embed found, by its key, to the key of the file it embeds.
+  const [embedFiles, setEmbedFiles] = useState<ReadonlyMap<string, string>>(new Map());
   const signedUrls = useAssetUrls(
     environmentId,
     imageKeys.map((key) => imageAssetResource(key, threadRef.threadId)),
@@ -116,11 +130,20 @@ export default function LiveMarkdownSurface({
     workspaceMutationId === null
       ? ""
       : `workspace-revision=${encodeURIComponent(workspaceMutationId)}`;
-  const imageUrls = imageKeys.flatMap((key, index) => {
-    const url = signedUrls[index];
-    if (!url) return [];
-    return [[key, revision ? `${url}${url.includes("?") ? "&" : "?"}${revision}` : url] as const];
-  });
+  const fileUrls = new Map(
+    imageKeys.flatMap((key, index) => {
+      const url = signedUrls[index];
+      if (!url) return [];
+      return [[key, revision ? `${url}${url.includes("?") ? "&" : "?"}${revision}` : url] as const];
+    }),
+  );
+  const imageUrls = [
+    ...fileUrls,
+    ...[...embedFiles].flatMap(([embed, file]) => {
+      const url = fileUrls.get(file);
+      return url ? [[embed, url] as const] : [];
+    }),
+  ];
   const imageUrlsKey = imageUrls.map((entry) => entry.join("\n")).join("\n");
   const drawImages = useEffectEvent(() => editorRef.current?.setImageUrls(new Map(imageUrls)));
 
@@ -163,6 +186,37 @@ export default function LiveMarkdownSurface({
     });
   });
   const resolveImage = useEffectEvent((source: string) => imageSourceOf(source, baseDir));
+  const searchEntries = useAtomQueryRunner(projectEnvironment.searchEntries, {
+    reportFailure: false,
+  });
+  const imageNeeded = useEffectEvent((key: string) => {
+    const target = imageEmbedTargetOf(key);
+    if (target === null) return addImageKey(key);
+    if (!readEnvironmentScope(environmentId, AuthFilesystemReadScope)) return;
+    void findImageEmbed(target, baseDir, cwd, {
+      files: async (paths) => {
+        const metadata = await getFilesystemMetadata({
+          environmentId,
+          input: { paths: [...paths] },
+        });
+        return metadata._tag === "Success"
+          ? metadata.value.entries.map((entry) => entry?.kind === "file")
+          : null;
+      },
+      search: async (name) => {
+        const result = await searchEntries({
+          environmentId,
+          input: { cwd, query: name, limit: WORKSPACE_BASENAME_LOOKUP_LIMIT, kind: "file" },
+        });
+        return result._tag === "Success" ? result.value.entries : [];
+      },
+    }).then((path) => {
+      if (path === null) return;
+      const file = imageEmbedFileKey(path);
+      addImageKey(file);
+      setEmbedFiles((files) => new Map(files).set(key, file));
+    });
+  });
   const offerOutline = useEffectEvent((source: MarkdownOutlineSource | null) =>
     onOutlineSource(source),
   );
@@ -176,7 +230,8 @@ export default function LiveMarkdownSurface({
       doc: latestContents(),
       onChange: (text) => saveEdit(text),
       resolveImage: (source) => resolveImage(source),
-      onImageNeeded: (key) => setImageKeys((keys) => (keys.includes(key) ? keys : [...keys, key])),
+      resolveImageEmbed: imageEmbedSourceOf,
+      onImageNeeded: (key) => imageNeeded(key),
       onOpenLink: (href, event) => followLink(href, event),
     });
     editorRef.current = editor;

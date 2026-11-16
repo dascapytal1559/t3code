@@ -180,13 +180,28 @@ export class FrontmatterWidget extends WidgetType {
 export class ImageWidget extends WidgetType {
   readonly url: string | null;
   readonly alt: string;
-  constructor(url: string | null, alt: string) {
+  /** Pixels, as Obsidian's `![[a.png|300x200]]` asks. */
+  readonly width: number | null;
+  readonly height: number | null;
+  constructor(
+    url: string | null,
+    alt: string,
+    width: number | null = null,
+    height: number | null = null,
+  ) {
     super();
     this.url = url;
     this.alt = alt;
+    this.width = width;
+    this.height = height;
   }
   override eq(other: ImageWidget) {
-    return other.url === this.url && other.alt === this.alt;
+    return (
+      other.url === this.url &&
+      other.alt === this.alt &&
+      other.width === this.width &&
+      other.height === this.height
+    );
   }
   toDOM(view: EditorView) {
     const wrap = element("span", "cm-lp-image");
@@ -199,6 +214,7 @@ export class ImageWidget extends WidgetType {
     image.src = this.url;
     image.alt = this.alt;
     image.draggable = false;
+    this.size(image);
     // The line is taller once the picture has loaded.
     image.addEventListener("load", () => view.requestMeasure());
     wrap.append(image);
@@ -210,7 +226,15 @@ export class ImageWidget extends WidgetType {
     if (!image || this.url === null) return false;
     image.src = this.url;
     image.alt = this.alt;
+    this.size(image);
     return true;
+  }
+  private size(image: HTMLImageElement) {
+    // An asked-for size may be wider than the page's usual cap, though never than the page.
+    image.style.width = this.width === null ? "" : `${this.width}px`;
+    image.style.height = this.height === null ? "" : `${this.height}px`;
+    image.style.maxWidth = this.width === null ? "" : "100%";
+    image.style.objectFit = this.height === null ? "" : "contain";
   }
 }
 

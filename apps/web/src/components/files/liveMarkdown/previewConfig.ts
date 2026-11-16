@@ -10,6 +10,8 @@ export type ImageSource =
 /** What the editor asks of the app around it. The editor itself knows nothing of T3. */
 export interface LivePreviewConfig {
   readonly resolveImage: (source: string) => ImageSource;
+  /** Where an Obsidian embed `![[name]]` of a picture loads from; until it has a URL its source shows. */
+  readonly resolveImageEmbed: (target: string) => ImageSource;
   /** Called once for each asset key that comes into view. */
   readonly onImageNeeded: (key: string) => void;
   readonly onOpenLink: (href: string, event: MouseEvent) => void;
@@ -17,6 +19,7 @@ export interface LivePreviewConfig {
 
 const standalone: LivePreviewConfig = {
   resolveImage: () => ({ kind: "blocked" }),
+  resolveImageEmbed: () => ({ kind: "blocked" }),
   onImageNeeded: () => {},
   onOpenLink: () => {},
 };

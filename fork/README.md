@@ -1406,7 +1406,8 @@ editor, and opens Markdown as source.
 
 It draws headings, bold, italic, strikethrough, inline code, quotes, callouts,
 rules, lists and task boxes, code blocks with colours, tables, images from the
-project, links, and frontmatter as a properties card. Mermaid, maths,
+project, Obsidian picture embeds (`![[shot.png|300]]`, found beside the note or
+by name in the project), links, and frontmatter as a properties card. Mermaid, maths,
 footnotes and raw HTML show as their source. A table, and the properties
 card, turn into their Markdown while the caret is in them. A line break in
 the file stays a line break, so a paragraph wrapped at 80 columns keeps its

@@ -18,8 +18,13 @@ import {
 import { markdownFrontmatterLength } from "@t3tools/shared/markdownFrontmatter";
 
 import { frontmatterRows } from "./frontmatter";
-import { HEADING_NODE } from "./markdownSyntax";
-import { clickedLink, type LivePreviewConfig, previewConfig } from "./previewConfig";
+import { HEADING_NODE, imageEmbedOf } from "./markdownSyntax";
+import {
+  clickedLink,
+  type ImageSource,
+  type LivePreviewConfig,
+  previewConfig,
+} from "./previewConfig";
 import {
   BulletWidget,
   CalloutTitleWidget,
@@ -190,6 +195,21 @@ export function inlineDecorations(
     const replacesBreak = decoration.point && doc.lineAt(from).to < to;
     out.push((replacesBreak ? syntaxMark : decoration).range(from, to));
   };
+  const addressOf = (source: ImageSource) => {
+    if (source.kind === "url") return source.url;
+    if (source.kind === "blocked") return null;
+    onAsset?.(source.key);
+    return imageUrls.get(source.key) ?? null;
+  };
+  const drawImage = (from: number, to: number, widget: ImageWidget) => {
+    if (touch.onLines(from, to) || doc.lineAt(from).to < to) {
+      // At the caret the source shows, with the picture after it.
+      add(from, to, syntaxMark);
+      out.push(Decoration.widget({ widget, side: 1 }).range(to));
+    } else {
+      add(from, to, Decoration.replace({ widget }));
+    }
+  };
   const lineStyle = (line: Line, className: string, style?: string) => {
     out.push(
       Decoration.line({ class: className, ...(style ? { attributes: { style } } : {}) }).range(
@@ -306,22 +326,16 @@ export function inlineDecorations(
           const [open, close] = ref.node.getChildren("LinkMark");
           const url = ref.node.getChild("URL");
           if (!open || !close || !url) return false;
-          const source = config.resolveImage(doc.sliceString(url.from, url.to));
-          if (source.kind === "asset") onAsset?.(source.key);
-          const address =
-            source.kind === "url"
-              ? source.url
-              : source.kind === "asset"
-                ? (imageUrls.get(source.key) ?? null)
-                : null;
-          const widget = new ImageWidget(address, doc.sliceString(open.to, close.from));
-          if (touch.onLines(from, to) || doc.lineAt(from).to < to) {
-            // At the caret the source shows, with the picture after it.
-            add(from, to, syntaxMark);
-            out.push(Decoration.widget({ widget, side: 1 }).range(to));
-          } else {
-            add(from, to, Decoration.replace({ widget }));
-          }
+          const address = addressOf(config.resolveImage(doc.sliceString(url.from, url.to)));
+          drawImage(from, to, new ImageWidget(address, doc.sliceString(open.to, close.from)));
+          return false;
+        }
+        if (name === "ImageEmbed") {
+          const embed = imageEmbedOf(doc.sliceString(from + 3, to - 2));
+          const address = embed ? addressOf(config.resolveImageEmbed(embed.target)) : null;
+          // Until its file is found it reads as written.
+          if (!embed || address === null) return false;
+          drawImage(from, to, new ImageWidget(address, embed.alt, embed.width, embed.height));
           return false;
         }
 
