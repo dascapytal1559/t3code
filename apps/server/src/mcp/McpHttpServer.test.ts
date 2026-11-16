@@ -1491,6 +1491,7 @@ it.effect("gives outside clients an upload URL on the origin their request reach
       ).pipe(
         Layer.provide(ServerSettings.layerTest()),
         Layer.provide(McpToolAccessTestkit.liveThreadsLayer),
+        Layer.provide(UsageOrigins.layerTest),
         Layer.provide(
           Layer.mock(McpSessionRegistry.McpSessionRegistry)({
             resolve: () => Effect.undefined,

@@ -1,5 +1,6 @@
 import { OrchestratorMcpFailure } from "@t3tools/contracts";
 import { OrchestratorToolkit } from "./tools.ts";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 
 import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
@@ -28,10 +29,19 @@ const bindScheduledTask = Effect.fn("mcp.bindScheduledTask")(function* (
   yield* origins
     .bindScheduledTask(taskId, bound.key)
     .pipe(
-      Effect.catch((cause) =>
-        Effect.logWarning("Usage could not bind a scheduled task's origin", { taskId, cause }),
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.interrupt
+          : Effect.logWarning("Usage could not bind a scheduled task's origin", { taskId, cause }),
       ),
     );
+});
+
+/** Work the caller's turn creates is born where that turn counts now, as a launch is. */
+const bornFromCaller = Effect.gen(function* () {
+  const { caller, threads } = yield* loadCaller();
+  const bound = yield* bindUsageOrigin(threads, undefined, caller?.id);
+  return bound === null ? undefined : UsageOrigins.storedOrigin(bound.key);
 });
 
 const handlers = {
@@ -46,7 +56,7 @@ const handlers = {
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;
       const service = yield* OrchestratorMcpService.OrchestratorMcpService;
-      return yield* service.delegateTask(scope, input);
+      return yield* service.delegateTask(scope, input, yield* bornFromCaller);
     }),
   ),
   task_status: McpToolAccess.actsAsCaller(({ taskId }) =>
@@ -173,7 +183,7 @@ const handlers = {
     Effect.gen(function* () {
       const scope = yield* McpInvocationContext.McpInvocationContext;
       const service = yield* OrchestratorMcpService.OrchestratorMcpService;
-      return yield* service.createThreads(scope, input);
+      return yield* service.createThreads(scope, input, yield* bornFromCaller);
     }),
   ),
   t3_thread_list: McpToolAccess.reads((input) =>

@@ -33,6 +33,16 @@ export interface UsageOriginKey {
   readonly folder?: true;
   /** Matched by the session's own registration at start. */
   readonly registered?: true;
+  /** The typed prompt that decided it; absent when a rule did (a journal, upkeep, a terminal). */
+  readonly root?: UsageOriginRoot;
+  /** Decided by following a recorded `causedBy`, not a value stored when the work began. */
+  readonly cause?: true;
+}
+
+/** A prompt by its thread and message ids. */
+export interface UsageOriginRoot {
+  readonly threadId: string;
+  readonly messageId: string;
 }
 
 /** The stored provenance of one message; null fields were never recorded. */
@@ -145,28 +155,26 @@ export function resolveMessageOrigin(
   clickedOf: (prompt: CausalMessage) => UsageOriginKey | undefined = () => undefined,
 ): UsageOriginKey {
   // A send T3 bound from a typed turn counts there; a click, where its crew thread's work counted.
-  const boundFor = (prompt: CausalMessage, via: UsageOriginVia): UsageOriginKey | undefined => {
+  const boundFor = (prompt: CausalMessage, via?: UsageOriginVia): UsageOriginKey | undefined => {
     const key = prompt.usageOrigin ?? (prompt.click === true ? clickedOf(prompt) : undefined);
-    return key === undefined || !isDevice(key) ? undefined : { ...withoutVia(key), via };
+    return key === undefined || !isDevice(key) ? undefined : withVia(key, via);
   };
   const claimedFor = (prompt: CausalMessage, via: UsageOriginVia): UsageOriginKey | undefined => {
     const claimed = prompt.runId === null ? undefined : claimOfRun(prompt.runId);
-    return claimed === undefined
-      ? undefined
-      : { origin: claimed.origin, basis: claimed.basis, via, reason: claimed.reason, claim: "run" };
+    return claimed === undefined ? undefined : { ...claimed, via, claim: "run" };
   };
   const filedFor = (prompt: CausalMessage, via?: UsageOriginVia): UsageOriginKey | undefined => {
     if (prompt.runId !== null && runClaimed(prompt.runId)) return undefined;
     const upkeep = upkeepOf(prompt);
     return upkeep === undefined || via === undefined ? upkeep : { ...upkeep, via };
   };
+  const byCause = (key: UsageOriginKey): UsageOriginKey => ({ ...key, cause: true });
   const direct = classifyMessageOrigin(message);
-  if (!sentByAgent(direct))
-    return isDevice(direct)
-      ? direct
-      : (claimedFor(message, "agent") ?? filedFor(message) ?? direct);
-  const ownBound = boundFor(message, direct.origin);
+  if (isDevice(direct)) return withRoot(direct, message);
+  // Any prompt nobody typed counts where T3 bound it, whoever sent it.
+  const ownBound = boundFor(message, sentByAgent(direct) ? direct.origin : undefined);
   if (ownBound !== undefined) return ownBound;
+  if (!sentByAgent(direct)) return claimedFor(message, "agent") ?? filedFor(message) ?? direct;
   const seen = new Set([message.id]);
   const visited = [message];
   let current = message;
@@ -177,24 +185,46 @@ export function resolveMessageOrigin(
     const cause = causeOf(causeId);
     if (cause === undefined) break;
     const causeBound = boundFor(cause, direct.origin);
-    if (causeBound !== undefined) return causeBound;
+    if (causeBound !== undefined) return byCause(causeBound);
     const root = classifyMessageOrigin(cause);
     if (isDevice(root)) {
-      return { origin: root.origin, basis: root.basis, via: direct.origin, reason: "inherited" };
+      return byCause(
+        withRoot(
+          { origin: root.origin, basis: root.basis, reason: "inherited" },
+          cause,
+          direct.origin,
+        ),
+      );
     }
     visited.push(cause);
     if (!sentByAgent(root)) break;
     current = cause;
   }
-  for (const prompt of visited) {
+  // Past the message itself, a claim or upkeep is reached only by following its causes.
+  for (const [hop, prompt] of visited.entries()) {
     const claimed = claimedFor(prompt, direct.origin);
-    if (claimed !== undefined) return claimed;
+    if (claimed !== undefined) return hop === 0 ? claimed : byCause(claimed);
   }
-  for (const prompt of visited) {
+  for (const [hop, prompt] of visited.entries()) {
     const filed = filedFor(prompt, direct.origin);
-    if (filed !== undefined) return filed;
+    if (filed !== undefined) return hop === 0 ? filed : byCause(filed);
   }
-  return message.causedBy === null ? direct : { ...direct, reason: "untracedCause" };
+  return message.causedBy === null ? direct : byCause({ ...direct, reason: "untracedCause" });
+}
+
+/** A typed prompt's origin, naming that prompt as its root. */
+function withRoot(
+  key: UsageOriginKey,
+  prompt: CausalMessage,
+  via?: UsageOriginVia,
+): UsageOriginKey {
+  const root =
+    prompt.threadId === undefined ? undefined : { threadId: prompt.threadId, messageId: prompt.id };
+  return {
+    ...key,
+    ...(via === undefined ? {} : { via }),
+    ...(root === undefined ? {} : { root }),
+  };
 }
 
 const NO_PROMPT: UsageOriginKey = { origin: "unknown", basis: "noPrompt", reason: "noPrompt" };
@@ -250,15 +280,16 @@ const viaOf = (message: CausalMessage): UsageOriginVia | undefined => {
   return sentByAgent(own) ? own.origin : undefined;
 };
 
-/** A prompt a person typed on a phone or a computer; a click never is one. */
-const typedOrigin = (message: OriginMessage): DeviceOriginKey | undefined => {
+/** A prompt a person typed on a phone or a computer, as its own root; a click never is one. */
+const typedOrigin = (message: CausalMessage): DeviceOriginKey | undefined => {
   const own = classifyMessageOrigin(message);
-  return isDevice(own) ? own : undefined;
+  return isDevice(own) ? { ...withRoot(own, message), origin: own.origin } : undefined;
 };
 
 /**
  * Where a message moves the work of its thread from then on: a prompt typed on it, a send T3 bound
- * from a typed turn, or an older send whose own recorded cause was a typed prompt.
+ * from a typed turn, or an older send whose own recorded cause was a typed prompt. A prompt the
+ * server bound (a restart's) counts where it was bound, and moves nothing.
  */
 function rootOfMessage(
   message: CausalMessage,
@@ -266,14 +297,17 @@ function rootOfMessage(
 ): UsageOriginKey | undefined {
   const typed = typedOrigin(message);
   if (typed !== undefined) return typed;
-  if (message.usageOrigin !== undefined) return message.usageOrigin;
+  if (message.usageOrigin !== undefined && message.creationSource !== "server")
+    return message.usageOrigin;
   const causeId = message.ownCausedBy ?? null;
   const cause = causeId === null ? undefined : causeOf(causeId);
   const root = cause === undefined || viaOf(message) === undefined ? undefined : typedOrigin(cause);
   return root === undefined
     ? undefined
-    : { origin: root.origin, basis: root.basis, reason: "inherited" };
+    : { origin: root.origin, basis: root.basis, reason: "inherited", cause: true, ...rootOf(root) };
 }
+
+const rootOf = (key: UsageOriginKey) => (key.root === undefined ? {} : { root: key.root });
 
 /** A time from which a work thread's usage counts somewhere: its birth, or a root that moved it. */
 export interface OriginEntry {
@@ -397,10 +431,7 @@ function turnSegments(turn: TurnFacts, resolver: OriginResolver): OriginSegment[
   }
   const timeline = resolver.timelineOf(turn.threadId);
   const via = message === null ? undefined : viaOf(message);
-  const own =
-    message === null
-      ? undefined
-      : (rootOfMessage(message, resolver.causeOf) ?? message.scheduledOrigin);
+  const own = message === null ? undefined : ownOrigin(message, resolver);
   const inherited = startedBy(timeline, turn.startedAtMs);
   const key =
     own !== undefined
@@ -426,11 +457,19 @@ function turnSegments(turn: TurnFacts, resolver: OriginResolver): OriginSegment[
   return [first(key), ...reroots].toSorted(byStart);
 }
 
+/** A work thread's prompt that decides its own origin: a root, a scheduled run, a server's bind. */
+const ownOrigin = (message: CausalMessage, resolver: OriginResolver): UsageOriginKey | undefined =>
+  rootOfMessage(message, resolver.causeOf) ??
+  message.scheduledOrigin ??
+  (message.usageOrigin !== undefined && isDevice(message.usageOrigin)
+    ? message.usageOrigin
+    : undefined);
+
 /** Where a prompt counts, by the same rules as the turn it starts. */
 function promptOrigin(message: CausalMessage, resolver: OriginResolver): UsageOriginKey {
   if (message.coordinator || message.threadId === undefined) return resolver.originOf(message);
   const via = viaOf(message);
-  const own = rootOfMessage(message, resolver.causeOf) ?? message.scheduledOrigin;
+  const own = ownOrigin(message, resolver);
   if (own !== undefined) return withVia(own, via);
   const claimed = message.runId === null ? undefined : resolver.claimOfRun(message.runId);
   if (claimed !== undefined) return { ...claimed, via: via ?? "agent", claim: "run" };
@@ -490,12 +529,20 @@ const TERMINAL_ORIGIN: DeviceOriginKey = {
   registered: true,
 };
 
+/** A work thread's origin over time, for usage of its sessions outside its turns. */
+export interface OriginTimeline {
+  readonly threadId: string;
+  readonly entries: readonly { readonly startedAtMs: number; readonly key: UsageOriginKey }[];
+}
+
 export interface UsageOriginSnapshot {
   readonly turns: readonly OriginTurn[];
   readonly prompts: readonly OriginPrompt[];
   readonly worktrees: readonly OriginWorktree[];
   readonly claims: readonly OriginClaim[];
   readonly registrations: readonly OriginRegistration[];
+  /** Work threads with turns here; a coordinator has none. */
+  readonly timelines?: readonly OriginTimeline[];
 }
 
 export interface OriginRecord {
@@ -504,8 +551,8 @@ export interface OriginRecord {
   readonly cwd?: string | undefined;
 }
 
-// Records written this long after a turn ended belong to no T3 turn, such as a terminal resume.
-const LATE_RECORD_GRACE_MS = 5 * 60 * 1000;
+// Work launched or sent this long after its caller's turn ended still binds to that turn.
+const BIND_GRACE_MS = 5 * 60 * 1000;
 
 // The session-start hook stamps whole seconds, so a session may have started up to a second later.
 const REGISTER_STAMP_SLACK_MS = 999;
@@ -515,7 +562,6 @@ const missed = (reason: UsageOriginReason): UsageOriginKey => ({
   basis: "default",
   reason,
 });
-const LATE_RECORD = missed("lateRecord");
 const UNREGISTERED_SESSION = missed("unregisteredSession");
 const UNMATCHED_REGISTRATION = missed("unmatchedRegistration");
 
@@ -574,14 +620,21 @@ export class UsageOriginIndex {
   // A session resumed later registers again, from wherever it was resumed.
   readonly #registrationsBySession = new Map<string, OriginRegistration[]>();
   readonly #unmatchedSessions = new Set<string>();
+  readonly #timelines = new Map<string, OriginTimeline["entries"]>();
   /** Deepest first; a claim wins a tie with a worktree. */
   readonly #folders: { readonly directory: string; readonly owner: FolderOwner }[];
   // Records repeat their folder thousands of times; its owner does not depend on the time.
   readonly #ownerByCwd = new Map<string, FolderOwner | null>();
 
   constructor(
-    snapshot: Pick<UsageOriginSnapshot, "turns" | "worktrees" | "claims" | "registrations">,
+    snapshot: Pick<
+      UsageOriginSnapshot,
+      "turns" | "worktrees" | "claims" | "registrations" | "timelines"
+    >,
   ) {
+    for (const { threadId, entries } of snapshot.timelines ?? []) {
+      this.#timelines.set(threadId, entries);
+    }
     for (const turn of snapshot.turns) {
       appendTo(this.#turnsBySession, turn.sessionId, [turn]);
       appendTo(this.#turnsByThread, turn.threadId, [turn]);
@@ -618,16 +671,18 @@ export class UsageOriginIndex {
     const turn = own === undefined ? undefined : startedBy(own, record.timestampMs);
     if (
       turn !== undefined &&
-      (turn.completedAtMs === null ||
-        record.timestampMs <= turn.completedAtMs + LATE_RECORD_GRACE_MS)
+      (turn.completedAtMs === null || record.timestampMs <= turn.completedAtMs)
     ) {
       return turn.key;
     }
     const claims = this.#claimsBySession.get(record.sessionId);
     const claimed = claims === undefined ? undefined : startedBy(claims, record.timestampMs);
     if (claimed !== undefined) return claimed.key;
-    // A T3 session's record outside its turns is someone resuming it elsewhere, such as a terminal.
-    if (own !== undefined) return LATE_RECORD;
+    // Outside its turns (background work running on), a T3 session counts with its thread.
+    if (own !== undefined) {
+      const latest = turn ?? own[0]!;
+      return this.#movedSince(latest, latest.startedAtMs, record.timestampMs);
+    }
     const registered = this.#registrationsBySession.get(record.sessionId);
     const registration =
       registered === undefined ? undefined : startedBy(registered, record.timestampMs);
@@ -638,7 +693,11 @@ export class UsageOriginIndex {
         turns === undefined
           ? undefined
           : startedBy(turns, registration.startedAtMs + REGISTER_STAMP_SLACK_MS);
-      if (starter !== undefined) return { ...starter.key, registered: true };
+      if (starter !== undefined)
+        return {
+          ...this.#movedSince(starter, registration.startedAtMs, record.timestampMs),
+          registered: true,
+        };
     }
     // A registration that names no turn still says the session announced itself.
     const miss =
@@ -654,6 +713,18 @@ export class UsageOriginIndex {
         : this.#turnsByWorktree.get(owner.directory);
     const key = turns && startedBy(turns, record.timestampMs)?.key;
     return key === undefined ? miss : { ...key, folder: true };
+  }
+
+  /**
+   * A turn's label, unless its work thread was moved after `sinceMs`: then where that work counts
+   * at the time. A coordinator is not one piece of work, so its turn's label stays.
+   */
+  #movedSince(turn: OriginTurn, sinceMs: number, timestampMs: number): UsageOriginKey {
+    const timeline = this.#timelines.get(turn.threadId);
+    const entry = timeline === undefined ? undefined : startedBy(timeline, timestampMs);
+    return entry === undefined || entry.startedAtMs <= sinceMs
+      ? turn.key
+      : withVia(entry.key, turn.key.via);
   }
 
   #ownerOf(cwd: string): FolderOwner | null {
@@ -716,7 +787,10 @@ export const storedOrigin = (key: UsageOriginKey) => ({
   // The bound work was not typed itself: it inherits the typed prompt behind it.
   reason: key.reason === "typed" ? "inherited" : key.reason,
   ...(key.claim === undefined ? {} : { claim: key.claim }),
+  ...rootOf(key),
 });
+
+const StoredRoot = Schema.Struct({ threadId: Schema.String, messageId: Schema.String });
 
 const StoredOriginJson = Schema.fromJsonString(
   Schema.Struct({
@@ -724,6 +798,7 @@ const StoredOriginJson = Schema.fromJsonString(
     basis: UsageOriginBasis,
     reason: UsageOriginReason,
     claim: Schema.optional(UsageOriginClaimKind),
+    root: Schema.optional(StoredRoot),
   }),
 );
 const decodeStoredOrigin = Schema.decodeUnknownOption(StoredOriginJson);
@@ -746,6 +821,7 @@ const boundClaimKey = (
         basis: bound.basis,
         reason: bound.reason,
         ...(bound.claim === undefined ? {} : { claim: bound.claim }),
+        ...(bound.root === undefined ? {} : { root: bound.root }),
       }
     : undefined;
 
@@ -757,8 +833,12 @@ const storedOriginOf = (json: string | null): UsageOriginKey | undefined => {
   if (json === null) return undefined;
   const decoded = decodeStoredOrigin(json);
   if (Option.isNone(decoded)) return undefined;
-  const { claim, ...key } = decoded.value;
-  return claim === undefined ? key : { ...key, claim };
+  const { claim, root, ...key } = decoded.value;
+  return {
+    ...key,
+    ...(claim === undefined ? {} : { claim }),
+    ...(root === undefined ? {} : { root }),
+  };
 };
 
 interface MessageColumns {
@@ -1169,9 +1249,8 @@ const make = Effect.gen(function* () {
       resolving.push(runId);
       const key = claimKey(claim);
       resolving.pop();
-      const settled = isDevice(key)
-        ? { origin: key.origin, basis: key.basis, reason: key.reason }
-        : undefined;
+      const { via: _via, claim: _claim, folder: _folder, registered: _registered, ...value } = key;
+      const settled = isDevice(value) ? value : undefined;
       if (cycleAt >= depth) settledRunClaims.set(runId, settled);
       cycleAt = Math.min(outerCycleAt, cycleAt < depth ? cycleAt : Number.POSITIVE_INFINITY);
       return settled;
@@ -1215,7 +1294,7 @@ const make = Effect.gen(function* () {
         {
           startedAtMs: reply.createdAtMs,
           runId: null,
-          key: { origin: typed.origin, basis: typed.basis, reason: "inherited" },
+          key: { origin: typed.origin, basis: typed.basis, reason: "inherited", ...rootOf(typed) },
         },
       ]);
     }
@@ -1287,6 +1366,15 @@ const make = Effect.gen(function* () {
       const turns = facts.turns.flatMap((turn) =>
         turnSegments(turn, facts.resolver).map(({ typed: _typed, ...segment }) => segment),
       );
+      const workThreads = new Set(
+        facts.turns.flatMap((turn) => (turn.coordinator ? [] : [turn.threadId])),
+      );
+      const timelines = [...workThreads].flatMap((threadId): OriginTimeline[] => {
+        const entries = facts.resolver
+          .timelineOf(threadId)
+          .map(({ startedAtMs, key }) => ({ startedAtMs, key }));
+        return entries.length === 0 ? [] : [{ threadId, entries }];
+      });
       const prompts = facts.promptMessages.flatMap((message): OriginPrompt[] =>
         message.createdAtMs === undefined
           ? []
@@ -1309,6 +1397,7 @@ const make = Effect.gen(function* () {
               ],
         ),
         registrations,
+        timelines,
       } satisfies UsageOriginSnapshot;
     },
     Effect.mapError((cause) => new UsageOriginsReadError({ cause })),
@@ -1330,7 +1419,7 @@ const make = Effect.gen(function* () {
       const turn = startedBy(facts.turns.toSorted(byStart), atMs);
       if (
         turn !== undefined &&
-        (turn.completedAtMs === null || atMs <= turn.completedAtMs + LATE_RECORD_GRACE_MS)
+        (turn.completedAtMs === null || atMs <= turn.completedAtMs + BIND_GRACE_MS)
       ) {
         const segment = startedBy(turnSegments(turn, facts.resolver), atMs);
         if (segment !== undefined)

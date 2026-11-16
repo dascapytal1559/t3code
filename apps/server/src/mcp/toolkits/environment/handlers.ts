@@ -135,14 +135,18 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
     ),
   ),
   // These take no thread lock: holding queues locks every thread, the caller's among them.
-  t3_restart_request: McpToolAccess.writesEnvironment(({ reason, causedBy }) =>
+  t3_restart_request: McpToolAccess.writesEnvironment(({ reason, causedBy, fromThread }) =>
     Effect.gen(function* () {
       const { scope, caller, threads } = yield* access;
       const orchestrator = yield* Orchestrator.OrchestratorV2;
+      // The note and continuations count where the work it installs counts.
+      const bound =
+        fromThread === undefined ? null : yield* bindUsageOrigin(threads, fromThread, caller?.id);
       yield* orchestrator.requestRestart({
         reason,
         requestedBy: caller?.title ?? scope.client?.label ?? "MCP",
         causedBy: causedBy === undefined ? undefined : yield* verifyCause(threads, causedBy),
+        usageOrigin: bound === null ? undefined : UsageOrigins.storedOrigin(bound.key),
       });
       return yield* restartStatus;
     }),

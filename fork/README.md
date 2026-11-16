@@ -194,21 +194,33 @@ and what agents claim.
 - T3 binds by value, through `UsageOrigins.originAt`: where a thread's work
   counted at a moment, read from the turn running then (or ended up to five
   minutes before), segment by segment, else, between turns, a work thread's
-  origin or a coordinator's upkeep. `t3_thread_launch` stores it on the new
-  thread as `usageOrigin` (reason `typed` stored as `inherited`).
-  `t3_thread_send` stores it on the message only when the sender's segment
-  was started by a prompt typed in that turn or is a voice-journal claim
-  (`reroots`), so only typed input moves work. `schedule_task` stores the
-  creating turn's origin in the fork table `usage_scheduled_task_origins`, and
-  an edit from a typed turn rebinds it. The calling thread is the MCP
-  caller's own thread; a caller outside threads, such as FirstMate's scripts,
-  names it as `fromThread: { threadId, at? }`, with `at` when a job that
-  outlived its turn began. A thread's agent may name only itself. Callers
-  that name neither bind nothing, and a read failure never holds work back.
+  origin or a coordinator's upkeep. `t3_thread_launch`, `delegate_task` and
+  `create_threads` store it on each new thread as `usageOrigin` (reason
+  `typed` stored as `inherited`), so a delegated child no longer copies its
+  parent's birth. `t3_thread_send` and `t3_thread_send_attachments` store it
+  on the message only when the sender's segment was started by a prompt typed
+  in that turn or is a voice-journal claim (`reroots`), so only typed input
+  moves work. `schedule_task` stores the creating turn's origin in the fork
+  table `usage_scheduled_task_origins`, and an edit from a typed turn rebinds
+  it. `t3_restart_request` binds when given `fromThread` and keeps the value on
+  the request; the restart note carries it, and each restart continuation
+  carries where its cut turn counted (the request's value instead when that
+  turn only counted as upkeep, or to no device, in a thread with no origin of
+  its own). A value the server bound (`creationSource` `server`) labels its own
+  turn and moves no work. Every stored origin keeps `root`, the typed prompt
+  (`threadId`, `messageId`) that decided it, copied unchanged as work inherits;
+  rules (a journal, upkeep, a terminal) have none, and Usage never adds tokens
+  up by it. The calling thread is the MCP caller's own thread; a caller
+  outside threads, such as FirstMate's scripts, names it as
+  `fromThread: { threadId, at? }`, with `at` when a job that outlived its turn
+  began. A thread's agent may name only itself. Callers that name neither
+  bind nothing, and a read failure or a bug in Usage never holds work back.
 - Tokens are joined before aggregation: a transcript record's native
   `sessionId` finds the provider thread (`nativeThreadRef.nativeId`), and its
-  timestamp the turn running then. A record more than five minutes after that
-  turn completed, such as a terminal resume, belongs to no T3 turn. Origins split the
+  timestamp the turn running then. A record outside its session's turns (a
+  worker's background work running on) counts with its thread: its latest
+  turn's label, or, when the work thread was moved after that turn started,
+  where its work counts at the record's time. Origins split the
   kept records after dedupe and the model filter, counting a duplicate's merged
   copies once in upstream's `#accumulate` as its bucket does, so they add up to
   the page's totals.
@@ -246,8 +258,7 @@ and what agents claim.
   decides: a folder named for a T3 session's native id (Claude's scratchpad),
   a thread's worktree, or a claimed folder, deepest first. A worktree counts to
   the latest turn started there by any thread, since slots are reused. A
-  record of a T3 session past its turn, such as a terminal resume, never
-  traces by folder.
+  record of a T3 session never traces by folder.
 - Usage still without a phone or computer settles in `settleOrigin` to the
   computer: `computer`/`default`, keeping `via` for agent work. Usage that can
   never trace says so in its basis: anything before
@@ -261,10 +272,12 @@ and what agents claim.
   `inherited`, `journal`, `upkeep` or `terminal` when there is device
   evidence, else what is missing (`unregisteredSession`,
   `unmatchedRegistration` for a registered session whose thread or task
-  matched no turn, `lateRecord`, `unnamedTurn`, `noCause`, `untracedCause`,
-  `noPrompt`, `unknownDevice`, `serverPrompt`, `unstamped`, `beforeStamps`,
-  `archive`, `accountOnly`), plus the claim kind (`run`, `session`,
-  `directory`) that decided it and whether a registration or a folder matched it. The
+  matched no turn, `unnamedTurn`, `noCause`, `untracedCause`, `noPrompt`,
+  `unknownDevice`, `serverPrompt`, `unstamped`, `beforeStamps`, `archive`,
+  `accountOnly`; `lateRecord` is no longer produced), plus the claim kind
+  (`run`, `session`, `directory`) that decided it, whether a registration or a
+  folder matched it, and `cause` when a recorded `causedBy` (a thread's, a
+  message's or a claim's) decided it rather than a stored value. The
   read-only MCP tool `t3_usage_reasons` (`days`, default 7, ending `untilDay`
   in `timeZone`) returns those tokens per provider, marks the no-evidence rows
   `byDefault` and totals them in `byDefaultTokens`, and fails rather than
@@ -1075,12 +1088,13 @@ MCP tools, on the environment toolkit. Request and cancel need a full-access
 client or live full-access caller thread, and refuse a linked environment's
 caller, like `t3_objectives_set`; status needs only orchestration access.
 
-- `t3_restart_request` `{ reason, causedBy? }` sets the request (`reason`:
-  trimmed, 1 to 500 characters, such as `install build 0.1.8`), or replaces
-  its reason and cause when one is pending. `causedBy` is the prompt whose work
-  the restart installs, checked like `t3_thread_launch`'s; FirstMate passes the
-  latest landed task's cause. `requestedBy` is the caller thread's title or the
-  MCP client's label. Returns the status below.
+- `t3_restart_request` `{ reason, causedBy?, fromThread? }` sets the request
+  (`reason`: trimmed, 1 to 500 characters, such as `install build 0.1.8`), or
+  replaces its reason, cause and origin when one is pending. `causedBy` is the
+  prompt whose work the restart installs, checked like `t3_thread_launch`'s;
+  `fromThread` names the thread of that work instead, and T3 stores where it
+  counts by value (see [Usage by origin](#usage-by-origin)). `requestedBy` is
+  the caller thread's title or the MCP client's label. Returns the status below.
 - `t3_restart_status` `{}` returns `{ pending, reason, requestedAt, causedBy,
   activeTurns, drained, serverStartedAt }`. `activeTurns` counts threads with a
   turn in flight (preparing, starting, running or waiting on a person), in any
@@ -1454,11 +1468,11 @@ still checked, stored and followed for work that has no bound origin:
   loses any `causedBy` it carries. It refers to this environment only, so a
   call forwarded to a linked environment goes without it and the work there
   records no cause.
-  `t3_thread_send_attachments` and `delegate_task` do not take it (delegated
-  tasks already record their parent run).
+  `t3_thread_send_attachments`, `delegate_task` and `create_threads` do not
+  take it; they bind by value from the caller's turn.
 - `t3_restart_request` and `t3_usage_claim` take the same checked `causedBy`:
-  a restart's note and continuations count to it, and a claimed session,
-  folder or turn counts to it.
+  a restart's note and continuations count to it when the request carries no
+  bound origin, and a claimed session, folder or turn counts to it.
 
 Usage follows these links ([Usage by origin](#usage-by-origin)). Code:
 `verifyCause` in `apps/server/src/mcp/threadAccess.ts`, `OrchestrationV2CausedBy`

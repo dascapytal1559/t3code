@@ -14,6 +14,7 @@ import {
   type OrchestrationV2ThreadShell,
   type OrchestratorMcpFromThread,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -310,12 +311,15 @@ export const bindUsageOrigin = Effect.fn("mcp.bindUsageOrigin")(function* (
   const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
   const atMs = fromThread?.at === undefined ? nowMs : Math.min(Date.parse(fromThread.at), nowMs);
   const origins = yield* UsageOrigins.UsageOrigins;
+  // A defect too: a bug in Usage must not stop the work it would have labelled.
   return yield* origins.originAt(threadId, atMs).pipe(
-    Effect.catch((cause) =>
-      Effect.logWarning("Usage could not bind work to its thread's origin", {
-        threadId,
-        cause,
-      }).pipe(Effect.as(null)),
+    Effect.catchCause((cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? Effect.interrupt
+        : Effect.logWarning("Usage could not bind work to its thread's origin", {
+            threadId,
+            cause,
+          }).pipe(Effect.as(null)),
     ),
   );
 });

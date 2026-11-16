@@ -33,6 +33,7 @@ import * as EventSink from "./EventSink.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as EffectWorker from "./EffectWorker.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
+import * as UsageOrigins from "../usage/UsageOrigins.ts";
 
 const threadId = ThreadId.make("thread:restart");
 const runId = RunId.make("run:restart");
@@ -999,10 +1000,17 @@ const continuationDispatches = (
   projection: OrchestrationV2ThreadProjection,
   sourceRunId: RunId = runId,
   restartedFor: RestartRequest | null = null,
+  // Where Usage says the cut turn counted; absent, the runtime has no Usage.
+  cutTurn?: UsageOrigins.BoundOrigin | null,
 ) =>
   Effect.gen(function* () {
     const dispatches: Array<Extract<OrchestrationV2Command, { type: "message.dispatch" }>> = [];
     yield* continueRestartedRun({ threadId, sourceRunId }).pipe(
+      cutTurn === undefined
+        ? (effect) => effect
+        : Effect.provide(
+            Layer.mock(UsageOrigins.UsageOrigins)({ originAt: () => Effect.succeed(cutTurn) }),
+          ),
       Effect.provide(
         Layer.merge(
           Layer.mock(ThreadManagementService.ThreadManagementService)({
@@ -1201,6 +1209,66 @@ it.effect.each([
       const [unrequested] = yield* continuationDispatches(projection, runId, null);
       assert.isUndefined(unrequested!.causedBy);
     }
+  }),
+);
+
+it.effect.each([
+  ["where the cut turn counted", "phone inherited", {}, "phone inherited"],
+  ["its own claim, not the restart's work", "phone journal", {}, "phone journal"],
+  ["the restart's work, when it only counted as upkeep", "computer upkeep", {}, "phone inherited"],
+  [
+    "upkeep still, in a thread with an origin of its own",
+    "computer upkeep",
+    { usageOrigin: { origin: "computer", basis: "stamp", reason: "inherited" } },
+    "computer upkeep",
+  ],
+  [
+    "the restart's work, when the cut turn counted to no device",
+    "unknown noCause",
+    {},
+    "phone inherited",
+  ],
+  ["nothing, naming its causes, in a runtime without Usage", null, {}, null],
+] as const)("a resumed turn is bound by value to %s", ([, cut, thread, expected]) =>
+  Effect.gen(function* () {
+    const base = cutMidTurn();
+    const projection = {
+      ...base,
+      thread: { ...base.thread, ...thread },
+      messages: [
+        {
+          id: MessageId.make("message:user"),
+          threadId,
+          role: "user",
+          text: "build the feature",
+          attachments: [],
+          createdBy: "user",
+        },
+      ],
+    } as unknown as OrchestrationV2ThreadProjection;
+    const restartedFor = {
+      reason: "install build split",
+      requestedBy: "FirstMate",
+      requestedAt: "2026-10-03T11:59:00.000Z",
+      usageOrigin: { origin: "phone", basis: "stamp", reason: "inherited" },
+    } satisfies RestartRequest;
+    const [origin, reason] = cut?.split(" ") ?? [];
+    const [command] = yield* continuationDispatches(
+      projection,
+      runId,
+      restartedFor,
+      cut === null
+        ? undefined
+        : {
+            key: { origin, basis: "stamp", reason } as UsageOrigins.UsageOriginKey,
+            reroots: false,
+            runId,
+          },
+    );
+    const bound = command!.usageOrigin;
+    assert.strictEqual(bound === undefined ? null : `${bound.origin} ${bound.reason}`, expected);
+    // A value replaces the pointer; with none, the turn names its causes as before.
+    assert.strictEqual(command!.causedBy === undefined, expected !== null);
   }),
 );
 

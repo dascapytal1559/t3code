@@ -28,6 +28,8 @@ export interface UsageClaimBinding {
   readonly basis: string;
   readonly reason: string;
   readonly claim?: string;
+  /** The typed prompt that decided it. */
+  readonly root?: { readonly threadId: string; readonly messageId: string };
 }
 
 /**
@@ -54,6 +56,7 @@ const BoundJson = Schema.fromJsonString(
     basis: Schema.String,
     reason: Schema.String,
     claim: Schema.optional(Schema.String),
+    root: Schema.optional(Schema.Struct({ threadId: Schema.String, messageId: Schema.String })),
   }),
 );
 const encodeBound = Schema.encodeSync(BoundJson);
@@ -61,8 +64,12 @@ const decodeBoundOption = Schema.decodeOption(BoundJson);
 const decodeBound = (json: string | null): UsageClaimBinding | undefined => {
   const decoded = json === null ? Option.none() : decodeBoundOption(json);
   if (Option.isNone(decoded)) return undefined;
-  const { claim, ...binding } = decoded.value;
-  return claim === undefined ? binding : { ...binding, claim };
+  const { claim, root, ...binding } = decoded.value;
+  return {
+    ...binding,
+    ...(claim === undefined ? {} : { claim }),
+    ...(root === undefined ? {} : { root }),
+  };
 };
 
 /**

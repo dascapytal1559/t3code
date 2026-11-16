@@ -122,6 +122,8 @@ export const OrchestrationV2UsageOrigin = Schema.Struct({
   basis: Schema.String,
   reason: Schema.String,
   claim: Schema.optional(Schema.String),
+  /** The typed prompt that decided it; absent when a rule did (a journal, upkeep). */
+  root: Schema.optional(Schema.Struct({ threadId: Schema.String, messageId: Schema.String })),
 });
 export type OrchestrationV2UsageOrigin = typeof OrchestrationV2UsageOrigin.Type;
 
@@ -3757,6 +3759,8 @@ export const OrchestrationV2Command = Schema.Union([
     // Defaults to settled_only; fire-and-forget wakes require always.
     completionWake: Schema.optional(Schema.Literals(["always", "settled_only"])),
     createdAt: Schema.optional(Schema.DateTimeUtc),
+    /** Fork: where Usage counts the child from birth. Only the server sets this. */
+    usageOrigin: Schema.optional(OrchestrationV2UsageOrigin),
   }),
   Schema.Struct({
     type: Schema.Literal("delegated_task.wake-policy"),

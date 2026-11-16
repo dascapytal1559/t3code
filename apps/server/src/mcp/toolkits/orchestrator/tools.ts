@@ -71,7 +71,8 @@ const sendDependencies = [
   RemoteDelegation.RemoteDelegation,
   UsageOrigins.UsageOrigins,
 ];
-const scheduleDependencies = [...dependencies, UsageOrigins.UsageOrigins];
+/** Work these start is born where the caller's turn counts. */
+const bindingDependencies = [...dependencies, UsageOrigins.UsageOrigins];
 const threadMetadataDependencies = [
   McpInvocationContext.McpInvocationContext,
   ThreadManagementService.ThreadManagementService,
@@ -99,7 +100,7 @@ const DelegateTaskTool = Tool.make("delegate_task", {
   success: OrchestratorMcpDelegateTaskResult,
   failure: OrchestratorMcpFailure,
   failureMode: "return",
-  dependencies,
+  dependencies: bindingDependencies,
 })
   .annotate(Tool.Title, "Delegate a child task")
   .annotate(Tool.Destructive, true)
@@ -180,7 +181,7 @@ const ScheduleTaskTool = Tool.make("schedule_task", {
   success: OrchestratorMcpScheduleTaskResult,
   failure: OrchestratorMcpFailure,
   failureMode: "return",
-  dependencies: scheduleDependencies,
+  dependencies: bindingDependencies,
 })
   .annotate(Tool.Title, "Schedule a task")
   .annotate(Tool.Destructive, true)
@@ -234,7 +235,7 @@ const CreateThreadsTool = Tool.make("create_threads", {
   success: OrchestratorMcpCreateThreadsResult,
   failure: OrchestratorMcpFailure,
   failureMode: "return",
-  dependencies,
+  dependencies: bindingDependencies,
 })
   .annotate(Tool.Title, "Create T3 threads")
   .annotate(Tool.Destructive, true)

@@ -39,7 +39,7 @@ const REASON_LABELS: Record<UsageOriginReasonUsage["reason"], string> = {
   accountOnly: "account-only",
 };
 
-/** One line per origin and reason, providers summed; claim kind and folder matches noted. */
+/** One line per origin and reason, providers summed; claim kind, folder matches and causes noted. */
 function formatUsageReasons(result: typeof UsageReasonsResult.Type): readonly string[] {
   const lines = new Map<string, { label: string; tokens: number; byDefault: boolean }>();
   for (const row of result.rows) {
@@ -49,6 +49,7 @@ function formatUsageReasons(result: typeof UsageReasonsResult.Type): readonly st
       ...(row.claim === undefined ? [] : [`${row.claim} claim`]),
       ...(row.folder === true ? ["by folder"] : []),
       ...(row.registered === true && row.reason !== "terminal" ? ["by registration"] : []),
+      ...(row.cause === true ? ["by recorded cause"] : []),
     ].join(" · ");
     const line = lines.get(label) ?? { label, tokens: 0, byDefault: row.byDefault };
     line.tokens += row.tokens;

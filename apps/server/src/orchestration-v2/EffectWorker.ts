@@ -31,6 +31,7 @@ import * as RuntimeRequestService from "./RuntimeRequestService.ts";
 import * as ThreadTitleRegenerationService from "./ThreadTitleRegenerationService.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as UsageOrigins from "../usage/UsageOrigins.ts";
 import { continueRestartedRun } from "./RestartContinuation.ts";
 
 const isProviderTurnControlError = Schema.is(ProviderTurnControlService.ProviderTurnControlError);
@@ -117,6 +118,12 @@ export const layerExecutor: Layer.Layer<
     const threads = yield* ThreadManagementService.ThreadManagementService;
     const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
     const settings = yield* ServerSettings.ServerSettingsService;
+    // The server builds this under Usage; a runtime without it resumes cut turns by their causes.
+    const usageOrigins = yield* Effect.serviceOption(UsageOrigins.UsageOrigins);
+    const withUsageOrigins = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      Option.isSome(usageOrigins)
+        ? Effect.provideService(effect, UsageOrigins.UsageOrigins, usageOrigins.value)
+        : effect;
     const startRun = (
       effect: EffectOutbox.OrchestrationEffectV2,
       runId: RunId,
@@ -169,6 +176,7 @@ export const layerExecutor: Layer.Layer<
             }).pipe(
               Effect.provideService(ThreadManagementService.ThreadManagementService, threads),
               Effect.provideService(ServerSettings.ServerSettingsService, settings),
+              withUsageOrigins,
               Effect.tapError(() =>
                 willRetry
                   ? Effect.void

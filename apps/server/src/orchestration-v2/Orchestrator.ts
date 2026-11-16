@@ -411,6 +411,7 @@ export interface OrchestratorV2Shape {
     readonly reason: string;
     readonly requestedBy: string;
     readonly causedBy?: OrchestrationV2CausedBy | undefined;
+    readonly usageOrigin?: OrchestrationV2UsageOrigin | undefined;
   }) => Effect.Effect<RestartRequest>;
   /** The request the previous process left pending, which this start fulfils; null when unrequested. */
   readonly restartedFor: Effect.Effect<RestartRequest | null>;
@@ -3600,7 +3601,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         Effect.gen(function* () {
           const requestedAt = DateTime.formatIso(yield* DateTime.now);
           const current = yield* SubscriptionRef.get(restartRequestRef);
-          const { causedBy: _previousCause, ...kept } = current ?? {
+          const {
+            causedBy: _previousCause,
+            usageOrigin: _previousOrigin,
+            ...kept
+          } = current ?? {
             requestedBy: input.requestedBy,
             requestedAt,
           };
@@ -3608,6 +3613,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ...kept,
             reason: input.reason.trim(),
             ...(input.causedBy === undefined ? {} : { causedBy: input.causedBy }),
+            ...(input.usageOrigin === undefined ? {} : { usageOrigin: input.usageOrigin }),
           };
           yield* SubscriptionRef.set(restartRequestRef, request);
           yield* restartRequestFile.save(request);
@@ -9874,6 +9880,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         runtimeMode: command.runtimeMode,
         interactionMode: command.interactionMode,
         ...(command.workspaceStrategy === undefined ? {} : { branch: null, worktreePath: null }),
+        // Born where the delegating turn counted, not where its parent was born.
+        ...(command.usageOrigin === undefined ? {} : { usageOrigin: command.usageOrigin }),
       };
       const task: OrchestrationV2Subagent = {
         id: taskNodeId,
