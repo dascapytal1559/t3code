@@ -6,11 +6,33 @@ import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
 import * as PeerLinkRequests from "../../../peer/PeerLinkRequests.ts";
 import * as PeerLinks from "../../../peer/PeerLinks.ts";
 import * as RemoteDelegation from "../../../peer/RemoteDelegation.ts";
-import { readCaller } from "../../threadAccess.ts";
+import * as UsageOrigins from "../../../usage/UsageOrigins.ts";
+import { bindUsageOrigin, loadCaller, readCaller } from "../../threadAccess.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
 import * as ThreadMetadataMcpService from "../../ThreadMetadataMcpService.ts";
+
+/**
+ * A scheduled task's runs count where the turn that created it counted then; an edit made from
+ * a typed turn re-roots it. Best effort: the task is saved either way.
+ */
+const bindScheduledTask = Effect.fn("mcp.bindScheduledTask")(function* (
+  taskId: string,
+  onlyIfTyped: boolean,
+) {
+  const { caller, threads } = yield* loadCaller();
+  const bound = yield* bindUsageOrigin(threads, undefined, caller?.id);
+  if (bound === null || (onlyIfTyped && !bound.reroots)) return;
+  const origins = yield* UsageOrigins.UsageOrigins;
+  yield* origins
+    .bindScheduledTask(taskId, bound.key)
+    .pipe(
+      Effect.catch((cause) =>
+        Effect.logWarning("Usage could not bind a scheduled task's origin", { taskId, cause }),
+      ),
+    );
+});
 
 const handlers = {
   orchestrator_capabilities: McpToolAccess.reads((input) =>
@@ -99,7 +121,9 @@ const handlers = {
           }
           const scope = yield* McpInvocationContext.McpInvocationContext;
           const service = yield* OrchestratorMcpService.OrchestratorMcpService;
-          return yield* service.scheduleTask(scope, { ...input, prompt, schedule });
+          const task = yield* service.scheduleTask(scope, { ...input, prompt, schedule });
+          yield* bindScheduledTask(task.scheduledTaskId, false);
+          return task;
         }),
       // A scheduled run starts long after its caller, with nothing to carry the link.
       { refused: "schedule tasks in this environment" },
@@ -110,7 +134,7 @@ const handlers = {
           if (scheduledTaskId === undefined) return yield* Effect.die("unreachable");
           const scope = yield* McpInvocationContext.McpInvocationContext;
           const service = yield* OrchestratorMcpService.OrchestratorMcpService;
-          return yield* service.updateScheduledTask(scope, {
+          const task = yield* service.updateScheduledTask(scope, {
             scheduledTaskId,
             prompt,
             title,
@@ -119,6 +143,8 @@ const handlers = {
             freshSession,
             bindToCurrentThread,
           });
+          yield* bindScheduledTask(task.scheduledTaskId, true);
+          return task;
         }),
     ),
   ),
@@ -180,7 +206,14 @@ const handlers = {
         Effect.gen(function* () {
           const scope = yield* McpInvocationContext.McpInvocationContext;
           const service = yield* OrchestratorMcpService.OrchestratorMcpService;
-          return yield* service.sendToThread(scope, input);
+          const { caller, threads } = yield* loadCaller();
+          // Only a send from a turn typed then moves the work it reaches.
+          const bound = yield* bindUsageOrigin(threads, input.fromThread, caller?.id);
+          return yield* service.sendToThread(
+            scope,
+            input,
+            bound?.reroots === true ? UsageOrigins.storedOrigin(bound.key) : undefined,
+          );
         }),
     ),
     // There the thread's parent is here, so only this side can make a follow-up a task.

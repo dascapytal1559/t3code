@@ -60,7 +60,11 @@ update model pricing.
 On web and desktop, **Tokens by origin** (or **Cost by origin**) splits usage between **Phone**
 and **Computer**. Each device splits into **Direct** (prompts you typed, solid) and
 **Coordinated** (prompts an agent sent on behalf of one you typed, hatched). A run counts toward
-the message that started it; messages sent while it runs do not split it. Phone includes
+the message that started it, until you type again while it runs. Work an agent launches, and a
+scheduled task it creates, counts where the agent's turn counted at that moment. That work then
+counts there until you type about it again: a message you type that reaches it, such as
+a reply on a worker's box or a FirstMate message sent from a turn you typed, moves it to the
+device you typed on. Settling, snoozing and approving are clicks and move nothing. Phone includes
 tablets. Sessions an agent runs outside T3, such as a CLI run in its worktree, count with the
 agent's turn. A coordinator's own turns that nobody typed, such as FirstMate's wakes and
 background checks, count to the computer as upkeep unless FirstMate says what they were about.

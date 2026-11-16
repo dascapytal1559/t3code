@@ -49,6 +49,7 @@ import * as ProviderReplayHarness from "../orchestration-v2/testkit/ProviderRepl
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
+import * as UsageOrigins from "../usage/UsageOrigins.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -172,6 +173,7 @@ const makeLaptopWith = (
       Layer.provide(NodeCrypto.layer),
       Layer.provideMerge(layerThreads),
       Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
+      Layer.provide(UsageOrigins.layerTest),
       Layer.provide(Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({})),
       Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
       Layer.provide(Layer.mock(ProjectService.ProjectService)({})),

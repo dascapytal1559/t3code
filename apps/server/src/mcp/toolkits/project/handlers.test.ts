@@ -1,4 +1,5 @@
 import * as ProviderRegistry from "../../../provider/ProviderRegistry.ts";
+import * as UsageOrigins from "../../../usage/UsageOrigins.ts";
 import { expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
@@ -75,6 +76,7 @@ const clientLaunchHarness = (input: {
     Layer.mock(ProviderRegistry.ProviderRegistry)({
       getProviders: Effect.succeed(input.providers ?? []),
     }),
+    UsageOrigins.layerTest,
     ServerSettings.layerTest({
       fallbackModelSelection: input.fallbackModel ?? null,
       ...(input.defaultRuntimeMode === undefined

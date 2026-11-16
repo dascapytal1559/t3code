@@ -1,6 +1,9 @@
 import {
   OrchestratorMcpFailure,
+  type OrchestratorMcpFromThread,
+  RunId,
   type ServerSettings,
+  type ThreadId,
   type ServerSettingsPatch,
   UsageDay,
 } from "@t3tools/contracts";
@@ -11,18 +14,46 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Environment from "../../../environment/ServerEnvironment.ts";
 import * as UsageClaims from "../../../usage/UsageClaims.ts";
+import * as UsageOrigins from "../../../usage/UsageOrigins.ts";
 import * as UsageService from "../../../usage/UsageService.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";
 import * as Settings from "../../../serverSettings.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
-import { readCaller, unavailable, verifyCause } from "../../threadAccess.ts";
+import { bindUsageOrigin, readCaller, unavailable, verifyCause } from "../../threadAccess.ts";
 import { EnvironmentToolkit } from "./tools.ts";
 
 const invalidRequest = (message: string) =>
   new OrchestratorMcpFailure({ code: "invalid_request", message });
 const decodeUsageDay = Schema.decodeSync(UsageDay);
+
+/** The run of the thread's turn running now, or ended up to five minutes ago. */
+const runningTurn = Effect.fn("mcp.usageClaimRunningTurn")(function* (threadId: ThreadId) {
+  const origins = yield* UsageOrigins.UsageOrigins;
+  const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
+  const bound = yield* origins.originAt(threadId, nowMs).pipe(Effect.mapError(unavailable));
+  if (bound === null) return yield* invalidRequest(`thread ${threadId} was not found.`);
+  if (bound.runId === null)
+    return yield* invalidRequest(`thread ${threadId} has no turn running now.`);
+  return RunId.make(bound.runId);
+});
+
+/** A claim on where a task's thread counts its work now (or at `at`), bound by value. */
+const boundClaim = Effect.fn("mcp.boundUsageClaim")(function* (
+  threads: Parameters<typeof bindUsageOrigin>[0],
+  fromThread: OrchestratorMcpFromThread,
+) {
+  // Any caller may name a task's thread: the claim is about the work, not the caller's turn.
+  const bound = yield* bindUsageOrigin(threads, fromThread, undefined);
+  if (bound === null) return yield* unavailable();
+  const { origin, ...binding } = UsageOrigins.storedOrigin(bound.key);
+  if (origin !== "phone" && origin !== "computer")
+    return yield* invalidRequest(
+      `fromThread: thread ${fromThread.threadId}'s work counts to no device then; nothing was claimed.`,
+    );
+  return { device: origin, bound: binding } satisfies UsageClaims.UsageClaimValue;
+});
 
 export function preferences(settings: ServerSettings) {
   const {
@@ -160,7 +191,7 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
     }),
   ),
   t3_usage_claim: McpToolAccess.writesEnvironment(
-    ({ sessionId, from, directory, threadId, runId, causedBy, device, ifUnclaimed }) =>
+    ({ sessionId, from, directory, threadId, runId, causedBy, fromThread, device, ifUnclaimed }) =>
       Effect.gen(function* () {
         const { threads } = yield* access;
         const path = yield* Path.Path;
@@ -169,6 +200,15 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
           return yield* invalidRequest("from must be an ISO 8601 time.");
         if (start !== undefined && sessionId === undefined)
           return yield* invalidRequest("from goes only with sessionId.");
+        // A thread alone names its turn running now, by the rule Usage binds work with.
+        const currentRunId =
+          threadId !== undefined &&
+          runId === undefined &&
+          sessionId === undefined &&
+          directory === undefined
+            ? yield* runningTurn(threadId)
+            : undefined;
+        const turnRunId = runId ?? currentRunId;
         const targets: UsageClaims.UsageClaimTarget[] = [
           ...(sessionId === undefined
             ? []
@@ -180,17 +220,18 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
                 },
               ]),
           ...(directory === undefined ? [] : [{ kind: "directory" as const, directory }]),
-          ...(runId === undefined ? [] : [{ kind: "run" as const, runId }]),
+          ...(turnRunId === undefined ? [] : [{ kind: "run" as const, runId: turnRunId }]),
         ];
         const target = targets.length === 1 ? targets[0]! : undefined;
         if (target === undefined)
-          return yield* invalidRequest("Give exactly one of sessionId, directory or runId.");
+          return yield* invalidRequest("Give exactly one of sessionId, directory or threadId.");
         if ((target.kind === "run") !== (threadId !== undefined))
           return yield* invalidRequest("threadId goes with runId, and only with runId.");
         if (target.kind === "directory" && !path.isAbsolute(target.directory))
           return yield* invalidRequest("directory must be an absolute path.");
-        if ((causedBy === undefined) === (device === undefined) || (causedBy === null && device))
-          return yield* invalidRequest("Give exactly one of causedBy or device.");
+        const values = [causedBy, fromThread, device].filter((value) => value !== undefined);
+        if (values.length !== 1)
+          return yield* invalidRequest("Give exactly one of causedBy, fromThread or device.");
         if (causedBy === null && ifUnclaimed === true)
           return yield* invalidRequest("ifUnclaimed goes only with a claim, not a removal.");
         if (runId !== undefined && threadId !== undefined) {
@@ -203,9 +244,11 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
         const value: UsageClaims.UsageClaimValue | null =
           device !== undefined
             ? { device }
-            : causedBy === null || causedBy === undefined
-              ? null
-              : { causedBy: yield* verifyCause(threads, causedBy) };
+            : fromThread !== undefined
+              ? yield* boundClaim(threads, fromThread)
+              : causedBy === null || causedBy === undefined
+                ? null
+                : { causedBy: yield* verifyCause(threads, causedBy) };
         const claimed = yield* (yield* UsageClaims.UsageClaims)
           .claim({ target, value, ifUnclaimed: ifUnclaimed === true })
           .pipe(Effect.mapError(unavailable));
@@ -219,10 +262,13 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
               }
             : claimed.target.kind === "directory"
               ? { directory: claimed.target.directory }
-              : { threadId, runId }),
+              : { threadId, runId: turnRunId }),
           causedBy:
             claimed.value !== null && "causedBy" in claimed.value ? claimed.value.causedBy : null,
           device: claimed.value !== null && "device" in claimed.value ? claimed.value.device : null,
+          ...(claimed.value !== null && "bound" in claimed.value && claimed.value.bound
+            ? { reason: claimed.value.bound.reason }
+            : {}),
           ...(claimed.kept ? { kept: true as const } : {}),
         };
       }),

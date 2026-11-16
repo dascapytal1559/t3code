@@ -35,6 +35,7 @@ import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
+import * as UsageOrigins from "../usage/UsageOrigins.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
@@ -124,7 +125,10 @@ const layerTools = Layer.mergeAll(
   Layer.provide(layerLaunches),
   Layer.provide(NodeCrypto.layer),
   Layer.provide(
-    Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
+    Layer.merge(
+      Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
+      UsageOrigins.layerTest,
+    ),
   ),
   Layer.provide(
     Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({

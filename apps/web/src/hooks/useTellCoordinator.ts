@@ -35,6 +35,7 @@ export function useTellCoordinator() {
         coordinator,
         messageId: newMessageId(),
         text: formatCrewThreadAction({ thread, action }),
+        crewNote: { threadId: thread.id, kind: "action" },
       }),
     }).then((result) => {
       if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;

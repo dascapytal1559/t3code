@@ -36,6 +36,7 @@ import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts
 import * as AssetSigner from "../assets/AssetSigner.ts";
 import * as DocumentText from "../provider/DocumentText.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
+import * as UsageOrigins from "../usage/UsageOrigins.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as McpOAuth from "../auth/McpOAuth.ts";
@@ -342,6 +343,7 @@ const layerRecordingTools = (calls: Array<unknown>) => {
         Layer.mock(ServerSettings.ServerSettingsService)({}),
         Layer.mock(DocumentText.DocumentText)({}),
         Layer.mock(ProviderRegistry.ProviderRegistry)({}),
+        UsageOrigins.layerTest,
         ServerConfig.layerTest(process.cwd(), { prefix: "t3-mcp-http-server-test-" }),
         NodeCrypto.layer,
       ),

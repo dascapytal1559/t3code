@@ -18,6 +18,7 @@ import {
   ProjectUpdatePayload,
   ProjectId,
   OrchestratorMcpCausedBy,
+  OrchestratorMcpFromThread,
   OrchestratorMcpClientRequestId,
   OrchestratorMcpEnvironmentTarget,
   OrchestratorMcpFailure,
@@ -40,6 +41,7 @@ import * as ManagedProjectFolders from "../../../project/ManagedProjectFolders.t
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as SourceControlRepositoryService from "../../../sourceControl/SourceControlRepositoryService.ts";
 import * as GitVcsDriver from "../../../vcs/GitVcsDriver.ts";
+import * as UsageOrigins from "../../../usage/UsageOrigins.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 
 const shared = {
@@ -178,6 +180,7 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
     ),
     clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
     causedBy: Schema.optional(OrchestratorMcpCausedBy),
+    fromThread: Schema.optional(OrchestratorMcpFromThread),
     /** Set by a linked environment launching its agent's delegated task here; ignored otherwise. */
     delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
   }),
@@ -200,6 +203,7 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
     ProviderRegistry.ProviderRegistry,
     DocumentText.DocumentText,
     Digest.Digest,
+    UsageOrigins.UsageOrigins,
   ],
 })
   .annotate(Tool.Destructive, true)

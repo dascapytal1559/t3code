@@ -157,8 +157,9 @@ computer". It is built from what T3 records (see
 [Messages record which client sent them](#messages-record-which-client-sent-them))
 and what agents claim.
 
-- A prompt is a user-role message. A run belongs to its `userMessageId`;
-  messages that steer a running turn do not split it.
+- A prompt is a user-role message. A run belongs to its `userMessageId`,
+  until a message typed on a phone or computer steers it: from then on the
+  turn counts to that device.
 - Stamped messages go by `origin`: `mcp` or `bot` is Agent; `mobile` or
   `tablet` devices, and the native app, are Phone; `desktop` is Computer;
   anything else is Unknown. Unstamped messages: `creationSource` `mobile` is
@@ -174,6 +175,36 @@ and what agents claim.
   the claim's device, so work a claimed turn caused inherits it. Any other root
   (an agent acting on its own, a server or unstamped prompt), a missing message
   or a cycle leaves the prompt where it was.
+- Work is born labelled, and a typed message re-roots it. Every thread that is
+  not a pinned coordinator is one piece of work with an origin over time
+  (`workTimeline` in `apps/server/src/usage/UsageOrigins.ts`): its birth (the
+  `usageOrigin` T3 bound at launch, else the device its `causedBy` reaches),
+  then each message that moves it, in order: a prompt typed on it, a message
+  carrying a bound `usageOrigin` (an agent sent it from a typed turn), an
+  older agent message whose own `causedBy` is a typed prompt, and a reply typed
+  on its crew box (a coordinator message with `crewNote.kind` `reply`). The
+  first run of a scheduled task in a thread of its own is that thread's birth.
+  A work thread's turn counts by its own prompt when that moves the work (or a
+  scheduled run's bound origin), else a run claim on it, else the work's
+  origin when it started, else the recorded-cause rule above; a move that
+  lands mid-turn splits the turn there. A coordinator's turn keeps the rules
+  above. The captain's settle, un-settle, snooze and un-snooze notes are clicks
+  (`crewNote.kind` `action`): one never counts as typed, and its turn counts
+  where the crew thread's work counted then. Approvals send no message.
+- T3 binds by value, through `UsageOrigins.originAt`: where a thread's work
+  counted at a moment, read from the turn running then (or ended up to five
+  minutes before), segment by segment, else, between turns, a work thread's
+  origin or a coordinator's upkeep. `t3_thread_launch` stores it on the new
+  thread as `usageOrigin` (reason `typed` stored as `inherited`).
+  `t3_thread_send` stores it on the message only when the sender's segment
+  was started by a prompt typed in that turn or is a voice-journal claim
+  (`reroots`), so only typed input moves work. `schedule_task` stores the
+  creating turn's origin in the fork table `usage_scheduled_task_origins`, and
+  an edit from a typed turn rebinds it. The calling thread is the MCP
+  caller's own thread; a caller outside threads, such as FirstMate's scripts,
+  names it as `fromThread: { threadId, at? }`, with `at` when a job that
+  outlived its turn began. A thread's agent may name only itself. Callers
+  that name neither bind nothing, and a read failure never holds work back.
 - Tokens are joined before aggregation: a transcript record's native
   `sessionId` finds the provider thread (`nativeThreadRef.nativeId`), and its
   timestamp the turn running then. A record more than five minutes after that
@@ -184,9 +215,13 @@ and what agents claim.
 - Agents claim what T3 can't trace with `t3_usage_claim`: a target of
   `sessionId` or `directory` (a session run outside T3, such as a pipeline),
   or `threadId` + `runId` (a turn whose prompt has no cause, such as a
-  FirstMate wake), and a value of `causedBy` (counts like an agent prompt with
-  that cause) or `device` (counts straight to `phone` or `computer`, basis
-  `claim`: FirstMate marks voice-journal work `phone`).
+  FirstMate wake; `threadId` alone names its turn running now, by the rule
+  `originAt` uses), and a value of `causedBy` (counts like an agent prompt with
+  that cause), `fromThread` (bound by value now, or at `at`, from where that
+  thread's work counts, so a wake about a task follows the task after it is
+  re-rooted; refused when that is no device; stored as the device plus
+  `bound_json`, its basis and reason) or `device` (counts straight to `phone`
+  or `computer`, basis `claim`: FirstMate marks voice-journal work `phone`).
   A session claim may take `from` (an ISO time), for a session resumed for
   different work, such as FirstMate's supervision engine: a record counts to
   the session's latest claim started by then, and a record before every start
@@ -1392,7 +1427,9 @@ in `Orchestrator.ts`, `clientOrigin` in `apps/server/src/ws.ts`.
 An MCP-sent message is stamped `mcp`/`bot`, which says an agent sent it but
 not why. So FirstMate can tie a worker back to the phone or computer prompt
 it acted on, `t3_thread_launch` and `t3_thread_send` take an optional
-`causedBy`:
+`causedBy`. T3 now binds where launched and steered work counts itself, from
+the calling thread (see [Usage by origin](#usage-by-origin)); `causedBy` is
+still checked, stored and followed for work that has no bound origin:
 
 ```json
 "causedBy": { "threadId": "<thread>", "runId": "<run, optional>", "messageId": "<message>" }

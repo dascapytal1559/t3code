@@ -6,6 +6,8 @@ import type {
   RestartRequestStatus,
   OrchestrationV2CausedBy,
   OrchestrationV2CreationSource,
+  OrchestrationV2CrewNote,
+  OrchestrationV2UsageOrigin,
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
   OrchestrationV2ThreadHistoryPage,
@@ -897,11 +899,15 @@ const MCP_CLIENT_ORIGIN: OrchestrationClientOrigin = { surface: "mcp", deviceTyp
 function messageProvenance(command: {
   readonly origin?: OrchestrationClientOrigin | undefined;
   readonly causedBy?: OrchestrationV2CausedBy | undefined;
+  readonly usageOrigin?: OrchestrationV2UsageOrigin | undefined;
+  readonly crewNote?: OrchestrationV2CrewNote | undefined;
   readonly creationSource: OrchestrationV2CreationSource;
   readonly scheduledTaskId?: unknown;
 }): {
   readonly origin?: OrchestrationClientOrigin;
   readonly causedBy?: OrchestrationV2CausedBy;
+  readonly usageOrigin?: OrchestrationV2UsageOrigin;
+  readonly crewNote?: OrchestrationV2CrewNote;
 } {
   const origin =
     command.origin ??
@@ -911,6 +917,8 @@ function messageProvenance(command: {
   return {
     ...(origin === undefined ? {} : { origin }),
     ...(command.causedBy === undefined ? {} : { causedBy: command.causedBy }),
+    ...(command.usageOrigin === undefined ? {} : { usageOrigin: command.usageOrigin }),
+    ...(command.crewNote === undefined ? {} : { crewNote: command.crewNote }),
   };
 }
 
@@ -4123,6 +4131,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       ...(command.instructions === undefined ? {} : { instructions: command.instructions }),
       ...(crewOf === undefined ? {} : { crewOf }),
       ...(command.causedBy === undefined ? {} : { causedBy: command.causedBy }),
+      ...(command.usageOrigin === undefined ? {} : { usageOrigin: command.usageOrigin }),
       lineage: {
         parentThreadId: null,
         relationshipToParent: null,
@@ -6352,6 +6361,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     readonly idleCompaction?: OrchestrationV2ConversationMessage["idleCompaction"];
     readonly origin?: OrchestrationClientOrigin;
     readonly causedBy?: OrchestrationV2ConversationMessage["causedBy"];
+    readonly usageOrigin?: OrchestrationV2ConversationMessage["usageOrigin"];
+    readonly crewNote?: OrchestrationV2ConversationMessage["crewNote"];
     readonly delegatedCompletion?: OrchestrationV2ConversationMessage["delegatedCompletion"];
     readonly notification?: OrchestrationV2ConversationMessage["notification"];
     readonly forceRestart: boolean;
@@ -6499,6 +6510,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ...(input.idleCompaction === undefined ? {} : { idleCompaction: input.idleCompaction }),
           ...(input.origin === undefined ? {} : { origin: input.origin }),
           ...(input.causedBy === undefined ? {} : { causedBy: input.causedBy }),
+          ...(input.usageOrigin === undefined ? {} : { usageOrigin: input.usageOrigin }),
+          ...(input.crewNote === undefined ? {} : { crewNote: input.crewNote }),
           id: input.messageId,
           threadId: input.command.threadId,
           runId: messageInput.runId,
@@ -11915,6 +11928,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         : { idleCompaction: queuedMessage.idleCompaction }),
       ...(queuedMessage.origin === undefined ? {} : { origin: queuedMessage.origin }),
       ...(queuedMessage.causedBy === undefined ? {} : { causedBy: queuedMessage.causedBy }),
+      ...(queuedMessage.usageOrigin === undefined
+        ? {}
+        : { usageOrigin: queuedMessage.usageOrigin }),
+      ...(queuedMessage.crewNote === undefined ? {} : { crewNote: queuedMessage.crewNote }),
       forceRestart: false,
     });
   });

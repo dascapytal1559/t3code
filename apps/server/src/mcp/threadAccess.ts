@@ -12,12 +12,15 @@ import {
   ThreadId,
   type OrchestrationV2CausedBy,
   type OrchestrationV2ThreadShell,
+  type OrchestratorMcpFromThread,
 } from "@t3tools/contracts";
 import * as SecureRandom from "effect/crypto/SecureRandom";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 
 import type { OrchestratorV2Error } from "../orchestration-v2/Orchestrator.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import * as UsageOrigins from "../usage/UsageOrigins.ts";
 import { resolveInteractionMode, resolveRuntimeMode } from "./delegatedTaskModes.ts";
 import { fencingLinkOrigin } from "./linkOrigin.ts";
 import * as McpInvocationContext from "./McpInvocationContext.ts";
@@ -278,6 +281,43 @@ export const verifyCause = Effect.fn("mcp.verifyCause")(function* (
     return yield* invalidCause(`message ${cause.messageId} is not part of run ${cause.runId}.`);
   }
   return cause;
+});
+
+const invalidFromThread = (message: string) =>
+  new OrchestratorMcpFailure({ code: "invalid_request", message: `fromThread: ${message}` });
+
+/**
+ * Where work a thread launches or sends counts, bound by value from that thread's turn at `at`
+ * (now by default): the caller's own thread, or the one a caller outside threads names. Null when
+ * neither names one, or when Usage cannot be read; accounting never holds work back.
+ */
+export const bindUsageOrigin = Effect.fn("mcp.bindUsageOrigin")(function* (
+  threads: Pick<ThreadManagement.ThreadManagementService["Service"], "getThreadShell">,
+  fromThread: OrchestratorMcpFromThread | undefined,
+  callerId: ThreadId | undefined,
+) {
+  if (fromThread !== undefined && callerId !== undefined && fromThread.threadId !== callerId) {
+    return yield* invalidFromThread("an agent in a thread speaks only for its own thread.");
+  }
+  const threadId = fromThread?.threadId ?? callerId;
+  if (threadId === undefined) return null;
+  if (fromThread !== undefined) {
+    const shell = yield* threads.getThreadShell(threadId).pipe(Effect.mapError(unavailable));
+    if (shell === null || shell.deletedAt !== null) {
+      return yield* invalidFromThread(`thread ${threadId} was not found.`);
+    }
+  }
+  const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
+  const atMs = fromThread?.at === undefined ? nowMs : Math.min(Date.parse(fromThread.at), nowMs);
+  const origins = yield* UsageOrigins.UsageOrigins;
+  return yield* origins.originAt(threadId, atMs).pipe(
+    Effect.catch((cause) =>
+      Effect.logWarning("Usage could not bind work to its thread's origin", {
+        threadId,
+        cause,
+      }).pipe(Effect.as(null)),
+    ),
+  );
 });
 
 export const newCommandId = Effect.fn("mcp.newCommandId")(function* () {

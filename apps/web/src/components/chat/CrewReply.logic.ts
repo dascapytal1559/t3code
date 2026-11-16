@@ -1,5 +1,10 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
-import { isIndefiniteSnooze, type MessageId, type ThreadId } from "@t3tools/contracts";
+import {
+  isIndefiniteSnooze,
+  type MessageId,
+  type OrchestrationV2CrewNote,
+  type ThreadId,
+} from "@t3tools/contracts";
 
 /**
  * The message a reply from a worker's thread puts in its coordinator's chat: a header naming the
@@ -53,12 +58,14 @@ export function formatCrewThreadAction(input: {
 
 /**
  * One user message to a coordinator, behind its running turn or at once when it is idle, the way
- * the composer's Queue sends.
+ * the composer's Queue sends. It names the crew thread it is about, so Usage moves that thread's
+ * work to this device for a typed reply, and leaves it where it was for a click (`action`).
  */
 export function coordinatorMessageInput(input: {
   readonly coordinator: Pick<EnvironmentThreadShell, "id" | "runtimeMode" | "interactionMode">;
   readonly messageId: MessageId;
   readonly text: string;
+  readonly crewNote: OrchestrationV2CrewNote;
 }) {
   return {
     threadId: input.coordinator.id,
@@ -71,5 +78,6 @@ export function coordinatorMessageInput(input: {
     runtimeMode: input.coordinator.runtimeMode,
     interactionMode: input.coordinator.interactionMode,
     dispatchMode: "queue" as const,
+    crewNote: input.crewNote,
   };
 }

@@ -1,9 +1,9 @@
 import {
   USAGE_ORIGINS_RECORDED_SINCE,
-  type UsageOrigin,
-  type UsageOriginBasis,
-  type UsageOriginClaimKind,
-  type UsageOriginReason,
+  UsageOrigin,
+  UsageOriginBasis,
+  UsageOriginClaimKind,
+  UsageOriginReason,
   type UsageOriginVia,
 } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
@@ -11,6 +11,7 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
@@ -44,6 +45,8 @@ export interface OriginMessage {
   readonly crew: boolean;
   /** A provider's background-task update (`notification`), posted as a prompt. */
   readonly notification: boolean;
+  /** A client's note of a click on a crew thread (a settle or a snooze): nobody typed it. */
+  readonly click?: boolean;
 }
 
 /** A message and the prompt recorded as its cause: its own `causedBy`, else its thread's. */
@@ -53,6 +56,16 @@ export interface CausalMessage extends OriginMessage {
   readonly causedBy: string | null;
   /** The message's thread is a pinned coordinator, such as FirstMate's own thread. */
   readonly coordinator: boolean;
+  readonly threadId?: string;
+  readonly createdAtMs?: number;
+  /** The cause the message itself names; `causedBy` falls back to its thread's. */
+  readonly ownCausedBy?: string | null;
+  /** Bound by value when an agent's thread sent it from a typed turn: it re-roots its thread. */
+  readonly usageOrigin?: UsageOriginKey;
+  /** The crew thread a coordinator message speaks for: a typed reply, or a click (`click`). */
+  readonly crewThreadId?: string;
+  /** The origin its scheduled task was bound to when a turn created it. */
+  readonly scheduledOrigin?: UsageOriginKey;
 }
 
 /** A phone or computer origin. */
@@ -65,6 +78,7 @@ export function classifyMessageOrigin(message: OriginMessage): UsageOriginKey {
 }
 
 function recordedOrigin(message: OriginMessage): UsageOriginKey {
+  if (message.click === true) return { origin: "agent", basis: "stamp", reason: "noCause" };
   const { surface, deviceType } = message;
   if (surface !== null || deviceType !== null) {
     if (surface === "mcp" || deviceType === "bot") {
@@ -127,7 +141,14 @@ export function resolveMessageOrigin(
   claimOfRun: (runId: string) => DeviceOriginKey | undefined = () => undefined,
   // A claim whose cause reaches no device still names its turn, so it is not filed as upkeep.
   runClaimed: (runId: string) => boolean = (runId) => claimOfRun(runId) !== undefined,
+  // A click on a crew thread counts where that thread's work counted then.
+  clickedOf: (prompt: CausalMessage) => UsageOriginKey | undefined = () => undefined,
 ): UsageOriginKey {
+  // A send T3 bound from a typed turn counts there; a click, where its crew thread's work counted.
+  const boundFor = (prompt: CausalMessage, via: UsageOriginVia): UsageOriginKey | undefined => {
+    const key = prompt.usageOrigin ?? (prompt.click === true ? clickedOf(prompt) : undefined);
+    return key === undefined || !isDevice(key) ? undefined : { ...withoutVia(key), via };
+  };
   const claimedFor = (prompt: CausalMessage, via: UsageOriginVia): UsageOriginKey | undefined => {
     const claimed = prompt.runId === null ? undefined : claimOfRun(prompt.runId);
     return claimed === undefined
@@ -144,6 +165,8 @@ export function resolveMessageOrigin(
     return isDevice(direct)
       ? direct
       : (claimedFor(message, "agent") ?? filedFor(message) ?? direct);
+  const ownBound = boundFor(message, direct.origin);
+  if (ownBound !== undefined) return ownBound;
   const seen = new Set([message.id]);
   const visited = [message];
   let current = message;
@@ -153,6 +176,8 @@ export function resolveMessageOrigin(
     seen.add(causeId);
     const cause = causeOf(causeId);
     if (cause === undefined) break;
+    const causeBound = boundFor(cause, direct.origin);
+    if (causeBound !== undefined) return causeBound;
     const root = classifyMessageOrigin(cause);
     if (isDevice(root)) {
       return { origin: root.origin, basis: root.basis, via: direct.origin, reason: "inherited" };
@@ -209,6 +234,211 @@ export function settleOrigin(
     basis: "default",
     ...(sentByAgent(key) ? { via: key.origin } : {}),
   };
+}
+
+const withoutVia = ({
+  via: _via,
+  folder: _folder,
+  registered: _registered,
+  ...key
+}: UsageOriginKey): UsageOriginKey => key;
+const withVia = (key: UsageOriginKey, via: UsageOriginVia | undefined): UsageOriginKey =>
+  via === undefined ? withoutVia(key) : { ...withoutVia(key), via };
+
+const viaOf = (message: CausalMessage): UsageOriginVia | undefined => {
+  const own = classifyMessageOrigin(message);
+  return sentByAgent(own) ? own.origin : undefined;
+};
+
+/** A prompt a person typed on a phone or a computer; a click never is one. */
+const typedOrigin = (message: OriginMessage): DeviceOriginKey | undefined => {
+  const own = classifyMessageOrigin(message);
+  return isDevice(own) ? own : undefined;
+};
+
+/**
+ * Where a message moves the work of its thread from then on: a prompt typed on it, a send T3 bound
+ * from a typed turn, or an older send whose own recorded cause was a typed prompt.
+ */
+function rootOfMessage(
+  message: CausalMessage,
+  causeOf: (messageId: string) => CausalMessage | undefined,
+): UsageOriginKey | undefined {
+  const typed = typedOrigin(message);
+  if (typed !== undefined) return typed;
+  if (message.usageOrigin !== undefined) return message.usageOrigin;
+  const causeId = message.ownCausedBy ?? null;
+  const cause = causeId === null ? undefined : causeOf(causeId);
+  const root = cause === undefined || viaOf(message) === undefined ? undefined : typedOrigin(cause);
+  return root === undefined
+    ? undefined
+    : { origin: root.origin, basis: root.basis, reason: "inherited" };
+}
+
+/** A time from which a work thread's usage counts somewhere: its birth, or a root that moved it. */
+export interface OriginEntry {
+  readonly startedAtMs: number;
+  /** The run of the message that made it; null for a birth or a reply typed on its coordinator. */
+  readonly runId: string | null;
+  readonly key: UsageOriginKey;
+  readonly via?: UsageOriginVia;
+  /** Typed on this thread, so what its run sends re-roots the work it reaches. */
+  readonly typed?: true;
+}
+
+/** A thread that is one piece of work, not a coordinator, with what decides its origin. */
+export interface WorkThread {
+  readonly createdAtMs: number;
+  /** Bound by value at launch, else the device its recorded cause reaches. */
+  readonly birth?: UsageOriginKey;
+  /** Its user messages, oldest first. */
+  readonly messages: readonly CausalMessage[];
+  /** Replies typed on its box, which reach its coordinator's chat instead. */
+  readonly replies: readonly OriginEntry[];
+}
+
+/**
+ * A work thread's origin over time: born where the thread that launched it counted, then moved by
+ * each typed message that reaches it, until the next. A scheduled task's first run is a birth.
+ */
+function workTimeline(
+  thread: WorkThread,
+  causeOf: (messageId: string) => CausalMessage | undefined,
+): OriginEntry[] {
+  const entries: OriginEntry[] =
+    thread.birth === undefined
+      ? []
+      : [{ startedAtMs: thread.createdAtMs, runId: null, key: withoutVia(thread.birth) }];
+  for (const message of thread.messages) {
+    if (message.createdAtMs === undefined) continue;
+    const key =
+      rootOfMessage(message, causeOf) ??
+      (entries.length === 0 ? message.scheduledOrigin : undefined);
+    if (key === undefined) continue;
+    const via = viaOf(message);
+    entries.push({
+      startedAtMs: message.createdAtMs,
+      runId: message.runId,
+      key: withoutVia(key),
+      ...(via === undefined ? {} : { via }),
+      ...(typedOrigin(message) === undefined ? {} : { typed: true }),
+    });
+  }
+  return [...entries, ...thread.replies].toSorted(byStart);
+}
+
+/** A provider turn with what decides where its usage counts. */
+export interface TurnFacts {
+  readonly sessionId: string;
+  readonly threadId: string;
+  readonly runId: string | null;
+  readonly startedAtMs: number;
+  readonly completedAtMs: number | null;
+  /** The message that started its run. */
+  readonly message: CausalMessage | null;
+  readonly coordinator: boolean;
+}
+
+/** Part of a turn that counts one way from its start; `typed` when a typed prompt decided it. */
+export interface OriginSegment extends OriginTurn {
+  readonly typed: boolean;
+}
+
+export interface OriginResolver {
+  readonly causeOf: (messageId: string) => CausalMessage | undefined;
+  /** The recorded resolution: causes, claims, upkeep, and clicks. */
+  readonly originOf: (message: CausalMessage) => UsageOriginKey;
+  readonly claimOfRun: (runId: string) => DeviceOriginKey | undefined;
+  readonly runClaimed: (runId: string) => boolean;
+  readonly timelineOf: (threadId: string) => readonly OriginEntry[];
+  /** A coordinator run's prompts, the starting one included. */
+  readonly runPrompts: (runId: string) => readonly CausalMessage[];
+}
+
+/**
+ * Where a turn's usage counts, split where a typed prompt (or, in a work thread, a root that
+ * re-roots it) arrives mid-turn. A coordinator's turn counts by its own prompt or claim; a work
+ * thread's by its own root, else a claim on it, else the work's origin when it started.
+ */
+function turnSegments(turn: TurnFacts, resolver: OriginResolver): OriginSegment[] {
+  const { message } = turn;
+  const endMs = turn.completedAtMs ?? Number.POSITIVE_INFINITY;
+  const segment = (startedAtMs: number, key: UsageOriginKey, typed: boolean): OriginSegment => ({
+    sessionId: turn.sessionId,
+    threadId: turn.threadId,
+    startedAtMs,
+    completedAtMs: turn.completedAtMs,
+    key,
+    typed,
+  });
+  const within = (atMs: number | undefined): atMs is number =>
+    atMs !== undefined && atMs > turn.startedAtMs && atMs <= endMs;
+  const startTyped = message !== null && typedOrigin(message) !== undefined;
+  const claimed = turn.runId === null ? undefined : resolver.claimOfRun(turn.runId);
+  const first = (key: UsageOriginKey) =>
+    segment(turn.startedAtMs, key, startTyped || key.reason === "journal");
+  if (turn.coordinator) {
+    const unnamedUpkeep = turn.runId === null || !resolver.runClaimed(turn.runId);
+    const own =
+      message !== null ? resolver.originOf(message) : unnamedUpkeep ? NO_PROMPT_UPKEEP : NO_PROMPT;
+    const key =
+      isDevice(own) || claimed === undefined
+        ? own
+        : { ...claimed, via: sentByAgent(own) ? own.origin : "agent", claim: "run" as const };
+    const steers = (turn.runId === null ? [] : resolver.runPrompts(turn.runId)).flatMap(
+      (prompt) => {
+        const typed = typedOrigin(prompt);
+        return typed !== undefined && prompt.id !== message?.id && within(prompt.createdAtMs)
+          ? [segment(prompt.createdAtMs, typed, true)]
+          : [];
+      },
+    );
+    return [first(key), ...steers].toSorted(byStart);
+  }
+  const timeline = resolver.timelineOf(turn.threadId);
+  const via = message === null ? undefined : viaOf(message);
+  const own =
+    message === null
+      ? undefined
+      : (rootOfMessage(message, resolver.causeOf) ?? message.scheduledOrigin);
+  const inherited = startedBy(timeline, turn.startedAtMs);
+  const key =
+    own !== undefined
+      ? withVia(own, via)
+      : claimed !== undefined
+        ? { ...claimed, via: via ?? "agent", claim: "run" as const }
+        : inherited !== undefined
+          ? withVia(inherited.key, via)
+          : message !== null
+            ? resolver.originOf(message)
+            : NO_PROMPT;
+  const reroots = timeline.flatMap((entry) =>
+    within(entry.startedAtMs) && (entry.runId === null || entry.runId === turn.runId)
+      ? [
+          segment(
+            entry.startedAtMs,
+            withVia(entry.key, entry.via),
+            entry.typed === true && entry.runId === turn.runId,
+          ),
+        ]
+      : [],
+  );
+  return [first(key), ...reroots].toSorted(byStart);
+}
+
+/** Where a prompt counts, by the same rules as the turn it starts. */
+function promptOrigin(message: CausalMessage, resolver: OriginResolver): UsageOriginKey {
+  if (message.coordinator || message.threadId === undefined) return resolver.originOf(message);
+  const via = viaOf(message);
+  const own = rootOfMessage(message, resolver.causeOf) ?? message.scheduledOrigin;
+  if (own !== undefined) return withVia(own, via);
+  const claimed = message.runId === null ? undefined : resolver.claimOfRun(message.runId);
+  if (claimed !== undefined) return { ...claimed, via: via ?? "agent", claim: "run" };
+  const inherited =
+    message.createdAtMs === undefined
+      ? undefined
+      : startedBy(resolver.timelineOf(message.threadId), message.createdAtMs);
+  return inherited !== undefined ? withVia(inherited.key, via) : resolver.originOf(message);
 }
 
 /** A provider turn of one native session, keyed by the run's starting message. */
@@ -448,6 +678,17 @@ export class UsageOriginsReadError extends Schema.TaggedError<UsageOriginsReadEr
   }
 }
 
+/**
+ * Where a thread's work counted at a moment, as T3 binds it when that thread launches or sends
+ * work. `reroots` when a prompt typed in the turn running then (or a voice journal) decided it.
+ */
+export interface BoundOrigin {
+  readonly key: UsageOriginKey;
+  readonly reroots: boolean;
+  /** The run of the turn running then, if one was. */
+  readonly runId: string | null;
+}
+
 export class UsageOrigins extends Context.Service<
   UsageOrigins,
   {
@@ -455,11 +696,75 @@ export class UsageOrigins extends Context.Service<
       sinceMs: number,
       untilMs: number,
     ) => Effect.Effect<UsageOriginSnapshot, UsageOriginsReadError>;
+    /** Null when T3 has no such thread. */
+    readonly originAt: (
+      threadId: string,
+      atMs: number,
+    ) => Effect.Effect<BoundOrigin | null, UsageOriginsReadError>;
+    /** Every run of the scheduled task counts here from now on. */
+    readonly bindScheduledTask: (
+      taskId: string,
+      key: UsageOriginKey,
+    ) => Effect.Effect<void, UsageOriginsReadError>;
   }
 >()("t3/usage/UsageOrigins") {}
 
+/** The origin T3 stores by value for work it binds, stripped of how this read matched it. */
+export const storedOrigin = (key: UsageOriginKey) => ({
+  origin: key.origin,
+  basis: key.basis,
+  // The bound work was not typed itself: it inherits the typed prompt behind it.
+  reason: key.reason === "typed" ? "inherited" : key.reason,
+  ...(key.claim === undefined ? {} : { claim: key.claim }),
+});
+
+const StoredOriginJson = Schema.fromJsonString(
+  Schema.Struct({
+    origin: UsageOrigin,
+    basis: UsageOriginBasis,
+    reason: UsageOriginReason,
+    claim: Schema.optional(UsageOriginClaimKind),
+  }),
+);
+const decodeStoredOrigin = Schema.decodeUnknownOption(StoredOriginJson);
+const encodeStoredOrigin = Schema.encodeSync(StoredOriginJson);
+
+const isBasis = Schema.is(UsageOriginBasis);
+const isReason = Schema.is(UsageOriginReason);
+const isClaimKind = Schema.is(UsageOriginClaimKind);
+
+/** A claim's device bound by value, with how the work it came from was read. */
+const boundClaimKey = (
+  origin: "phone" | "computer",
+  bound: UsageClaims.UsageClaimBinding,
+): UsageOriginKey | undefined =>
+  isBasis(bound.basis) &&
+  isReason(bound.reason) &&
+  (bound.claim === undefined || isClaimKind(bound.claim))
+    ? {
+        origin,
+        basis: bound.basis,
+        reason: bound.reason,
+        ...(bound.claim === undefined ? {} : { claim: bound.claim }),
+      }
+    : undefined;
+
+/** Bound for work whose thread has nothing recorded to count it by. */
+const NO_ORIGIN_BOUND: UsageOriginKey = { origin: "unknown", basis: "default", reason: "noCause" };
+
+/** A stored origin a later version cannot read is left out rather than guessed. */
+const storedOriginOf = (json: string | null): UsageOriginKey | undefined => {
+  if (json === null) return undefined;
+  const decoded = decodeStoredOrigin(json);
+  if (Option.isNone(decoded)) return undefined;
+  const { claim, ...key } = decoded.value;
+  return claim === undefined ? key : { ...key, claim };
+};
+
 interface MessageColumns {
   readonly message_id: string;
+  readonly message_thread_id: string | null;
+  readonly message_created_at: string | null;
   readonly run_id: string | null;
   readonly created_by: string | null;
   readonly creation_source: string | null;
@@ -468,26 +773,47 @@ interface MessageColumns {
   readonly crew: number;
   readonly notification: number;
   readonly caused_by: string | null;
+  readonly own_caused_by: string | null;
+  readonly usage_origin: string | null;
+  readonly crew_thread_id: string | null;
+  readonly crew_note_kind: string | null;
+  readonly scheduled_task_id: string | null;
   readonly coordinator: number;
 }
-
-const messageOf = (row: MessageColumns): CausalMessage => ({
-  id: row.message_id,
-  runId: row.run_id,
-  createdBy: row.created_by,
-  creationSource: row.creation_source,
-  surface: row.surface,
-  deviceType: row.device_type,
-  crew: row.crew === 1,
-  notification: row.notification === 1,
-  causedBy: row.caused_by,
-  coordinator: row.coordinator === 1,
-});
 
 const parseMs = (value: string | null): number | null => {
   if (value === null) return null;
   const parsed = Date.parse(value);
   return Number.isNaN(parsed) ? null : parsed;
+};
+
+const messageOf = (
+  row: MessageColumns,
+  scheduledOrigins: ReadonlyMap<string, UsageOriginKey>,
+): CausalMessage => {
+  const createdAtMs = parseMs(row.message_created_at);
+  const usageOrigin = storedOriginOf(row.usage_origin);
+  const scheduledOrigin =
+    row.scheduled_task_id === null ? undefined : scheduledOrigins.get(row.scheduled_task_id);
+  return {
+    id: row.message_id,
+    runId: row.run_id,
+    createdBy: row.created_by,
+    creationSource: row.creation_source,
+    surface: row.surface,
+    deviceType: row.device_type,
+    crew: row.crew === 1,
+    notification: row.notification === 1,
+    causedBy: row.caused_by,
+    coordinator: row.coordinator === 1,
+    ownCausedBy: row.own_caused_by,
+    ...(row.crew_note_kind === "action" ? { click: true } : {}),
+    ...(row.message_thread_id === null ? {} : { threadId: row.message_thread_id }),
+    ...(createdAtMs === null ? {} : { createdAtMs }),
+    ...(usageOrigin === undefined ? {} : { usageOrigin }),
+    ...(row.crew_thread_id === null ? {} : { crewThreadId: row.crew_thread_id }),
+    ...(scheduledOrigin === undefined ? {} : { scheduledOrigin }),
+  };
 };
 
 const encodeIds = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.String)));
@@ -559,14 +885,8 @@ const make = Effect.gen(function* () {
     });
   });
 
-  // Columns of `message` (joined to its `thread`) that classify it and name its cause.
-  const messageColumns = sql.literal(`
-    message.message_id,
-    message.run_id,
-    json_extract(message.payload_json, '$.createdBy') AS created_by,
-    json_extract(message.payload_json, '$.creationSource') AS creation_source,
-    json_extract(message.payload_json, '$.origin.surface') AS surface,
-    json_extract(message.payload_json, '$.origin.deviceType') AS device_type,
+  // Columns of `thread` that say whether it is crew or a coordinator.
+  const threadKind = `
     (
       json_extract(thread.payload_json, '$.crewOf') IS NOT NULL
       OR EXISTS (
@@ -575,16 +895,53 @@ const make = Effect.gen(function* () {
           AND json_extract(root.payload_json, '$.crewOf') IS NOT NULL
       )
     ) AS crew,
+    coalesce(json_extract(thread.payload_json, '$.coordinator') = 1, 0) AS coordinator`;
+
+  // Columns of `message` (joined to its `thread`) that classify it and name its cause.
+  const messageColumns = sql.literal(`
+    message.message_id,
+    message.thread_id AS message_thread_id,
+    message.created_at AS message_created_at,
+    message.run_id,
+    json_extract(message.payload_json, '$.createdBy') AS created_by,
+    json_extract(message.payload_json, '$.creationSource') AS creation_source,
+    json_extract(message.payload_json, '$.origin.surface') AS surface,
+    json_extract(message.payload_json, '$.origin.deviceType') AS device_type,
     json_extract(message.payload_json, '$.notification') IS NOT NULL AS notification,
     coalesce(
       json_extract(message.payload_json, '$.causedBy.messageId'),
       json_extract(thread.payload_json, '$.causedBy.messageId')
     ) AS caused_by,
-    coalesce(json_extract(thread.payload_json, '$.coordinator') = 1, 0) AS coordinator`);
+    json_extract(message.payload_json, '$.causedBy.messageId') AS own_caused_by,
+    json_extract(message.payload_json, '$.usageOrigin') AS usage_origin,
+    json_extract(message.payload_json, '$.crewNote.threadId') AS crew_thread_id,
+    json_extract(message.payload_json, '$.crewNote.kind') AS crew_note_kind,
+    json_extract(message.payload_json, '$.scheduledTaskId') AS scheduled_task_id,
+    ${threadKind}`);
+  const fromMessages = sql.literal(`
+    FROM orchestration_v2_projection_messages AS message
+    LEFT JOIN orchestration_v2_projection_threads AS thread
+      ON thread.thread_id = message.thread_id`);
+
+  const loadScheduledOrigins = sql<{ readonly task_id: string; readonly origin_json: string }>`
+    SELECT task_id, origin_json FROM usage_scheduled_task_origins
+  `.pipe(
+    NodeSqliteClient.readOnly,
+    Effect.map(
+      (rows) =>
+        new Map(
+          rows.flatMap((row) => {
+            const key = storedOriginOf(row.origin_json);
+            return key === undefined ? [] : [[row.task_id, key] as const];
+          }),
+        ),
+    ),
+  );
 
   // Loads the recorded causes of agent prompts, one chain hop per query.
   const loadCauses = Effect.fn("UsageOrigins.loadCauses")(function* (
     messages: ReadonlyArray<CausalMessage>,
+    toMessage: (row: MessageColumns) => CausalMessage,
   ) {
     const loaded = new Map<string, CausalMessage>();
     const causesToLoad = (from: ReadonlyArray<CausalMessage>) =>
@@ -600,37 +957,44 @@ const make = Effect.gen(function* () {
     let pending = causesToLoad(messages);
     for (let depth = 0; depth < MAX_CAUSE_DEPTH && pending.size > 0; depth++) {
       const rows = yield* sql<MessageColumns>`
-        SELECT ${messageColumns}
-        FROM orchestration_v2_projection_messages AS message
-        LEFT JOIN orchestration_v2_projection_threads AS thread
-          ON thread.thread_id = message.thread_id
+        SELECT ${messageColumns} ${fromMessages}
         WHERE message.message_id IN (SELECT value FROM json_each(${encodeIds([...pending])}))
       `.pipe(NodeSqliteClient.readOnly);
-      const found = rows.map(messageOf);
+      const found = rows.map(toMessage);
       for (const message of found) loaded.set(message.id, message);
       pending = causesToLoad(found);
     }
     return loaded;
   });
 
-  const read = Effect.fn("UsageOrigins.read")(
-    function* (sinceMs: number, untilMs: number) {
-      const iso = (ms: number) => DateTime.formatIso(DateTime.makeUnsafe(ms));
-      const since = iso(sinceMs);
-      const until = iso(untilMs);
-      const turnsSince = iso(sinceMs - TURN_LOOKBACK_MS);
-      // A run's sender is its userMessageId's origin; later steering messages do not split it.
-      const turnRows = yield* sql<
-        Omit<MessageColumns, "message_id"> & {
-          readonly message_id: string | null;
-          readonly session_id: string | null;
-          readonly thread_id: string;
-          readonly turn_run_id: string | null;
-          readonly worktree_path: string | null;
-          readonly started_at: string | null;
-          readonly completed_at: string | null;
-        }
-      >`
+  const iso = (ms: number) => DateTime.formatIso(DateTime.makeUnsafe(ms));
+  const ids = (list: Iterable<string>) => encodeIds([...new Set(list)]);
+
+  /**
+   * What places the provider turns started in [turnsSince, until) (only `onlyThread`'s, if
+   * given) and the prompts since `promptsSince`: their messages, causes, claims, and the history
+   * of every work thread among them or clicked on.
+   */
+  const collect = Effect.fn("UsageOrigins.collect")(function* (input: {
+    readonly turnsSinceMs: number;
+    readonly untilMs: number;
+    readonly promptsSinceMs?: number;
+    readonly onlyThread?: string;
+  }) {
+    const until = iso(input.untilMs);
+    const scheduledOrigins = yield* loadScheduledOrigins;
+    const toMessage = (row: MessageColumns) => messageOf(row, scheduledOrigins);
+    const turnRows = yield* sql<
+      Omit<MessageColumns, "message_id"> & {
+        readonly message_id: string | null;
+        readonly session_id: string | null;
+        readonly thread_id: string;
+        readonly turn_run_id: string | null;
+        readonly worktree_path: string | null;
+        readonly started_at: string | null;
+        readonly completed_at: string | null;
+      }
+    >`
       SELECT json_extract(provider_thread.payload_json, '$.nativeThreadRef.nativeId') AS session_id,
         turn.thread_id,
         run.run_id AS turn_run_id,
@@ -647,127 +1011,292 @@ const make = Effect.gen(function* () {
       LEFT JOIN orchestration_v2_projection_messages AS message
         ON message.message_id = json_extract(run.payload_json, '$.userMessageId')
       LEFT JOIN orchestration_v2_projection_threads AS thread ON thread.thread_id = turn.thread_id
-      WHERE turn.started_at >= ${turnsSince} AND turn.started_at < ${until}
+      WHERE turn.started_at >= ${iso(input.turnsSinceMs)} AND turn.started_at < ${until}
+        ${input.onlyThread === undefined ? sql`` : sql`AND turn.thread_id = ${input.onlyThread}`}
     `.pipe(NodeSqliteClient.readOnly);
-      const promptRows = yield* sql<MessageColumns & { readonly created_at: string }>`
-      SELECT message.created_at, ${messageColumns}
-      FROM orchestration_v2_projection_messages AS message
-      LEFT JOIN orchestration_v2_projection_threads AS thread
-        ON thread.thread_id = message.thread_id
-      WHERE message.role = 'user' AND message.created_at >= ${since} AND message.created_at < ${until}
-    `.pipe(NodeSqliteClient.readOnly);
+    const promptRows =
+      input.promptsSinceMs === undefined
+        ? []
+        : yield* sql<MessageColumns>`
+            SELECT ${messageColumns} ${fromMessages}
+            WHERE message.role = 'user' AND message.created_at >= ${iso(input.promptsSinceMs)}
+              AND message.created_at < ${until}
+          `.pipe(NodeSqliteClient.readOnly);
+    const turnMessages = turnRows.map((row) =>
+      row.message_id === null ? null : toMessage({ ...row, message_id: row.message_id }),
+    );
+    const promptMessages = promptRows.map(toMessage);
+    // A coordinator's typed prompts that arrive mid-turn.
+    const coordinatorRunIds = turnRows.flatMap((row) =>
+      row.coordinator === 1 && row.turn_run_id !== null ? [row.turn_run_id] : [],
+    );
+    const runPromptMessages = (
+      coordinatorRunIds.length === 0
+        ? []
+        : yield* sql<MessageColumns>`
+            SELECT ${messageColumns} ${fromMessages}
+            WHERE message.role = 'user' AND message.created_at < ${until}
+              AND message.run_id IN (SELECT value FROM json_each(${ids(coordinatorRunIds)}))
+          `.pipe(NodeSqliteClient.readOnly)
+    ).map(toMessage);
+    const runPrompts = new Map<string, CausalMessage[]>();
+    for (const prompt of runPromptMessages) {
+      if (prompt.runId !== null) appendTo(runPrompts, prompt.runId, [prompt]);
+    }
 
-      const turnMessages = turnRows.map((row) =>
-        row.message_id === null ? null : messageOf({ ...row, message_id: row.message_id }),
-      );
-      const promptMessages = promptRows.map(messageOf);
-      // A claim names a device, or counts like an agent prompt caused by the prompt it names.
-      const claimRows = yield* claims.read;
-      const claimMessage = (claim: UsageClaims.StoredUsageClaim): CausalMessage | null =>
-        claim.causeMessageId === null
-          ? null
-          : {
-              id: `usage-claim:${claim.kind}:${claim.target}:${claim.fromMs ?? ""}`,
+    // Work threads: those with a turn or a prompt here, and those a click was about.
+    const workCandidates = new Set<string>(
+      input.onlyThread === undefined ? [] : [input.onlyThread],
+    );
+    for (const row of turnRows) if (row.coordinator !== 1) workCandidates.add(row.thread_id);
+    for (const message of [...turnMessages, ...promptMessages, ...runPromptMessages]) {
+      if (message === null) continue;
+      if (!message.coordinator && message.threadId !== undefined)
+        workCandidates.add(message.threadId);
+      if (message.click === true && message.crewThreadId !== undefined)
+        workCandidates.add(message.crewThreadId);
+    }
+    const workRows =
+      workCandidates.size === 0
+        ? []
+        : (yield* sql<{
+            readonly thread_id: string;
+            readonly created_at: string;
+            readonly usage_origin: string | null;
+            readonly caused_by: string | null;
+            readonly crew_of: string | null;
+            readonly crew: number;
+            readonly coordinator: number;
+          }>`
+            SELECT thread.thread_id, thread.created_at,
+              json_extract(thread.payload_json, '$.usageOrigin') AS usage_origin,
+              json_extract(thread.payload_json, '$.causedBy.messageId') AS caused_by,
+              json_extract(thread.payload_json, '$.crewOf') AS crew_of,
+              ${sql.literal(threadKind)}
+            FROM orchestration_v2_projection_threads AS thread
+            WHERE thread.thread_id IN (SELECT value FROM json_each(${ids(workCandidates)}))
+          `.pipe(NodeSqliteClient.readOnly)).filter((row) => row.coordinator !== 1);
+    const workMessages = (
+      workRows.length === 0
+        ? []
+        : yield* sql<MessageColumns>`
+            SELECT ${messageColumns} ${fromMessages}
+            WHERE message.role = 'user' AND message.created_at < ${until}
+              AND message.thread_id IN (SELECT value FROM json_each(${ids(workRows.map((row) => row.thread_id))}))
+            ORDER BY message.created_at, message.message_id
+          `.pipe(NodeSqliteClient.readOnly)
+    ).map(toMessage);
+    // Replies typed on a work thread's box are user messages in its coordinator's chat.
+    const coordinatorIds = workRows.flatMap((row) => (row.crew_of === null ? [] : [row.crew_of]));
+    const replyMessages = (
+      coordinatorIds.length === 0
+        ? []
+        : yield* sql<MessageColumns>`
+            SELECT ${messageColumns} ${fromMessages}
+            WHERE message.role = 'user' AND message.created_at < ${until}
+              AND message.thread_id IN (SELECT value FROM json_each(${ids(coordinatorIds)}))
+              AND json_extract(message.payload_json, '$.crewNote.kind') = 'reply'
+          `.pipe(NodeSqliteClient.readOnly)
+    ).map(toMessage);
+    // An older work thread's recorded cause, as an agent prompt sent for it.
+    const births = workRows.flatMap((row): CausalMessage[] =>
+      row.caused_by === null
+        ? []
+        : [
+            {
+              id: `thread-birth:${row.thread_id}`,
               runId: null,
               createdBy: "agent",
               creationSource: "mcp",
               surface: "mcp",
               deviceType: "bot",
-              crew: false,
+              crew: row.crew === 1,
               notification: false,
-              causedBy: claim.causeMessageId,
+              causedBy: row.caused_by,
               coordinator: false,
-            };
+            },
+          ],
+    );
+    // A claim names a device, or counts like an agent prompt caused by the prompt it names.
+    const claimRows = yield* claims.read;
+    const claimMessage = (claim: UsageClaims.StoredUsageClaim): CausalMessage | null =>
+      claim.causeMessageId === null
+        ? null
+        : {
+            id: `usage-claim:${claim.kind}:${claim.target}:${claim.fromMs ?? ""}`,
+            runId: null,
+            createdBy: "agent",
+            creationSource: "mcp",
+            surface: "mcp",
+            deviceType: "bot",
+            crew: false,
+            notification: false,
+            causedBy: claim.causeMessageId,
+            coordinator: false,
+          };
+    const causes = yield* loadCauses(
+      [
+        ...turnMessages.filter((message) => message !== null),
+        ...promptMessages,
+        ...runPromptMessages,
+        ...workMessages,
+        ...births,
+        ...claimRows.flatMap((claim) => claimMessage(claim) ?? []),
+      ],
+      toMessage,
+    );
+    const causeOf = (id: string) => causes.get(id);
+    const runClaims = new Map(
+      claimRows.flatMap((claim) => (claim.kind === "run" ? [[claim.target, claim] as const] : [])),
+    );
+    const runClaimed = (runId: string) => runClaims.has(runId);
+    // A run claim reached again while it resolves is a cycle and counts to no device.
+    const settledRunClaims = new Map<string, DeviceOriginKey | undefined>();
+    const resolving: string[] = [];
+    let cycleAt = Number.POSITIVE_INFINITY;
+    const claimOfRun = (runId: string): DeviceOriginKey | undefined => {
+      if (settledRunClaims.has(runId)) return settledRunClaims.get(runId);
+      const ancestor = resolving.indexOf(runId);
+      if (ancestor >= 0) {
+        cycleAt = Math.min(cycleAt, ancestor);
+        return undefined;
+      }
+      const claim = runClaims.get(runId);
+      if (claim === undefined) return undefined;
+      const depth = resolving.length;
+      const outerCycleAt = cycleAt;
+      cycleAt = Number.POSITIVE_INFINITY;
+      resolving.push(runId);
+      const key = claimKey(claim);
+      resolving.pop();
+      const settled = isDevice(key)
+        ? { origin: key.origin, basis: key.basis, reason: key.reason }
+        : undefined;
+      if (cycleAt >= depth) settledRunClaims.set(runId, settled);
+      cycleAt = Math.min(outerCycleAt, cycleAt < depth ? cycleAt : Number.POSITIVE_INFINITY);
+      return settled;
+    };
+    const originOf = (message: CausalMessage) =>
+      resolveMessageOrigin(message, causeOf, claimOfRun, runClaimed, (prompt) =>
+        prompt.crewThreadId === undefined || prompt.createdAtMs === undefined
+          ? undefined
+          : startedBy(timelineOf(prompt.crewThreadId), prompt.createdAtMs)?.key,
+      );
+    const claimKey = (claim: UsageClaims.StoredUsageClaim): UsageOriginKey => {
+      const message = claimMessage(claim);
+      if (message !== null) return originOf(message);
+      const origin = claim.device ?? "computer";
+      // Bound by value from a thread's work when it was claimed.
+      const bound = claim.bound === undefined ? undefined : boundClaimKey(origin, claim.bound);
+      if (bound !== undefined) return { ...bound, via: "agent" };
+      // FirstMate claims the phone for voice-journal work and the computer for upkeep.
+      return {
+        origin,
+        basis: "claim",
+        via: "agent",
+        reason: origin === "phone" ? "journal" : "upkeep",
+      };
+    };
+
+    const workById = new Map(workRows.map((row) => [row.thread_id, row]));
+    const birthByThread = new Map(
+      births.map((birth) => [birth.id.slice("thread-birth:".length), birth]),
+    );
+    const messagesByThread = new Map<string, CausalMessage[]>();
+    for (const message of workMessages) {
+      if (message.threadId !== undefined) appendTo(messagesByThread, message.threadId, [message]);
+    }
+    const repliesByThread = new Map<string, OriginEntry[]>();
+    for (const reply of replyMessages) {
+      const typed = reply.click === true ? undefined : typedOrigin(reply);
+      if (typed === undefined || reply.crewThreadId === undefined) continue;
+      if (reply.createdAtMs === undefined) continue;
+      appendTo(repliesByThread, reply.crewThreadId, [
+        {
+          startedAtMs: reply.createdAtMs,
+          runId: null,
+          key: { origin: typed.origin, basis: typed.basis, reason: "inherited" },
+        },
+      ]);
+    }
+    const timelines = new Map<string, readonly OriginEntry[]>();
+    const building = new Set<string>();
+    const timelineOf = (threadId: string): readonly OriginEntry[] => {
+      const known = timelines.get(threadId);
+      if (known !== undefined) return known;
+      const row = workById.get(threadId);
+      // A birth that leads back to this thread while it is read counts to nothing more.
+      if (row === undefined || building.has(threadId)) return [];
+      building.add(threadId);
+      const recordedCause = birthByThread.get(threadId);
+      const recorded = recordedCause === undefined ? undefined : originOf(recordedCause);
+      const birth =
+        storedOriginOf(row.usage_origin) ??
+        (recorded !== undefined && isDevice(recorded) ? recorded : undefined);
+      const timeline = workTimeline(
+        {
+          createdAtMs: parseMs(row.created_at) ?? Number.NEGATIVE_INFINITY,
+          ...(birth === undefined ? {} : { birth }),
+          messages: messagesByThread.get(threadId) ?? [],
+          replies: repliesByThread.get(threadId) ?? [],
+        },
+        causeOf,
+      );
+      building.delete(threadId);
+      timelines.set(threadId, timeline);
+      return timeline;
+    };
+    const resolver: OriginResolver = {
+      causeOf,
+      originOf,
+      claimOfRun,
+      runClaimed,
+      timelineOf,
+      runPrompts: (runId) => runPrompts.get(runId) ?? [],
+    };
+
+    const turns: TurnFacts[] = [];
+    const worktrees = new Map<string, string>();
+    turnRows.forEach((row, index) => {
+      if (row.worktree_path !== null) worktrees.set(row.thread_id, row.worktree_path);
+      const startedAtMs = parseMs(row.started_at);
+      if (row.session_id === null || startedAtMs === null) return;
+      turns.push({
+        sessionId: row.session_id,
+        threadId: row.thread_id,
+        runId: row.turn_run_id,
+        startedAtMs,
+        completedAtMs: parseMs(row.completed_at),
+        message: turnMessages[index] ?? null,
+        coordinator: row.coordinator === 1,
+      });
+    });
+    return { turns, worktrees, promptMessages, claimRows, claimKey, resolver };
+  });
+
+  const read = Effect.fn("UsageOrigins.read")(
+    function* (sinceMs: number, untilMs: number) {
+      const facts = yield* collect({
+        turnsSinceMs: sinceMs - TURN_LOOKBACK_MS,
+        untilMs,
+        promptsSinceMs: sinceMs,
+      });
       const registrations = yield* resolveRegistrations(
         yield* register.read(sinceMs - TURN_LOOKBACK_MS, untilMs),
       );
-      const causes = yield* loadCauses([
-        ...turnMessages.filter((message) => message !== null),
-        ...promptMessages,
-        ...claimRows.flatMap((claim) => claimMessage(claim) ?? []),
-      ]);
-      const runClaims = new Map(
-        claimRows.flatMap((claim) =>
-          claim.kind === "run" ? [[claim.target, claim] as const] : [],
-        ),
+      const turns = facts.turns.flatMap((turn) =>
+        turnSegments(turn, facts.resolver).map(({ typed: _typed, ...segment }) => segment),
       );
-      const runClaimed = (runId: string) => runClaims.has(runId);
-      // A run claim reached again while it resolves is a cycle and counts to no device.
-      const settledRunClaims = new Map<string, DeviceOriginKey | undefined>();
-      const resolving: string[] = [];
-      let cycleAt = Number.POSITIVE_INFINITY;
-      const claimOfRun = (runId: string): DeviceOriginKey | undefined => {
-        if (settledRunClaims.has(runId)) return settledRunClaims.get(runId);
-        const ancestor = resolving.indexOf(runId);
-        if (ancestor >= 0) {
-          cycleAt = Math.min(cycleAt, ancestor);
-          return undefined;
-        }
-        const claim = runClaims.get(runId);
-        if (claim === undefined) return undefined;
-        const depth = resolving.length;
-        const outerCycleAt = cycleAt;
-        cycleAt = Number.POSITIVE_INFINITY;
-        resolving.push(runId);
-        const key = claimKey(claim);
-        resolving.pop();
-        const settled = isDevice(key)
-          ? { origin: key.origin, basis: key.basis, reason: key.reason }
-          : undefined;
-        if (cycleAt >= depth) settledRunClaims.set(runId, settled);
-        cycleAt = Math.min(outerCycleAt, cycleAt < depth ? cycleAt : Number.POSITIVE_INFINITY);
-        return settled;
-      };
-      const originOf = (message: CausalMessage) =>
-        resolveMessageOrigin(message, (id) => causes.get(id), claimOfRun, runClaimed);
-      const claimKey = (claim: UsageClaims.StoredUsageClaim): UsageOriginKey => {
-        const message = claimMessage(claim);
-        if (message !== null) return originOf(message);
-        // FirstMate claims the phone for voice-journal work and the computer for upkeep.
-        const origin = claim.device ?? "computer";
-        return {
-          origin,
-          basis: "claim",
-          via: "agent",
-          reason: origin === "phone" ? "journal" : "upkeep",
-        };
-      };
-
-      const turns: OriginTurn[] = [];
-      const worktrees = new Map<string, string>();
-      turnRows.forEach((row, index) => {
-        if (row.worktree_path !== null) worktrees.set(row.thread_id, row.worktree_path);
-        const startedAtMs = parseMs(row.started_at);
-        if (row.session_id === null || startedAtMs === null) return;
-        const message = turnMessages[index] ?? null;
-        const unnamedUpkeep =
-          row.coordinator === 1 && (row.turn_run_id === null || !runClaimed(row.turn_run_id));
-        const own =
-          message !== null ? originOf(message) : unnamedUpkeep ? NO_PROMPT_UPKEEP : NO_PROMPT;
-        // A claimed turn counts there unless its own prompt already traces to a device.
-        const claimed = row.turn_run_id === null ? undefined : claimOfRun(row.turn_run_id);
-        turns.push({
-          sessionId: row.session_id,
-          threadId: row.thread_id,
-          startedAtMs,
-          completedAtMs: parseMs(row.completed_at),
-          key:
-            isDevice(own) || claimed === undefined
-              ? own
-              : { ...claimed, via: sentByAgent(own) ? own.origin : "agent", claim: "run" },
-        });
-      });
-      const prompts: OriginPrompt[] = [];
-      promptRows.forEach((row, index) => {
-        const createdAtMs = parseMs(row.created_at);
-        if (createdAtMs !== null)
-          prompts.push({ createdAtMs, key: originOf(promptMessages[index]!) });
-      });
+      const prompts = facts.promptMessages.flatMap((message): OriginPrompt[] =>
+        message.createdAtMs === undefined
+          ? []
+          : [{ createdAtMs: message.createdAtMs, key: promptOrigin(message, facts.resolver) }],
+      );
       return {
         turns,
         prompts,
-        worktrees: [...worktrees].map(([threadId, directory]) => ({ threadId, directory })),
-        claims: claimRows.flatMap((claim): OriginClaim[] =>
+        worktrees: [...facts.worktrees].map(([threadId, directory]) => ({ threadId, directory })),
+        claims: facts.claimRows.flatMap((claim): OriginClaim[] =>
           claim.kind === "run"
             ? []
             : [
@@ -775,7 +1304,7 @@ const make = Effect.gen(function* () {
                   kind: claim.kind,
                   target: claim.target,
                   fromMs: claim.fromMs,
-                  key: claimKey(claim),
+                  key: facts.claimKey(claim),
                 },
               ],
         ),
@@ -785,7 +1314,65 @@ const make = Effect.gen(function* () {
     Effect.mapError((cause) => new UsageOriginsReadError({ cause })),
   );
 
-  return UsageOrigins.of({ read });
+  const originAt = Effect.fn("UsageOrigins.originAt")(
+    function* (threadId: string, atMs: number) {
+      const [thread] = yield* sql<{ readonly coordinator: number }>`
+        SELECT coalesce(json_extract(payload_json, '$.coordinator') = 1, 0) AS coordinator
+        FROM orchestration_v2_projection_threads WHERE thread_id = ${threadId}
+      `.pipe(NodeSqliteClient.readOnly);
+      if (thread === undefined) return null;
+      const facts = yield* collect({
+        turnsSinceMs: atMs - TURN_LOOKBACK_MS,
+        untilMs: atMs + 1,
+        onlyThread: threadId,
+      });
+      // The turn running then; a job that outlived its turn names when it began.
+      const turn = startedBy(facts.turns.toSorted(byStart), atMs);
+      if (
+        turn !== undefined &&
+        (turn.completedAtMs === null || atMs <= turn.completedAtMs + LATE_RECORD_GRACE_MS)
+      ) {
+        const segment = startedBy(turnSegments(turn, facts.resolver), atMs);
+        if (segment !== undefined)
+          return {
+            key: segment.key,
+            reroots: segment.typed,
+            runId: turn.runId,
+          } satisfies BoundOrigin;
+      }
+      // A coordinator acting between its turns does its own upkeep.
+      if (thread.coordinator === 1) return { key: NO_PROMPT_UPKEEP, reroots: false, runId: null };
+      const entry = startedBy(facts.resolver.timelineOf(threadId), atMs);
+      return {
+        key: entry?.key ?? NO_ORIGIN_BOUND,
+        reroots: false,
+        runId: null,
+      } satisfies BoundOrigin;
+    },
+    Effect.mapError((cause) => new UsageOriginsReadError({ cause })),
+  );
+
+  const bindScheduledTask = Effect.fn("UsageOrigins.bindScheduledTask")(
+    function* (taskId: string, key: UsageOriginKey) {
+      const boundAt = DateTime.formatIso(yield* DateTime.now);
+      yield* sql`
+        INSERT INTO usage_scheduled_task_origins (task_id, origin_json, bound_at)
+        VALUES (${taskId}, ${encodeStoredOrigin(storedOrigin(key))}, ${boundAt})
+        ON CONFLICT (task_id) DO UPDATE SET
+          origin_json = excluded.origin_json,
+          bound_at = excluded.bound_at
+      `;
+    },
+    Effect.mapError((cause) => new UsageOriginsReadError({ cause })),
+  );
+
+  return UsageOrigins.of({ read, originAt, bindScheduledTask });
 });
 
 export const layer = Layer.effect(UsageOrigins, make);
+
+/** For tests of the tools that bind origins: binds nothing. */
+export const layerTest = Layer.mock(UsageOrigins)({
+  originAt: () => Effect.succeed(null),
+  bindScheduledTask: () => Effect.void,
+});

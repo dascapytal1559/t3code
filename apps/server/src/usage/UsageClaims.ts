@@ -5,7 +5,9 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import type * as SqlError from "effect/sql/SqlError";
 
@@ -21,10 +23,20 @@ export type UsageClaimTarget =
 
 export type UsageClaimDevice = "phone" | "computer";
 
-/** What a claim counts its target to: the prompt that caused it, or a device directly. */
+/** How a device bound by value was read: the basis and reason of the work it was copied from. */
+export interface UsageClaimBinding {
+  readonly basis: string;
+  readonly reason: string;
+  readonly claim?: string;
+}
+
+/**
+ * What a claim counts its target to: the prompt that caused it, a device directly, or a device
+ * bound by value from a thread's work, with how that work counted.
+ */
 export type UsageClaimValue =
   | { readonly causedBy: OrchestrationV2CausedBy }
-  | { readonly device: UsageClaimDevice };
+  | { readonly device: UsageClaimDevice; readonly bound?: UsageClaimBinding };
 
 export interface StoredUsageClaim {
   readonly kind: UsageClaimTarget["kind"];
@@ -34,7 +46,24 @@ export interface StoredUsageClaim {
   readonly fromMs?: number;
   readonly causeMessageId: string | null;
   readonly device: UsageClaimDevice | null;
+  readonly bound?: UsageClaimBinding;
 }
+
+const BoundJson = Schema.fromJsonString(
+  Schema.Struct({
+    basis: Schema.String,
+    reason: Schema.String,
+    claim: Schema.optional(Schema.String),
+  }),
+);
+const encodeBound = Schema.encodeSync(BoundJson);
+const decodeBoundOption = Schema.decodeOption(BoundJson);
+const decodeBound = (json: string | null): UsageClaimBinding | undefined => {
+  const decoded = json === null ? Option.none() : decodeBoundOption(json);
+  if (Option.isNone(decoded)) return undefined;
+  const { claim, ...binding } = decoded.value;
+  return claim === undefined ? binding : { ...binding, claim };
+};
 
 /**
  * Work Usage can't trace on its own, claimed by an agent: sessions run outside T3, or a turn whose
@@ -66,6 +95,7 @@ interface ClaimRow {
   readonly claimed_from: string;
   readonly cause_message_id: string | null;
   readonly device: string | null;
+  readonly bound_json: string | null;
 }
 
 interface StoredValueRow {
@@ -73,11 +103,13 @@ interface StoredValueRow {
   readonly cause_run_id: string | null;
   readonly cause_message_id: string | null;
   readonly device: string | null;
+  readonly bound_json: string | null;
 }
 
-const storedValue = (row: StoredValueRow): UsageClaimValue | null =>
-  row.device === "phone" || row.device === "computer"
-    ? { device: row.device }
+const storedValue = (row: StoredValueRow): UsageClaimValue | null => {
+  const bound = decodeBound(row.bound_json);
+  return row.device === "phone" || row.device === "computer"
+    ? { device: row.device, ...(bound === undefined ? {} : { bound }) }
     : row.cause_thread_id === null || row.cause_message_id === null
       ? null
       : {
@@ -87,6 +119,7 @@ const storedValue = (row: StoredValueRow): UsageClaimValue | null =>
             ...(row.cause_run_id === null ? {} : { runId: RunId.make(row.cause_run_id) }),
           },
         };
+};
 
 // A claim with no start is stored from "", since SQLite never matches NULL keys on conflict.
 const NO_START = "";
@@ -146,6 +179,10 @@ const make = Effect.gen(function* () {
     const claimedAt = DateTime.formatIso(yield* DateTime.now);
     const cause = "causedBy" in input.value ? input.value.causedBy : null;
     const device = "device" in input.value ? input.value.device : null;
+    const bound =
+      "bound" in input.value && input.value.bound !== undefined
+        ? encodeBound(input.value.bound)
+        : null;
     const onConflict =
       input.ifUnclaimed === true
         ? sql`DO NOTHING`
@@ -154,26 +191,28 @@ const make = Effect.gen(function* () {
             cause_run_id = excluded.cause_run_id,
             cause_message_id = excluded.cause_message_id,
             device = excluded.device,
+            bound_json = excluded.bound_json,
             claimed_at = excluded.claimed_at`;
     const written = yield* sql`
       INSERT INTO usage_claims
         (target_kind, target, claimed_from, cause_thread_id, cause_run_id, cause_message_id,
-          device, claimed_at)
+          device, bound_json, claimed_at)
       VALUES (${target.kind}, ${key}, ${from}, ${cause?.threadId ?? null},
-        ${cause?.runId ?? null}, ${cause?.messageId ?? null}, ${device}, ${claimedAt})
+        ${cause?.runId ?? null}, ${cause?.messageId ?? null}, ${device}, ${bound}, ${claimedAt})
       ON CONFLICT (target_kind, target, claimed_from) ${onConflict}
       RETURNING target
     `;
     if (written.length > 0) return { target, value: input.value, kept: false };
     const [stored] = yield* sql<StoredValueRow>`
-      SELECT cause_thread_id, cause_run_id, cause_message_id, device FROM usage_claims
+      SELECT cause_thread_id, cause_run_id, cause_message_id, device, bound_json FROM usage_claims
       WHERE target_kind = ${target.kind} AND target = ${key} AND claimed_from = ${from}
     `;
     return { target, value: stored === undefined ? null : storedValue(stored), kept: true };
   });
 
   const read = sql<ClaimRow>`
-    SELECT target_kind, target, claimed_from, cause_message_id, device FROM usage_claims
+    SELECT target_kind, target, claimed_from, cause_message_id, device, bound_json
+    FROM usage_claims
   `.pipe(
     NodeSqliteClient.readOnly,
     Effect.map((rows) =>
@@ -184,11 +223,13 @@ const make = Effect.gen(function* () {
         if (kind !== "session" && kind !== "directory" && kind !== "run") return [];
         if ((row.cause_message_id === null) === (device === null)) return [];
         if (Number.isNaN(fromMs)) return [];
+        const bound = device === null ? undefined : decodeBound(row.bound_json);
         const claimed: StoredUsageClaim = {
           kind,
           target: row.target,
           causeMessageId: row.cause_message_id,
           device,
+          ...(bound === undefined ? {} : { bound }),
         };
         return [fromMs === undefined ? claimed : { ...claimed, fromMs }];
       }),

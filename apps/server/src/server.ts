@@ -314,7 +314,8 @@ const layerUsage = UsageService.layer.pipe(
       CursorUsageAccounts.layer.pipe(Layer.provide(CursorAccountReader.layer)),
     ).pipe(Layer.provide(ProviderHostLive.layer.pipe(Layer.provide(ServerSecretStore.layer)))),
   ),
-  Layer.provide(UsageOrigins.layer.pipe(Layer.provide(UsageSessionRegister.layer))),
+  // Merged so MCP tools bind work's origin by the same rules Usage reads it with.
+  Layer.provideMerge(UsageOrigins.layer.pipe(Layer.provide(UsageSessionRegister.layer))),
   Layer.provide(layerServerSettings),
   // Merged so the MCP claim tool writes through the same service Usage reads.
   Layer.provideMerge(UsageClaims.layer),

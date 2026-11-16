@@ -16,8 +16,10 @@ import {
   MAX_CAUSE_DEPTH,
   resolveMessageOrigin,
   settleOrigin,
+  storedOrigin,
   UsageOriginIndex,
   UsageOrigins,
+  type BoundOrigin,
   type CausalMessage,
   type OriginMessage,
   type UsageOriginKey,
@@ -529,6 +531,7 @@ const seedThread = (input: {
   environment?: Record<string, string>;
   createdAt?: string;
   coordinator?: true;
+  usageOrigin?: Record<string, string>;
 }) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
@@ -548,6 +551,7 @@ const seedThread = (input: {
         ...(input.environment === undefined ? {} : { environment: input.environment }),
         ...(input.coordinator === undefined ? {} : { coordinator: input.coordinator }),
         ...(input.causedBy === undefined ? {} : { causedBy: input.causedBy }),
+        ...(input.usageOrigin === undefined ? {} : { usageOrigin: input.usageOrigin }),
         ...(input.rootThreadId === undefined
           ? {}
           : { lineage: { rootThreadId: input.rootThreadId } }),
@@ -1153,5 +1157,204 @@ describe("UsageOrigins.read", () => {
         ),
       ),
     ),
+  );
+});
+
+const seedMessage = (input: {
+  id: string;
+  threadId: string;
+  runId: string;
+  createdAt: string;
+  payload: Record<string, unknown>;
+}) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`INSERT INTO orchestration_v2_projection_messages ${sql.insert({
+      message_id: input.id,
+      thread_id: input.threadId,
+      run_id: input.runId,
+      role: "user",
+      streaming: 0,
+      created_at: input.createdAt,
+      updated_at: input.createdAt,
+      payload_json: encodeJson(input.payload),
+    })}`;
+  });
+
+describe("UsageOrigins born labelled", () => {
+  const phone = {
+    createdBy: "user",
+    creationSource: "web",
+    origin: { surface: "web", deviceType: "mobile" },
+  };
+  const computer = { ...phone, origin: { surface: "desktop", deviceType: "desktop" } };
+  const fromMcp = {
+    createdBy: "agent",
+    creationSource: "mcp",
+    origin: { surface: "mcp", deviceType: "bot" },
+  };
+  const wake = {
+    createdBy: "agent",
+    creationSource: "provider",
+    notification: { source: { kind: "background_task" }, outcome: "completed" },
+  };
+  const iso = (clock: string) => `2026-08-08T${clock}:00.000Z`;
+  const time = (clock: string) => Date.parse(iso(clock));
+  const run = (
+    id: string,
+    ordinal: number,
+    threadId: string,
+    from: string,
+    to: string,
+    message: Record<string, unknown>,
+  ) =>
+    seedRun({
+      id,
+      ordinal,
+      threadId,
+      sessionId: `${threadId}-session`,
+      startedAt: iso(from),
+      completedAt: iso(to),
+      message,
+    });
+
+  it.effect(
+    "binds launched work to its launcher's turn and moves it only with a typed message",
+    () =>
+      Effect.gen(function* () {
+        const origins = yield* UsageOrigins;
+        const bindAt = (clock: string) =>
+          origins.originAt("firstmate", time(clock)).pipe(
+            Effect.map((bound) => {
+              assert.isNotNull(bound);
+              return bound!;
+            }),
+          );
+        const summary = (bound: BoundOrigin) =>
+          `${bound.key.origin} ${bound.key.reason}${bound.reroots ? " reroots" : ""}`;
+        yield* seedThread({ id: "firstmate", coordinator: true });
+
+        // FirstMate launches a worker from a turn typed on the phone.
+        yield* run("fm-phone", 1, "firstmate", "01:00", "01:10", phone);
+        const launch = yield* bindAt("01:01");
+        assert.strictEqual(summary(launch), "phone typed reroots");
+        yield* seedThread({
+          id: "worker",
+          crewOf: "firstmate",
+          createdAt: iso("01:01"),
+          usageOrigin: storedOrigin(launch.key),
+        });
+        yield* run("brief", 1, "worker", "01:01", "01:30", fromMcp);
+        // A scheduled task created in that turn.
+        yield* origins.bindScheduledTask("task-daily", (yield* bindAt("01:02")).key);
+
+        // In a later upkeep wake, a job that began in the phone turn still binds there.
+        yield* run("fm-wake", 2, "firstmate", "02:00", "02:10", wake);
+        assert.strictEqual(summary(yield* bindAt("02:01")), "computer upkeep");
+        assert.strictEqual(summary(yield* bindAt("01:05")), "phone typed reroots");
+
+        // A steer from a turn typed on the computer re-roots the worker from that moment.
+        yield* run("worker-2", 2, "worker", "03:00", "03:30", wake);
+        yield* run("fm-computer", 3, "firstmate", "03:10", "03:20", computer);
+        const steer = yield* bindAt("03:11");
+        assert.strictEqual(summary(steer), "computer typed reroots");
+        yield* seedMessage({
+          id: "steer",
+          threadId: "worker",
+          runId: "run-worker-2",
+          createdAt: iso("03:11"),
+          payload: { ...fromMcp, usageOrigin: storedOrigin(steer.key) },
+        });
+        yield* run("worker-3", 3, "worker", "04:00", "04:30", wake);
+
+        // Settling the worker is a click: its note's turn counts to the worker, and moves nothing.
+        yield* run("fm-settle", 4, "firstmate", "05:00", "05:10", {
+          ...phone,
+          crewNote: { threadId: "worker", kind: "action" },
+        });
+        assert.strictEqual(summary(yield* bindAt("05:01")), "computer inherited");
+        // So a send in that turn carries no origin.
+        yield* run("worker-4", 4, "worker", "05:02", "05:30", fromMcp);
+
+        // A reply typed on the worker's box, from the phone, moves it back.
+        yield* run("fm-reply", 5, "firstmate", "06:00", "06:10", {
+          ...phone,
+          crewNote: { threadId: "worker", kind: "reply" },
+        });
+        yield* run("worker-5", 5, "worker", "06:30", "06:40", wake);
+
+        // The scheduled task's run, in a thread of its own.
+        yield* seedThread({ id: "daily", createdAt: iso("07:00") });
+        yield* run("daily", 1, "daily", "07:00", "07:10", {
+          createdBy: "agent",
+          creationSource: "mcp",
+          scheduledTaskId: "task-daily",
+        });
+
+        // FirstMate today: a launch and a steer that name a cause, which a typed one re-roots.
+        yield* seedThread({
+          id: "older",
+          crewOf: "firstmate",
+          createdAt: iso("01:00"),
+          causedBy: { threadId: "firstmate", messageId: "message-fm-phone" },
+        });
+        yield* run("older-1", 1, "older", "01:30", "01:40", fromMcp);
+        yield* run("older-2", 2, "older", "03:15", "03:16", {
+          ...fromMcp,
+          causedBy: { threadId: "firstmate", messageId: "message-fm-computer" },
+        });
+        yield* run("older-3", 3, "older", "04:10", "04:20", wake);
+
+        const index = new UsageOriginIndex(yield* origins.read(time("00:00"), time("23:59")));
+        const counted = (threadId: string, clock: string) => {
+          const key = index.lookup({ sessionId: `${threadId}-session`, timestampMs: time(clock) });
+          return `${threadId} ${clock} ${key.origin} ${key.reason}`;
+        };
+        assert.deepStrictEqual(
+          [
+            counted("worker", "01:05"),
+            counted("firstmate", "02:01"),
+            counted("worker", "03:05"),
+            counted("worker", "03:12"),
+            counted("worker", "04:01"),
+            counted("firstmate", "05:01"),
+            counted("worker", "05:03"),
+            counted("firstmate", "06:01"),
+            counted("worker", "06:31"),
+            counted("daily", "07:01"),
+            counted("older", "01:31"),
+            counted("older", "03:15"),
+            counted("older", "04:11"),
+          ],
+          [
+            "worker 01:05 phone inherited",
+            "firstmate 02:01 computer upkeep",
+            "worker 03:05 phone inherited",
+            "worker 03:12 computer inherited",
+            "worker 04:01 computer inherited",
+            "firstmate 05:01 computer inherited",
+            "worker 05:03 computer inherited",
+            "firstmate 06:01 phone typed",
+            "worker 06:31 phone inherited",
+            "daily 07:01 phone inherited",
+            "older 01:31 phone inherited",
+            "older 03:15 computer inherited",
+            "older 04:11 computer inherited",
+          ],
+        );
+        assert.isNull(yield* origins.originAt("gone", time("01:00")));
+      }).pipe(
+        Effect.provide(
+          usageOriginsLayer.pipe(
+            Layer.provide(
+              Layer.mock(UsageSessionRegister.UsageSessionRegister)({
+                read: () => Effect.succeed([]),
+              }),
+            ),
+            Layer.provideMerge(UsageClaims.layer),
+            Layer.provideMerge(Layer.merge(Sqlite.layerMemory, NodeServices.layer)),
+          ),
+        ),
+      ),
   );
 });

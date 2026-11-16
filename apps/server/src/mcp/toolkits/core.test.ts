@@ -57,6 +57,7 @@ import * as ThreadSearch from "../../orchestration-v2/ThreadSearch.ts";
 import * as PreviewBrowser from "../../preview/PreviewBrowser.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
 import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
+import * as UsageOrigins from "../../usage/UsageOrigins.ts";
 import * as SecretRequests from "../../secrets/SecretRequests.ts";
 import * as RemoteDelegation from "../../peer/RemoteDelegation.ts";
 import * as ScheduledTaskService from "../../scheduledTasks/ScheduledTaskService.ts";
@@ -95,6 +96,7 @@ const layerThreadToolkitWith = (providers: ReadonlyArray<ServerProvider>) =>
     Layer.provide(
       Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed(providers) }),
     ),
+    Layer.provide(UsageOrigins.layerTest),
     Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
     Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
     Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
@@ -1099,6 +1101,7 @@ it.effect("search names the calling thread, so an agent can tell its own match a
           }),
         ),
         Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
+        Layer.provide(UsageOrigins.layerTest),
         Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
         Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
         Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
@@ -1228,6 +1231,7 @@ it.effect("hides act-as-caller tools from a client caller", () =>
         Layer.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
         Layer.provide(ServerSettings.layerTest()),
         Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
+        Layer.provide(UsageOrigins.layerTest),
         Layer.provide(Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({})),
         Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
         Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
@@ -1278,6 +1282,7 @@ it.effect("a caller cannot rewrite a scheduled task that runs above its own mode
         Layer.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
         Layer.provide(ServerSettings.layerTest()),
         Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
+        Layer.provide(UsageOrigins.layerTest),
         Layer.provide(Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({})),
         Layer.provide(
           Layer.mock(ScheduledTaskService.ScheduledTaskService)({
@@ -1393,6 +1398,7 @@ it.effect("run_scheduled_task_now reports why a started run failed to dispatch",
         Layer.provide(NodeCrypto.layer),
         Layer.provide(Layer.mock(ThreadManagement.ThreadManagementService)({})),
         Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
+        Layer.provide(UsageOrigins.layerTest),
         Layer.provide(Layer.mock(ThreadSearch.ThreadSearch)({})),
         Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
         Layer.provide(Layer.mock(PeerLinkRequests.PeerLinkRequests)({})),
@@ -1492,6 +1498,7 @@ it.effect.each(["t3_thread_interrupt", "t3_workflow_stop"])(
           ),
           Layer.provide(ServerSettings.layerTest()),
           Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
+          Layer.provide(UsageOrigins.layerTest),
           Layer.provide(Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({})),
           Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
           Layer.provide(Layer.mock(ProjectService.ProjectService)({})),
@@ -1589,6 +1596,7 @@ it.effect("discovers workflow stop targets and requires orchestration capability
         ),
         Layer.provide(ServerSettings.layerTest()),
         Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
+        Layer.provide(UsageOrigins.layerTest),
         Layer.provide(Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({})),
         Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
         Layer.provide(Layer.mock(PeerForwarding.PeerForwarding)({})),
@@ -1702,6 +1710,7 @@ it.effect(
           ),
           Layer.provide(ServerSettings.layerTest()),
           Layer.provide(Layer.mock(ProviderRegistry.ProviderRegistry)({})),
+          Layer.provide(UsageOrigins.layerTest),
           Layer.provide(Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({})),
           Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
           Layer.provide(

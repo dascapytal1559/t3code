@@ -202,6 +202,8 @@ export interface StartThreadTurnInput extends ThreadCommandInput {
   readonly freshContext?: boolean;
   /** Defaults to true. Callers with their own retry queue opt out so a dead socket fails fast. */
   readonly resendAfterSocketLoss?: boolean;
+  /** Fork: a message to a coordinator about one of its crew threads; Usage reads it. */
+  readonly crewNote?: import("@t3tools/contracts").OrchestrationV2CrewNote;
 }
 
 export interface InterruptThreadTurnInput extends ThreadCommandInput {
@@ -840,6 +842,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
           ? {}
           : { sourcePlanRef: input.sourceProposedPlan }),
         ...(input.freshContext ? { freshContext: true } : {}),
+        ...(input.crewNote === undefined ? {} : { crewNote: input.crewNote }),
         dispatchMode: { type: "start_immediately" },
       },
       resendAfterSocketLoss,
@@ -870,6 +873,7 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
         ? {}
         : { sourcePlanRef: input.sourceProposedPlan }),
       ...(input.freshContext ? { freshContext: true } : {}),
+      ...(input.crewNote === undefined ? {} : { crewNote: input.crewNote }),
       ...(requestedMode !== "queue" ? { deliveryIntent: requestedMode } : {}),
       dispatchMode,
     },

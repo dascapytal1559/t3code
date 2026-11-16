@@ -11,6 +11,7 @@ import {
   type OrchestrationV2Subagent,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2ThreadShell,
+  type OrchestrationV2UsageOrigin,
   type OrchestrationV2ThreadLaunchWorkspaceStrategy,
   type OrchestrationV2TurnItem,
   OrchestratorMcpFailure,
@@ -246,6 +247,8 @@ export interface OrchestratorMcpServiceShape {
   readonly sendToThread: (
     scope: McpInvocationScope,
     input: OrchestratorMcpThreadSendInput,
+    /** Set when the send re-roots the thread's Usage. */
+    usageOrigin?: OrchestrationV2UsageOrigin,
   ) => Effect.Effect<OrchestratorMcpThreadSendResult, OrchestratorMcpFailure>;
   readonly waitForThread: (
     scope: McpInvocationScope,
@@ -3448,65 +3451,70 @@ const make = Effect.gen(function* () {
         earlierPosition: timeline.hasEarlier || start > 0 ? (items[0]?.position ?? null) : null,
       } satisfies OrchestratorMcpThreadReadResult;
     }),
-    sendToThread: Effect.fn("OrchestratorMcpService.sendToThread")(function* (scope, input) {
-      const { parent, limits, target } = yield* loadScopedThread(scope, input.threadId, ["runs"]);
-      yield* assertLiveCallerForOtherThread(scope, parent, target);
-      yield* assertTargetWithinLimits(limits, target.thread);
-      const causedBy =
-        input.causedBy === undefined
-          ? undefined
-          : yield* verifyCause(threadManagement, input.causedBy);
+    sendToThread: Effect.fn("OrchestratorMcpService.sendToThread")(
+      function* (scope, input, usageOrigin) {
+        const { parent, limits, target } = yield* loadScopedThread(scope, input.threadId, ["runs"]);
+        yield* assertLiveCallerForOtherThread(scope, parent, target);
+        yield* assertTargetWithinLimits(limits, target.thread);
+        const causedBy =
+          input.causedBy === undefined
+            ? undefined
+            : yield* verifyCause(threadManagement, input.causedBy);
 
-      const mode = input.mode ?? "auto";
-      const key = yield* requestKey(input.clientRequestId);
-      const messageId = stableOperationMessageId({
-        scope,
-        requestKey: key,
-        operation: "thread-send",
-      });
-      const result = yield* threadManagement
-        .sendToThread({
-          projectId: target.thread.projectId,
-          commandId: stableCommandId({
-            scope,
-            requestKey: key,
-            operation: "thread-send",
-          }),
+        const mode = input.mode ?? "auto";
+        const key = yield* requestKey(input.clientRequestId);
+        const messageId = stableOperationMessageId({
+          scope,
+          requestKey: key,
+          operation: "thread-send",
+        });
+        const result = yield* threadManagement
+          .sendToThread({
+            projectId: target.thread.projectId,
+            commandId: stableCommandId({
+              scope,
+              requestKey: key,
+              operation: "thread-send",
+            }),
+            threadId: input.threadId,
+            ...(parent === undefined ? {} : { senderThreadId: parent.thread.id }),
+            ...(causedBy === undefined ? {} : { causedBy }),
+            ...(usageOrigin === undefined ? {} : { usageOrigin }),
+            // A linked environment's agent has no thread here; the link names it.
+            ...(parent === undefined && scope.client?.senderThread !== undefined
+              ? { linkedSender: scope.client.senderThread }
+              : {}),
+            messageId,
+            text: input.message,
+            attachments: [],
+            mode,
+            ...(input.freshContext ? { freshContext: true } : {}),
+            createdBy: "agent",
+            creationSource: "mcp",
+          })
+          .pipe(
+            Effect.mapError((error) =>
+              isThreadManagementError(error)
+                ? threadManagementFailure(error)
+                : failure(
+                    "orchestration_error",
+                    `Unable to send to thread ${input.threadId}: ${userFacingDispatchErrorMessage(error) ?? errorMessage(error)}`,
+                  ),
+            ),
+          );
+        return {
           threadId: input.threadId,
-          ...(parent === undefined ? {} : { senderThreadId: parent.thread.id }),
-          ...(causedBy === undefined ? {} : { causedBy }),
-          // A linked environment's agent has no thread here; the link names it.
-          ...(parent === undefined && scope.client?.senderThread !== undefined
-            ? { linkedSender: scope.client.senderThread }
-            : {}),
+          link: threadLinkFor(scope, input.threadId, target.thread.title),
           messageId,
-          text: input.message,
-          attachments: [],
-          mode,
-          ...(input.freshContext ? { freshContext: true } : {}),
-          createdBy: "agent",
-          creationSource: "mcp",
-        })
-        .pipe(
-          Effect.mapError((error) =>
-            isThreadManagementError(error)
-              ? threadManagementFailure(error)
-              : failure(
-                  "orchestration_error",
-                  `Unable to send to thread ${input.threadId}: ${userFacingDispatchErrorMessage(error) ?? errorMessage(error)}`,
-                ),
-          ),
-        );
-      return {
-        threadId: input.threadId,
-        link: threadLinkFor(scope, input.threadId, target.thread.title),
-        messageId,
-        runId: result.run.id,
-        ...(result.run.delegatedTaskId === undefined ? {} : { taskId: result.run.delegatedTaskId }),
-        status: result.run.status,
-        delivery: result.delivery,
-      } satisfies OrchestratorMcpThreadSendResult;
-    }),
+          runId: result.run.id,
+          ...(result.run.delegatedTaskId === undefined
+            ? {}
+            : { taskId: result.run.delegatedTaskId }),
+          status: result.run.status,
+          delivery: result.delivery,
+        } satisfies OrchestratorMcpThreadSendResult;
+      },
+    ),
     waitForThread: Effect.fn("OrchestratorMcpService.waitForThread")(function* (scope, input) {
       const { parent, target } = yield* loadScopedThread(scope, input.threadId, []);
       const result = yield* threadManagement

@@ -416,6 +416,10 @@ export const layerExecutor: Layer.Layer<
                           : { senderThreadId: message.senderThreadId }),
                         ...(message.origin === undefined ? {} : { origin: message.origin }),
                         ...(message.causedBy === undefined ? {} : { causedBy: message.causedBy }),
+                        ...(message.usageOrigin === undefined
+                          ? {}
+                          : { usageOrigin: message.usageOrigin }),
+                        ...(message.crewNote === undefined ? {} : { crewNote: message.crewNote }),
                         ...(message.linkedSender === undefined
                           ? {}
                           : { linkedSender: message.linkedSender }),

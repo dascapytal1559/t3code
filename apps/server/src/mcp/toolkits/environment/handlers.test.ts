@@ -33,6 +33,7 @@ import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandE
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as Settings from "../../../serverSettings.ts";
 import * as UsageClaims from "../../../usage/UsageClaims.ts";
+import * as UsageOrigins from "../../../usage/UsageOrigins.ts";
 import * as UsageService from "../../../usage/UsageService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
@@ -43,6 +44,8 @@ import { EnvironmentToolkit } from "./tools.ts";
 const environmentId = EnvironmentId.make("environment:preferences");
 const threadId = ThreadId.make("thread:preferences");
 const wakeRun = RunId.make("run:wake");
+const phoneTask = ThreadId.make("thread:phone-task");
+const lostTask = ThreadId.make("thread:lost-task");
 const decodeUsageDay = Schema.decodeSync(UsageDay);
 
 const layerServerEnvironment = Layer.mock(Environment.ServerEnvironment)({
@@ -330,6 +333,7 @@ it.effect(
         readonly threadId?: ThreadId;
         readonly runId?: RunId;
         readonly causedBy?: { readonly threadId: ThreadId; readonly messageId: MessageId } | null;
+        readonly fromThread?: { readonly threadId: ThreadId };
         readonly device?: "phone" | "computer";
         readonly ifUnclaimed?: boolean;
       }) =>
@@ -348,7 +352,9 @@ it.effect(
         [{ sessionId: "pipeline", directory: "/runs/one", causedBy: madeUp }, "exactly one"],
         [{ directory: "runs/one", causedBy: madeUp }, "absolute"],
         [{ sessionId: "pipeline", causedBy: madeUp }, "causedBy"],
-        [{ sessionId: "pipeline" }, "exactly one of causedBy or device"],
+        [{ sessionId: "pipeline" }, "exactly one of causedBy, fromThread or device"],
+        [{ sessionId: "pipeline", fromThread: { threadId: madeUp.threadId } }, "was not found"],
+        [{ sessionId: "pipeline", fromThread: { threadId: lostTask } }, "counts to no device"],
         [{ sessionId: "pipeline", causedBy: madeUp, device: "phone" }, "exactly one of causedBy"],
         [{ runId: wakeRun, device: "computer" }, "threadId goes with runId"],
         [{ sessionId: "pipeline", threadId, device: "computer" }, "threadId goes with runId"],
@@ -375,6 +381,30 @@ it.effect(
       ).toEqual({ ...journal, kept: true });
       expect(yield* claims.read).toEqual([
         { kind: "run", target: wakeRun, causeMessageId: null, device: "phone" },
+      ]);
+      yield* claim({ threadId, runId: wakeRun, causedBy: null });
+
+      // The drain names the task: its own turn running now counts where the task's work counts,
+      // bound by value.
+      expect(yield* claim({ threadId, fromThread: { threadId: phoneTask } })).toEqual({
+        threadId,
+        runId: wakeRun,
+        causedBy: null,
+        device: "phone",
+        reason: "inherited",
+      });
+      expect(yield* claim({ threadId: lostTask, device: "computer" })).toMatchObject({
+        code: "invalid_request",
+        message: expect.stringContaining("no turn running now"),
+      });
+      expect(yield* claims.read).toEqual([
+        {
+          kind: "run",
+          target: wakeRun,
+          causeMessageId: null,
+          device: "phone",
+          bound: { basis: "stamp", reason: "inherited" },
+        },
       ]);
       yield* claim({ threadId, runId: wakeRun, causedBy: null });
 
@@ -420,7 +450,10 @@ it.effect(
               layerServerEnvironment,
               Layer.mock(Orchestrator.OrchestratorV2)({}),
               Layer.mock(ThreadManagement.ThreadManagementService)({
-                getThreadShell: () => Effect.succeed(null),
+                getThreadShell: (id) =>
+                  Effect.succeed(
+                    id === phoneTask || id === lostTask ? ({ deletedAt: null } as never) : null,
+                  ),
                 getThreadRecords: (_threadId, _fields, filter) =>
                   Effect.succeed({
                     runs: (filter?.runIds ?? []).flatMap((id) => (id === wakeRun ? [{ id }] : [])),
@@ -438,6 +471,19 @@ it.effect(
             ),
           ),
           Layer.provideMerge(UsageClaims.layer),
+          Layer.provideMerge(
+            Layer.mock(UsageOrigins.UsageOrigins)({
+              originAt: (id) =>
+                Effect.succeed({
+                  key:
+                    id === phoneTask
+                      ? { origin: "phone", basis: "stamp", reason: "typed" }
+                      : { origin: "unknown", basis: "default", reason: "noCause" },
+                  reroots: false,
+                  runId: id === threadId ? wakeRun : null,
+                }),
+            }),
+          ),
           Layer.provideMerge(Layer.merge(SqlitePersistence.layerMemory, NodeServices.layer)),
         ),
       ),

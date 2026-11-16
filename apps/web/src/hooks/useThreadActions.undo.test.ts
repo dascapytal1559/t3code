@@ -182,7 +182,12 @@ describe("concurrent thread action Undo", () => {
 describe("telling a crew thread's coordinator", () => {
   const sentTexts = () =>
     commands.startTurn.mock.calls.map(([call]) => {
-      expect(call.input).toMatchObject({ threadId: "firstmate", dispatchMode: "queue" });
+      expect(call.input).toMatchObject({
+        threadId: "firstmate",
+        dispatchMode: "queue",
+        // A click: Usage leaves the worker's work where it was.
+        crewNote: { kind: "action" },
+      });
       return call.input.message.text.split("\n").at(-1);
     });
 

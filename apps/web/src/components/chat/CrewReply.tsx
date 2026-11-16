@@ -51,6 +51,7 @@ export function CrewReply(props: {
         coordinator,
         messageId: newMessageId(),
         text: formatCrewReply({ thread, text: sent }),
+        crewNote: { threadId: thread.id, kind: "reply" },
       }),
     });
     setSending(false);

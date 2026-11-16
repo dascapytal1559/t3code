@@ -30,7 +30,9 @@ import { resolveRuntimeMode } from "../../delegatedTaskModes.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as OrchestrationMcp from "../../OrchestratorMcpService.ts";
+import * as UsageOrigins from "../../../usage/UsageOrigins.ts";
 import {
+  bindUsageOrigin,
   newCommandId,
   readCaller,
   readThread,
@@ -151,6 +153,11 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           input.causedBy === undefined
             ? undefined
             : yield* verifyCause(context.threads, input.causedBy);
+        // Born where the launching thread's work counts now; a link's work has no thread here.
+        const bound =
+          linkOrigin === undefined
+            ? yield* bindUsageOrigin(context.threads, input.fromThread, caller?.id)
+            : null;
         const projectId =
           input.scratch === true
             ? (yield* ManagedProjectFolders.ManagedProjectFolders.pipe(
@@ -290,6 +297,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           ...(input.environment === undefined ? {} : { environment: input.environment }),
           ...(input.parentThreadId === undefined ? {} : { crewOf: input.parentThreadId }),
           ...(causedBy === undefined ? {} : { causedBy }),
+          ...(bound === null ? {} : { usageOrigin: UsageOrigins.storedOrigin(bound.key) }),
           ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
           ...(input.message === undefined && attachments.length === 0
             ? {}

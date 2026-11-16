@@ -28,6 +28,7 @@ import {
   type OrchestrationV2ServerCommand,
   type OrchestrationV2ConversationMessage,
   type OrchestrationV2CausedBy,
+  type OrchestrationV2UsageOrigin,
   type OrchestrationV2CreationSource,
   type OrchestrationV2LinkedSender,
   type OrchestrationV2Run,
@@ -97,6 +98,7 @@ export function withCreationProvenance(
         linkOrigin: _linkOrigin,
         delegatedFrom: _delegatedFrom,
         causedBy: _causedBy,
+        usageOrigin: _usageOrigin,
         initialMessage: _initialMessage,
         ...rest
       } = command;
@@ -106,6 +108,7 @@ export function withCreationProvenance(
       const {
         origin: _origin,
         causedBy: _causedBy,
+        usageOrigin: _usageOrigin,
         linkedSender: _linkedSender,
         ...rest
       } = command;
@@ -169,6 +172,8 @@ export interface ThreadManagementSendInput {
   readonly scheduledTaskId?: ScheduledTaskId;
   readonly senderThreadId?: ThreadId;
   readonly causedBy?: OrchestrationV2CausedBy;
+  /** Re-roots the thread's Usage: the sender's turn was typed when it sent this. */
+  readonly usageOrigin?: OrchestrationV2UsageOrigin;
   readonly linkedSender?: OrchestrationV2LinkedSender;
   readonly text: string;
   readonly attachments: ReadonlyArray<ChatAttachment>;
@@ -979,6 +984,7 @@ const make = Effect.gen(function* () {
       ...(input.scheduledTaskId === undefined ? {} : { scheduledTaskId: input.scheduledTaskId }),
       ...(input.senderThreadId === undefined ? {} : { senderThreadId: input.senderThreadId }),
       ...(input.causedBy === undefined ? {} : { causedBy: input.causedBy }),
+      ...(input.usageOrigin === undefined ? {} : { usageOrigin: input.usageOrigin }),
       ...(input.linkedSender === undefined ? {} : { linkedSender: input.linkedSender }),
       text: input.text,
       attachments: input.attachments,

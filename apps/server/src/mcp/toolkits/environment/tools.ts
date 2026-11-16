@@ -8,6 +8,7 @@ import {
   OrchestrationV2CausedBy,
   OrchestratorMcpCausedBy,
   OrchestratorMcpEnvironmentTarget,
+  OrchestratorMcpFromThread,
   OrchestratorMcpFailure,
   RestartRequest,
   RestartRequestStatus,
@@ -23,6 +24,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 import * as UsageClaims from "../../../usage/UsageClaims.ts";
+import * as UsageOrigins from "../../../usage/UsageOrigins.ts";
 import * as UsageService from "../../../usage/UsageService.ts";
 import * as ServerEnvironment from "../../../environment/ServerEnvironment.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
@@ -114,9 +116,14 @@ const RestartRequestTool = Tool.make("t3_restart_request", {
 }).annotate(Tool.Destructive, true);
 const UsageClaimTool = Tool.make("t3_usage_claim", {
   ...shared,
-  dependencies: [...shared.dependencies, UsageClaims.UsageClaims, Path.Path],
+  dependencies: [
+    ...shared.dependencies,
+    UsageClaims.UsageClaims,
+    UsageOrigins.UsageOrigins,
+    Path.Path,
+  ],
   description:
-    "Count work Usage can't trace on its own. Target one of: `sessionId` (native id) or an absolute `directory`, for sessions run outside T3 (a pipeline, a CLI run); `threadId` + `runId`, for a turn whose prompt has no cause (a wake). Give `causedBy` (the prompt behind it) or `device` (`phone` for a voice journal); work a claimed turn causes inherits it. `from` (ISO time) claims a session from then until a later `from`. Claiming again replaces it, unless `ifUnclaimed` keeps the first (`kept`); `causedBy: null` removes it. A coordinator's unclaimed turn counts as upkeep. Your own worktree needs no claim.",
+    "Count work Usage can't trace on its own. Target one of: `sessionId` (native id) or an absolute `directory`, for sessions run outside T3 (a pipeline, a CLI run); `threadId` + `runId` (alone, its turn running now), for a turn whose prompt has no cause (a wake). Give `causedBy` (the prompt behind it), `fromThread` (count it with that thread's work) or `device` (`phone` for a voice journal); work a claimed turn causes inherits it. `from` (ISO time) claims a session from then until a later `from`. Claiming again replaces it, unless `ifUnclaimed` keeps the first (`kept`); `causedBy: null` removes it. A coordinator's unclaimed turn counts as upkeep. Your own worktree needs no claim.",
   parameters: Schema.Struct({
     sessionId: Schema.optional(TrimmedNonEmptyString),
     from: Schema.optional(IsoDateTime),
@@ -124,6 +131,7 @@ const UsageClaimTool = Tool.make("t3_usage_claim", {
     threadId: Schema.optional(ThreadId),
     runId: Schema.optional(RunId),
     causedBy: Schema.optional(Schema.NullOr(OrchestratorMcpCausedBy)),
+    fromThread: Schema.optional(OrchestratorMcpFromThread),
     device: Schema.optional(Schema.Literals(["phone", "computer"])),
     ifUnclaimed: Schema.optional(Schema.Boolean),
   }),
@@ -134,6 +142,7 @@ const UsageClaimTool = Tool.make("t3_usage_claim", {
     threadId: Schema.optional(ThreadId),
     runId: Schema.optional(RunId),
     causedBy: Schema.NullOr(OrchestrationV2CausedBy),
+    reason: Schema.optional(Schema.String),
     device: Schema.NullOr(Schema.Literals(["phone", "computer"])),
     kept: Schema.optional(Schema.Literal(true)),
   }),

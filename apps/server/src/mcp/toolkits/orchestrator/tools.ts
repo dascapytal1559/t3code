@@ -47,6 +47,7 @@ import * as PeerForwarding from "../../../peer/PeerForwarding.ts";
 import * as PeerLinkRequests from "../../../peer/PeerLinkRequests.ts";
 import * as PeerLinks from "../../../peer/PeerLinks.ts";
 import * as RemoteDelegation from "../../../peer/RemoteDelegation.ts";
+import * as UsageOrigins from "../../../usage/UsageOrigins.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
 import * as ThreadMetadataMcpService from "../../ThreadMetadataMcpService.ts";
@@ -65,7 +66,12 @@ const linkingDependencies = [
   PeerLinks.PeerLinks,
 ];
 /** A send there may record a follow-up to a remote task. */
-const sendDependencies = [...dependencies, RemoteDelegation.RemoteDelegation];
+const sendDependencies = [
+  ...dependencies,
+  RemoteDelegation.RemoteDelegation,
+  UsageOrigins.UsageOrigins,
+];
+const scheduleDependencies = [...dependencies, UsageOrigins.UsageOrigins];
 const threadMetadataDependencies = [
   McpInvocationContext.McpInvocationContext,
   ThreadManagementService.ThreadManagementService,
@@ -174,7 +180,7 @@ const ScheduleTaskTool = Tool.make("schedule_task", {
   success: OrchestratorMcpScheduleTaskResult,
   failure: OrchestratorMcpFailure,
   failureMode: "return",
-  dependencies,
+  dependencies: scheduleDependencies,
 })
   .annotate(Tool.Title, "Schedule a task")
   .annotate(Tool.Destructive, true)

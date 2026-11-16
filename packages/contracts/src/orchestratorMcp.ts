@@ -576,6 +576,15 @@ export const OrchestratorMcpCausedBy = OrchestrationV2CausedBy.annotate({
     "The prompt that led to this work, by ids you were given. T3 checks them; Usage counts this work to that prompt's device.",
 });
 
+/** Fork: the thread whose turn work comes from, for a caller that runs in no T3 thread itself. */
+export const OrchestratorMcpFromThread = Schema.Struct({
+  threadId: ThreadId,
+  at: Schema.optional(IsoDateTime),
+}).annotate({
+  description: "Scripts outside a thread only: the thread this work is for; `at`, when it began.",
+});
+export type OrchestratorMcpFromThread = typeof OrchestratorMcpFromThread.Type;
+
 export const OrchestratorMcpThreadSendInput = Schema.Struct({
   environmentId: OrchestratorMcpEnvironmentTarget,
   threadId: ThreadId,
@@ -589,6 +598,7 @@ export const OrchestratorMcpThreadSendInput = Schema.Struct({
   ),
   clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
   causedBy: Schema.optional(OrchestratorMcpCausedBy),
+  fromThread: Schema.optional(OrchestratorMcpFromThread),
 });
 export type OrchestratorMcpThreadSendInput = typeof OrchestratorMcpThreadSendInput.Type;
 

@@ -10,6 +10,7 @@ import {
   type OrchestrationClientOrigin,
   type OrchestrationV2Actor,
   type OrchestrationV2CausedBy,
+  type OrchestrationV2UsageOrigin,
   type OrchestrationV2CreationSource,
   type OrchestrationV2DelegatedFrom,
   type OrchestrationV2ThreadEnvironment,
@@ -119,6 +120,8 @@ export interface ThreadLaunchInput {
   readonly crewOf?: ThreadId;
   /** The prompt whose work led to this launch; set on the thread and its initial message. */
   readonly causedBy?: OrchestrationV2CausedBy;
+  /** Where Usage counts the thread's work from birth, bound from the thread that launched it. */
+  readonly usageOrigin?: OrchestrationV2UsageOrigin;
 }
 
 type PreparationInput = Pick<
@@ -1321,6 +1324,7 @@ const make = Effect.gen(function* () {
                 ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
                 ...(input.crewOf === undefined ? {} : { crewOf: input.crewOf }),
                 ...(input.causedBy === undefined ? {} : { causedBy: input.causedBy }),
+                ...(input.usageOrigin === undefined ? {} : { usageOrigin: input.usageOrigin }),
                 createdBy: input.createdBy,
                 creationSource: input.creationSource,
                 ...(initialMessage === undefined

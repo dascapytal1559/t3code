@@ -83,6 +83,7 @@ it("a FirstMate worker shows no composer: a box that sends to FirstMate, Stop an
       {
         threadId: coordinator.id,
         text: `**Reply · ${crew.title}**\nkept-thread: ${crew.id}\n\nGo with green.`,
+        crewNote: { threadId: crew.id, kind: "reply" },
         dispatchMode: { type: "queue_after_active" },
       },
     ]),

@@ -112,6 +112,29 @@ export const OrchestrationV2CausedBy = Schema.Struct({
 });
 export type OrchestrationV2CausedBy = typeof OrchestrationV2CausedBy.Type;
 
+/**
+ * Fork: where Usage counts a thread an agent's thread launched, or a thread from a message that
+ * re-roots it, copied by value from the calling thread's turn when T3 accepted the work. Only the
+ * server sets it. Plain strings, so a reason Usage later retires still decodes.
+ */
+export const OrchestrationV2UsageOrigin = Schema.Struct({
+  origin: Schema.String,
+  basis: Schema.String,
+  reason: Schema.String,
+  claim: Schema.optional(Schema.String),
+});
+export type OrchestrationV2UsageOrigin = typeof OrchestrationV2UsageOrigin.Type;
+
+/**
+ * Fork: the crew thread a client's message to its coordinator speaks for: the user's reply typed
+ * on that thread's box, or an `action` (a settle, a snooze, or undoing one), which is a click.
+ */
+export const OrchestrationV2CrewNote = Schema.Struct({
+  threadId: ThreadId,
+  kind: Schema.Literals(["reply", "action"]),
+});
+export type OrchestrationV2CrewNote = typeof OrchestrationV2CrewNote.Type;
+
 export const OrchestrationV2ThreadHistoryOrigin = Schema.Literals(["native", "v1_import"]);
 export type OrchestrationV2ThreadHistoryOrigin = typeof OrchestrationV2ThreadHistoryOrigin.Type;
 
@@ -568,6 +591,8 @@ export const OrchestrationV2AppThread = Schema.Struct({
   crewOf: Schema.optional(ThreadId),
   /** The prompt whose work launched this thread; Usage counts the thread's agent prompts to it. */
   causedBy: Schema.optional(OrchestrationV2CausedBy),
+  /** Where Usage counts this thread's work from its birth, bound from the thread that launched it. */
+  usageOrigin: Schema.optional(OrchestrationV2UsageOrigin),
   /** A coordinator's short word on this thread's state, shown on its crew card. */
   statusLabel: Schema.optional(Schema.NullOr(ThreadStatusLabel)),
   /** When the current label was first set; re-sending the same label keeps it. */
@@ -1495,6 +1520,9 @@ export const OrchestrationV2ConversationMessage = Schema.Struct({
   senderThreadId: Schema.optional(ThreadId),
   /** The prompt whose work led an agent to send this message. */
   causedBy: Schema.optional(OrchestrationV2CausedBy),
+  /** Set when the message re-roots its thread's Usage: its sender's turn was typed then. */
+  usageOrigin: Schema.optional(OrchestrationV2UsageOrigin),
+  crewNote: Schema.optional(OrchestrationV2CrewNote),
   linkedSender: Schema.optional(OrchestrationV2LinkedSender),
   idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
   origin: Schema.optional(OrchestrationClientOrigin),
@@ -3272,6 +3300,8 @@ export const OrchestrationV2Command = Schema.Union([
     crewOf: Schema.optional(ThreadId),
     /** Only the server sets this, after checking the message; a client's value is dropped. */
     causedBy: Schema.optional(OrchestrationV2CausedBy),
+    /** Only the server sets this; a client's value is dropped. */
+    usageOrigin: Schema.optional(OrchestrationV2UsageOrigin),
     environment: Schema.optional(OrchestrationV2ThreadEnvironment),
     instructions: Schema.optional(OrchestrationV2ThreadInstructions),
     importedNativeThread: Schema.optional(
@@ -3535,6 +3565,9 @@ export const OrchestrationV2Command = Schema.Union([
     senderThreadId: Schema.optional(ThreadId),
     /** Only the server sets this, after checking the message; a client's value is dropped. */
     causedBy: Schema.optional(OrchestrationV2CausedBy),
+    /** Only the server sets this; a client's value is dropped. */
+    usageOrigin: Schema.optional(OrchestrationV2UsageOrigin),
+    crewNote: Schema.optional(OrchestrationV2CrewNote),
     linkedSender: Schema.optional(OrchestrationV2LinkedSender),
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
     /** Set by the server from the sending connection; a client's value is dropped. */

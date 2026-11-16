@@ -31,6 +31,18 @@ export const ensureForkSchema = Effect.fn("ensureForkSchema")(function* () {
       hasColumn("device") ? ", device" : ""
     }`,
   );
+  // A claim bound by value from a thread's work: its device, plus how it was read (basis, reason).
+  if (claimColumns.length > 0 && !outdated && !hasColumn("bound_json")) {
+    yield* sql`ALTER TABLE usage_claims ADD COLUMN bound_json TEXT`;
+  }
+  // The origin a scheduled task's runs count to, bound from the turn that created it.
+  yield* sql`
+    CREATE TABLE IF NOT EXISTS usage_scheduled_task_origins (
+      task_id TEXT PRIMARY KEY,
+      origin_json TEXT NOT NULL,
+      bound_at TEXT NOT NULL
+    )
+  `;
   yield* sql.withTransaction(
     Effect.gen(function* () {
       // SQLite can't change a CHECK or primary key in place, so an older table is rebuilt once.
@@ -45,6 +57,7 @@ export const ensureForkSchema = Effect.fn("ensureForkSchema")(function* () {
           cause_message_id TEXT,
           device TEXT CHECK (device IN ('phone', 'computer')),
           claimed_at TEXT NOT NULL,
+          bound_json TEXT,
           PRIMARY KEY (target_kind, target, claimed_from),
           CHECK ((cause_message_id IS NULL) <> (device IS NULL)),
           CHECK (claimed_from = '' OR target_kind = 'session')

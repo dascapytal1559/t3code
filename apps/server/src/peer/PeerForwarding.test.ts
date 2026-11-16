@@ -33,6 +33,7 @@ import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterReg
 import * as ProjectCloneTracker from "../project/ProjectCloneTracker.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
+import * as UsageOrigins from "../usage/UsageOrigins.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -240,7 +241,10 @@ const serveBox = (seen: Ref.Ref<Seen>, linkSession: Ref.Ref<string>) =>
       ),
       Layer.provide(NodeServices.layer),
       Layer.provide(
-        Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
+        Layer.merge(
+          Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
+          UsageOrigins.layerTest,
+        ),
       ),
       Layer.provide(Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({})),
       Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
@@ -322,6 +326,7 @@ const makeLaptop = Effect.gen(function* () {
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(ProviderRegistry.ProviderRegistry)({ getProviders: Effect.succeed([]) }),
+        UsageOrigins.layerTest,
         Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({}),
         Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
         Layer.mock(ProjectService.ProjectService)({}),
