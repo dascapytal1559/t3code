@@ -69,6 +69,7 @@ const threadShell = vi.hoisted(() => ({
   activeOrderKey: null as string | null,
   unsettledAt: null as string | null,
   snoozedUntil: null as string | null,
+  settledOverride: null as "settled" | "active" | null,
   projectId: "project",
   environmentId: "undo-env",
   session: null,
@@ -146,6 +147,7 @@ beforeEach(() => {
   threadShell.activeOrderKey = null;
   threadShell.unsettledAt = null;
   threadShell.snoozedUntil = null;
+  threadShell.settledOverride = null;
   threadShell.crewOf = undefined;
   shellLoaded.current = true;
 });
@@ -196,6 +198,21 @@ describe("telling a crew thread's coordinator", () => {
     await useThreadActions().settleThread(target);
     await currentUndo()();
     expect(sentTexts()).toEqual(["thread-action: settled", "thread-action: unsettled"]);
+  });
+
+  it("sends an un-settle or a wake when pinning wakes the thread, and nothing for its Undo", async () => {
+    threadShell.crewOf = "firstmate";
+    threadShell.settledOverride = "settled";
+    await useThreadActions().pinThread(target);
+    threadShell.settledOverride = "active";
+    threadShell.snoozedUntil = "2099-01-01T09:00:00.000Z";
+    await useThreadActions().pinThread(target);
+    threadShell.snoozedUntil = null;
+    threadShell.pinnedAt = "2026-01-01T00:00:00.000Z";
+    await useThreadActions().unpinThread(target);
+    await currentUndo()();
+    expect(commands.pin).toHaveBeenCalledTimes(3);
+    expect(sentTexts()).toEqual(["thread-action: unsettled", "thread-action: unsnoozed"]);
   });
 
   it("sends nothing for a thread that is not crew", async () => {

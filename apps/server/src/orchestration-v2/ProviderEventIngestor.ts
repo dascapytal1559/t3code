@@ -338,7 +338,11 @@ export const layer: Layer.Layer<
         );
       }
       for (const item of pending.turnItems) {
-        if (item.type === "user_input_request" && kept.has(item.requestId)) continue;
+        if (
+          (item.type === "user_input_request" || item.type === "approval_request") &&
+          kept.has(item.requestId)
+        )
+          continue;
         events.push(
           yield* makeDomainEvent(input, {
             type: "turn-item.updated",

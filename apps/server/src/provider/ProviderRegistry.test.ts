@@ -53,6 +53,7 @@ import {
   type CodexAppServerProviderSnapshot,
 } from "./CodexProvider.ts";
 import { BUNDLED_CLAUDE_MODEL_CATALOG } from "./ClaudeModelCatalog.ts";
+import { claudeOauthUsageRateLimits } from "./claudeUsageLimits.ts";
 import { type ClaudeCapabilitiesProbe, checkClaudeProviderStatus } from "./ClaudeProvider.ts";
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as AntigravityInstallation from "./AntigravityInstallation.ts";
@@ -4658,6 +4659,7 @@ it.layer(
               rate_limits: {
                 five_hour: window(10),
                 seven_day: window(20),
+                model_scoped: [{ display_name: "Fable", ...window(40) }],
                 extra_usage: {
                   is_enabled: true,
                   monthly_limit: 100,
@@ -4680,7 +4682,11 @@ it.layer(
                   read && {
                     checkedAt: "2026-11-16T02:04:00.000Z",
                     rateLimits: read.windows
-                      ? { five_hour: window(15), seven_day: window(25), model_scoped: [] }
+                      ? claudeOauthUsageRateLimits({
+                          five_hour: window(15),
+                          seven_day: window(25),
+                          extra_usage: null,
+                        })
                       : undefined,
                     resetCredits: undefined,
                   },
@@ -4696,6 +4702,7 @@ it.layer(
             [
               ["five_hour", 15],
               ["seven_day", 25],
+              ["seven_day_fable", 40],
               ["monthly_spend", 30],
             ],
           ]);
@@ -4705,6 +4712,7 @@ it.layer(
               [
                 ["five_hour", 10],
                 ["seven_day", 20],
+                ["seven_day_fable", 40],
                 ["monthly_spend", 30],
               ],
             ]);

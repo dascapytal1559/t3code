@@ -776,8 +776,15 @@ export function useThreadActions() {
   };
 
   const pinThread = async (target: ScopedThreadRef, opts: { orderKey?: string } = {}) => {
+    const thread = readThreadShell(target);
+    const nowMs = Date.now();
     const result = await sendPin(target, opts);
-    if (result._tag === "Success") announce("Pinned 1 thread");
+    if (result._tag !== "Success") return result;
+    announce("Pinned 1 thread");
+    if (thread?.settledOverride === "settled") tellCoordinator(target, { kind: "unsettled" });
+    else if (thread?.snoozedUntil != null && Date.parse(thread.snoozedUntil) > nowMs) {
+      tellCoordinator(target, { kind: "unsnoozed" });
+    }
     return result;
   };
 

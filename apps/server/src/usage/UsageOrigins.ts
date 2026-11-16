@@ -780,15 +780,21 @@ export class UsageOrigins extends Context.Service<
   }
 >()("t3/usage/UsageOrigins") {}
 
-/** The origin T3 stores by value for work it binds, stripped of how this read matched it. */
-export const storedOrigin = (key: UsageOriginKey) => ({
-  origin: key.origin,
-  basis: key.basis,
-  // The bound work was not typed itself: it inherits the typed prompt behind it.
-  reason: key.reason === "typed" ? "inherited" : key.reason,
-  ...(key.claim === undefined ? {} : { claim: key.claim }),
-  ...rootOf(key),
-});
+/**
+ * The origin T3 stores by value for work it binds, stripped of how this read matched it. Only a
+ * phone or computer is stored: other work keeps counting by its recorded causes and claims.
+ */
+export const storedOrigin = (key: UsageOriginKey) =>
+  isDevice(key)
+    ? {
+        origin: key.origin,
+        basis: key.basis,
+        // The bound work was not typed itself: it inherits the typed prompt behind it.
+        reason: key.reason === "typed" ? "inherited" : key.reason,
+        ...(key.claim === undefined ? {} : { claim: key.claim }),
+        ...rootOf(key),
+      }
+    : undefined;
 
 const StoredRoot = Schema.Struct({ threadId: Schema.String, messageId: Schema.String });
 
@@ -828,17 +834,18 @@ const boundClaimKey = (
 /** Bound for work whose thread has nothing recorded to count it by. */
 const NO_ORIGIN_BOUND: UsageOriginKey = { origin: "unknown", basis: "default", reason: "noCause" };
 
-/** A stored origin a later version cannot read is left out rather than guessed. */
-const storedOriginOf = (json: string | null): UsageOriginKey | undefined => {
+/** A stored origin a later version cannot read, or one naming no device, is left out. */
+const storedOriginOf = (json: string | null): DeviceOriginKey | undefined => {
   if (json === null) return undefined;
   const decoded = decodeStoredOrigin(json);
   if (Option.isNone(decoded)) return undefined;
   const { claim, root, ...key } = decoded.value;
-  return {
+  const stored = {
     ...key,
     ...(claim === undefined ? {} : { claim }),
     ...(root === undefined ? {} : { root }),
   };
+  return isDevice(stored) ? stored : undefined;
 };
 
 interface MessageColumns {
@@ -900,6 +907,8 @@ const encodeIds = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.St
 
 // A turn that started before the window can still be running in it.
 const TURN_LOOKBACK_MS = 2 * 24 * 60 * 60 * 1000;
+// A session outside T3 (a terminal left open) can run far longer than any turn.
+const REGISTER_LOOKBACK_MS = 31 * 24 * 60 * 60 * 1000;
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -1198,7 +1207,6 @@ const make = Effect.gen(function* () {
           ],
     );
     // A claim names a device, or counts like an agent prompt caused by the prompt it names.
-    const claimRows = yield* claims.read;
     const claimMessage = (claim: UsageClaims.StoredUsageClaim): CausalMessage | null =>
       claim.causeMessageId === null
         ? null
@@ -1214,17 +1222,44 @@ const make = Effect.gen(function* () {
             causedBy: claim.causeMessageId,
             coordinator: false,
           };
+    const reached = [
+      ...turnMessages.filter((message) => message !== null),
+      ...promptMessages,
+      ...runPromptMessages,
+      ...workMessages,
+      ...births,
+    ];
+    const claimRows: UsageClaims.StoredUsageClaim[] =
+      input.onlyThread === undefined ? [...(yield* claims.read)] : [];
     const causes = yield* loadCauses(
-      [
-        ...turnMessages.filter((message) => message !== null),
-        ...promptMessages,
-        ...runPromptMessages,
-        ...workMessages,
-        ...births,
-        ...claimRows.flatMap((claim) => claimMessage(claim) ?? []),
-      ],
+      [...reached, ...claimRows.flatMap((claim) => claimMessage(claim) ?? [])],
       toMessage,
     );
+    // One thread's read takes only the run claims its prompts and their causes reach.
+    if (input.onlyThread !== undefined) {
+      const runsRead = new Set<string>();
+      const unreadRuns = (runs: ReadonlyArray<string | null>) => [
+        ...new Set(runs.flatMap((runId) => (runId === null || runsRead.has(runId) ? [] : [runId]))),
+      ];
+      const runsOf = (messages: Iterable<CausalMessage>) =>
+        [...messages].map((message) => message.runId);
+      let runIds = unreadRuns([
+        ...turnRows.map((row) => row.turn_run_id),
+        ...runsOf(reached),
+        ...runsOf(causes.values()),
+      ]);
+      while (runIds.length > 0) {
+        for (const runId of runIds) runsRead.add(runId);
+        const found = yield* claims.readRuns(runIds);
+        claimRows.push(...found);
+        const claimCauses = yield* loadCauses(
+          found.flatMap((claim) => claimMessage(claim) ?? []),
+          toMessage,
+        );
+        for (const [id, message] of claimCauses) causes.set(id, message);
+        runIds = unreadRuns(runsOf(claimCauses.values()));
+      }
+    }
     const causeOf = (id: string) => causes.get(id);
     const runClaims = new Map(
       claimRows.flatMap((claim) => (claim.kind === "run" ? [[claim.target, claim] as const] : [])),
@@ -1361,7 +1396,7 @@ const make = Effect.gen(function* () {
         promptsSinceMs: sinceMs,
       });
       const registrations = yield* resolveRegistrations(
-        yield* register.read(sinceMs - TURN_LOOKBACK_MS, untilMs),
+        yield* register.read(sinceMs - REGISTER_LOOKBACK_MS, untilMs),
       );
       const turns = facts.turns.flatMap((turn) =>
         turnSegments(turn, facts.resolver).map(({ typed: _typed, ...segment }) => segment),
@@ -1422,6 +1457,17 @@ const make = Effect.gen(function* () {
         (turn.completedAtMs === null || atMs <= turn.completedAtMs + BIND_GRACE_MS)
       ) {
         const segment = startedBy(turnSegments(turn, facts.resolver), atMs);
+        const moved = startedBy(facts.resolver.timelineOf(threadId), atMs);
+        if (
+          moved !== undefined &&
+          turn.completedAtMs !== null &&
+          moved.startedAtMs > turn.completedAtMs
+        )
+          return {
+            key: withVia(moved.key, segment?.key.via),
+            reroots: false,
+            runId: turn.runId,
+          } satisfies BoundOrigin;
         if (segment !== undefined)
           return {
             key: segment.key,
@@ -1443,10 +1489,12 @@ const make = Effect.gen(function* () {
 
   const bindScheduledTask = Effect.fn("UsageOrigins.bindScheduledTask")(
     function* (taskId: string, key: UsageOriginKey) {
+      const stored = storedOrigin(key);
+      if (stored === undefined) return;
       const boundAt = DateTime.formatIso(yield* DateTime.now);
       yield* sql`
         INSERT INTO usage_scheduled_task_origins (task_id, origin_json, bound_at)
-        VALUES (${taskId}, ${encodeStoredOrigin(storedOrigin(key))}, ${boundAt})
+        VALUES (${taskId}, ${encodeStoredOrigin(stored)}, ${boundAt})
         ON CONFLICT (task_id) DO UPDATE SET
           origin_json = excluded.origin_json,
           bound_at = excluded.bound_at

@@ -93,6 +93,10 @@ export class UsageClaims extends Context.Service<
       SqlError.SqlError
     >;
     readonly read: Effect.Effect<ReadonlyArray<StoredUsageClaim>, SqlError.SqlError>;
+    /** The claims on these runs. */
+    readonly readRuns: (
+      runIds: ReadonlyArray<string>,
+    ) => Effect.Effect<ReadonlyArray<StoredUsageClaim>, SqlError.SqlError>;
   }
 >()("t3/usage/UsageClaims") {}
 
@@ -217,34 +221,40 @@ const make = Effect.gen(function* () {
     return { target, value: stored === undefined ? null : storedValue(stored), kept: true };
   });
 
+  const storedClaims = (rows: ReadonlyArray<ClaimRow>) =>
+    rows.flatMap((row): StoredUsageClaim[] => {
+      const kind = row.target_kind;
+      const device = row.device === "phone" || row.device === "computer" ? row.device : null;
+      const fromMs = row.claimed_from === NO_START ? undefined : Date.parse(row.claimed_from);
+      if (kind !== "session" && kind !== "directory" && kind !== "run") return [];
+      if ((row.cause_message_id === null) === (device === null)) return [];
+      if (Number.isNaN(fromMs)) return [];
+      const bound = device === null ? undefined : decodeBound(row.bound_json);
+      const claimed: StoredUsageClaim = {
+        kind,
+        target: row.target,
+        causeMessageId: row.cause_message_id,
+        device,
+        ...(bound === undefined ? {} : { bound }),
+      };
+      return [fromMs === undefined ? claimed : { ...claimed, fromMs }];
+    });
+
   const read = sql<ClaimRow>`
     SELECT target_kind, target, claimed_from, cause_message_id, device, bound_json
     FROM usage_claims
-  `.pipe(
-    NodeSqliteClient.readOnly,
-    Effect.map((rows) =>
-      rows.flatMap((row): StoredUsageClaim[] => {
-        const kind = row.target_kind;
-        const device = row.device === "phone" || row.device === "computer" ? row.device : null;
-        const fromMs = row.claimed_from === NO_START ? undefined : Date.parse(row.claimed_from);
-        if (kind !== "session" && kind !== "directory" && kind !== "run") return [];
-        if ((row.cause_message_id === null) === (device === null)) return [];
-        if (Number.isNaN(fromMs)) return [];
-        const bound = device === null ? undefined : decodeBound(row.bound_json);
-        const claimed: StoredUsageClaim = {
-          kind,
-          target: row.target,
-          causeMessageId: row.cause_message_id,
-          device,
-          ...(bound === undefined ? {} : { bound }),
-        };
-        return [fromMs === undefined ? claimed : { ...claimed, fromMs }];
-      }),
-    ),
-    Effect.withSpan("UsageClaims.read"),
-  );
+  `.pipe(NodeSqliteClient.readOnly, Effect.map(storedClaims), Effect.withSpan("UsageClaims.read"));
 
-  return UsageClaims.of({ claim, read });
+  const readRuns = Effect.fn("UsageClaims.readRuns")(function* (runIds: ReadonlyArray<string>) {
+    if (runIds.length === 0) return [];
+    const rows = yield* sql<ClaimRow>`
+      SELECT target_kind, target, claimed_from, cause_message_id, device, bound_json
+      FROM usage_claims WHERE target_kind = 'run' AND target IN ${sql.in(runIds)}
+    `.pipe(NodeSqliteClient.readOnly);
+    return storedClaims(rows);
+  });
+
+  return UsageClaims.of({ claim, read, readRuns });
 });
 
 export const layer = Layer.effect(UsageClaims, make);

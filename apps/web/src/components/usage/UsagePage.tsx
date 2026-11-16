@@ -744,7 +744,6 @@ function UsageOverview({
                   <dt className="flex min-w-0 items-baseline gap-1.5 text-sm text-foreground">
                     <button
                       type="button"
-                      aria-label={`Count ${PROVIDER_PRESENTATION[provider].label} in usage`}
                       aria-pressed={!excluded}
                       onClick={() => onProviderShownChange(provider, excluded)}
                       className="-mx-1 flex min-w-0 cursor-pointer items-center gap-2 rounded-sm px-1 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"

@@ -47,11 +47,12 @@ const boundClaim = Effect.fn("mcp.boundUsageClaim")(function* (
   // Any caller may name a task's thread: the claim is about the work, not the caller's turn.
   const bound = yield* bindUsageOrigin(threads, fromThread, undefined);
   if (bound === null) return yield* unavailable();
-  const { origin, ...binding } = UsageOrigins.storedOrigin(bound.key);
-  if (origin !== "phone" && origin !== "computer")
+  const stored = UsageOrigins.storedOrigin(bound.key);
+  if (stored === undefined)
     return yield* invalidRequest(
       `fromThread: thread ${fromThread.threadId}'s work counts to no device then; nothing was claimed.`,
     );
+  const { origin, ...binding } = stored;
   return { device: origin, bound: binding } satisfies UsageClaims.UsageClaimValue;
 });
 

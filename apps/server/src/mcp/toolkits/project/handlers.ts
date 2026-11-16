@@ -158,6 +158,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           linkOrigin === undefined
             ? yield* bindUsageOrigin(context.threads, input.fromThread, caller?.id)
             : null;
+        const usageOrigin = bound === null ? undefined : UsageOrigins.storedOrigin(bound.key);
         const projectId =
           input.scratch === true
             ? (yield* ManagedProjectFolders.ManagedProjectFolders.pipe(
@@ -297,7 +298,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
           ...(input.environment === undefined ? {} : { environment: input.environment }),
           ...(input.parentThreadId === undefined ? {} : { crewOf: input.parentThreadId }),
           ...(causedBy === undefined ? {} : { causedBy }),
-          ...(bound === null ? {} : { usageOrigin: UsageOrigins.storedOrigin(bound.key) }),
+          ...(usageOrigin === undefined ? {} : { usageOrigin }),
           ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
           ...(input.message === undefined && attachments.length === 0
             ? {}

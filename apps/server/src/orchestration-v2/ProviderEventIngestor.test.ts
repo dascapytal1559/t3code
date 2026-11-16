@@ -1248,16 +1248,21 @@ layer("ProviderEventIngestorV2", (it) => {
           { key: "other-turn", responseCapability: { type: "live", providerSessionId } },
           { key: "approval", responseCapability: { type: "live", providerSessionId } },
           { key: "retained", responseCapability: { type: "live", providerSessionId } },
+          {
+            key: "retained-approval",
+            responseCapability: { type: "live", providerSessionId },
+          },
         ] as const;
         const fixtures = specs.map((spec, ordinal) => {
           const nodeId = NodeId.make(`${threadId}:${spec.key}`);
           const resolved = spec.key === "answered";
+          const approval = spec.key === "approval" || spec.key === "retained-approval";
           const request: OrchestrationV2RuntimeRequest = {
             id: RuntimeRequestId.make(`${threadId}:${spec.key}`),
             nodeId,
             providerTurnId: spec.key === "other-turn" ? otherTurnId : providerTurnId,
             nativeRequestRef: null,
-            kind: spec.key === "approval" ? "command" : "user_input",
+            kind: approval ? "command" : "user_input",
             status: resolved ? "resolved" : "pending",
             responseCapability: spec.responseCapability,
             createdAt: now,
@@ -1269,7 +1274,7 @@ layer("ProviderEventIngestorV2", (it) => {
             runId: null,
             parentNodeId: null,
             rootNodeId: nodeId,
-            kind: spec.key === "approval" ? "approval_request" : "user_input_request",
+            kind: approval ? "approval_request" : "user_input_request",
             status: resolved ? "completed" : "waiting",
             countsForRun: false,
             providerThreadId,
@@ -1295,7 +1300,7 @@ layer("ProviderEventIngestorV2", (it) => {
             startedAt: now,
             completedAt: resolved ? now : null,
             updatedAt: now,
-            ...(spec.key === "approval"
+            ...(approval
               ? { type: "approval_request", requestId: request.id, requestKind: "command" }
               : {
                   type: "user_input_request",
@@ -1322,7 +1327,10 @@ layer("ProviderEventIngestorV2", (it) => {
           }
         }
         yield* eventSink.write({ events: seedEvents });
-        const retainedRuntimeRequestIds = [RuntimeRequestId.make(`${threadId}:retained`)];
+        const retainedRuntimeRequestIds = [
+          RuntimeRequestId.make(`${threadId}:retained`),
+          RuntimeRequestId.make(`${threadId}:retained-approval`),
+        ];
         const input = {
           providerSessionId,
           providerInstanceId: modelSelection.instanceId,
@@ -1395,7 +1403,7 @@ layer("ProviderEventIngestorV2", (it) => {
             providerTurnId,
             "questions",
           )).runtimeRequests.map((request) => request.id),
-          retainedRuntimeRequestIds,
+          [RuntimeRequestId.make(`${threadId}:retained`)],
         );
         const replayed = yield* eventStore.read({ threadId }).pipe(Stream.runCollect);
         assert.equal(

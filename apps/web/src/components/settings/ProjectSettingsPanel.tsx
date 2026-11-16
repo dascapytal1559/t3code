@@ -329,7 +329,7 @@ function ProjectDetail({
     const next =
       value.trim() === "" || !Number.isFinite(thousands) || thousands <= 0
         ? null
-        : Math.round(thousands * 1000);
+        : Math.max(1, Math.round(thousands * 1000));
     if (next === coldClearMinTokens) return;
     void updateAllMembers({ coldClearMinTokens: next }, "Failed to save the cache-expiry setting");
   };

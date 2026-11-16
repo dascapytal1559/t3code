@@ -152,15 +152,13 @@ const decodeOauthUsage = Schema.decodeUnknownOption(
   }),
 );
 const decodeOauthExtraUsage = Schema.decodeUnknownOption(
-  Schema.NullOr(
-    Schema.Struct({
-      is_enabled: Schema.Boolean,
-      monthly_limit: Schema.NullOr(Schema.Number),
-      used_credits: Schema.NullOr(Schema.Number),
-      utilization: Schema.NullOr(Schema.Number),
-      currency: Schema.optionalKey(Schema.NullOr(Schema.String)),
-    }),
-  ),
+  Schema.Struct({
+    is_enabled: Schema.Boolean,
+    monthly_limit: Schema.NullOr(Schema.Number),
+    used_credits: Schema.NullOr(Schema.Number),
+    utilization: Schema.NullOr(Schema.Number),
+    currency: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  }),
 );
 const decodeOauthScopedLimit = Schema.decodeUnknownOption(
   Schema.Struct({
@@ -173,29 +171,36 @@ const decodeOauthScopedLimit = Schema.decodeUnknownOption(
 
 /**
  * The windows of a raw `/api/oauth/usage` body in the CLI's `get_usage` shape. The CLI builds
- * `model_scoped` from the body's `weekly_scoped` limits; fields the body omits stay absent.
+ * `model_scoped` from the body's `weekly_scoped` limits. Without `limits` or a non-null
+ * `extra_usage` (the read skips spend), those fields stay absent so the probe's survive the merge.
  */
 export function claudeOauthUsageRateLimits(body: unknown): Partial<ClaudeRateLimits> | undefined {
   const usage = Option.getOrUndefined(decodeOauthUsage(body));
   if (!usage || (usage.five_hour === undefined && usage.seven_day === undefined)) return undefined;
   const extraUsage =
-    usage.extra_usage === undefined ? undefined : decodeOauthExtraUsage(usage.extra_usage);
+    usage.extra_usage == null
+      ? undefined
+      : Option.getOrUndefined(decodeOauthExtraUsage(usage.extra_usage));
   return {
     five_hour: usage.five_hour ?? null,
     seven_day: usage.seven_day ?? null,
-    model_scoped: (usage.limits ?? []).flatMap((entry) =>
-      Option.match(decodeOauthScopedLimit(entry), {
-        onNone: () => [],
-        onSome: (limit) => [
-          {
-            display_name: limit.scope.model.display_name,
-            utilization: limit.percent ?? null,
-            resets_at: limit.resets_at ?? null,
-          },
-        ],
-      }),
-    ),
-    ...(extraUsage && Option.isSome(extraUsage) ? { extra_usage: extraUsage.value } : {}),
+    ...(usage.limits === undefined
+      ? {}
+      : {
+          model_scoped: (usage.limits ?? []).flatMap((entry) =>
+            Option.match(decodeOauthScopedLimit(entry), {
+              onNone: () => [],
+              onSome: (limit) => [
+                {
+                  display_name: limit.scope.model.display_name,
+                  utilization: limit.percent ?? null,
+                  resets_at: limit.resets_at ?? null,
+                },
+              ],
+            }),
+          ),
+        }),
+    ...(extraUsage ? { extra_usage: extraUsage } : {}),
   };
 }
 

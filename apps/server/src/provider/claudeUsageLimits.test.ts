@@ -372,7 +372,6 @@ describe("claudeOauthUsageRateLimits", () => {
       model_scoped: [
         { display_name: "Fable", utilization: 96, resets_at: "2026-11-16T04:00:00.108918+00:00" },
       ],
-      extra_usage: null,
     });
     expect(
       claudeUsageResponseToLimits({

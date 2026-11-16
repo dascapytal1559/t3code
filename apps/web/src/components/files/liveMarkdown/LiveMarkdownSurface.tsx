@@ -189,9 +189,10 @@ export default function LiveMarkdownSurface({
   const searchEntries = useAtomQueryRunner(projectEnvironment.searchEntries, {
     reportFailure: false,
   });
-  const imageNeeded = useEffectEvent((key: string) => {
+  const embedKeys = useRef(new Set<string>());
+  const lookUpEmbed = useEffectEvent((key: string) => {
     const target = imageEmbedTargetOf(key);
-    if (target === null) return addImageKey(key);
+    if (target === null) return;
     if (!readEnvironmentScope(environmentId, AuthFilesystemReadScope)) return;
     void findImageEmbed(target, baseDir, cwd, {
       files: async (paths) => {
@@ -211,12 +212,32 @@ export default function LiveMarkdownSurface({
         return result._tag === "Success" ? result.value.entries : [];
       },
     }).then((path) => {
-      if (path === null) return;
+      if (path === null) {
+        setEmbedFiles((files) => {
+          if (!files.has(key)) return files;
+          const next = new Map(files);
+          next.delete(key);
+          return next;
+        });
+        return;
+      }
       const file = imageEmbedFileKey(path);
       addImageKey(file);
-      setEmbedFiles((files) => new Map(files).set(key, file));
+      setEmbedFiles((files) => (files.get(key) === file ? files : new Map(files).set(key, file)));
     });
   });
+  const imageNeeded = useEffectEvent((key: string) => {
+    if (imageEmbedTargetOf(key) === null) return addImageKey(key);
+    embedKeys.current.add(key);
+    lookUpEmbed(key);
+  });
+  const lookedUpAt = useRef(workspaceMutationId);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a workspace change can add or move the file an embed names, which only a new lookup finds
+  useEffect(() => {
+    if (lookedUpAt.current === workspaceMutationId) return;
+    lookedUpAt.current = workspaceMutationId;
+    for (const key of embedKeys.current) lookUpEmbed(key);
+  }, [workspaceMutationId]);
   const offerOutline = useEffectEvent((source: MarkdownOutlineSource | null) =>
     onOutlineSource(source),
   );

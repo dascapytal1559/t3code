@@ -550,7 +550,7 @@ const seedThread = (input: {
   environment?: Record<string, string>;
   createdAt?: string;
   coordinator?: true;
-  usageOrigin?: Record<string, unknown>;
+  usageOrigin?: Record<string, unknown> | undefined;
 }) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
@@ -1317,6 +1317,13 @@ describe("UsageOrigins born labelled", () => {
           crewNote: { threadId: "worker", kind: "reply" },
         });
         yield* run("worker-5", 5, "worker", "06:30", "06:40", wake);
+        // A reply from the computer just after that turn ends moves what the worker launches then.
+        yield* run("fm-reply-computer", 6, "firstmate", "06:42", "06:44", {
+          ...computer,
+          crewNote: { threadId: "worker", kind: "reply" },
+        });
+        const afterTurn = yield* origins.originAt("worker", time("06:43"));
+        assert.strictEqual(afterTurn && summary(afterTurn), "computer inherited");
 
         // The scheduled task's run, in a thread of its own.
         yield* seedThread({ id: "daily", createdAt: iso("07:00") });
@@ -1339,6 +1346,15 @@ describe("UsageOrigins born labelled", () => {
           causedBy: { threadId: "firstmate", messageId: "message-fm-computer" },
         });
         yield* run("older-3", 3, "older", "04:10", "04:20", wake);
+        // An origin stored before only devices were stored names no device: its cause decides.
+        yield* seedThread({
+          id: "agent-bound",
+          crewOf: "firstmate",
+          createdAt: iso("01:00"),
+          causedBy: { threadId: "firstmate", messageId: "message-fm-phone" },
+          usageOrigin: { origin: "agent", basis: "sender", reason: "noCause" },
+        });
+        yield* run("agent-bound-1", 1, "agent-bound", "01:30", "01:40", fromMcp);
 
         const index = new UsageOriginIndex(yield* origins.read(time("00:00"), time("23:59")));
         const counted = (threadId: string, clock: string) => {
@@ -1360,6 +1376,7 @@ describe("UsageOrigins born labelled", () => {
             counted("older", "01:31"),
             counted("older", "03:15"),
             counted("older", "04:11"),
+            counted("agent-bound", "01:31"),
           ],
           [
             "worker 01:05 phone inherited",
@@ -1375,8 +1392,31 @@ describe("UsageOrigins born labelled", () => {
             "older 01:31 phone inherited",
             "older 03:15 computer inherited",
             "older 04:11 computer inherited",
+            "agent-bound 01:31 phone inherited",
           ],
         );
+        // Deleting the scheduled task deletes the origin its runs counted to.
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`INSERT INTO scheduled_tasks ${sql.insert({
+          task_id: "task-daily",
+          title: "Daily",
+          prompt: "Daily",
+          enabled: 1,
+          schedule_json: "{}",
+          project_id: "project",
+          workspace_strategy_json: "{}",
+          model_selection_json: "{}",
+          runtime_mode: "full-access",
+          interaction_mode: "default",
+          created_by: "agent",
+          creation_source: "mcp",
+          created_at: iso("01:02"),
+          updated_at: iso("01:02"),
+          last_run_status: "never",
+          run_count: 0,
+        })}`;
+        yield* sql`DELETE FROM scheduled_tasks WHERE task_id = 'task-daily'`;
+        assert.deepStrictEqual(yield* sql`SELECT task_id FROM usage_scheduled_task_origins`, []);
         assert.isNull(yield* origins.originAt("gone", time("01:00")));
       }).pipe(
         Effect.provide(
@@ -1408,7 +1448,13 @@ describe("UsageOrigins born labelled", () => {
             }),
           );
         const bornAt = (threadId: string, clock: string) =>
-          bindAt(threadId, clock).pipe(Effect.map((bound) => storedOrigin(bound.key)));
+          bindAt(threadId, clock).pipe(
+            Effect.map((bound) => {
+              const stored = storedOrigin(bound.key);
+              assert.isDefined(stored);
+              return stored!;
+            }),
+          );
         const rootOf = (key: { root?: { messageId: string } }) => key.root?.messageId ?? "-";
         yield* seedThread({ id: "firstmate", coordinator: true });
 
