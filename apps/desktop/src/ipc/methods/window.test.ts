@@ -291,7 +291,10 @@ describe("installRelayTelemetryEnabled", () => {
         afterDiscovery: true,
       });
       assert.deepEqual(
-        yield* relayTelemetryEnabled(optedIn, undefined, { T3CODE_TELEMETRY_ENABLED: "false" }),
+        // The helper writes the login shell's values into the env it is given.
+        yield* relayTelemetryEnabled({ ...optedIn }, undefined, {
+          T3CODE_TELEMETRY_ENABLED: "false",
+        }),
         { beforeDiscovery: null, afterDiscovery: false },
       );
     }),
