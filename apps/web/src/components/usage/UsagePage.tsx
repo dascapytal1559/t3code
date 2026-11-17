@@ -50,7 +50,7 @@ import {
   formatPercent,
   formatTokens,
   formatUsageContractMismatch,
-  formatUsd,
+  formatUsdShort,
   makeWindow,
   usageSourceMessages,
 } from "@t3tools/shared/usageFormat";
@@ -84,6 +84,7 @@ import { splitSkippedRecords } from "./usageSkippedRecords";
 import { SpeedPremium, UsageModelDialog } from "./UsageModelDialog";
 import { UsageShareBar } from "./UsageShareBar";
 import { UsageOriginBreakdown } from "./UsageOriginBreakdown";
+import { emphasisColor, emphasisPositions, isTopLeague } from "./usageEmphasis";
 import {
   costTypeSegments,
   modelShare,
@@ -672,6 +673,16 @@ function UsageOverview({
     [...merged.providers, ...merged.excludedProviders],
     metric,
   );
+  const providerTotals = rankedProviders.map((provider) =>
+    (excludedProviders.has(provider) ? merged.excludedProviders : merged.providers).find(
+      (entry) => entry.provider === provider,
+    ),
+  );
+  const providerEmphasis = emphasisPositions(
+    providerTotals.map((totals) =>
+      metric === "cost" ? (totals?.costUsd ?? 0) : (totals?.totalTokens ?? 0),
+    ),
+  );
 
   return (
     <div aria-busy={loadingPartial} className="flex flex-col gap-6">
@@ -689,12 +700,17 @@ function UsageOverview({
                 figureClass(loadingPartial),
               )}
             >
-              {metric === "cost" ? formatUsd(merged.costUsd) : formatTokens(merged.totalTokens)}
+              {metric === "cost"
+                ? formatUsdShort(merged.costUsd)
+                : formatTokens(merged.totalTokens)}
             </p>
-            <p className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+            <p className="inline-flex items-center gap-1 text-xs text-muted-foreground tabular-nums">
               <span>
                 <span className={figureClass(loadingPartial)}>
-                  {formatCount(merged.sessions)} sessions
+                  {formatCount(merged.sessions)} sessions ·{" "}
+                  {metric === "cost"
+                    ? `${formatTokens(merged.totalTokens)} tokens`
+                    : formatUsdShort(merged.costUsd)}
                 </span>
                 {metric === "cost" && " · API estimate"}
               </span>
@@ -723,11 +739,10 @@ function UsageOverview({
             </div>
           ) : null}
 
-          {rankedProviders.map((provider) => {
+          {rankedProviders.map((provider, index) => {
             const excluded = excludedProviders.has(provider);
-            const totals = (excluded ? merged.excludedProviders : merged.providers).find(
-              (entry) => entry.provider === provider,
-            );
+            const totals = providerTotals[index];
+            const emphasis = providerEmphasis[index] ?? 1;
             const share = metric === "cost" ? (totals?.costShare ?? 0) : (totals?.tokenShare ?? 0);
             const providerSessions = totals?.sessions ?? 0;
             const sessionLabel = `${formatCount(providerSessions)} ${
@@ -741,7 +756,7 @@ function UsageOverview({
                 className={cn("flex min-w-0 flex-col gap-1", excluded && "opacity-50 grayscale")}
               >
                 <dl className="flex items-baseline justify-between gap-4">
-                  <dt className="flex min-w-0 items-baseline gap-1.5 text-sm text-foreground">
+                  <dt className="flex min-w-0 text-sm text-foreground">
                     <button
                       type="button"
                       aria-pressed={!excluded}
@@ -758,45 +773,36 @@ function UsageOverview({
                       <ProviderMark provider={provider} className="size-4" />
                       <span className="truncate">{PROVIDER_PRESENTATION[provider].label}</span>
                     </button>
-                    <span
-                      className={cn(
-                        "shrink-0 whitespace-nowrap text-2xs text-muted-foreground tabular-nums",
-                        figureClass(providerLoading),
-                        awaitingData && "invisible",
-                      )}
-                    >
-                      {sessionLabel}
-                    </span>
                   </dt>
                   <dd
                     className={cn(
-                      "shrink-0 text-sm font-medium text-foreground tabular-nums",
+                      "shrink-0 text-base tabular-nums",
+                      isTopLeague(emphasis) ? "font-semibold" : "font-medium",
                       figureClass(providerLoading),
                     )}
+                    style={{ color: emphasisColor(emphasis) }}
                   >
                     {awaitingData
                       ? "-"
                       : metric === "cost"
-                        ? formatUsd(totals?.costUsd ?? 0)
+                        ? formatUsdShort(totals?.costUsd ?? 0)
                         : formatTokens(totals?.totalTokens ?? 0)}
                   </dd>
                 </dl>
                 <p
                   className={cn(
-                    "text-xs text-muted-foreground",
+                    "flex justify-between gap-4 text-xs text-muted-foreground tabular-nums",
                     figureClass(providerLoading),
                     awaitingData && "invisible",
                   )}
                 >
-                  {`${
-                    excluded
-                      ? "Excluded"
-                      : `${formatPercent(share)} of ${metric === "cost" ? "cost" : "tokens"}`
-                  } · ${
-                    metric === "cost"
+                  <span className="min-w-0 truncate">
+                    {sessionLabel} ·{" "}
+                    {metric === "cost"
                       ? `${formatTokens(totals?.totalTokens ?? 0)} tokens`
-                      : formatUsd(totals?.costUsd ?? 0)
-                  }`}
+                      : formatUsdShort(totals?.costUsd ?? 0)}
+                  </span>
+                  <span className="shrink-0">{excluded ? "Excluded" : formatPercent(share)}</span>
                 </p>
               </div>
             );
@@ -829,37 +835,6 @@ function UsageOverview({
         </div>
       </section>
 
-      <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium text-foreground">Totals</h2>
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 py-1 md:grid-cols-5">
-          <Metric
-            loading={loadingPartial}
-            label="Processed tokens"
-            value={formatTokens(merged.totalTokens)}
-          />
-          <Metric
-            loading={loadingPartial}
-            label="Cached input"
-            value={formatTokens(merged.cachedInputTokens)}
-          />
-          <Metric
-            loading={loadingPartial}
-            label="Uncached input"
-            value={formatTokens(merged.uncachedInputTokens)}
-          />
-          <Metric
-            loading={loadingPartial}
-            label="Output"
-            value={formatTokens(merged.outputTokens)}
-          />
-          <Metric
-            loading={loadingPartial}
-            label="Cache savings"
-            value={formatUsd(merged.costQuality.cacheSavingsUsd)}
-          />
-        </dl>
-      </section>
-
       {merged.totalTokens > 0 ? (
         <section
           className={cn("grid gap-x-12 gap-y-8 lg:grid-cols-2", figureClass(loadingPartial))}
@@ -875,13 +850,21 @@ function UsageOverview({
               <UsageShareBar
                 label="Cost by type"
                 segments={costTypeSegments(merged.categoryCost)}
-                format={formatUsd}
+                format={formatUsdShort}
+                aside={
+                  <span className="text-xs text-muted-foreground">
+                    Cache savings{" "}
+                    <span className="text-foreground tabular-nums">
+                      {formatUsdShort(merged.costQuality.cacheSavingsUsd)}
+                    </span>
+                  </span>
+                }
               />
               {merged.speedCost.fast + merged.speedCost.ultrafast > 0 ? (
                 <UsageShareBar
                   label="Cost by speed"
                   segments={speedCostSegments(merged.speedCost)}
-                  format={formatUsd}
+                  format={formatUsdShort}
                   aside={<SpeedPremium premiumUsd={merged.speedCost.premium} />}
                 />
               ) : null}
@@ -892,7 +875,7 @@ function UsageOverview({
               label={metric === "tokens" ? "Tokens by origin" : "Cost by origin"}
               origins={merged.origins}
               valueOf={(amount) => (metric === "tokens" ? amount.totalTokens : amount.costUsd)}
-              format={metric === "tokens" ? formatTokens : formatUsd}
+              format={metric === "tokens" ? formatTokens : formatUsdShort}
             />
           ) : null}
         </section>
@@ -982,7 +965,7 @@ function UsageOverview({
                         {isModelCostUnknown(model) ? (
                           <span className="text-muted-foreground">Unpriced</span>
                         ) : (
-                          formatUsd(model.costUsd)
+                          formatUsdShort(model.costUsd)
                         )}
                       </td>
                       <td className={cn("hidden py-2.5 pl-6 sm:table-cell", rowFigures)}>
@@ -1049,7 +1032,7 @@ function UsageOverview({
                             figureClass(loadingProviders.has(provider)),
                           )}
                         >
-                          {formatUsd(period.byProvider.get(provider)?.costUsd ?? 0)}
+                          {formatUsdShort(period.byProvider.get(provider)?.costUsd ?? 0)}
                         </td>
                       ))}
                       <td
@@ -1058,7 +1041,7 @@ function UsageOverview({
                           figureClass(loadingPartial),
                         )}
                       >
-                        {formatUsd(period.costUsd)}
+                        {formatUsdShort(period.costUsd)}
                       </td>
                       <td
                         className={cn(
@@ -1104,27 +1087,6 @@ function ProviderMark({
 
 function figureClass(loading: boolean) {
   return cn("transition-opacity", loading && "opacity-40 delay-150");
-}
-
-function Metric({
-  label,
-  value,
-  loading,
-}: {
-  readonly label: string;
-  readonly value: string;
-  readonly loading: boolean;
-}) {
-  return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd
-        className={cn("text-base font-medium text-foreground tabular-nums", figureClass(loading))}
-      >
-        {value}
-      </dd>
-    </div>
-  );
 }
 
 function UsageCoverageNotice({
@@ -1394,13 +1356,6 @@ function UsageSkeleton() {
         </div>
       </section>
 
-      <section className="flex flex-col gap-2">
-        <h2 className="text-sm font-medium text-foreground">Totals</h2>
-        <MetricSkeletons
-          labels={["Processed tokens", "Cached input", "Uncached input", "Output", "Cache savings"]}
-        />
-      </section>
-
       <section className="grid gap-x-12 gap-y-8 lg:grid-cols-2">
         <div className="flex flex-col gap-2.5">
           <Skeleton className="h-5 w-28" />
@@ -1417,18 +1372,5 @@ function UsageSkeleton() {
         <Skeleton className="h-44" />
       </section>
     </>
-  );
-}
-
-function MetricSkeletons({ labels }: { readonly labels: readonly string[] }) {
-  return (
-    <div className="grid grid-cols-2 gap-x-6 gap-y-4 py-1 md:grid-cols-5">
-      {labels.map((label) => (
-        <div key={label} className="flex flex-col gap-0.5">
-          <span className="text-xs text-muted-foreground">{label}</span>
-          <Skeleton className="h-6 w-16" />
-        </div>
-      ))}
-    </div>
   );
 }

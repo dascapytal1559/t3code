@@ -15,6 +15,12 @@ const CURRENCY = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
 });
 
+const WHOLE_CURRENCY = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
+
 const INTEGER = new Intl.NumberFormat("en-US");
 
 export function formatMalformedUsageWarning(count: number): string {
@@ -57,6 +63,13 @@ export function usageSourceMessages(sources: readonly UsageSource[]): readonly s
 
 export function formatUsd(value: number): string {
   return CURRENCY.format(value);
+}
+
+/** Whole dollars from $100 up, where cents stop mattering; cents below. */
+export function formatUsdShort(value: number): string {
+  return Math.abs(Math.round(value * 100)) >= 10_000
+    ? WHOLE_CURRENCY.format(value)
+    : CURRENCY.format(value);
 }
 
 export function formatCount(value: number): string {

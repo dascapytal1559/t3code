@@ -4,6 +4,7 @@ import type { CSSProperties, ReactNode } from "react";
 
 import { cn } from "../../lib/utils";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { emphasisColor, emphasisPositions } from "./usageEmphasis";
 import { originAxes, type OriginDevice } from "./usageOriginAxes";
 
 // Amber and blue: no provider on the Usage page uses either hue.
@@ -45,6 +46,17 @@ export function UsageOriginBreakdown({
   });
   const total = parts.reduce((sum, part) => sum + part.total, 0);
   if (total <= 0) return null;
+  // One scale for the block: the totals and their parts are the same kind of figure.
+  const figures = parts.flatMap((part) => [part.total, part.direct, part.coordinated]);
+  const positions = emphasisPositions(figures);
+  const figure = (value: number) => (
+    <span
+      className="text-right"
+      style={{ color: emphasisColor(positions[figures.indexOf(value)] ?? 1) }}
+    >
+      {format(value)}
+    </span>
+  );
 
   const segments = parts.flatMap((part) => [
     {
@@ -103,47 +115,49 @@ export function UsageOriginBreakdown({
             </Tooltip>
           ))}
       </div>
-      <div className="flex flex-col gap-1 text-xs tabular-nums">
+      <div className="grid grid-cols-[repeat(9,max-content)] items-center gap-x-1 gap-y-1 text-xs tabular-nums">
         {parts
           .filter((part) => part.total > 0)
           .map((part) => (
-            <span key={part.key} className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-              <Swatch className={DEVICE[part.key].color} style={SOLID}>
-                <span className="text-muted-foreground">{DEVICE[part.key].label}</span>
-                <span className="text-foreground">{format(part.total)}</span>
-                <span className="text-muted-foreground">
-                  {formatPercent(part.total / total, 0)} ·
-                </span>
-              </Swatch>
-              <Swatch className={DEVICE[part.key].color} style={SOLID}>
-                <span className="text-foreground">{format(part.direct)}</span>
-              </Swatch>
-              <Swatch className={DEVICE[part.key].color} style={STRIPED}>
-                <span className="text-foreground">{format(part.coordinated)}</span>
-              </Swatch>
-            </span>
+            <div key={part.key} className="contents">
+              <Dot className={DEVICE[part.key].color} style={SOLID} />
+              <span className="text-muted-foreground">{DEVICE[part.key].label}</span>
+              {figure(part.total)}
+              <span className="text-right text-muted-foreground">
+                {formatPercent(part.total / total, 0)}
+              </span>
+              <span className="text-muted-foreground">·</span>
+              <Dot className={DEVICE[part.key].color} style={SOLID} />
+              {figure(part.direct)}
+              <Dot className={cn(DEVICE[part.key].color, "ms-1")} style={STRIPED} />
+              {figure(part.coordinated)}
+            </div>
           ))}
       </div>
     </div>
   );
 }
 
+function Dot({ className, style }: { readonly className?: string; readonly style: CSSProperties }) {
+  return (
+    <i
+      aria-hidden
+      className={cn("inline-block size-2 shrink-0 rounded-xs", className)}
+      style={style}
+    />
+  );
+}
+
 function Swatch({
   children,
-  className,
   style,
 }: {
   readonly children: ReactNode;
-  readonly className?: string;
   readonly style: CSSProperties;
 }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <i
-        aria-hidden
-        className={cn("inline-block size-2 shrink-0 rounded-xs", className)}
-        style={style}
-      />
+      <Dot style={style} />
       {children}
     </span>
   );

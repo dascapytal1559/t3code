@@ -314,7 +314,7 @@ function UsageChartPlot({
   return (
     <div
       ref={plotRef}
-      className="relative h-56 flex-1"
+      className="relative flex-1"
       onMouseMove={handleMove}
       onMouseLeave={() => {
         hoverPositionRef.current = null;
@@ -393,9 +393,10 @@ export function UsageProviderChart({
       : formatPeriod(period);
 
   return (
-    <div className="flex flex-col gap-1">
-      <div className="flex gap-2">
-        <div aria-hidden className="relative h-56 w-14 shrink-0">
+    // Fills a taller column, such as a long providers list beside it, and never shrinks below h-56.
+    <div className="flex flex-1 flex-col gap-1">
+      <div className="flex min-h-56 flex-1 gap-2">
+        <div aria-hidden className="relative w-14 shrink-0">
           {scale.labeled
             ? scale.ticks.map((tick) => (
                 <span

@@ -2,7 +2,13 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import type { UsageSource } from "@t3tools/contracts";
 
-import { formatHourShort, formatTokens, makeWindow, usageSourceMessages } from "./usageFormat.ts";
+import {
+  formatHourShort,
+  formatTokens,
+  formatUsdShort,
+  makeWindow,
+  usageSourceMessages,
+} from "./usageFormat.ts";
 
 function malformedSource(count: number, overrides: Partial<UsageSource> = {}): UsageSource {
   return {
@@ -182,5 +188,15 @@ describe("token formatting", () => {
     expect(formatTokens(999_999)).toBe("1M");
     expect(formatTokens(999_999_999)).toBe("1B");
     expect(formatTokens(-999_999)).toBe("-1M");
+  });
+});
+
+describe("short dollar formatting", () => {
+  it("drops cents from $100 up, deciding after rounding to the cent", () => {
+    expect(formatUsdShort(4_542.47)).toBe("$4,542");
+    expect(formatUsdShort(129.78)).toBe("$130");
+    expect(formatUsdShort(99.996)).toBe("$100");
+    expect(formatUsdShort(93.21)).toBe("$93.21");
+    expect(formatUsdShort(0)).toBe("$0.00");
   });
 });
