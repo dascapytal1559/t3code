@@ -296,6 +296,10 @@
   cursor: pointer;
 }
 
+[data-live-markdown] .cm-lp-code.cm-lp-link {
+  color: var(--info-foreground);
+}
+
 [data-live-markdown] .cm-lp-link:hover {
   text-decoration: underline dotted;
   text-underline-offset: 3px;

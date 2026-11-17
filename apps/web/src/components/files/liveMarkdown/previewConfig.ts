@@ -15,6 +15,12 @@ export interface LivePreviewConfig {
   /** Called once for each asset key that comes into view. */
   readonly onImageNeeded: (key: string) => void;
   readonly onOpenLink: (href: string, event: MouseEvent) => void;
+  /** The link inline code stands for, such as a file path, or null to keep it plain code. */
+  readonly inlineCodeLink: (code: string) => string | null;
+  /** Paths in a line of prose that open like links, by their offset in the line. */
+  readonly bareLinks: (
+    text: string,
+  ) => ReadonlyArray<{ readonly index: number; readonly path: string }>;
 }
 
 const standalone: LivePreviewConfig = {
@@ -22,6 +28,8 @@ const standalone: LivePreviewConfig = {
   resolveImageEmbed: () => ({ kind: "blocked" }),
   onImageNeeded: () => {},
   onOpenLink: () => {},
+  inlineCodeLink: () => null,
+  bareLinks: () => [],
 };
 
 export const previewConfig = Facet.define<LivePreviewConfig, LivePreviewConfig>({

@@ -2,16 +2,13 @@ import { isLocalEditorFileUrl } from "@t3tools/contracts";
 import { fileBasename, isAbsolutePath, workspaceRelativeFilePath } from "@t3tools/shared/path";
 import {
   inlineCodeFilePathCandidate,
-  isRelativeFilePath,
   normalizeMarkdownLinkDestination,
   parseMarkdownFileLink,
   resolveMarkdownFileLinkTarget,
+  safeDecodeURIComponent,
+  splitMarkdownLinkSearchAndHash,
 } from "@t3tools/shared/markdownLinks";
-import {
-  parseFileUrlHref,
-  resolvePathLinkTarget,
-  splitFilePathPosition,
-} from "@t3tools/shared/fileLinks";
+import { parseFileUrlHref, splitFilePathPosition } from "@t3tools/shared/fileLinks";
 
 import { formatWorkspaceRelativePath } from "./filePathDisplay";
 import { isTerminalLinkActivation } from "./terminal-links";
@@ -22,12 +19,12 @@ export interface MarkdownFileLinkMeta {
   targetPath: string;
   displayPath: string;
   workspaceRelativePath: string | null;
-  /** Workspace-root reading of a path written inside a file, opened when nothing sits beside the file. */
-  fallbackFilePath: string | null;
   basename: string;
   line?: number;
   column?: number;
   endLine?: number;
+  /** The heading a link like `notes.md#setup` names, to scroll to once the file opens. */
+  heading?: string;
 }
 
 export function shouldOpenMarkdownFileLinkInEditor(
@@ -54,49 +51,42 @@ export function isLocalEditorFileHref(href: string): boolean {
 export function resolveInlineCodeFileLinkMeta(
   codeText: string,
   cwd?: string,
-  baseDir: string | undefined = cwd,
+  documentDir?: string,
 ): MarkdownFileLinkMeta | null {
   const candidate = inlineCodeFilePathCandidate(codeText);
   if (candidate === null) return null;
 
-  return resolveMarkdownFileLinkMeta(candidate, cwd, baseDir);
+  return resolveMarkdownFileLinkMeta(candidate, cwd, documentDir);
 }
 
-/** A bare relative path written in a file below the workspace root may name a path from that root. */
-function workspaceRootFallbackPath(
-  sourcePath: string,
-  filePath: string,
-  cwd: string | undefined,
-  baseDir: string | undefined,
-): string | null {
-  if (!cwd || !baseDir || !isRelativeFilePath(sourcePath)) return null;
-  if (/^(?:~|\.{1,2})[\\/]/.test(sourcePath)) return null;
-  if (workspaceRelativeFilePath(baseDir, cwd) === ".") return null;
-  const fallback = resolvePathLinkTarget(sourcePath, cwd);
-  return fallback !== filePath && workspaceRelativeFilePath(fallback, cwd) !== null
-    ? fallback
-    : null;
+/** The heading a file link names after `#`, unless the fragment is a `#L12` line. */
+function linkedHeading(href: string): string | null {
+  const destination = normalizeMarkdownLinkDestination(href);
+  const { hash } = parseFileUrlHref(destination) ?? splitMarkdownLinkSearchAndHash(destination);
+  if (hash.length <= 1 || /^#L\d/i.test(hash)) return null;
+  return safeDecodeURIComponent(hash.slice(1));
 }
 
+/**
+ * Fork: a path written in a document reads from `documentDir`, the document's own folder,
+ * and only there. Without one the path is from a chat message: it reads from the workspace,
+ * and a miss falls back to upstream's workspace search (`workspaceLookupPath`).
+ */
 export function resolveMarkdownFileLinkMeta(
   href: string | undefined,
   cwd?: string,
-  baseDir: string | undefined = cwd,
+  documentDir?: string,
 ): MarkdownFileLinkMeta | null {
-  const targetPath = resolveMarkdownFileLinkTarget(href, cwd, baseDir);
+  const targetPath = resolveMarkdownFileLinkTarget(href, cwd, documentDir ?? cwd);
   if (!targetPath) return null;
   const source = href ? parseMarkdownFileLink(href) : null;
-  const meta = buildFileLinkMetaFromTarget(targetPath, cwd);
+  const heading = href ? linkedHeading(href) : null;
   return {
-    ...meta,
-    fallbackFilePath:
-      source === null ? null : workspaceRootFallbackPath(source.path, meta.filePath, cwd, baseDir),
+    ...buildFileLinkMetaFromTarget(targetPath, cwd),
     ...(source?.endLine !== undefined ? { endLine: source.endLine } : {}),
+    ...(heading !== null && source?.line === undefined ? { heading } : {}),
     workspaceLookupPath:
-      source !== null &&
-      !isAbsolutePath(source.path) &&
-      baseDir !== undefined &&
-      workspaceRelativeFilePath(baseDir, cwd) === "."
+      source !== null && !isAbsolutePath(source.path) && documentDir === undefined
         ? source.path
         : null,
   };

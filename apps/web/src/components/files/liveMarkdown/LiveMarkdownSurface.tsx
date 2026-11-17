@@ -6,19 +6,18 @@ import {
 } from "@t3tools/contracts";
 import { WORKSPACE_BASENAME_LOOKUP_LIMIT } from "@t3tools/client-runtime/workspace-basename-lookup";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
-import { normalizeMarkdownLinkDestination } from "@t3tools/shared/markdownLinks";
 import {
-  isHostPath,
-  resolveWorkspaceFilePath,
-  workspaceRelativeFilePath,
-} from "@t3tools/shared/path";
+  absoluteFilePathMatches,
+  inlineCodeFilePathCandidate,
+  normalizeMarkdownLinkDestination,
+} from "@t3tools/shared/markdownLinks";
+import { resolveWorkspaceFilePath } from "@t3tools/shared/path";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { useAssetUrls } from "~/assets/assetUrls";
 import { useOpenLink } from "~/browser/useOpenLink";
 import { resolveMarkdownFileLinkMeta } from "~/markdown-links";
-import { pickMarkdownFileCandidate } from "~/markdownFileHostPath";
-import { useRightPanelStore } from "~/rightPanelStore";
+import { openFileReference } from "~/openFileReference";
 import { filesystemEnvironment } from "~/state/filesystem";
 import { projectEnvironment } from "~/state/projects";
 import { readEnvironmentScope } from "~/state/session";
@@ -60,6 +59,8 @@ export interface LiveMarkdownSurfaceProps {
   readonly workspaceMutationId: string | null;
   /** The line a link opened the file at, until the reader has moved on from it. */
   readonly revealLine: number | null;
+  /** The heading a link opened the file at, such as `setup` from `notes.md#setup`. */
+  readonly revealHeading: string | null;
   readonly revealRequestId: number;
   readonly onPendingChange: FilePendingListener;
   /** Offers the editor's outline to the panel's outline button, and takes it back on unmount. */
@@ -89,6 +90,7 @@ export default function LiveMarkdownSurface({
   contents,
   workspaceMutationId,
   revealLine,
+  revealHeading,
   revealRequestId,
   onPendingChange,
   onOutlineSource,
@@ -115,7 +117,7 @@ export default function LiveMarkdownSurface({
     changeFileSaveSession(saveTarget, text);
   });
 
-  // Paths written in the file are read from the file's own folder first.
+  // Paths written in the file are read from the file's own folder, and only there.
   const lastSeparator = Math.max(relativePath.lastIndexOf("/"), relativePath.lastIndexOf("\\"));
   const baseDir =
     lastSeparator >= 0 ? resolvePathLinkTarget(relativePath.slice(0, lastSeparator), cwd) : cwd;
@@ -171,24 +173,7 @@ export default function LiveMarkdownSurface({
       );
       return;
     }
-    const open = (path: string, alsoTried?: string) =>
-      useRightPanelStore.getState().openFile(threadRef, path, file.line, alsoTried);
-    const written = file.workspaceRelativePath ?? file.filePath;
-    if (file.fallbackFilePath === null) {
-      if (file.workspaceRelativePath !== null || isHostPath(file.filePath)) open(written);
-      return;
-    }
-    // A bare path may be meant from the workspace root: the file's folder wins when both exist.
-    void pickMarkdownFileCandidate(file, async (paths) => {
-      if (!readEnvironmentScope(environmentId, AuthFilesystemReadScope)) return null;
-      const metadata = await getFilesystemMetadata({ environmentId, input: { paths: [...paths] } });
-      return metadata._tag === "Success"
-        ? metadata.value.entries.map((entry) => entry !== null)
-        : null;
-    }).then(({ filePath, alsoTried }) => {
-      if (filePath === file.filePath) open(written, alsoTried ?? undefined);
-      else open(workspaceRelativeFilePath(filePath, cwd) ?? filePath);
-    });
+    openFileReference(threadRef, file);
   });
   const resolveImage = useEffectEvent((source: string) => imageSourceOf(source, baseDir));
   const searchEntries = useAtomQueryRunner(projectEnvironment.searchEntries, {
@@ -260,6 +245,8 @@ export default function LiveMarkdownSurface({
       resolveImageEmbed: imageEmbedSourceOf,
       onImageNeeded: (key) => imageNeeded(key),
       onOpenLink: (href, event) => followLink(href, event),
+      inlineCodeLink: inlineCodeFilePathCandidate,
+      bareLinks: absoluteFilePathMatches,
     });
     editorRef.current = editor;
     setMountedEditor(editor);
@@ -291,8 +278,9 @@ export default function LiveMarkdownSurface({
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the editor to the line a link asked for; each request does so once
   useEffect(() => {
     if (revealLine !== null) editorRef.current?.revealLine(revealLine);
+    else if (revealHeading !== null) editorRef.current?.jumpToAnchor(revealHeading);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A second link to the same line is a new request for it.
-  }, [revealLine, revealRequestId]);
+  }, [revealLine, revealHeading, revealRequestId]);
 
   return (
     <div className="flex min-h-0 flex-1">

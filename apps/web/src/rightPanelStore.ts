@@ -66,7 +66,8 @@ export type RightPanelSurface =
       attachment?: ChatFileAttachment;
       /** Deepest workspace path retained for navigating back down after moving up. */
       folderTrail?: string;
-      alsoTried?: string;
+      /** Fork: the heading a link named, scrolled to with the reveal request. */
+      revealHeading?: string;
     }
   | {
       id: `pull-request:${string}`;
@@ -138,8 +139,8 @@ interface RightPanelStoreState {
   openDevice: (ref: ScopedThreadRef, target: DeviceTabTarget, automatic?: boolean) => void;
   renameDevice: (ref: ScopedThreadRef, surfaceId: string, title: string) => void;
   openBrowser: (ref: ScopedThreadRef, tabId: string | null) => void;
-  /** alsoTried names another reading of the link that was missing too, for the error view. */
-  openFile: (ref: ScopedThreadRef, relativePath: string, line?: number, alsoTried?: string) => void;
+  /** Fork: heading names a heading to scroll to, from a link such as `notes.md#setup`. */
+  openFile: (ref: ScopedThreadRef, relativePath: string, line?: number, heading?: string) => void;
   /** Moves in place; "" opens the root explorer. folderTrail keeps the return path; keepSource opens beside the source. */
   navigateFolder: (
     ref: ScopedThreadRef,
@@ -257,14 +258,14 @@ const fileSurface = (
   relativePath: string,
   revealLine: number | null,
   revealRequestId: number,
-  alsoTried?: string,
+  revealHeading?: string,
 ): RightPanelSurface => ({
   id: `file:${relativePath}`,
   kind: "file",
   relativePath,
   revealLine,
   revealRequestId,
-  ...(alsoTried === undefined ? {} : { alsoTried }),
+  ...(revealHeading === undefined ? {} : { revealHeading }),
 });
 
 const attachmentSurface = (attachment: ChatFileAttachment): RightPanelSurface => ({
@@ -542,13 +543,13 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                         surface.revealRequestId >= 0
                           ? surface.revealRequestId
                           : 0;
-                      const { alsoTried, ...rest } = surface;
+                      const { revealHeading, ...rest } = surface;
                       return [
                         {
                           ...rest,
                           revealLine,
                           revealRequestId,
-                          ...(typeof alsoTried === "string" ? { alsoTried } : {}),
+                          ...(typeof revealHeading === "string" ? { revealHeading } : {}),
                         },
                       ];
                     }
@@ -836,7 +837,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             ),
           }));
         }),
-      openFile: (ref, requestedPath, line, alsoTried) =>
+      openFile: (ref, requestedPath, line, heading) =>
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) => {
             if (requestedPath === ".") {
@@ -858,7 +859,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
               relativePath,
               normalizeRevealLine(line),
               (existing?.revealRequestId ?? 0) + 1,
-              alsoTried,
+              heading,
             );
             return {
               ...current,

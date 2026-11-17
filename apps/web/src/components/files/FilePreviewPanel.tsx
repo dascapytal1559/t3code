@@ -63,6 +63,7 @@ import { useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
 import { OpenInPicker } from "~/components/chat/OpenInPicker";
 import { MediaVideoPlayer } from "~/components/media/MediaVideoPlayer";
 import { MediaActions, type MediaActionSource } from "~/components/media/MediaActions";
+import { OpenInDefaultAppAction } from "./OpenInDefaultAppAction";
 import { useRemoteOpenState } from "~/remoteOpen";
 import { useClientSettings } from "~/hooks/useSettings";
 import { useTheme } from "~/hooks/useTheme";
@@ -163,8 +164,8 @@ interface FilePreviewPanelProps {
   openInShortcutEnabled: boolean;
   revealLine: number | null;
   revealRequestId: number;
-  /** Another reading of the opening link, also missing; the error view lists it. */
-  alsoTriedPath?: string | undefined;
+  /** Fork: a heading the opening link named, scrolled to in a Markdown file. */
+  revealHeading?: string | null;
   onOpenFile: (relativePath: string) => void;
   onNavigateFolder: (relativePath: string, folderTrail: string, keepSource: boolean) => void;
   /** Retained descendant breadcrumb path after navigating up; see navigateFolder. */
@@ -1109,12 +1110,13 @@ function RenderedMarkdownSurface({
   workspaceMutationId,
   readOnly,
   onPendingChange,
+  revealHeading,
+  revealRequestId,
 }: Omit<
   EditableFileSurfaceProps,
   | "resolvedTheme"
   | "composerDraftTarget"
   | "revealLine"
-  | "revealRequestId"
   | "wordWrap"
   | "onPostRender"
   | "onEditorChange"
@@ -1122,10 +1124,20 @@ function RenderedMarkdownSurface({
   threadRef: ScopedThreadRef;
   readOnly: boolean;
   workspaceMutationId: string | null;
+  revealHeading: string | null;
 }) {
   const saveTarget = { environmentId, cwd, relativePath, threadId: hostFileThreadId };
   useFileSaveSession(saveTarget, onPendingChange);
   const [citeViewport, setCiteViewport] = useState<HTMLElement | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Fork: scrolls the page to the heading a link named; each request does so once
+  useEffect(() => {
+    if (revealHeading === null || citeViewport === null) return;
+    const wanted = revealHeading.toLowerCase();
+    Array.from(citeViewport.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6"))
+      .find((heading) => heading.id.replace(/^user-content-/, "") === wanted)
+      ?.scrollIntoView({ block: "start" });
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A second link to the same heading is a new request for it.
+  }, [revealHeading, revealRequestId, citeViewport]);
 
   return (
     <ScrollArea
@@ -1197,7 +1209,7 @@ export default function FilePreviewPanel({
   openInShortcutEnabled,
   revealLine,
   revealRequestId,
-  alsoTriedPath,
+  revealHeading = null,
   onOpenFile,
   onNavigateFolder,
   folderTrail,
@@ -1261,9 +1273,6 @@ export default function FilePreviewPanel({
   );
   const [fileRefreshRevision, setFileRefreshRevision] = useState(0);
   const attemptedPath = file.readError?.resolvedPath ?? file.readError?.operationPath;
-  const attemptedPaths = [
-    ...new Set([attemptedPath, alsoTriedPath].filter((path) => path !== undefined)),
-  ];
   // Folder links fail file reads; retain mutation refresh to detect conversion to files. Host folders own
   // roots; folderTrail keeps descendants.
   const breadcrumbPath =
@@ -1570,6 +1579,16 @@ export default function FilePreviewPanel({
               revealFileManager={revealsInFileManager}
             />
           ) : null}
+          {/* Fork: media and files the panel cannot show open in the host's own app. */}
+          {absolutePath &&
+          attachment === undefined &&
+          (isMedia || isPdf || isDocument || file.readError?.failure === "binary_file") ? (
+            <OpenInDefaultAppAction
+              environmentId={environmentId}
+              absolutePath={absolutePath}
+              availableEditors={availableEditors}
+            />
+          ) : null}
           {isMarkdown && renderMarkdown && file.data !== null ? (
             <MarkdownOutlineAction
               live={liveMarkdownOutline}
@@ -1761,17 +1780,12 @@ export default function FilePreviewPanel({
                 <p className="text-destructive">
                   {file.readError ? filePreviewReadErrorMessage(file.readError) : file.error}
                 </p>
-                {attemptedPaths.length > 0 ? (
+                {attemptedPath ? (
                   <p className="text-muted-foreground">
-                    {attemptedPaths.length > 1 ? "Attempted paths" : "Attempted path"}
-                    {attemptedPaths.map((path) => (
-                      <code
-                        key={path}
-                        className="block break-all font-mono text-foreground select-all"
-                      >
-                        {path}
-                      </code>
-                    ))}
+                    Attempted path
+                    <code className="block break-all font-mono text-foreground select-all">
+                      {attemptedPath}
+                    </code>
                   </p>
                 ) : null}
                 {!isHostFile ? (
@@ -1806,6 +1820,7 @@ export default function FilePreviewPanel({
                   contents={file.data.contents}
                   workspaceMutationId={workspaceMutationId}
                   revealLine={revealHandled ? null : revealLine}
+                  revealHeading={revealHeading}
                   revealRequestId={revealRequestId}
                   onPendingChange={onPendingChange}
                   onOutlineSource={setLiveMarkdownOutline}
@@ -1824,6 +1839,8 @@ export default function FilePreviewPanel({
                 workspaceMutationId={workspaceMutationId}
                 readOnly={file.data.truncated || readOnlyHostFile || !canWriteFiles}
                 onPendingChange={onPendingChange}
+                revealHeading={revealHeading}
+                revealRequestId={revealRequestId}
               />
             ) : tableDelimiter && renderTable ? (
               <DelimitedTablePreview

@@ -3,6 +3,10 @@ import { ensureSyntaxTree } from "@codemirror/language";
 import { openSearchPanel } from "@codemirror/search";
 import { EditorState, StateEffect, type TransactionSpec } from "@codemirror/state";
 import type { DecorationSet, EditorView } from "@codemirror/view";
+import {
+  absoluteFilePathMatches,
+  inlineCodeFilePathCandidate,
+} from "@t3tools/shared/markdownLinks";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -40,6 +44,8 @@ function editorOn(text: string, marker = "|"): EditorState {
         resolveImageEmbed: (target) => ({ kind: "asset", key: `embed:${target}` }),
         onImageNeeded: () => {},
         onOpenLink: () => {},
+        inlineCodeLink: inlineCodeFilePathCandidate,
+        bareLinks: absoluteFilePathMatches,
       }),
     ],
   });
@@ -247,6 +253,19 @@ describe("live preview", () => {
       ["https://example.com", "https://example.com"],
     ]);
     expect(view.replaced).toEqual(["<", ">"]);
+  });
+
+  // Fork: as in chat, a path in inline code or a bare absolute path in prose opens like a link.
+  it("makes file paths in inline code and bare absolute paths clickable, not code or links", () => {
+    const view = drawn(
+      "Play `sources/clip-a.mp4`, read /Users/me/notes.md, not `npm test` or `/Users/me/x.md` twice.\n\n```\n/Users/me/in-code.md\n```\n\n[see](/Users/me/linked.md)",
+    );
+    expect(view.links).toEqual([
+      ["sources/clip-a.mp4", "sources/clip-a.mp4"],
+      ["/Users/me/notes.md", "/Users/me/notes.md"],
+      ["/Users/me/x.md", "/Users/me/x.md"],
+      ["see", "/Users/me/linked.md"],
+    ]);
   });
 
   it("draws a wiki-link as its name or its label, with no address to open yet", () => {

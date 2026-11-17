@@ -27,8 +27,10 @@ import {
 } from "./codexMarkdownDirectives.ts";
 import {
   absoluteFilePathMatches,
+  inlineCodeFilePathCandidate,
   isWindowsDrivePathHref,
   normalizeMarkdownLinkDestination,
+  parseMarkdownFileLink,
 } from "./markdownLinks.ts";
 import { isWindowsAbsolutePath } from "./path.ts";
 import { THREAD_LINK_PROTOCOL } from "./threadLinks.ts";
@@ -204,6 +206,29 @@ function rehypeNormalizeLocalEditorLinks() {
   };
 }
 
+// Fork: the sanitizer and the URL filter read `notes.md:3` as a `notes.md:` scheme and drop it.
+// An encoded colon keeps it a relative link, and the file link parser decodes it to its line.
+export function rehypeKeepFileLineLinks() {
+  return (tree: MarkdownImageHastNode) => {
+    const visit = (node: MarkdownImageHastNode) => {
+      const href = node.properties?.href;
+      if (
+        node.type === "element" &&
+        node.tagName === "a" &&
+        typeof href === "string" &&
+        /^[^/\\?#:]+:\d/.test(href) &&
+        inlineCodeFilePathCandidate(href) !== null &&
+        parseMarkdownFileLink(href) !== null
+      ) {
+        node.properties = { ...node.properties, href: href.replace(":", "%3A") };
+      }
+      node.children?.forEach(visit);
+    };
+
+    visit(tree);
+  };
+}
+
 const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
   ...defaultSchema,
   attributes: {
@@ -356,6 +381,7 @@ export const CHAT_MARKDOWN_REHYPE_PLUGINS: PluggableList = [
   rehypeRawWhenPresent,
   rehypePreserveImageSourceMeta,
   rehypeNormalizeLocalEditorLinks,
+  rehypeKeepFileLineLinks,
   [rehypeSanitize, CHAT_MARKDOWN_SANITIZE_SCHEMA],
 ];
 

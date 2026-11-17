@@ -48,6 +48,8 @@ interface MarkdownFileLinkProps {
   onOpenMedia?: (() => void) | undefined;
   onReveal?: (() => Promise<AtomCommandResult<unknown, unknown>>) | undefined;
   revealLabel?: string | undefined;
+  /** Fork: opens the file with the host's own app for its type, such as a video player. */
+  onOpenInDefaultApp?: (() => Promise<AtomCommandResult<unknown, unknown>>) | undefined;
 }
 
 const MARKDOWN_FILE_LINK_CLASS_NAME = "chat-markdown-file-link";
@@ -72,6 +74,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
   onOpenMedia,
   onReveal,
   revealLabel,
+  onOpenInDefaultApp,
   resolveCopyPaths,
 }: MarkdownFileLinkProps) {
   const handleOpenInEditor = () => {
@@ -162,43 +165,45 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
     })();
   };
 
-  const handleRevealInFileManager = () => {
-    if (!onReveal) {
+  const runHostFileAction = (
+    action: (() => Promise<AtomCommandResult<unknown, unknown>>) | undefined,
+    operation: string,
+    failureTitle: string,
+  ) => {
+    if (!action) {
       return;
     }
     void (async () => {
       try {
-        const result = await onReveal();
+        const result = await action();
         if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
           return;
         }
-        reportMarkdownActionFailure(
-          { operation: "reveal-file-in-file-manager", target: targetPath },
-          result.cause,
-        );
+        reportMarkdownActionFailure({ operation, target: targetPath }, result.cause);
         const error = squashAtomCommandFailure(result);
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Unable to reveal file",
+            title: failureTitle,
             description: error instanceof Error ? error.message : "An error occurred.",
           }),
         );
       } catch (cause) {
-        reportMarkdownActionFailure(
-          { operation: "reveal-file-in-file-manager", target: targetPath },
-          cause,
-        );
+        reportMarkdownActionFailure({ operation, target: targetPath }, cause);
         toastManager.add(
           stackedThreadToast({
             type: "error",
-            title: "Unable to reveal file",
+            title: failureTitle,
             description: cause instanceof Error ? cause.message : "An error occurred.",
           }),
         );
       }
     })();
   };
+  const handleRevealInFileManager = () =>
+    runHostFileAction(onReveal, "reveal-file-in-file-manager", "Unable to reveal file");
+  const handleOpenInDefaultApp = () =>
+    runHostFileAction(onOpenInDefaultApp, "open-file-in-default-app", "Unable to open file");
 
   const handleCopy = (resolveValue: () => Promise<string>, title: string) => {
     if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
@@ -250,6 +255,9 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
         [
           ...(onOpenMedia ? ([{ id: "preview-media", label: "Preview media" }] as const) : []),
           ...(onOpen ? ([{ id: "open", label: openInEditorMenuLabel }] as const) : []),
+          ...(onOpenInDefaultApp
+            ? ([{ id: "open-default-app", label: "Open in default app" }] as const)
+            : []),
           ...(onOpenInBrowser
             ? ([{ id: "open-in-browser", label: "Open in integrated browser" }] as const)
             : []),
@@ -266,6 +274,10 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
       }
       if (clicked === "open") {
         handleOpenInEditor();
+        return;
+      }
+      if (clicked === "open-default-app") {
+        handleOpenInDefaultApp();
         return;
       }
       if (clicked === "open-in-browser") {
@@ -417,6 +429,7 @@ function areMarkdownFileLinkPropsEqual(
     previous.onOpenInBrowser === next.onOpenInBrowser &&
     previous.onOpenMedia === next.onOpenMedia &&
     previous.onReveal === next.onReveal &&
+    previous.onOpenInDefaultApp === next.onOpenInDefaultApp &&
     previous.resolveCopyPaths === next.resolveCopyPaths &&
     previous.revealLabel === next.revealLabel
   );

@@ -152,10 +152,25 @@ describe("resolvePathLinkTarget", () => {
     [
       String.raw`.\src\index.ts:12`,
       String.raw`\\server\share\project`,
-      String.raw`\\server\share\project\.\src\index.ts:12`,
+      String.raw`\\server\share\project\src\index.ts:12`,
     ],
     ["src/index.ts:12", "/home/jane/project", "/home/jane/project/src/index.ts:12"],
     ["./reports/draft.md:2", "/home/jane/project", "/home/jane/project/reports/draft.md:2"],
+    // Fork: one file, one spelling, so a `../` link and a direct link open the same tab.
+    ["../sources/a.mp4", "/home/jane/project/scripts", "/home/jane/project/sources/a.mp4"],
+    ["a/./b/../c.md:4", "/home/jane/project", "/home/jane/project/a/c.md:4"],
+    ["../../../../x.md", "/home/jane", "/x.md"],
+    [
+      String.raw`..\docs\a.md`,
+      String.raw`C:\work\project\src`,
+      String.raw`C:\work\project\docs\a.md`,
+    ],
+    [
+      String.raw`..\..\..\a.md`,
+      String.raw`\\server\share\project`,
+      String.raw`\\server\share\a.md`,
+    ],
+    ["../sources/", "/home/jane/project/scripts", "/home/jane/project/sources/"],
   ])("resolves %s using the connected environment cwd %s", (path, cwd, expected) => {
     expect(resolvePathLinkTarget(path, cwd)).toBe(expected);
   });

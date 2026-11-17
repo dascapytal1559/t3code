@@ -114,14 +114,41 @@ export function resolvePathLinkTarget(rawPath: string, cwd: string): string {
     const home = inferHomeFromCwd(cwd);
     if (home) {
       const separator: "/" | "\\" = isWindowsPathStyle(home) ? "\\" : "/";
-      resolvedPath = joinPath(home, path.slice(2), separator);
+      resolvedPath = collapseDotSegments(joinPath(home, path.slice(2), separator), separator);
     }
   } else if (!isAbsolutePath(path)) {
     const separator: "/" | "\\" = isWindowsPathStyle(cwd) ? "\\" : "/";
-    resolvedPath = joinPath(cwd, path.replace(/^(?:\.\/)+/, ""), separator);
+    resolvedPath = collapseDotSegments(
+      joinPath(cwd, path.replace(/^(?:\.\/)+/, ""), separator),
+      separator,
+    );
   }
 
   return formatFilePathPosition({ ...position, path: resolvedPath });
+}
+
+// Fork: `scripts/../sources/a.mp4` and `sources/a.mp4` name one file, so they open as one tab.
+// POSIX names may contain `\`, so only Windows paths split on both separators.
+function collapseDotSegments(path: string, separator: "/" | "\\"): string {
+  const parts = path.split(separator === "\\" ? /[\\/]/ : "/");
+  if (!parts.some((part) => part === "." || part === "..")) return path;
+  // The root never collapses: "" for `/`, `C:` for a drive, "", "", host, share for UNC.
+  const rootLength =
+    parts[0] === ""
+      ? separator === "\\" && parts[1] === ""
+        ? 4
+        : 1
+      : /^[A-Za-z]:$/.test(parts[0] ?? "")
+        ? 1
+        : 0;
+  const kept = parts.slice(0, rootLength);
+  for (const part of parts.slice(rootLength)) {
+    if (part === ".") continue;
+    if (part !== "..") kept.push(part);
+    else if (kept.length > rootLength && kept.at(-1) !== "..") kept.pop();
+    else if (rootLength === 0) kept.push(part);
+  }
+  return kept.join(separator);
 }
 
 function pathParentSegments(path: string): string[] {

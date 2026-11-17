@@ -8,11 +8,7 @@ import {
   inlineCodeFilePathCandidate,
 } from "@t3tools/shared/markdownLinks";
 import { taskListMarkerOffset } from "@t3tools/shared/markdownTaskList";
-import {
-  isHostPath,
-  resolveWorkspaceFilePath,
-  workspaceRelativeFilePath,
-} from "@t3tools/shared/path";
+import { isHostPath, resolveWorkspaceFilePath } from "@t3tools/shared/path";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 import {
   AuthFilesystemReadScope,
@@ -23,6 +19,7 @@ import {
   CHAT_MARKDOWN_REMARK_PLUGINS,
   CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS,
   CHAT_MARKDOWN_REHYPE_PLUGINS,
+  rehypeKeepFileLineLinks,
   decodeMarkdownLinkEscapes,
   remarkAssistantInsights,
 } from "@t3tools/shared/markdownPipeline";
@@ -157,10 +154,9 @@ import {
 import {
   markdownFileCopyPaths,
   markdownFileEditorTarget,
-  pickMarkdownFileCandidate,
   resolveMarkdownFileHostPath,
-  type MarkdownFilePathsExist,
 } from "../markdownFileHostPath";
+import { openFileReference } from "../openFileReference";
 import { isMarkdownFileLinkLabel } from "@t3tools/shared/markdownLinks";
 import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
@@ -262,6 +258,7 @@ interface ChatMarkdownProps {
   parseRawHtml?: boolean;
   onUseArtifactTemplate?: ((template: CodexArtifactTemplate) => void) | undefined;
   onRunShellCommand?: ((command: string) => void) | undefined;
+  /** Fork: the folder of the file this Markdown is; its relative paths read from there only. */
   imageBaseDir?: string | undefined;
   workspaceMutationId?: string | null | undefined;
   onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
@@ -426,6 +423,7 @@ const CHAT_MARKDOWN_RENDER_REHYPE_PLUGINS = [
 ] satisfies NonNullable<ReactMarkdownOptions["rehypePlugins"]>;
 
 const CHAT_MARKDOWN_LITERAL_HTML_REHYPE_PLUGINS = [
+  rehypeKeepFileLineLinks,
   rehypeHeadingIds,
   rehypeTextDirection,
   rehypeChipPunctuation,
@@ -499,9 +497,9 @@ function fileLinkSourcesKey(
     .filter((href) => !parseComposerContextHref(href))
     .map(decodeMarkdownLinkEscapes)
     .map(normalizeMarkdownLinkHrefKey)
-    .filter((href) => resolveMarkdownFileLinkMeta(href, cwd, imageBaseDir ?? cwd));
+    .filter((href) => resolveMarkdownFileLinkMeta(href, cwd, imageBaseDir));
   const spans = extractInlineCodeSpans(text).filter((span) =>
-    resolveInlineCodeFileLinkMeta(span, cwd, imageBaseDir ?? cwd),
+    resolveInlineCodeFileLinkMeta(span, cwd, imageBaseDir),
   );
   return JSON.stringify([[...new Set(hrefs)], [...new Set(spans)]]);
 }
@@ -514,12 +512,12 @@ function resolveFileLinkSources(
   const [hrefs, spans] = JSON.parse(key) as [string[], string[]];
   const markdownFileLinkMetaByHref = new Map<string, MarkdownFileLinkMeta>();
   for (const href of hrefs) {
-    const meta = resolveMarkdownFileLinkMeta(href, cwd, imageBaseDir ?? cwd);
+    const meta = resolveMarkdownFileLinkMeta(href, cwd, imageBaseDir);
     if (meta) markdownFileLinkMetaByHref.set(href, meta);
   }
   const inlineCodeFileLinkMetaByText = new Map<string, MarkdownFileLinkMeta>();
   for (const span of spans) {
-    const meta = resolveInlineCodeFileLinkMeta(span, cwd, imageBaseDir ?? cwd);
+    const meta = resolveInlineCodeFileLinkMeta(span, cwd, imageBaseDir);
     if (meta) inlineCodeFileLinkMetaByText.set(span, meta);
   }
   const fileLinkParentSuffixByPath = buildFileLinkParentSuffixByPath([
@@ -683,7 +681,8 @@ function useChatMarkdownState({
   const openInEditor = useAtomCommand(shellEnvironment.openInEditor, {
     reportFailure: false,
   });
-  const revealFileInFileManager = (filePath: string) => {
+  // Fork: without `reveal` the file manager opens the file in its default app.
+  const launchFileManager = (filePath: string, reveal: boolean) => {
     if (environmentId === null) {
       return Promise.resolve(
         AsyncResult.failure<void, PreferredEditorEnvironmentRequiredError>(
@@ -700,7 +699,7 @@ function useChatMarkdownState({
     }
     return openInEditor({
       environmentId,
-      input: { cwd: filePath, editor: "file-manager", reveal: true },
+      input: { cwd: filePath, editor: "file-manager", ...(reveal ? { reveal: true } : {}) },
     });
   };
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
@@ -877,35 +876,11 @@ function useChatMarkdownState({
     }
     return findAgentDirectoryMatch(workspaceRelativePath, agentRoots, searchRoot);
   };
-  const filePathsExist: MarkdownFilePathsExist = async (paths) => {
-    if (environmentId === null || !readEnvironmentScope(environmentId, AuthFilesystemReadScope)) {
-      return null;
-    }
-    const metadata = await getFilesystemMetadata({ environmentId, input: { paths: [...paths] } });
-    return metadata._tag === "Success"
-      ? metadata.value.entries.map((entry) => entry !== null)
-      : null;
-  };
   const openFileInPanel = (fileLinkMeta: MarkdownFileLinkMeta, panelPath: string) => {
     if (!threadRef) return;
     // Every open supersedes pending lookups, including synchronous opens.
     const isLatestLookup = claimWorkspaceBasenameLookup();
-    const openAt = (path: string, alsoTried: string | null = null) =>
-      alsoTried === null
-        ? useRightPanelStore.getState().openFile(threadRef, path, fileLinkMeta.line)
-        : useRightPanelStore.getState().openFile(threadRef, path, fileLinkMeta.line, alsoTried);
-    if (fileLinkMeta.fallbackFilePath !== null) {
-      void (async () => {
-        const { filePath, alsoTried } = await pickMarkdownFileCandidate(
-          fileLinkMeta,
-          filePathsExist,
-        );
-        if (!isLatestLookup()) return;
-        if (filePath === fileLinkMeta.filePath) openAt(panelPath, alsoTried);
-        else openAt(workspaceRelativeFilePath(filePath, cwd) ?? filePath);
-      })();
-      return;
-    }
+    const openAt = (path: string) => openFileReference(threadRef, fileLinkMeta, path);
     if (
       fileLinkMeta.workspaceLookupPath === null ||
       !cwd ||
@@ -930,7 +905,6 @@ function useChatMarkdownState({
         meta: fileLinkMeta,
         cwd,
         findWorkspaceMatch: () => findWorkspaceFileMatch(fileLinkMeta),
-        pathsExist: filePathsExist,
       });
     const isAppBundle = isMacOS && fileLinkMeta.filePath.endsWith(".app");
     const canOpenApp =
@@ -1000,10 +974,15 @@ function useChatMarkdownState({
         openInEditorMenuLabel={canOpenApp ? "Open app" : preferredEditorMenuLabel}
         onReveal={
           canUseShellActions && revealInFileManagerLabel !== undefined
-            ? async () => revealFileInFileManager((await resolveHostPath()).absolutePath)
+            ? async () => launchFileManager((await resolveHostPath()).absolutePath, true)
             : undefined
         }
         revealLabel={revealInFileManagerLabel}
+        onOpenInDefaultApp={
+          canUseShellActions && !isAppBundle && availableEditors.includes("file-manager")
+            ? async () => launchFileManager((await resolveHostPath()).absolutePath, false)
+            : undefined
+        }
         onOpenInBrowser={
           threadRef &&
           canOperatePreview &&
@@ -1265,7 +1244,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
     const normalizedHref = href ? normalizeMarkdownLinkHrefKey(href) : "";
     const fileLinkMeta = normalizedHref
       ? (markdownFileLinkMetaByHref.get(normalizedHref) ??
-        resolveMarkdownFileLinkMeta(normalizedHref, cwd, imageBaseDir ?? cwd))
+        resolveMarkdownFileLinkMeta(normalizedHref, cwd, imageBaseDir))
       : null;
     if (!fileLinkMeta) {
       const faviconHost = resolveExternalWebLinkHost(href);
@@ -1509,7 +1488,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
       const codeText = nodeToPlainText(children);
       const fileLinkMeta =
         inlineCodeFileLinkMetaByText.get(codeText.trim()) ??
-        resolveInlineCodeFileLinkMeta(codeText, cwd, imageBaseDir ?? cwd);
+        resolveInlineCodeFileLinkMeta(codeText, cwd, imageBaseDir);
       if (fileLinkMeta) {
         return fileLinkChip(
           fileLinkMeta,
@@ -1602,7 +1581,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
       );
     }
     if (mediaKind === null && imageSource._tag === "WorkspaceFile") {
-      const fileLinkMeta = resolveMarkdownFileLinkMeta(srcString, cwd, imageBaseDir ?? cwd);
+      const fileLinkMeta = resolveMarkdownFileLinkMeta(srcString, cwd, imageBaseDir);
       if (fileLinkMeta) return fileLinkChip(fileLinkMeta, copyMarkdown, srcString);
     }
     const kind = mediaKind ?? "image";

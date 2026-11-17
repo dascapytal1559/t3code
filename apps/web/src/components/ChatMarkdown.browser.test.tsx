@@ -526,6 +526,24 @@ describe("ChatMarkdown workspace file opens", () => {
     expect(openFile).toHaveBeenCalledExactlyOnceWith(threadRef, "/elsewhere/b.md", 9);
     expect(workspaceSearch).toHaveBeenCalledOnce();
   });
+
+  // Fork: the sanitizer read `notes.md:3` as a `notes.md:` scheme and dropped the link,
+  // and a link to a heading in another file lost the heading.
+  it("opens a file name at its line, and a file at a heading", async () => {
+    setup();
+    using openFile = vi
+      .spyOn(useRightPanelStore.getState(), "openFile")
+      .mockImplementation(() => {});
+    await using screen = await renderText(
+      "[Line](notes.md:3) and [Part](/school/physics/notes.md#part-two)",
+      { cwd: "/school/physics", threadRef },
+    );
+    const [line, part] = screen.container.querySelectorAll("a");
+    await act(async () => line!.click());
+    await vi.waitFor(() => expect(openFile).toHaveBeenCalledWith(threadRef, "notes.md", 3));
+    await act(async () => part!.click());
+    expect(openFile).toHaveBeenLastCalledWith(threadRef, "notes.md", undefined, "part-two");
+  });
 });
 
 describe("ChatMarkdown skill chips", () => {

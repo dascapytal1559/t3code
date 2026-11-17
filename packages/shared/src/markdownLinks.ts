@@ -282,7 +282,8 @@ export function isMarkdownFileLinkLabel(label: string, href: string): boolean {
   return destinationPath === labelPath || destinationPath.endsWith(`/${labelPath}`);
 }
 
-export function isRelativeFilePath(path: string): boolean {
+// Fork: the fork no longer reads this outside the module, so it is not exported.
+function isRelativeFilePath(path: string): boolean {
   return (
     RELATIVE_PATH_PREFIX_PATTERN.test(path) ||
     (!path.startsWith("/") && !isWindowsAbsolutePath(path))

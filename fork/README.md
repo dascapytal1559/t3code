@@ -1579,26 +1579,40 @@ export does not reach an app opened from the Dock: run
 the app from a terminal that has the variable set. Your own OpenTelemetry export
 and the mobile app's crash reports have their own settings.
 
-## Paths in a file open beside it first
+## File references
 
-A relative path written in a file you are reading, as a link or as inline code
-(`scripts/run.md` in `data/demo/report.md`), opens the file beside it
-(`data/demo/scripts/run.md`) when that exists, and the path from the project's
-top folder (`scripts/run.md`) otherwise. When neither exists, the error view
-lists both attempted paths. Paths starting with `./`, `../` or `~/`, absolute
-paths, URLs, paths in a file at the project's top folder and paths in chat
-messages resolve as before; the existing read rules still decide what may
-open. Upstream resolves inline code that has a folder from the top folder
-only, and links from the file's folder only.
+A path written in a Markdown file is read from that file's own folder, and only
+there, as GitHub, VS Code and Obsidian read it: in `data/demo/report.md`,
+`scripts/run.md` is `data/demo/scripts/run.md` and `../clips/a.mp4` is
+`data/clips/a.mp4`. That holds for links, inline-code paths and images, in the
+rendered view and the live editor alike. `/…` and `~/…` mean the host path they
+name. A path in a chat message reads from the thread's workspace, with
+upstream's project-wide search when it misses, as upstream does. Upstream reads
+inline code that has a folder from the project's top folder instead
+(https://github.com/pingdotgg/t3code/pull/16950), and a file at the top folder
+also gets the search; the fork reads both from the file's folder. When the file is not there, the panel shows the one path it tried.
 
-The choice happens on click: `fallbackFilePath` on the link
-(`apps/web/src/markdown-links.ts`), `pickMarkdownFileCandidate` in
-`apps/web/src/markdownFileHostPath.ts` (one metadata call for both paths, which
-also serves open in editor, copy and reveal), and `alsoTried` on the file
-surface for the error view in `FilePreviewPanel.tsx`. Mobile's file viewer
-already reads links from the file's folder, has no fallback, and does not make
-inline code tappable. On syncs, keep `resolveInlineCodeFileLinkMeta` resolving
-from the file's folder.
+- One click handler opens a reference from chat, the rendered view and the live
+  editor (`openFileReference.ts`). The live editor also makes inline-code paths
+  and bare absolute paths clickable, as chat does.
+- `notes.md#setup` opens the file at that heading (`revealHeading` on the file
+  tab); upstream drops the heading. `[x](notes.md:3)` opens at line 3; upstream's
+  sanitizer read `notes.md:` as a scheme and dropped the link
+  (`rehypeKeepFileLineLinks` in `packages/shared/src/markdownPipeline.ts`).
+- `scripts/../clips/a.mp4` and `clips/a.mp4` are one tab: joined paths drop `.`
+  and `..` (`resolvePathLinkTarget` in `packages/shared/src/fileLinks.ts`).
+- A video or audio file plays in the side panel. "Open in default app" opens a
+  file in the host's own app for its type: in every file chip's right-click
+  menu, and as a panel button on media and files the panel cannot show. It
+  appears only when the host is this computer, as for Open in editor, since the
+  app opens on the host (`OpenInDefaultAppAction.tsx`; the `file-manager`
+  launcher without `reveal`).
+- Mobile's file viewer already reads a file's paths from its folder; its inline
+  code is not tappable there and `..` is not tidied.
+
+On syncs, keep `resolveMarkdownFileLinkMeta`'s `documentDir` (unset only for
+chat, which alone sets `workspaceLookupPath`) and `ChatMarkdown`'s `imageBaseDir`
+passed through as that folder, not defaulted to `cwd`.
 
 ## FirstMate edits files in any project
 
@@ -1652,9 +1666,10 @@ short lines.
 - A change on disk, such as an agent's edit, is applied line by line and
   stays out of the undo history. The caret, the scroll position and undo
   stay, and the changed lines are tinted for two seconds.
-- A plain click follows a link: a file opens in the panel, a web address in
-  the browser. Option-click puts the caret in the link. `[[wiki-links]]` are
-  drawn but do not open. A link to a line (`report.md:42`) scrolls to it
+- A plain click follows a link, an inline-code path or a bare absolute path:
+  a file opens in the panel ([File references](#file-references)), a web
+  address in the browser. Option-click puts the caret in it. `[[wiki-links]]`
+  are drawn but do not open. A link to a line (`report.md:42`) scrolls to it
   here; the read-only view still switches to source for that.
 - A "Fork editor" badge sits in the file panel's toolbar while the editor
   shows, so it is never mistaken for upstream's read-only preview. Upstream's

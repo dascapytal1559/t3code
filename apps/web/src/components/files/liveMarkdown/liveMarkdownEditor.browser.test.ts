@@ -19,6 +19,8 @@ describe("createLiveMarkdownEditor", () => {
       resolveImageEmbed: () => ({ kind: "blocked" }),
       onImageNeeded: () => {},
       onOpenLink: () => {},
+      inlineCodeLink: () => null,
+      bareLinks: () => [],
     });
     try {
       const stop = editor.watchOutline(() => {});

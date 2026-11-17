@@ -162,6 +162,34 @@ const indentMark = Decoration.mark({ class: "cm-lp-indent" });
 const wikiLinkMark = Decoration.mark({ class: "cm-lp-wikilink" });
 const linkMark = (href: string) =>
   Decoration.mark({ class: "cm-lp-link", attributes: { "data-href": href } });
+const codeLinkMark = (href: string) =>
+  Decoration.mark({ class: "cm-lp-code cm-lp-link", attributes: { "data-href": href } });
+
+// A bare path links only in prose, not inside code, a link or an address of its own.
+const NOT_PROSE = new Set([
+  "InlineCode",
+  "Link",
+  "Image",
+  "URL",
+  "Autolink",
+  "LinkReference",
+  "FencedCode",
+  "CodeBlock",
+  "HTMLBlock",
+  "HTMLTag",
+  "Comment",
+  "WikiLink",
+  "ImageEmbed",
+]);
+
+function inProse(state: EditorState, position: number): boolean {
+  const tree = syntaxTree(state);
+  let node: ReturnType<typeof tree.resolveInner> | null = tree.resolveInner(position, 1);
+  for (; node !== null; node = node.parent) {
+    if (NOT_PROSE.has(node.name)) return false;
+  }
+  return true;
+}
 
 /** Width of one column of list indentation, which `.cm-lp-indent` draws in a fixed-width font. */
 const REM_PER_INDENT_COLUMN = 0.625;
@@ -280,7 +308,8 @@ export function inlineDecorations(
           const open = marks[0];
           const close = marks.at(-1);
           if (open && close && close.from >= open.to) {
-            add(open.to, close.from, codeMark);
+            const href = config.inlineCodeLink(doc.sliceString(open.to, close.from));
+            add(open.to, close.from, href === null ? codeMark : codeLinkMark(href));
             const shown = touch.touches(from, to);
             add(open.from, open.to, shown ? syntaxMark : hidden);
             add(close.from, close.to, shown ? syntaxMark : hidden);
@@ -510,6 +539,13 @@ export function inlineDecorations(
           return;
         }
       },
+    });
+
+    eachLine(Math.max(windowFrom, frontmatter), lastLine.to, (line) => {
+      for (const { index, path } of config.bareLinks(line.text)) {
+        const from = line.from + index;
+        if (inProse(state, from)) add(from, from + path.length, linkMark(path));
+      }
     });
 
     // Blank lines separate blocks; drawn shorter, they read as paragraph spacing.
