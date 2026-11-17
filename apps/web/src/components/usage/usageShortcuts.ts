@@ -40,3 +40,11 @@ export function resolveUsageShortcut(
     context: { usagePageOpen: true },
   });
 }
+
+export function usageChartTitle(metric: UsageChartMetric, hourly: boolean, dayCount: number) {
+  const subject = metric === "tokens" ? "processed tokens" : "cost";
+  if (hourly) return `${metric === "tokens" ? "Processed tokens" : "Cost"}, last 24 hours`;
+  const period =
+    WINDOW_OPTIONS.find((option) => option.days === dayCount)?.label ?? `${dayCount} days`;
+  return `Daily ${subject} over ${period}`;
+}

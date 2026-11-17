@@ -49,6 +49,8 @@ Four things are still shared with the official app:
 The Usage page on web and desktop has 6 months (`Cmd+Shift+5`) and 12 months
 (`Cmd+Shift+6`) periods. Every period draws one stacked bar per day or hour,
 because upstream's overlapping lines turn into a smear over long ranges. The
+chart's title names the period, such as "Daily cost over 6 months" or
+"Processed tokens, last 24 hours". The
 mobile app already draws bars and still
 stops at 90 days. The server keeps parsed usage for 367 days instead of 92, so
 usage stays after Claude Code deletes old transcripts. History older than what

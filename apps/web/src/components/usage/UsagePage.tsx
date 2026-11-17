@@ -95,6 +95,7 @@ import {
 import {
   METRIC_OPTIONS,
   WINDOW_OPTIONS,
+  usageChartTitle,
   resolveUsageShortcut,
   type UsageMetric,
 } from "./usageShortcuts";
@@ -811,7 +812,7 @@ function UsageOverview({
 
         <div className="flex min-w-0 flex-col gap-3">
           <h2 className="text-sm font-medium text-foreground">
-            {shownHourly ? "Hourly" : "Daily"} {metric === "tokens" ? "processed tokens" : "cost"}
+            {usageChartTitle(metric, shownHourly, days.length)}
           </h2>
           {activeProviders.length === 0 && excludedProviders.size > 0 ? (
             <p className="flex h-56 items-center justify-center text-sm text-muted-foreground">
