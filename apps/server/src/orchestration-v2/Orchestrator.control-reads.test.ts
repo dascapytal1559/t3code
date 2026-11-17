@@ -33,8 +33,8 @@ import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import type * as Tracer from "effect/Tracer";
 import * as TestClock from "effect/testing/TestClock";
+import * as Tracer from "effect/Tracer";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Statement from "effect/sql/Statement";
 import {
@@ -1923,7 +1923,21 @@ it.effect.each([false, true])("rejects thread.create for an existing id (deleted
         ref: { driver: adapter.driver, nativeId: "native-original", strength: "strong" },
       },
     } as const;
-    yield* orchestrator.dispatch(create);
+    const failedSpans: Array<string> = [];
+    const tracer = Tracer.make({
+      span(options) {
+        const span = new Tracer.NativeSpan(options);
+        const end = span.end.bind(span);
+        span.end = (time, exit) => {
+          end(time, exit);
+          if (Exit.isFailure(exit)) failedSpans.push(span.name);
+        };
+        return span;
+      },
+    });
+    yield* orchestrator.dispatch(create).pipe(Effect.withTracer(tracer));
+    // The id check expects a miss; a failed span there reads as an error in Tempo.
+    assert.deepEqual(failedSpans, []);
     if (deleted) {
       yield* orchestrator.dispatch({
         type: "thread.delete",

@@ -10,6 +10,7 @@ import * as Path from "effect/Path";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
 import { vi } from "vite-plus/test";
 import type * as Electron from "electron";
 
@@ -26,6 +27,7 @@ import * as DesktopBackendConfiguration from "../../backend/DesktopBackendConfig
 import * as DesktopBackendManager from "../../backend/DesktopBackendManager.ts";
 import * as DesktopBackendPool from "../../backend/DesktopBackendPool.ts";
 import * as DesktopAppSettings from "../../settings/DesktopAppSettings.ts";
+import * as DesktopShellEnvironment from "../../shell/DesktopShellEnvironment.ts";
 import * as DesktopManagedPolicy from "../../app/DesktopManagedPolicy.ts";
 import * as DesktopWslEnvironment from "../../wsl/DesktopWslEnvironment.ts";
 import * as ElectronDialog from "../../electron/ElectronDialog.ts";
@@ -235,6 +237,7 @@ describe("installRelayTelemetryEnabled", () => {
   const relayTelemetryEnabled = (
     env: NodeJS.ProcessEnv,
     policy?: Parameters<typeof DesktopManagedPolicy.layerTest>[0],
+    loginShellEnv: NodeJS.ProcessEnv = {},
   ) =>
     Effect.gen(function* () {
       const listeners = new Map<string, DesktopIpc.DesktopIpcSyncListener>();
@@ -244,23 +247,53 @@ describe("installRelayTelemetryEnabled", () => {
         removeAllListeners: (channel) => void listeners.delete(channel),
         on: (channel, listener) => void listeners.set(channel, listener),
       };
+      let discoveryFinished = false;
+      const ask = () => {
+        const event = { returnValue: undefined as unknown };
+        listeners.get(IpcChannels.GET_RELAY_TELEMETRY_ENABLED_CHANNEL)?.(event as never);
+        return event.returnValue;
+      };
       yield* installRelayTelemetryEnabled().pipe(
         Effect.provideService(HostProcess.Environment, env),
+        Effect.provideService(DesktopShellEnvironment.DesktopShellEnvironment, {
+          installIntoProcess: Effect.succeed(true),
+          awaitDiscovery: Effect.succeed(true),
+          awaitUserShellDiscovery: Effect.succeed(true),
+          discoveryFinished: Effect.sync(() => discoveryFinished),
+          updates: Stream.empty,
+        }),
         Effect.provide(
           Layer.mergeAll(DesktopIpc.layerTest(ipcMain), DesktopManagedPolicy.layerTest(policy)),
         ),
       );
-      const event = { returnValue: undefined as unknown };
-      listeners.get(IpcChannels.GET_RELAY_TELEMETRY_ENABLED_CHANNEL)?.(event as never);
-      return event.returnValue;
+      const beforeDiscovery = ask();
+      // The login shell's values land in the process env after startup has installed handlers.
+      Object.assign(env, loginShellEnv);
+      discoveryFinished = true;
+      return { beforeDiscovery, afterDiscovery: ask() };
     }).pipe(Effect.scoped);
   const optedIn = { T3CODE_TELEMETRY_ENABLED: "true" };
 
   it.effect("reads the desktop host opt-in before returning the renderer policy", () =>
     Effect.gen(function* () {
-      assert.isFalse(yield* relayTelemetryEnabled({ T3CODE_TELEMETRY_ENABLED: "false" }));
-      assert.isFalse(yield* relayTelemetryEnabled({}));
-      assert.isTrue(yield* relayTelemetryEnabled(optedIn));
+      assert.deepEqual(yield* relayTelemetryEnabled({ T3CODE_TELEMETRY_ENABLED: "false" }), {
+        beforeDiscovery: false,
+        afterDiscovery: false,
+      });
+      // Fork: off unless opted in, so no opt-in answers false before the login shell is read.
+      assert.deepEqual(yield* relayTelemetryEnabled({}), {
+        beforeDiscovery: false,
+        afterDiscovery: false,
+      });
+      // An opt-in is undecided until the login shell is read, so the renderer asks again.
+      assert.deepEqual(yield* relayTelemetryEnabled(optedIn), {
+        beforeDiscovery: null,
+        afterDiscovery: true,
+      });
+      assert.deepEqual(
+        yield* relayTelemetryEnabled(optedIn, undefined, { T3CODE_TELEMETRY_ENABLED: "false" }),
+        { beforeDiscovery: null, afterDiscovery: false },
+      );
     }),
   );
 
@@ -271,14 +304,14 @@ describe("installRelayTelemetryEnabled", () => {
         organization: "Example Corp",
         limits,
       });
-      assert.isFalse(yield* relayTelemetryEnabled(optedIn, policy({ telemetry: false })));
-      assert.isTrue(yield* relayTelemetryEnabled(optedIn, policy({ webhookTasks: false })));
+      const after = function* (...args: Parameters<typeof relayTelemetryEnabled>) {
+        return (yield* relayTelemetryEnabled(...args)).afterDiscovery;
+      };
+      assert.isFalse(yield* after(optedIn, policy({ telemetry: false })));
+      assert.isTrue(yield* after(optedIn, policy({ webhookTasks: false })));
       // A policy that cannot be read fails closed.
       assert.isFalse(
-        yield* relayTelemetryEnabled(
-          optedIn,
-          new ManagedPolicyFileError({ path: "/test", reason: "bad JSON" }),
-        ),
+        yield* after(optedIn, new ManagedPolicyFileError({ path: "/test", reason: "bad JSON" })),
       );
     }),
   );

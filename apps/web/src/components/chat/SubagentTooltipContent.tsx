@@ -128,7 +128,7 @@ export function SubagentTooltipContent(props: {
             acpRegistryIconUrl={props.provider?.iconUrl}
             showBadge={showInstanceBadge && entry?.accentColor !== undefined}
             badgeClassName="h-2 min-w-2 px-0"
-            iconClassName="size-3 shrink-0 grayscale opacity-60"
+            iconClassName="size-3 shrink-0 opacity-60"
           />
         ) : (
           <BotIcon className="size-3 shrink-0" />

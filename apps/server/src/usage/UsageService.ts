@@ -95,12 +95,6 @@ const RATES_REFRESH_FLOOR_MS = 60 * 1000;
 const MTIME_SLACK_MS = 36 * 60 * 60 * 1000;
 const MAX_HOURLY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/**
- * Parsed usage outlives its transcripts (Claude Code deletes old sessions), so
- * this bounds how far back Usage can reach. It covers the longest window, twelve
- * months, with two days of slack.
- */
-const CACHE_RETENTION_DAYS = 367;
 const STALE_TEMP_DIRECTORY_MS = 60 * 60 * 1000;
 
 const TRANSCRIPT_READ_CONCURRENCY = 4;
@@ -1013,7 +1007,10 @@ export const make = Effect.gen(function* () {
       hourlyWindow?.untilTimeMs ??
       Date.parse(`${input.untilDay}T00:00:00Z`) + 86400000 + MTIME_SLACK_MS;
 
-    const retentionCutoffMs = startedAtMs - CACHE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    const retentionCutoffMs =
+      settings.usageHistoryRetentionDays === "unlimited"
+        ? 0
+        : Math.max(0, startedAtMs - settings.usageHistoryRetentionDays * 24 * 60 * 60 * 1000);
 
     const awaitRefresh = input.awaitRefresh === true;
     const collect = Effect.gen(function* () {
@@ -1400,14 +1397,26 @@ export const make = Effect.gen(function* () {
       });
     }
 
-    const pruned = pruneScanCache(fileCache, retentionCutoffMs);
-    if (pruned > 0) {
-      cacheDirty = true;
-      // Pruned files are no longer saved, so nothing before the cutoff stays covered.
-      for (const [key, since] of coveredSince) {
-        if (since < retentionCutoffMs) coveredSince.set(key, retentionCutoffMs);
-      }
-    }
+    yield* settingsService
+      .withSettingsSnapshot((currentSettings) =>
+        Effect.sync(() => {
+          if (settings.usageHistoryRetentionDays === currentSettings.usageHistoryRetentionDays) {
+            const pruned = pruneScanCache(fileCache, retentionCutoffMs);
+            if (pruned > 0) {
+              cacheDirty = true;
+              // Pruned files are no longer saved, so nothing before the cutoff stays covered.
+              for (const [key, since] of coveredSince) {
+                if (since < retentionCutoffMs) coveredSince.set(key, retentionCutoffMs);
+              }
+            }
+          }
+        }),
+      )
+      .pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("failed to read settings before pruning the usage cache", { cause }),
+        ),
+      );
 
     const aggregated = aggregator.finish();
     const readAt = yield* DateTime.now;

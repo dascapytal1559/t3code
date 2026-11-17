@@ -55,6 +55,7 @@ import {
 } from "@t3tools/client-runtime/environment";
 import {
   AuthOrchestrationOperateScope,
+  type ContextMenuSource,
   ProjectId,
   type ScopedThreadRef,
   type ThreadId,
@@ -1163,6 +1164,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       ? null
       : scopedThreadKey(resolveListedAncestorThreadRef(routeThreadRef, threads));
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
+  // The open draft's first send names its thread in place; a finalized draft reached by
+  // navigation resolves through its redirect instead, and still reveals.
+  const routeKeyInPlace = routeDraftThread?.promotedTo != null;
 
   // History, the palette and links can open a thread the scope hides or the list
   // scrolled away; a remount starts at the top, so each mount scrolls to the open
@@ -1171,6 +1175,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const { widensScope: revealWidensScope } = resolveSidebarRouteReveal({
     reveal: routeReveal,
     routeKey: routeRowThreadKey,
+    routeKeyInPlace,
     isSearching: isSearchingThreads,
     scopedProjectKeys: chosenScopeProjectKeys,
     delegatedUnderParent,
@@ -1194,7 +1199,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     clearSelection();
     setPersistedProjectScopeKeys([]);
   }, [clearSelection, revealWidensScope, setPersistedProjectScopeKeys]);
-  const revealActiveRow = useActiveRowReveal(routeReveal, routeRowThreadKey);
+  const revealActiveRow = useActiveRowReveal(routeReveal, routeRowThreadKey, routeKeyInPlace);
   const showProjectEnvironments = projectGroupsSpanEnvironments(projectGroups);
   const scratchMachineLabelFor = (
     thread: Pick<SidebarThreadSummary, "environmentId" | "projectId">,
@@ -1297,7 +1302,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     void handleNewThread(scopeProjectRef(group.environmentId, group.id));
   });
   const handleProjectFolderContextMenu = useStableCallback(
-    (group: SidebarProjectSnapshot, position: { x: number; y: number }) => {
+    (
+      group: SidebarProjectSnapshot,
+      position: { x: number; y: number },
+      source: ContextMenuSource,
+    ) => {
       const api = readLocalApi();
       if (!api) return;
       void (async () => {
@@ -1316,6 +1325,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               { id: "project-settings", label: "Project settings", icon: "settings" },
             ],
             position,
+            source,
           ),
         );
         if (clicked._tag === "Failure") return;
@@ -2360,7 +2370,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   );
 
   const handleMultiSelectContextMenu = useStableCallback(
-    async (position: { x: number; y: number }) => {
+    async (position: { x: number; y: number }, source: ContextMenuSource) => {
       const api = readLocalApi();
       if (!api) return;
       const selectedThreadKeys = [...useThreadSelectionStore.getState().selectedThreadKeys];
@@ -2462,6 +2472,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             },
           ],
           position,
+          source,
         ),
       );
       if (clicked._tag === "Failure" || clicked.value === null) return;
@@ -2615,7 +2626,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   );
 
   const handleDraftContextMenu = useStableCallback(
-    (draftId: DraftId, position: { x: number; y: number }) => {
+    (draftId: DraftId, position: { x: number; y: number }, source: ContextMenuSource) => {
       void (async () => {
         const api = readLocalApi();
         const session = useComposerDraftStore.getState().getDraftSession(draftId);
@@ -2637,6 +2648,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               hasProject: projectGroup != null,
             }),
             position,
+            source,
           ),
         );
         if (clicked._tag === "Failure") return;
@@ -2666,14 +2678,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   );
 
   const handleThreadContextMenu = useStableCallback(
-    (threadRef: ScopedThreadRef, position: { x: number; y: number }) => {
+    (threadRef: ScopedThreadRef, position: { x: number; y: number }, source: ContextMenuSource) => {
       void (async () => {
         const api = readLocalApi();
         if (!api) return;
         const threadKey = scopedThreadKey(threadRef);
         const selectionState = useThreadSelectionStore.getState();
         if (selectionState.hasSelection() && selectionState.selectedThreadKeys.has(threadKey)) {
-          await handleMultiSelectContextMenu(position);
+          await handleMultiSelectContextMenu(position, source);
           return;
         }
         const thread = threadByKeyRef.current.get(threadKey);
@@ -2735,6 +2747,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               snoozePresets,
             }),
             position,
+            source,
           ),
         );
         if (clicked._tag === "Failure" || clicked.value === null) return;
