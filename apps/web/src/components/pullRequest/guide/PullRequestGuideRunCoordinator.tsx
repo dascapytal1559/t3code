@@ -6,8 +6,8 @@ import { AsyncResult, type AtomRegistry } from "effect/reactivity";
 import { getClientSettings } from "~/hooks/useSettings";
 import { observedPullRequestTitle, pullRequestEnvironment } from "~/state/pullRequests";
 import {
+  alertPlaysSound,
   hasDesktopNotifications,
-  hasNotificationSound,
   playNotificationSound,
 } from "~/threadNotifications";
 
@@ -108,10 +108,12 @@ function watchGuideRun(
         },
       });
     };
-    const mode = getClientSettings().notificationMode;
-    if (hasNotificationSound(mode)) {
+    const settings = getClientSettings();
+    const mode = settings.notificationMode;
+    // A guide run is not FirstMate, so "FirstMate only" keeps it silent.
+    if (alertPlaysSound(settings, null)) {
       void playNotificationSound(failure === null ? "completion" : "input", () =>
-        hasNotificationSound(getClientSettings().notificationMode),
+        alertPlaysSound(getClientSettings(), null),
       );
     }
     if (looking) {

@@ -283,6 +283,10 @@ export const NotificationMode = Schema.Literals([
 ]);
 export type NotificationMode = typeof NotificationMode.Type;
 
+/** Fork: which threads' alerts play the notification sound; the others alert silently. */
+export const NotificationSoundScope = Schema.Literals(["all-threads", "firstmate"]);
+export type NotificationSoundScope = typeof NotificationSoundScope.Type;
+
 export const QuitConfirmationMode = Schema.Literals(["direct", "hold", "double-click"]);
 export type QuitConfirmationMode = typeof QuitConfirmationMode.Type;
 const DEFAULT_QUIT_CONFIRMATION_MODE: QuitConfirmationMode = "hold";
@@ -411,6 +415,9 @@ export type VoiceTranscriptionDestination = typeof VoiceTranscriptionDestination
 export const ClientSettingsSchema = Schema.Struct({
   notificationMode: NotificationMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("off" as const)),
+  ),
+  notificationSoundScope: NotificationSoundScope.pipe(
+    Schema.withDecodingDefault(Effect.succeed("all-threads" as const)),
   ),
   inAppNotificationsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   diffColorScheme: DiffColorScheme.pipe(
@@ -2065,6 +2072,7 @@ export function requiredScopesForProjectMutation(
 
 export const ClientSettingsPatch = Schema.Struct({
   notificationMode: Schema.optionalKey(NotificationMode),
+  notificationSoundScope: Schema.optionalKey(NotificationSoundScope),
   inAppNotificationsEnabled: Schema.optionalKey(Schema.Boolean),
   diffColorScheme: Schema.optionalKey(DiffColorScheme),
   chatWidth: Schema.optionalKey(ChatWidth),

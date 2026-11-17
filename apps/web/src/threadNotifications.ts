@@ -1,4 +1,9 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import {
+  type EnvironmentId,
+  isPrimaryCoordinator,
+  type OrchestrationV2AppThread,
+  type ThreadId,
+} from "@t3tools/contracts";
 import type { ClientSettings } from "@t3tools/contracts/settings";
 
 import completionUrl from "./assets/notification-completion.mp3";
@@ -14,6 +19,23 @@ export const NOTIFICATION_MODE_LABELS = {
 
 export function hasNotificationSound(mode: NotificationMode) {
   return mode === "sound" || mode === "notifications-and-sound";
+}
+
+export const NOTIFICATION_SOUND_SCOPE_LABELS = {
+  "all-threads": "Every thread",
+  firstmate: "FirstMate only",
+} satisfies Record<ClientSettings["notificationSoundScope"], string>;
+
+/** Whether an alert sounds; `thread` is null for alerts that are not about a thread. */
+export function alertPlaysSound(
+  settings: Pick<ClientSettings, "notificationMode" | "notificationSoundScope">,
+  thread: Pick<OrchestrationV2AppThread, "coordinator" | "crewOf"> | null,
+) {
+  if (!hasNotificationSound(settings.notificationMode)) return false;
+  return (
+    settings.notificationSoundScope === "all-threads" ||
+    (thread !== null && isPrimaryCoordinator(thread))
+  );
 }
 
 export function hasDesktopNotifications(mode: NotificationMode) {

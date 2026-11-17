@@ -25,6 +25,7 @@ import { environmentSummaries } from "../state/presentation";
 import { environmentShell } from "../state/shell";
 import { environmentThreadShells } from "../state/threads";
 import {
+  alertPlaysSound,
   hasDesktopNotifications,
   hasNotificationSound,
   playNotificationSound,
@@ -141,7 +142,8 @@ export function startThreadNotifications(
         .has(threadKey({ environmentId, threadId: thread.id }))
     )
       return;
-    const { notificationMode: mode, inAppNotificationsEnabled } = getClientSettings();
+    const settings = getClientSettings();
+    const { notificationMode: mode, inAppNotificationsEnabled } = settings;
     const active = activeThread();
     const title =
       kind === "completion"
@@ -155,10 +157,8 @@ export function startThreadNotifications(
               : status === "request"
                 ? "Guest request"
                 : "Input needed";
-    if (hasNotificationSound(mode)) {
-      void playNotificationSound(kind, () =>
-        hasNotificationSound(getClientSettings().notificationMode),
-      );
+    if (alertPlaysSound(settings, state.raw)) {
+      void playNotificationSound(kind, () => alertPlaysSound(getClientSettings(), state.raw));
     }
     if (
       inAppNotificationsEnabled &&

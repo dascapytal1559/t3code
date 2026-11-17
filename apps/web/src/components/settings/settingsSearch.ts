@@ -697,6 +697,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["notification sound alert completion input approval desktop"],
   },
   {
+    id: "notification-sound-scope",
+    title: "Sound for",
+    to: "/settings/general",
+    // Shown only while the mode includes sound, so search lands on the mode row.
+    targetId: "thread-notifications",
+    searchTerms: ["notification sound firstmate coordinator mute silent threads"],
+  },
+  {
     id: "in-app-notifications",
     title: msg("In-app notifications"),
     to: "/settings/general",

@@ -10,6 +10,7 @@ import { RELEASED_COMPLETION_GRACE_MS } from "./ThreadNotificationCoordinator.lo
 
 const state = vi.hoisted(() => ({
   mode: "notifications",
+  soundScope: "all-threads",
   inApp: false,
   toast: vi.fn(),
   closeToast: vi.fn(),
@@ -74,6 +75,7 @@ vi.mock(import("../hooks/useSettings"), async (original) => ({
   }) as never,
   getClientSettings: (() => ({
     notificationMode: state.mode,
+    notificationSoundScope: state.soundScope,
     inAppNotificationsEnabled: state.inApp,
   })) as never,
 }));
@@ -197,6 +199,7 @@ function setup() {
   const testRegistry = registry;
   stack.defer(() => testRegistry.dispose());
   state.mode = "notifications";
+  state.soundScope = "all-threads";
   state.inApp = false;
   state.settingsListeners.clear();
   registry.set(environmentIdsAtom, ["one", "two"]);
@@ -300,6 +303,35 @@ it.each([
     });
     expect(TestNotification.sent.map((sent) => sent.title)).toEqual(titles);
     expect(state.sound.mock.calls).toEqual(titles.map(() => ["completion", expect.any(Function)]));
+  },
+);
+
+it.each([
+  [
+    "completion",
+    { latestTurn: { turnId: "turn", state: "completed", completedAt: "2026-09-13T07:00:01.000Z" } },
+    "Thread completed",
+  ],
+  ["input", { hasPendingUserInput: true }, "Input needed"],
+] as const)(
+  "with sound for FirstMate only, FirstMate's %s alert sounds and another top-level thread's alerts silently",
+  async (kind, fields, title) => {
+    await using app = setup();
+    state.mode = "notifications-and-sound";
+    state.soundScope = "firstmate";
+    state.shells.set("one", shell({ id: "firstmate" }));
+    state.shells.set("two", shell({ id: "other" }));
+    app.start();
+    const asCoordinator = (next: ReturnType<typeof shell>) => ({
+      ...next,
+      snapshot: Option.map(next.snapshot, ({ threads }) => ({
+        threads: threads.map((thread) => ({ ...thread, coordinator: true })),
+      })),
+    });
+    state.shells.set("one", asCoordinator(shell({ id: "firstmate", ...fields })));
+    state.shells.set("two", shell({ id: "other", ...fields }));
+    expect(TestNotification.sent.map((sent) => sent.title)).toEqual([title, title]);
+    expect(state.sound.mock.calls).toEqual([[kind, expect.any(Function)]]);
   },
 );
 
