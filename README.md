@@ -30,6 +30,7 @@ Also:
 - [Board](fork/README.md#board): a tab to sketch on screenshots and attach them to the chat.
 - [Twelve months of usage](fork/README.md#usage-reaches-twelve-months): longer periods, drawn as stacked bars.
 - [Muted usage rows](fork/README.md#usage-rows-can-be-muted): click a provider on the Usage page to mute it.
+- [Usage figures](fork/README.md#usage-figures-line-up-and-fade-by-size): shares and aligned columns on the Usage page, and the big numbers stand out.
 - [Usage in the sidebar](fork/README.md#usage-limits-in-the-sidebar): one bar per account shows what is left this week.
 - [Archived usage](fork/README.md#archived-usage): counts machines that no longer run T3.
 - [Usage export](fork/README.md#usage-export): `t3 usage export` prints each model call as T3 counted it, as JSON lines.

@@ -44,7 +44,7 @@ Four things are still shared with the official app:
 
 ## Usage reaches twelve months
 
-![The Usage page's 12 months view: a year of daily cost as stacked bars, split by Codex and Claude Code](media/usage-12-months.png)
+![The Usage page's 12 months view: a year of daily cost as stacked bars, split by Claude Code, Grok Build, Codex and Pi](media/usage-12-months.png)
 
 The Usage page on web and desktop has 6 months (`Cmd+Shift+5`) and 12 months
 (`Cmd+Shift+6`) periods. Every period draws one stacked bar per day or hour,
@@ -69,13 +69,13 @@ at the top (`apps/web/src/components/usage/UsagePage.tsx`).
 
 ## Usage rows can be muted
 
-![The Usage page with Codex and Grok Build muted and grayed out, leaving Claude Code alone in the headline, chart and totals](media/usage-provider-filter.png)
+![The Usage page with Grok Build and Codex muted and grayed out, leaving Claude Code and Pi in the headline, the chart and the bars under it](media/usage-provider-filter.png)
 
 On the Usage page, click a provider's dot, icon or name to mute it; click again
 to bring it back. The row looks like plain text until you hover it. Muting grays
 the row and leaves it in the list, showing what that provider would have added.
 Everything else drops it: the headline, the other rows' shares, the chart, the
-totals, the by-type bars and the breakdown. Rows follow upstream's order by the
+by-type bars and the breakdown. Rows follow upstream's order by the
 selected metric (cost or tokens); a muted row ranks by what it would have added,
 so muting it does not move it.
 
@@ -86,6 +86,51 @@ adds: `excludedProviders` in `apps/web/src/state/usage.ts` and the rows in
 `apps/web/src/components/usage/UsagePage.tsx`. Upstream's filter also hides a
 provider's Limits cards, so a row muted here hides them too. The mobile app
 has no row toggles.
+
+## Usage figures line up and fade by size
+
+![The Usage page's Tokens tab: a headline with sessions and a dollar total, four provider rows whose counts fade from 1.93B down to 32.3M, a chart as tall as the provider list, and Tokens by type and Tokens by origin with their figures in columns](media/usage-figures.png)
+
+The captain reads the Usage page for where the tokens went, so the Tokens and
+Cost tabs on web and desktop put the figures he compares where the eye can
+compare them:
+
+- **No Totals row.** Upstream's row of five totals repeats the type bar. Cache
+  savings moves beside the **Cost by type** heading.
+- **The other figure rides along.** Under the headline the Tokens tab shows the
+  sessions and the dollar total, and the Cost tab the sessions and the token
+  total. A provider's row shows the tab's figure one size up, then its sessions
+  and the other figure, with its share at the right under the figure.
+- **Figures fade by size.** The largest figure in a group is at full strength,
+  the smallest at 70%, and the rest are placed between by order of magnitude,
+  so billions stand apart from millions. On provider rows a figure in the top
+  fifth of that scale is bold; in the captain's words, "if it's in a league of
+  its own, then it should be separated from the others". The scale never spans
+  less than one order of magnitude, so three providers of similar size all stay
+  bold rather than being stretched apart.
+- **Figures sit in columns.** Tokens by type, Cost by type and Cost by speed
+  print each part's share and set the parts two to a line, in the order Input,
+  Cache read, Output, Cache write, so every M and B, percent sign and colour
+  square is directly above its like. A fifth part (Other, on Cost by type)
+  follows the second line where it fits. Tokens by origin sets its figures in
+  columns too.
+- **The chart is as tall as the provider list.** With four or more providers
+  the bars stretch so the chart ends level with the last row. It is never
+  shorter than upstream's.
+- **Whole dollars from $100.** The page's standing dollar figures drop cents
+  from $100 up (`formatUsdShort`). The chart's tooltip and a model's pop-up
+  keep cents.
+
+The mobile app keeps upstream's layout. A model's pop-up uses the same bars,
+so its legends take the columns, shares and fade too.
+
+For syncs, the fork's parts are: the provider rows, the headline's second line
+and the missing Totals section in
+`apps/web/src/components/usage/UsagePage.tsx`; the legend in
+`UsageShareBar.tsx` and the segment order in `usageBreakdown.ts`; the legend
+in `UsageOriginBreakdown.tsx`; `min-h-56 flex-1` in place of upstream's fixed
+`h-56` in `UsageProviderChart.tsx`; the scale in `usageEmphasis.ts`; and
+`formatUsdShort` in `packages/shared/src/usageFormat.ts`.
 
 ## Usage accounts follow the providers tab
 
