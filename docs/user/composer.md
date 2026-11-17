@@ -142,6 +142,10 @@ delete it like other inline context. Copying, reloading, and restoring a
 with its quote, and sending tells the agent which words were quoted and which comment you wrote.
 The quoted text and comment count toward the message limit.
 
+You can also quote a Markdown file open in the side panel: select text there and choose **Cite**,
+or right-click the selection and choose **Cite**. The agent gets the file's path and the lines the
+quote came from. Select the quote to open the file at those lines.
+
 Mobile displays saved quotes and comments, but does not create citations or
 navigate to their sources.
 

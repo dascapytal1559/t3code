@@ -7,7 +7,11 @@ import {
 import { WORKSPACE_BASENAME_LOOKUP_LIMIT } from "@t3tools/client-runtime/workspace-basename-lookup";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { normalizeMarkdownLinkDestination } from "@t3tools/shared/markdownLinks";
-import { isHostPath, workspaceRelativeFilePath } from "@t3tools/shared/path";
+import {
+  isHostPath,
+  resolveWorkspaceFilePath,
+  workspaceRelativeFilePath,
+} from "@t3tools/shared/path";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { useAssetUrls } from "~/assets/assetUrls";
@@ -29,6 +33,7 @@ import {
   getOptimisticProjectFileQueryData,
   setProjectFileQueryData,
 } from "../projectFilesQueryState";
+import { captureEditorFileSelection, FileSelectionCite } from "../FileSelectionCite";
 import { createLiveMarkdownEditor, type LiveMarkdownEditor } from "./liveMarkdownEditor";
 import {
   findImageEmbed,
@@ -293,6 +298,16 @@ export default function LiveMarkdownSurface({
     <div className="flex min-h-0 flex-1">
       {showOutline && mountedEditor ? <MarkdownOutlineColumn editor={mountedEditor} /> : null}
       <div ref={hostRef} data-live-markdown className="min-h-0 flex-1" />
+      {mountedEditor ? (
+        <FileSelectionCite
+          viewport={mountedEditor.view.scrollDOM}
+          capture={captureEditorFileSelection(mountedEditor.view, {
+            environmentId,
+            path: resolveWorkspaceFilePath(relativePath, cwd),
+          })}
+          editable
+        />
+      ) : null}
     </div>
   );
 }

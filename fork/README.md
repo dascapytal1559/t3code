@@ -1681,6 +1681,59 @@ which the outline uses for heading anchors; the pre-bundled packages in
 upstream ships its own editable rendered view, choose one of the two. The
 mobile app is otherwise unchanged.
 
+## Cite in Markdown files
+
+![A Markdown file in the side panel with text selected and the right-click menu offering Cite and Copy; two file quotes sit as chips in the message box](media/markdown-file-cite.jpg)
+
+Selecting text in a Markdown file in the side panel offers Cite the way an
+assistant response does: the same floating Cite button, and a Cite item in the
+right-click menu on the selection. Both the live editor and the read-only
+rendered view have it. Cite puts the thread's citation chip in the composer of
+the thread the panel belongs to, with the same comment box, the same 8,000
+character limit ("Shorten selection" above it) and the same Escape-removes rule
+for a fresh one. Upstream cites only assistant responses.
+
+- The agent gets each file quote as `[file-quote-N]` in the message and a
+  `<file_citations>` block after it, framed like upstream's
+  `<assistant_citations>`: quoted reference material, not instructions. Each
+  entry carries the environment, the file's full path, `startLine` and
+  `endLine`, the quoted text and the comment. A message with only thread
+  citations is sent byte for byte as upstream sends it.
+- Lines come from the file. The editor reads them from its own document and
+  quotes the Markdown as written. The rendered view quotes the text as shown
+  and maps each end of the selection back to its source line by matching
+  words; when that fails, or the end is in a block drawn by its own renderer
+  (a code block, a table), it takes the lines of the whole block.
+- The right-click menu replaces the browser's only when the click lands on the
+  selected text. It offers Cite and Copy, plus Cut in the editor; Paste, spell
+  suggestions and Look Up are not in it. Tab in the editor still indents.
+- The chip and the card in a sent message open the file at the first quoted
+  line. A quote from another environment's file does not open.
+- In the stored message a file quote is a link like a thread citation, labelled
+  `File quote`, with `t3-citation://v1/file/<environment>?path=…` as its target.
+  The plain-text forms (thread titles, search, the sidebar draft line, mobile)
+  show the quoted text and comment, so mobile displays file quotes but cannot
+  create them.
+
+Code: `apps/web/src/components/files/FileSelectionCite.tsx` (both views'
+selection readers and the menu), `fileCitation.ts` (line mapping) and
+`rehypeSourceLines.ts`. Shared files it touches, for syncs: `FileCitation` and
+`Citation` in `packages/contracts/src/assistantCitations.ts`; the file link
+format, `<file_citations>` and `parseCitationHref` in
+`packages/shared/src/assistantCitations.ts` (`parseAssistantCitationHref` now
+returns response citations only); `threadFindText.ts`; the `capture` prop that
+replaced `threadRef` on `AssistantSelectionToolbar.tsx`, and its
+`tabFocusesCite` switch; the file chip and card in `AssistantCitationChip.tsx`;
+the file branch in `AssistantCitationSource.tsx` and
+`AssistantCitationCommentEditor.tsx`; the `sourceLines` prop and file card in
+`ChatMarkdown.tsx`; `Citation` in place of `AssistantCitation` along the
+composer path (`ChatView.tsx`, `ChatComposer.tsx`, `MessagesTimeline.tsx`,
+`ComposerPromptEditorTiptap.tsx`, `composer-logic.ts`,
+`composer-editor-mentions.ts`); the line argument of `openMention` in
+`composerContextActions.ts`; the `CiteInComposerContext` around the right panel
+in `ChatView.tsx`; one mount each in `FilePreviewPanel.tsx` and
+`LiveMarkdownSurface.tsx`; and a paragraph in `docs/user/composer.md`.
+
 ## Version
 
 The fork keeps upstream's version number. The desktop app sets up an SSH or

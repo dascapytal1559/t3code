@@ -1,9 +1,5 @@
 import type { ClientSettings } from "@t3tools/contracts/settings";
-import type {
-  AssistantCitation,
-  EnvironmentId,
-  ResolvedKeybindingsConfig,
-} from "@t3tools/contracts";
+import type { Citation, EnvironmentId, ResolvedKeybindingsConfig } from "@t3tools/contracts";
 import type { ComposerPathSearchTarget } from "@t3tools/client-runtime/state/threads";
 import {
   serializeAssistantCitation,
@@ -46,7 +42,7 @@ export function isPathSuggestionCurrent(
   );
 }
 
-export function formatAssistantCitationForComposer(citation: AssistantCitation, comment = "") {
+export function formatAssistantCitationForComposer(citation: Citation, comment = "") {
   return `${serializeAssistantCitation(withAssistantCitationComment(citation, comment))} `;
 }
 

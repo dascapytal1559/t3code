@@ -8,7 +8,7 @@ export interface ComposerContextActions {
   expandImage: (imageId: string) => void;
   expandVideo: (fileId: string) => void;
   openFile: (fileId: string) => void;
-  openMention: (path: string) => void;
+  openMention: (path: string, line?: number) => void;
   openPullRequest: (event: MouseEvent<HTMLElement>, url: string) => void;
 }
 

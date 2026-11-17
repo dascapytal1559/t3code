@@ -74,7 +74,7 @@ import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import { cn, isMacPlatform } from "~/lib/utils";
 import { requestWorkspaceFocus } from "~/lib/workspaceFocus";
 import type { ChatFileAttachment } from "~/types";
-import { isHostPath } from "@t3tools/shared/path";
+import { isHostPath, resolveWorkspaceFilePath } from "@t3tools/shared/path";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
@@ -97,6 +97,7 @@ import { BrowserDocumentFrame, isPdfPreviewFile } from "./BrowserDocumentFrame";
 import { DelimitedTablePreview } from "./DelimitedTablePreview";
 import { PreviewImage } from "./PreviewImage";
 import FileBrowserPanel from "./FileBrowserPanel";
+import { captureRenderedFileSelection, FileSelectionCite } from "./FileSelectionCite";
 import { FileExplorerPane } from "./FileExplorerPane";
 import { FileBreadcrumbs } from "./FileBreadcrumbs";
 import { breadcrumbPathOf, retainedBreadcrumbTrail, trailChildOf } from "./filePath";
@@ -1124,9 +1125,21 @@ function RenderedMarkdownSurface({
 }) {
   const saveTarget = { environmentId, cwd, relativePath, threadId: hostFileThreadId };
   useFileSaveSession(saveTarget, onPendingChange);
+  const [citeViewport, setCiteViewport] = useState<HTMLElement | null>(null);
 
   return (
-    <ScrollArea className="min-h-0 flex-1" onKeyDown={selectRenderedContentOnSelectAll}>
+    <ScrollArea
+      ref={setCiteViewport}
+      className="min-h-0 flex-1"
+      onKeyDown={selectRenderedContentOnSelectAll}
+    >
+      <FileSelectionCite
+        viewport={citeViewport}
+        capture={captureRenderedFileSelection(
+          { environmentId, path: resolveWorkspaceFilePath(relativePath, cwd) },
+          contents,
+        )}
+      />
       <FileMarkdownPreview
         text={contents}
         cwd={cwd}

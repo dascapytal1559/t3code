@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { EnvironmentId, MessageId, NonNegativeInt, ThreadId } from "./baseSchemas.ts";
+import { EnvironmentId, MessageId, NonNegativeInt, PositiveInt, ThreadId } from "./baseSchemas.ts";
 
 export const ASSISTANT_CITATION_MAX_TEXT_LENGTH = 8_000;
 export const ASSISTANT_CITATION_MAX_COMMENT_LENGTH = 8_000;
@@ -28,3 +28,28 @@ export const AssistantCitation = Schema.Struct({
   Schema.makeFilter((citation) => citation.end > citation.start && citation.text.trim().length > 0),
 );
 export type AssistantCitation = typeof AssistantCitation.Type;
+
+const FILE_CITATION_MAX_PATH_LENGTH = 4_096;
+
+/** A passage quoted from a file on an environment. Lines are 1-based and inclusive. */
+export const FileCitation = Schema.Struct({
+  environmentId: EnvironmentId.check(Schema.isMaxLength(ASSISTANT_CITATION_MAX_ID_LENGTH)),
+  path: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(FILE_CITATION_MAX_PATH_LENGTH)),
+  startLine: PositiveInt,
+  endLine: PositiveInt,
+  text: Schema.String.check(
+    Schema.isNonEmpty(),
+    Schema.isMaxLength(ASSISTANT_CITATION_MAX_TEXT_LENGTH),
+  ),
+  comment: Schema.optional(
+    Schema.String.check(Schema.isMaxLength(ASSISTANT_CITATION_MAX_COMMENT_LENGTH)),
+  ),
+}).check(
+  Schema.makeFilter(
+    (citation) => citation.endLine >= citation.startLine && citation.text.trim().length > 0,
+  ),
+);
+export type FileCitation = typeof FileCitation.Type;
+
+/** What a composer citation can quote: an assistant response or a file. */
+export type Citation = AssistantCitation | FileCitation;

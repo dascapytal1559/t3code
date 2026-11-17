@@ -1,5 +1,6 @@
 import type { LegendListRef } from "@legendapp/list/react";
-import type { AssistantCitation, MessageId, ScopedThreadRef } from "@t3tools/contracts";
+import type { AssistantCitation, Citation, MessageId, ScopedThreadRef } from "@t3tools/contracts";
+import { isFileCitation } from "@t3tools/shared/assistantCitations";
 import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 import {
   resolveAssistantCitationRange,
@@ -23,7 +24,7 @@ export function observeAssistantCitationCommentSource({
   onUnavailable,
 }: {
   anchor: AssistantCitationSourceAnchor;
-  citation: AssistantCitation;
+  citation: Citation;
   onUnavailable: () => void;
 }): () => void {
   const { source, range, viewport } = anchor;
@@ -55,13 +56,16 @@ export function observeAssistantCitationCommentSource({
       unavailable();
       return false;
     }
+    // A file view redraws its own text, so its range holds until it falls apart; only a
+    // response can find its quote again.
+    const file = isFileCitation(citation);
     if (
-      sourceChanged ||
+      (sourceChanged && !file) ||
       range.collapsed ||
       !source.contains(range.startContainer) ||
       !source.contains(range.endContainer)
     ) {
-      const repaired = resolveAssistantCitationRange(source, citation);
+      const repaired = file ? null : resolveAssistantCitationRange(source, citation);
       if (!repaired) {
         unavailable();
         return false;

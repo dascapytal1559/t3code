@@ -10,7 +10,7 @@ import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import type { WorktreeSetupSnapshot } from "@t3tools/contracts";
 import { deriveTimelineMinimapItems } from "./timelineMinimapItems";
 import {
-  type AssistantCitation,
+  type Citation,
   type EnvironmentId,
   type MessageId,
   type OrchestrationV2TurnItem,
@@ -71,7 +71,7 @@ import {
   rememberTimelinePosition,
   resolveDisclosureRevealScrollDelta,
 } from "./timelineScrollAnchoring";
-import { AssistantSelectionToolbar } from "./AssistantSelectionToolbar";
+import { AssistantSelectionToolbar, captureAssistantCitation } from "./AssistantSelectionToolbar";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
 import { type AssistantCitationRequest } from "./AssistantCitationSource";
 import { useAssistantCitationTarget } from "./useAssistantCitationTarget";
@@ -227,7 +227,7 @@ interface MessagesTimelineProps {
   citationRequest?: AssistantCitationRequest | null;
   citationHistory?: CitedHistory;
   onCiteAssistantText?: (
-    citation: AssistantCitation,
+    citation: Citation,
     sourceAnchor: AssistantCitationSourceAnchor,
   ) => boolean;
   onReplyToResponse?: TimelineRowSharedState["onReplyToResponse"];
@@ -1428,7 +1428,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
             {onCiteAssistantText && citationThreadRef ? (
               <AssistantSelectionToolbar
                 viewport={timelineViewportElement}
-                threadRef={citationThreadRef}
+                capture={captureAssistantCitation(citationThreadRef)}
                 onCite={onCiteAssistantText}
               />
             ) : null}

@@ -98,10 +98,14 @@ import type {
 import { createIncrementalMarkdownPlugin } from "../markdown-incremental";
 import type { Pluggable, PluggableList } from "unified";
 import { defaultUrlTransform } from "react-markdown";
-import { parseAssistantCitationHref } from "@t3tools/shared/assistantCitations";
+import { isFileCitation, parseCitationHref } from "@t3tools/shared/assistantCitations";
 import { parseComposerContextHref } from "@t3tools/shared/composerContextReferences";
 import { parseThreadLinkHref } from "@t3tools/shared/threadLinks";
-import { AssistantCitationEmbed } from "./chat/AssistantCitationChip";
+import {
+  AssistantCitationEmbed,
+  FileCitationEmbed,
+  fileCitationPanelPath,
+} from "./chat/AssistantCitationChip";
 import { MarkdownThreadLink } from "./chat/MarkdownThreadLink";
 import { mathKind } from "@t3tools/shared/markdownMath";
 import remarkMath from "remark-math";
@@ -225,6 +229,7 @@ import { canUseMarkdownFileShellActions } from "./chat/MarkdownFileLink.logic";
 import { rehypeChipPunctuation } from "./chat/markdownChipPunctuation";
 import { handleMarkdownFragmentClick, rehypeHeadingIds } from "./chat/markdownFragments";
 import { rehypeTextDirection } from "./chat/markdownTextDirection";
+import { rehypeSourceLines } from "./files/rehypeSourceLines";
 import { hastHasText, hastPlainTextDeep, plainHastText } from "./chat/markdownHast.logic";
 import {
   extractCodeBlock,
@@ -269,6 +274,8 @@ interface ChatMarkdownProps {
   /** The change request's repository, when it can differ from the checkout at `cwd`. */
   sourceControlMediaRepository?: string | undefined;
   headingLevelOffset?: number | undefined;
+  /** Marks rendered blocks with the source lines they came from, for citing a file. */
+  sourceLines?: boolean | undefined;
 }
 
 export interface ChatMarkdownContextReference {
@@ -424,8 +431,18 @@ const CHAT_MARKDOWN_LITERAL_HTML_REHYPE_PLUGINS = [
   rehypeChipPunctuation,
 ] satisfies NonNullable<ReactMarkdownOptions["rehypePlugins"]>;
 
+const CHAT_MARKDOWN_RENDER_SOURCE_LINES_REHYPE_PLUGINS = [
+  ...CHAT_MARKDOWN_RENDER_REHYPE_PLUGINS,
+  rehypeSourceLines,
+] satisfies NonNullable<ReactMarkdownOptions["rehypePlugins"]>;
+
+const CHAT_MARKDOWN_LITERAL_HTML_SOURCE_LINES_REHYPE_PLUGINS = [
+  ...CHAT_MARKDOWN_LITERAL_HTML_REHYPE_PLUGINS,
+  rehypeSourceLines,
+] satisfies NonNullable<ReactMarkdownOptions["rehypePlugins"]>;
+
 function markdownUrlTransform(href: string) {
-  if (parseAssistantCitationHref(href)) return href;
+  if (parseCitationHref(href)) return href;
   if (parseComposerContextHref(href)) return href;
   if (parseThreadLinkHref(href)) return href;
   if (isWindowsDrivePathHref(href)) return href;
@@ -1200,11 +1217,28 @@ const CHAT_MARKDOWN_COMPONENTS = {
       renderContextReference,
     } = use(ChatMarkdownRendererContext);
     const text = use(ChatMarkdownTextContext);
-    const citation = href ? parseAssistantCitationHref(href) : null;
+    const citation = href ? parseCitationHref(href) : null;
     const before = node?.position?.start.offset;
     const after = node?.position?.end.offset;
     const leading = before !== undefined && CITATION_LEADS_BLOCK.test(text.slice(0, before));
     const trailing = after !== undefined && CITATION_ENDS_BLOCK.test(text.slice(after));
+    if (citation && isFileCitation(citation)) {
+      const onOpen =
+        threadRef?.environmentId === citation.environmentId
+          ? () =>
+              useRightPanelStore
+                .getState()
+                .openFile(threadRef, fileCitationPanelPath(citation, cwd), citation.startLine)
+          : undefined;
+      return (
+        <FileCitationEmbed
+          citation={citation}
+          leading={leading}
+          trailing={trailing}
+          onOpen={onOpen}
+        />
+      );
+    }
     if (citation) {
       return <AssistantCitationEmbed citation={citation} leading={leading} trailing={trailing} />;
     }
@@ -1869,6 +1903,7 @@ function ChatMarkdown({
   parseRawHtml = true,
   extraRemarkPlugins = EMPTY_REMARK_PLUGINS,
   renderInsights = false,
+  sourceLines = false,
   ...props
 }: ChatMarkdownProps) {
   const { componentState, handleCopy, markdownRef, localMediaPreview, closeLocalMediaPreview } =
@@ -1934,9 +1969,13 @@ function ChatMarkdown({
             text={source}
             remarkPlugins={remarkPlugins}
             rehypePlugins={
-              parseRawHtml
-                ? CHAT_MARKDOWN_RENDER_REHYPE_PLUGINS
-                : CHAT_MARKDOWN_LITERAL_HTML_REHYPE_PLUGINS
+              sourceLines
+                ? parseRawHtml
+                  ? CHAT_MARKDOWN_RENDER_SOURCE_LINES_REHYPE_PLUGINS
+                  : CHAT_MARKDOWN_LITERAL_HTML_SOURCE_LINES_REHYPE_PLUGINS
+                : parseRawHtml
+                  ? CHAT_MARKDOWN_RENDER_REHYPE_PLUGINS
+                  : CHAT_MARKDOWN_LITERAL_HTML_REHYPE_PLUGINS
             }
             shared={!uncachedPlugins}
             // Every block before the last is finished, so its parse can be reused.

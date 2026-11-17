@@ -1,4 +1,5 @@
-import { ASSISTANT_CITATION_MAX_COMMENT_LENGTH, type AssistantCitation } from "@t3tools/contracts";
+import { ASSISTANT_CITATION_MAX_COMMENT_LENGTH, type Citation } from "@t3tools/contracts";
+import { isFileCitation } from "@t3tools/shared/assistantCitations";
 import { use, useEffect, useRef, useState, type RefObject } from "react";
 
 import { TextFieldSpeechControls, useTextFieldSpeech } from "~/speech/useTextFieldSpeech";
@@ -16,7 +17,7 @@ export function AssistantCitationCommentEditor({
   onDraftChange,
   onVoiceSetupOpenChange,
 }: {
-  citation: AssistantCitation;
+  citation: Citation;
   inputRef?: RefObject<HTMLTextAreaElement | null>;
   onSubmit: (comment: string) => boolean;
   onSubmitAndSend?: (comment: string) => boolean;
@@ -35,14 +36,18 @@ export function AssistantCitationCommentEditor({
   const speech = useTextFieldSpeech({
     environmentId: environmentId ?? citation.environmentId,
     projectId,
-    ownerKey: JSON.stringify([
-      "citation",
-      environmentId,
-      citation.threadId,
-      citation.messageId,
-      citation.start,
-      citation.end,
-    ]),
+    ownerKey: JSON.stringify(
+      isFileCitation(citation)
+        ? ["file-citation", environmentId, citation.path, citation.startLine, citation.endLine]
+        : [
+            "citation",
+            environmentId,
+            citation.threadId,
+            citation.messageId,
+            citation.start,
+            citation.end,
+          ],
+    ),
     text: comment,
     textareaRef,
     onTextChange: updateComment,

@@ -26,7 +26,7 @@ import {
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import type { NodeType, ResolvedPos } from "@tiptap/pm/model";
 import type {
-  AssistantCitation,
+  Citation,
   ComposerContextClipboardFragment,
   ServerProviderSkill,
 } from "@t3tools/contracts";
@@ -447,7 +447,7 @@ const ComposerCitationExtension = Node.create({
 
 function ComposerCitationNodeView({ node, editor, getPos }: NodeViewProps) {
   const commentContext = use(ComposerCitationCommentContext);
-  const citation = node.attrs.citation as AssistantCitation;
+  const citation = node.attrs.citation as Citation;
   const citeKey = node.attrs.citeKey as string;
   const commentTarget =
     commentContext.openComment?.key === citeKey ? commentContext.openComment : null;
@@ -463,7 +463,7 @@ function ComposerCitationNodeView({ node, editor, getPos }: NodeViewProps) {
     if (pos === null) return false;
     const current = editor.state.doc.nodeAt(pos);
     if (!current || current.type.name !== "composer-citation") return false;
-    const currentCitation = current.attrs.citation as AssistantCitation;
+    const currentCitation = current.attrs.citation as Citation;
     const next = withAssistantCitationComment(currentCitation, comment);
     const tr = editor.state.tr.setNodeMarkup(pos, undefined, {
       ...current.attrs,
@@ -1561,7 +1561,7 @@ function ComposerPromptEditorTiptapInner(
     );
     if (!target) return;
     const { node, pos } = target;
-    const citation = node.attrs.citation as AssistantCitation;
+    const citation = node.attrs.citation as Citation;
     const dismissal = resolveAssistantCitationCommentDismissal({
       reason: "none",
       draft: draft.comment,

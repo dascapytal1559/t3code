@@ -1,5 +1,5 @@
 import { collectComposerModelMentions } from "@t3tools/client-runtime/composer-model-mentions";
-import type { AssistantCitation } from "@t3tools/contracts";
+import type { Citation } from "@t3tools/contracts";
 import { collectAssistantCitations } from "@t3tools/shared/assistantCitations";
 import { collectComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import {
@@ -31,7 +31,7 @@ export type ComposerPromptSegment =
     }
   | {
       type: "citation";
-      citation: AssistantCitation;
+      citation: Citation;
       source: string;
     }
   | {

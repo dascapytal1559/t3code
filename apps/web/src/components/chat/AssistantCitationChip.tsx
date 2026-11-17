@@ -1,12 +1,21 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { AssistantCitation, ResponseContextRecord } from "@t3tools/contracts";
+import type {
+  AssistantCitation,
+  Citation,
+  FileCitation,
+  ResponseContextRecord,
+} from "@t3tools/contracts";
 import {
   assistantCitationLabel,
+  fileCitationLines,
+  isFileCitation,
   serializeAssistantCitation,
 } from "@t3tools/shared/assistantCitations";
+import { fileBasename, workspaceRelativeFilePath } from "@t3tools/shared/path";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { PencilIcon, QuoteIcon } from "lucide-react";
 import {
+  use,
   useEffect,
   useEffectEvent,
   useRef,
@@ -24,6 +33,7 @@ import {
 } from "../../lib/assistantCitationNavigation";
 import { cn } from "~/lib/utils";
 import { useQuietThreadShell } from "~/state/entities";
+import { ComposerContextActionsContext } from "../composerContextActions";
 import { ContextChip, ContextChipAction, ContextChipLabel } from "../ContextChip";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { AssistantCitationCommentEditor } from "./AssistantCitationCommentEditor";
@@ -175,12 +185,104 @@ export function ResponseReplyCard({
   );
 }
 
+/** The path the side panel opens a quoted file by: its workspace path, or its full path. */
+export function fileCitationPanelPath(citation: FileCitation, cwd: string | undefined): string {
+  return workspaceRelativeFilePath(citation.path, cwd) ?? citation.path;
+}
+
+/** A passage quoted from a file. Clicking it opens the file at the quote; a comment follows. */
+export function FileCitationEmbed({
+  citation,
+  leading,
+  trailing,
+  onOpen,
+}: {
+  citation: FileCitation;
+  leading: boolean;
+  trailing: boolean;
+  onOpen: (() => void) | undefined;
+}) {
+  const { comment, ...quoted } = citation;
+  const where = `${fileBasename(citation.path)}, ${fileCitationLines(citation)}`;
+  return (
+    <span
+      data-markdown-copy={serializeAssistantCitation(citation)}
+      className={cn("block", !leading && "mt-[0.65rem]", !trailing && "mb-[0.65rem]")}
+    >
+      <button
+        type="button"
+        data-markdown-copy={serializeAssistantCitation(quoted)}
+        data-thread-find-ignore
+        disabled={!onOpen}
+        aria-label={`Open quoted file: ${citation.path}, ${fileCitationLines(citation)}`}
+        onClick={onOpen}
+        className="block w-full min-w-0 rounded-lg bg-black/10 px-2.5 py-1.5 text-start text-sm text-muted-foreground wrap-break-word enabled:hover:bg-black/14 focus-visible:outline-2 focus-visible:outline-ring dark:bg-black/35 dark:enabled:hover:bg-black/50"
+      >
+        <span className="block truncate text-xs font-medium text-foreground/80" dir="auto">
+          {where}
+        </span>
+        <span className="line-clamp-2" dir={textDirection(citation.text)}>
+          {flat(citation.text)}
+        </span>
+      </button>
+      {comment ? (
+        <span className="mt-1.5 block whitespace-pre-wrap" dir={textDirection(comment)}>
+          {comment}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+const CHIP_SOURCE_CLASS_NAME =
+  "inline-flex min-w-0 items-center gap-[0.2em] self-baseline text-inherit no-underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-current rounded-sm";
+
+function ResponseChipSource({ citation, label }: { citation: AssistantCitation; label: string }) {
+  const sourceLinkProps = useCitationSourceLinkProps(citation);
+  return (
+    <Link
+      {...sourceLinkProps}
+      className={CHIP_SOURCE_CLASS_NAME}
+      aria-label={`View cited assistant text: ${label}`}
+    >
+      <QuoteIcon aria-hidden="true" />
+      <ContextChipLabel className="max-w-[16em]" dir={textDirection(label)}>
+        {label}
+      </ContextChipLabel>
+    </Link>
+  );
+}
+
+function FileChipSource({ citation, label }: { citation: FileCitation; label: string }) {
+  const actions = use(ComposerContextActionsContext);
+  const where = `${citation.path}, ${fileCitationLines(citation)}`;
+  // A file on another environment cannot open in this thread's panel.
+  const open =
+    actions.environmentId === citation.environmentId
+      ? () => actions.openMention(fileCitationPanelPath(citation, actions.cwd), citation.startLine)
+      : undefined;
+  return (
+    <button
+      type="button"
+      disabled={!open}
+      onClick={open}
+      className={CHIP_SOURCE_CLASS_NAME}
+      aria-label={`View cited file text: ${label} (${where})`}
+    >
+      <QuoteIcon aria-hidden="true" />
+      <ContextChipLabel className="max-w-[16em]" dir={textDirection(label)}>
+        {label}
+      </ContextChipLabel>
+    </button>
+  );
+}
+
 /** The citation chip in the composer, with its comment editor. */
 export function AssistantCitationChip({
   citation,
   commentEditor,
 }: {
-  citation: AssistantCitation;
+  citation: Citation;
   commentEditor?: {
     open: boolean;
     sourceAnchor?: AssistantCitationSourceAnchor | undefined;
@@ -192,7 +294,6 @@ export function AssistantCitationChip({
     onRestoreFocus?: () => void;
   };
 }) {
-  const sourceLinkProps = useCitationSourceLinkProps(citation);
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
   const commentPopupRef = useRef<HTMLDivElement>(null);
   const draftCommentRef = useRef<string | null>(null);
@@ -217,7 +318,8 @@ export function AssistantCitationChip({
   };
   const onSourceUnavailable = useEffectEvent(() => {
     if (!sourceAnchor) return;
-    if (settleDraftOnClose("none")) {
+    // A file view redraws its lines at will, so its comment stays open over the chip instead.
+    if (!isFileCitation(citation) && settleDraftOnClose("none")) {
       commentEditor?.onOpenChange(false);
     } else {
       setUnavailableSourceAnchor(sourceAnchor);
@@ -226,7 +328,9 @@ export function AssistantCitationChip({
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- observes the cited DOM source while the comment editor is open and reacts when it disappears
   useEffect(() => {
     if (!commentOpen || sourceAnchor === unavailableSourceAnchor) return;
-    const anchor = sourceAnchor ?? findAssistantCitationSourceAnchor(document, citation);
+    const anchor =
+      sourceAnchor ??
+      (isFileCitation(citation) ? null : findAssistantCitationSourceAnchor(document, citation));
     if (!anchor) return;
     return observeAssistantCitationCommentSource({
       anchor,
@@ -252,17 +356,10 @@ export function AssistantCitationChip({
       }
     : undefined;
   const label = assistantCitationLabel(citation);
-  const composerSourceLink = (
-    <Link
-      {...sourceLinkProps}
-      className="inline-flex min-w-0 items-center gap-[0.2em] self-baseline text-inherit no-underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-current rounded-sm"
-      aria-label={`View cited assistant text: ${label}`}
-    >
-      <QuoteIcon aria-hidden="true" />
-      <ContextChipLabel className="max-w-[16em]" dir={textDirection(label)}>
-        {label}
-      </ContextChipLabel>
-    </Link>
+  const composerSourceLink = isFileCitation(citation) ? (
+    <FileChipSource citation={citation} label={label} />
+  ) : (
+    <ResponseChipSource citation={citation} label={label} />
   );
   return (
     <ContextChip

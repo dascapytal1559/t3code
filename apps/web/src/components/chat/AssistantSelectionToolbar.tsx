@@ -1,11 +1,11 @@
 import {
   ASSISTANT_CITATION_MAX_TEXT_LENGTH,
   MessageId,
-  type AssistantCitation,
+  type Citation,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { QuoteIcon } from "lucide-react";
-import { use, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { use, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   captureAssistantTextSelection,
@@ -20,23 +20,58 @@ import {
 import { Button } from "../ui/button";
 import { BackgroundThreadContext } from "./backgroundThread";
 
+/** A selection that can be cited: what it quotes, and the element and range it was made in. */
+export interface CapturedCitation {
+  citation: Citation;
+  source: HTMLElement;
+  range: Range;
+}
+
+export type CitationCapture = (
+  viewport: HTMLElement,
+  selection: Selection | null,
+) => CapturedCitation | null;
+
+export function captureAssistantCitation(threadRef: ScopedThreadRef): CitationCapture {
+  return (viewport, selection) => {
+    const captured = captureAssistantTextSelection(viewport, selection);
+    const messageId = captured?.source.dataset.assistantCitationSource;
+    if (!captured || !messageId) return null;
+    return {
+      source: captured.source,
+      range: captured.range,
+      citation: {
+        version: 1,
+        ...threadRef,
+        messageId: MessageId.make(messageId),
+        ...captured.selector,
+      },
+    };
+  };
+}
+
 export function AssistantSelectionToolbar({
   viewport,
-  threadRef,
+  capture,
   onCite,
+  tabFocusesCite = true,
 }: {
   viewport: HTMLElement | null;
-  threadRef: ScopedThreadRef;
-  onCite: (citation: AssistantCitation, sourceAnchor: AssistantCitationSourceAnchor) => boolean;
+  capture: CitationCapture;
+  tabFocusesCite?: boolean;
+  onCite: (citation: Citation, sourceAnchor: AssistantCitationSourceAnchor) => boolean;
 }) {
   const [selection, setSelection] = useState<{
-    citation: AssistantCitation;
+    citation: Citation;
     position: SelectionActionPoint;
     sourceAnchor: AssistantCitationSourceAnchor;
   } | null>(null);
   const toolbarRef = useRef<HTMLButtonElement>(null);
   const actionsRef = useRef<ReturnType<typeof observeSelectionActions> | null>(null);
   const backgroundThread = use(BackgroundThreadContext);
+  const captureSelection = useEffectEvent((root: HTMLElement, native: Selection | null) =>
+    capture(root, native),
+  );
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the toolbar DOM node and clamps its position inside the window before paint
   useLayoutEffect(() => {
@@ -52,10 +87,8 @@ export function AssistantSelectionToolbar({
     if (!viewport) return;
     const clear = () => setSelection(null);
     const update = (pointer: SelectionActionPoint | null) => {
-      const nativeSelection = window.getSelection();
-      const captured = captureAssistantTextSelection(viewport, nativeSelection);
-      const messageId = captured?.source.dataset.assistantCitationSource;
-      if (!captured || !messageId) {
+      const captured = captureSelection(viewport, window.getSelection());
+      if (!captured) {
         clear();
         return;
       }
@@ -123,12 +156,7 @@ export function AssistantSelectionToolbar({
         );
       setSelection({
         sourceAnchor: { source: captured.source, range: captured.range, viewport },
-        citation: {
-          version: 1,
-          ...threadRef,
-          messageId: MessageId.make(messageId),
-          ...captured.selector,
-        },
+        citation: captured.citation,
         position: resolveSelectionActionPosition({
           bounds: viewportRect,
           selectionRect: rects.item(rects.length - 1) ?? rect,
@@ -165,8 +193,10 @@ export function AssistantSelectionToolbar({
       event.stopPropagation();
       toolbar.focus({ preventScroll: true });
     };
-    // Tab belongs to the foreground chat; a background timeline only follows its selection.
-    if (!backgroundThread) document.addEventListener("keydown", focusActions, true);
+    // Tab belongs to the foreground chat; a background timeline only follows its selection, and an
+    // editor keeps Tab for indenting.
+    if (!backgroundThread && tabFocusesCite)
+      document.addEventListener("keydown", focusActions, true);
     document.addEventListener("selectionchange", actions.selectionChanged);
     return () => {
       document.removeEventListener("keydown", focusActions, true);
@@ -174,7 +204,7 @@ export function AssistantSelectionToolbar({
       actions.dispose();
       actionsRef.current = null;
     };
-  }, [backgroundThread, threadRef, viewport]);
+  }, [backgroundThread, tabFocusesCite, viewport]);
 
   if (!selection) return null;
   const tooLong = selection.citation.text.length > ASSISTANT_CITATION_MAX_TEXT_LENGTH;
