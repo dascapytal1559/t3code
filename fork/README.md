@@ -150,7 +150,7 @@ defaults to `["~/.t3-usage-archive"]` and can be changed in
 The captain wants to see the prompts he sent from his phone and the work they
 started, so the Usage page on web and desktop has a **Tokens by origin** bar
 (Cost by origin): the period's usage split between phone and computer, direct
-or coordinated. Usage with no phone evidence counts to the computer; in the
+or orchestrated. Usage with no phone evidence counts to the computer; in the
 captain's words, "the computer is sort of its true back end … ever since we
 have T3 code we're starting to add phone label to what would otherwise be
 computer". It is built from what T3 records (see

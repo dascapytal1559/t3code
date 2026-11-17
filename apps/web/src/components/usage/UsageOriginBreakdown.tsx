@@ -59,7 +59,7 @@ export function UsageOriginBreakdown({
       value: part.coordinated,
       className: DEVICE[part.key].color,
       style: STRIPED,
-      name: `${DEVICE[part.key].label} coordinated`,
+      name: `${DEVICE[part.key].label} orchestrated`,
     },
   ]);
 
@@ -69,7 +69,7 @@ export function UsageOriginBreakdown({
         <h3 className="text-sm font-medium text-foreground">{label}</h3>
         <span className="flex gap-3 text-xs text-muted-foreground">
           <Swatch style={{ backgroundColor: NEUTRAL_INK }}>Direct</Swatch>
-          <Swatch style={{ backgroundImage: stripes(NEUTRAL_INK) }}>Coordinated</Swatch>
+          <Swatch style={{ backgroundImage: stripes(NEUTRAL_INK) }}>Orchestrated</Swatch>
         </span>
       </div>
       <div
@@ -77,7 +77,7 @@ export function UsageOriginBreakdown({
         aria-label={`${label}: ${parts
           .map(
             (part) =>
-              `${DEVICE[part.key].label} ${format(part.direct)} direct, ${format(part.coordinated)} coordinated`,
+              `${DEVICE[part.key].label} ${format(part.direct)} direct, ${format(part.coordinated)} orchestrated`,
           )
           .join("; ")}`}
         className="flex h-2 gap-0.5"
