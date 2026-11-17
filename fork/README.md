@@ -52,18 +52,17 @@ because upstream's overlapping lines turn into a smear over long ranges. The
 chart's title names the period, such as "Daily cost over 6 months" or
 "Processed tokens, last 24 hours". The
 mobile app already draws bars and still
-stops at 90 days. The server keeps parsed usage for 367 days instead of 92, so
-usage stays after Claude Code deletes old transcripts. History older than what
-is on disk or in the saved usage today cannot be recovered; twelve months builds
-up from when this build first scans.
+stops at 90 days. The server keeps parsed usage for 367 days, so usage stays
+after Claude Code deletes old transcripts. History older than what is on disk or
+in the saved usage today cannot be recovered; twelve months builds up from when
+this build first scans.
 
-Keeping the history is no longer only the fork's: upstream's server setting
-`usageHistoryRetentionDays` keeps it as long as set
-(https://github.com/pingdotgg/t3code/pull/28111, merged 17 Nov 2026, not yet
-synced here), though upstream's views still stop at 90 days and draw lines.
-The 6- and 12-month views and the bars stay the fork's. On the sync that brings
-it in, take upstream's setting at 367 days in place of the fork's fixed
-`CACHE_RETENTION_DAYS` in `apps/server/src/usage/UsageService.ts`.
+How long the history is kept is upstream's server setting
+`usageHistoryRetentionDays` (https://github.com/pingdotgg/t3code/pull/28111),
+a number of days or `"unlimited"`, set in `settings.json`. The fork's part is
+its default: 367 days instead of upstream's 92, in `ServerSettings` in
+`packages/contracts/src/settings.ts`. Upstream's views still stop at 90 days and
+draw lines; the 6- and 12-month views and the bars stay the fork's.
 
 Upstream's "N malformed or inconsistent usage record(s) were skipped" sentence
 shows as a small muted footnote at the bottom of the page instead of a notice
@@ -1742,8 +1741,10 @@ opt in. `T3CODE_TELEMETRY_ENABLED` governs both and defaults to `false` here
 (upstream defaults it to `true`): `AnalyticsService.ts` and
 `isRelayTracingEnabled` in `packages/shared/src/otelEnvironment.ts`. To turn them
 on, set `T3CODE_TELEMETRY_ENABLED=true` in the server's environment. The desktop
-app starts its server before it reads your login shell, so a shell-profile
-export does not reach an app opened from the Dock: run
+app starts its server before it reads your login shell, but it remembers this
+variable from the shell and applies it on the next launch
+(https://github.com/pingdotgg/t3code/pull/37792), so a shell-profile export
+takes effect from the second launch. For it to take effect at once, run
 `launchctl setenv T3CODE_TELEMETRY_ENABLED true` and restart the app, or start
 the app from a terminal that has the variable set. Your own OpenTelemetry export
 and the mobile app's crash reports have their own settings.
