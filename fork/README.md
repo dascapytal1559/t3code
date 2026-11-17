@@ -55,6 +55,14 @@ usage stays after Claude Code deletes old transcripts. History older than what
 is on disk or in the saved usage today cannot be recovered; twelve months builds
 up from when this build first scans.
 
+Keeping the history is no longer only the fork's: upstream's server setting
+`usageHistoryRetentionDays` keeps it as long as set
+(https://github.com/pingdotgg/t3code/pull/28111, merged 17 Nov 2026, not yet
+synced here), though upstream's views still stop at 90 days and draw lines.
+The 6- and 12-month views and the bars stay the fork's. On the sync that brings
+it in, take upstream's setting at 367 days in place of the fork's fixed
+`CACHE_RETENTION_DAYS` in `apps/server/src/usage/UsageService.ts`.
+
 Upstream's "N malformed or inconsistent usage record(s) were skipped" sentence
 shows as a small muted footnote at the bottom of the page instead of a notice
 at the top (`apps/web/src/components/usage/UsagePage.tsx`).
@@ -338,8 +346,8 @@ macOS too, so Claude accounts there show banked resets the way Codex does.
 - Each Claude provider instance reads only its own account's Keychain entry,
   through `/usr/bin/security find-generic-password`. It names the entry the
   way Claude Code does: `Claude Code-credentials`, plus `-` and the first 8 hex
-  characters of the SHA-256 of `CLAUDE_CONFIG_DIR` whenever the CLI runs with
-  that variable set. The account is `$USER`. The env used is the one the CLI
+  characters of the SHA-256 of `CLAUDE_SECURESTORAGE_CONFIG_DIR`, or else
+  `CLAUDE_CONFIG_DIR`, whenever the CLI runs with one of them set. The account is `$USER`. The env used is the one the CLI
   itself gets (`makeClaudeEnvironment`).
 - Only the access token is used. It stays in memory, and failures carry no
   output, so it never reaches a log, a file or a client. The login is never
@@ -353,7 +361,9 @@ from the windows the fork also reads from that response (see
 from the darwin branch of `readAccessToken` in
 `apps/server/src/provider/claudeResetCredits.ts`, plus the `cliEnvironment`
 that `ClaudeDriver.ts` passes to it. If Claude Code changes how it names the
-entry, update `claudeKeychainService` to match.
+entry, update `claudeKeychainService` to match. Open upstream PR
+https://github.com/pingdotgg/t3code/pull/34099 reads the same Keychain entry
+the same way; if it lands, take upstream's.
 
 ### Each limit row counts only the resets that refill it
 
@@ -431,7 +441,9 @@ installed. Here each of those drivers expands a leading `~` with
 status, as Codex, Claude, Muse, OpenCode, fx, Kiro and Antigravity do upstream
 (fx, Kiro and Antigravity since upstream #35171, which replaced the fork's own
 change there). Cursor never runs its `binaryPath`, so it is unchanged. When a
-sync finds upstream expanding `~` in these drivers, keep upstream's.
+sync finds upstream expanding `~` in these drivers, keep upstream's. Open
+upstream PR https://github.com/pingdotgg/t3code/pull/29330 does this for
+OpenCode, Grok and Pi, not the ACP registry.
 
 ## Idle agent release is a server setting
 
@@ -443,7 +455,8 @@ release. It has no control in the app: edit
 change up, including for agents already idle. Firstmate's environment sets it
 to Never. This is the server half of upstream
 https://github.com/pingdotgg/t3code/pull/25624, without its web and mobile
-controls. When a sync finds the PR merged, or an upstream equivalent, drop
+controls. Upstream closed that PR on 17 Nov 2026 as not something it wants to
+take on, so the setting stays the fork's. If upstream ships an equivalent, drop
 this copy and keep upstream's.
 
 ## Upstream release indicator
@@ -736,6 +749,12 @@ settling is his own act; the server's auto-settle settings still apply if
 turned on, and his are off. This reverses the 11/14 choice to drop Settled and
 archive instead ("we're still not gonna need settled").
 
+Settle, Un-settle and the Settled section are upstream's
+(https://github.com/pingdotgg/t3code/pull/4026). The fork's parts are no
+Archive in the captain's menus, Indefinitely first in the snooze menu (see
+[Indefinite snooze](#indefinite-snooze)), Snoozed pinned to the bottom, and
+[settling telling FirstMate](#settling-or-snoozing-a-worker-tells-firstmate).
+
 The Snoozed row, with its count and chevron, is pinned to the bottom of the
 thread list, just above the usage readout, so a long list scrolls under it
 instead of pushing it out of sight. Opening it scrolls its last row into view,
@@ -747,8 +766,10 @@ appeared without the user's input, leaves the pinned header alone: it never
 slides under the pointer, and its position as the guard reads it follows the
 scroll, so a press on it after a scroll was dropped.
 
-Upstream code it touches, for syncs: the `SIDEBAR_SETTLED_SHELF` switch
-(`apps/web/src/components/sidebar/settledShelf.ts`, now on), read by
+Code it touches, for syncs: the fork's own `SIDEBAR_SETTLED_SHELF` switch
+(`apps/web/src/components/sidebar/settledShelf.ts`, now a constant `true`;
+upstream has no such switch, so removing it returns these files to upstream's
+code), read by
 `partitionSidebarThreads`, `getFallbackThreadIdAfterDelete`, the older-settled
 scopes, the list items and the multi-selection menu in `Sidebar.tsx`,
 `settledOutOfSight` in `CommandPalette.logic.ts`, and both single-thread menus;
@@ -1252,10 +1273,14 @@ The composer's footer shows a ring for how full the thread's context window
 is. Hovering it opens the usage, total processed tokens, cost, the
 auto-compact threshold and a Compact context button when the provider has
 `/compact`. It shows on web and desktop with no setting; mobile has none.
-Upstream's #33131 (8 Nov 2026) deleted it with the Labs toggle that hid it,
-"Context window indicator (legacy)". The fork keeps the meter, not the toggle,
-because a glance at the composer is the quickest way to see when a long
-thread needs compacting. A FirstMate worker's thread, which has no composer,
+Upstream moved context fill out of the composer:
+https://github.com/pingdotgg/t3code/pull/33131 (8 Nov 2026) deleted the ring
+with the Labs toggle that hid it, "Context window indicator (legacy)", and the
+thread details card has an opt-in Context window row instead
+(https://github.com/pingdotgg/t3code/pull/26904,
+https://github.com/pingdotgg/t3code/pull/27892). The fork's part is the ring in
+the composer, always on, not the toggle, because a glance at the composer is
+the quickest way to see when a long thread needs compacting. A FirstMate worker's thread, which has no composer,
 shows the same ring on its
 [reply box](#a-crewmates-message-box-sends-to-firstmate) so the captain can see
 how much context each worker holds; there it has no Compact context button.
@@ -1395,11 +1420,15 @@ Code: `apps/server/src/mcp/toolkits/thread/handlers.ts`.
 
 ## Stopped turns close their approvals
 
-Upstream closes only a stopped turn's questions, so an approval such as a Claude
-command prompt stays pending forever: the app keeps showing a prompt for a tool
-call that no longer exists, and the thread reports a pending request. Here a turn
-that ends interrupted, failed or cancelled expires every pending request it
-raised. A turn that completes still closes only its questions, because a
+On the normal path, upstream closes only a stopped turn's questions, so an
+approval such as a Claude command prompt stays pending forever: the app keeps
+showing a prompt for a tool call that no longer exists, and the thread reports a
+pending request. Upstream's Stop fallback for a stalled run
+(`settleInterruptedRun`) already cancels every pending request, approvals
+included, and closes their cards
+(https://github.com/pingdotgg/t3code/pull/30695); that part is upstream's. The
+fork's part: here a turn that ends interrupted, failed or cancelled expires
+every pending request it raised. A turn that completes still closes only its questions, because a
 background subagent's approval can still be live then. These requests close as
 `expired`, not `cancelled`, and the guard that keeps a just-committed answer from
 being overwritten covers every request kind. A question the adapter keeps open
@@ -1425,7 +1454,9 @@ and, for a pending request, `pendingRequests` in the shape
 `t3_pending_request` `list` returns. Callers without the flag see no change.
 Clients detect it by the field in the tool's `tools/list` input schema.
 Code: `apps/server/src/orchestration-v2/ThreadManagementService.ts`
-(`waitForThread`).
+(`waitForThread`). Open upstream PR
+https://github.com/pingdotgg/t3code/pull/24712 adds a similar return on a
+pending question or approval to thread waits.
 
 ## FirstMate's sign-in lasts 10 years
 
@@ -1440,7 +1471,9 @@ because the name is only the `client_name` a client registers with, and cloud
 apps now sign in through a public URL, so any of them could claim it. FirstMate
 signs in locally, so nothing changes for it. Code:
 `apps/server/src/auth/EnvironmentAuth.ts` (`FIRSTMATE_SESSION_TTL`) and
-`isLoopbackRedirect` in `McpOAuth.ts`.
+`isLoopbackRedirect` in `McpOAuth.ts`. Open upstream PR
+https://github.com/pingdotgg/t3code/pull/37679 makes the lifetime configurable
+instead, one for every client.
 
 ## Messages record which client sent them
 
@@ -1691,7 +1724,11 @@ right-click menu on the selection. Both the live editor and the read-only
 rendered view have it. Cite puts the thread's citation chip in the composer of
 the thread the panel belongs to, with the same comment box, the same 8,000
 character limit ("Shorten selection" above it) and the same Escape-removes rule
-for a fresh one. Upstream cites only assistant responses.
+for a fresh one. Upstream cites assistant responses, and its file comments
+(https://github.com/pingdotgg/t3code/pull/3115) send a line range selected in
+the source view to the composer as a File comment chip. The fork's part is
+citing from the rendered views, quoting the exact selection, and the shared
+Cite button and right-click menu.
 
 - The agent gets each file quote as `[file-quote-N]` in the message and a
   `<file_citations>` block after it, framed like upstream's

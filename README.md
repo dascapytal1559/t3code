@@ -8,7 +8,7 @@ For FirstMate:
 
 - [Crew sidebar](fork/README.md#firstmate-crew-in-the-sidebar): FirstMate and its workers as a tree, with short status labels.
 - [Worker replies go to FirstMate](fork/README.md#a-crewmates-message-box-sends-to-firstmate): a worker thread's message box sends to FirstMate, not the worker, and shows how full the worker's context is.
-- [Snoozed pinned, no Settled](fork/README.md#snoozed-stays-at-the-bottom-with-no-settled): the sidebar keeps Snoozed in reach at the bottom and has no Settled section.
+- [Settle, not archive](fork/README.md#the-captain-settles-firstmate-archives): the menus offer upstream's Settle but no Archive, Snoozed stays pinned at the bottom, and settling a worker tells FirstMate.
 - [Approvals over MCP](fork/README.md#agents-answer-approvals-over-mcp): FirstMate answers a worker's permission prompts.
 - [Waits end on a question](fork/README.md#waits-end-on-a-question-or-approval): FirstMate hears a question or approval the moment it appears.
 - [Per-thread settings](fork/README.md#per-thread-environment-and-instructions): each launched worker gets its own environment and instructions.
