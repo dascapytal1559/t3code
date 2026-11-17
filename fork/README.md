@@ -338,7 +338,8 @@ and what agents claim.
   prompt) and `usage_close` ("closed through"). Rows keep the label before
   settling plus the `device` it counts to. The close reads every record back
   through the new rows in the same transaction and rolls back, with a warning
-  in the log, if any differs. From then on a record at or before "closed
+  in the log, if any differs. Records of one session at one millisecond share
+  a row, so they take the first one's label and are not compared. From then on a record at or before "closed
   through" takes its session's latest row (then settles as below), and a
   prompt its row; only the open tail runs the rules above, so a later claim or
   code change never re-labels a closed day. A session with no row by then (a
@@ -424,8 +425,8 @@ made-up values:
   Cost follows T3's price list, which can still change.
 - The lines come from `GET /api/usage/export?since=&until=&timeZone=` with a
   session that has the same diagnostics read scope as the Usage page; the
-  command signs in with a short-lived, read-only session of that scope. It is a route rather than an MCP tool because a week
-  runs to tens of megabytes.
+  command signs in with a short-lived, read-only session of that scope. It is
+  a route rather than an MCP tool because a week runs to tens of megabytes.
 
 Code: `onRecord` and `toUsageExportRecord` in
 `apps/server/src/usage/usageAggregation.ts`, `readRecords` in `UsageService.ts`,
@@ -1017,6 +1018,12 @@ as activity. Clients detect the action by `alert_when_done` in the tool's
 `tools/list` `action` enum. Approval, input, request, failed and usage-limit
 states alert on a coordinator as on any other top-level thread.
 
+While the mode includes sound, **Sound for** chooses which alerts play it:
+Every thread (the default) or FirstMate only. With FirstMate only, FirstMate's
+main thread still sounds, and every other alert, including review guide runs,
+still shows its toast or notification, silently. The phone's alerts are not
+affected.
+
 Upstream has no crew, so every listed thread is the user's own and alerts.
 It also alerts whenever any thread's background work reports its end: a
 terminal wake ("Command … finished") alerts at once, and a progress wake alerts
@@ -1032,8 +1039,10 @@ Code: `isTopLevelThread` and `latestRunEndsQuietly` in
 (`apps/web/src/components/ThreadNotificationCoordinator.tsx`) and the phone
 relay; `isSupervisionRunForShell` and its SQL mirror `isSupervisionShellRun` in
 `apps/server/src/orchestration-v2/ProjectionStore.ts`, which put
-`latestRunSupervision` on the thread shell; and `alert_when_done` in
-`apps/server/src/mcp/ThreadMetadataMcpService.ts`.
+`latestRunSupervision` on the thread shell; `alert_when_done` in
+`apps/server/src/mcp/ThreadMetadataMcpService.ts`; and the
+`notificationSoundScope` client setting, read by `alertPlaysSound` in
+`apps/web/src/threadNotifications.ts`.
 
 ## FirstMate's doorbell folds to one short line
 
@@ -1149,8 +1158,8 @@ rule no longer holds, for example because the old session has background work.
 The clock does not arm again after the note's own run, however large the fresh
 session grows, so it waits for the next real run; and its command id names the
 run that ended, so a restart or a repeated event rotates an idle spell at most
-once. The at-input rule stays as a backstop and
-cannot clear twice: whichever input comes first leaves a small fresh session.
+once. The at-input rule stays as a backstop and cannot clear twice: whichever
+input comes first leaves a small fresh session.
 The note's run is a coordinator's supervision run, so its end makes no sound,
 notification, toast or badge in any notification mode, and the relay does not
 push it. **Start a new session** in FirstMate's context window popover sends the

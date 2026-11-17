@@ -221,7 +221,7 @@ export const UsageExportRecord = Schema.Struct({
       promptThreadId: Schema.optional(Schema.String),
     }),
   ),
-  /** Its day's labels are written down; until then a later export may label it differently. */
+  /** Its label is read from a written-down row; until then a later export may relabel it. */
   final: Schema.Boolean,
 });
 export type UsageExportRecord = typeof UsageExportRecord.Type;
