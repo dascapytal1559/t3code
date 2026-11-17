@@ -433,7 +433,7 @@
 [data-live-markdown] .cm-lp-details-summary {
   position: relative;
   color: var(--foreground);
-  font-weight: 500;
+  font-weight: 400;
   cursor: pointer;
 }
 
