@@ -1,12 +1,29 @@
-import { type UsageOriginReasonUsage, UsageOriginReasons } from "@t3tools/contracts";
+import {
+  AuthOrchestrationReadScope,
+  USAGE_EXPORT_PATH,
+  type UsageOriginReasonUsage,
+  UsageOriginReasons,
+} from "@t3tools/contracts";
 import { formatPercent, formatTokens } from "@t3tools/shared/usageFormat";
 import * as Console from "effect/Console";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
+import * as Stdio from "effect/Stdio";
+import * as Stream from "effect/Stream";
 import { Command, Flag } from "effect/cli";
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 
 import { projectLocationFlags } from "./config.ts";
-import { jsonFlag, printJson, reportThreadErrors, withThreadTools } from "./thread.ts";
+import {
+  jsonFlag,
+  printJson,
+  reportThreadErrors,
+  ThreadServerUnreachableError,
+  ThreadToolFailedError,
+  withServerSession,
+  withThreadTools,
+} from "./thread.ts";
 
 const REASON_LABELS: Record<UsageOriginReasonUsage["reason"], string> = {
   typed: "typed",
@@ -107,7 +124,60 @@ const usageReasonsCommand = Command.make("reasons", {
   ),
 );
 
+const usageExportCommand = Command.make("export", {
+  ...projectLocationFlags,
+  since: Flag.String("since").pipe(Flag.withDescription("First day of the window (YYYY-MM-DD).")),
+  until: Flag.String("until").pipe(
+    Flag.withDescription("Last day of the window (YYYY-MM-DD). Defaults to today."),
+    Flag.optional,
+  ),
+  timeZone: Flag.String("time-zone").pipe(
+    Flag.withDescription("IANA time zone the days are in. Defaults to the server's."),
+    Flag.optional,
+  ),
+}).pipe(
+  Command.withDescription(
+    "Print the running server's usage as JSON lines, one per model call, as Usage counted it.",
+  ),
+  Command.withHandler((flags) =>
+    // Quiet logs, as for --json: stdout carries only the records.
+    withServerSession(
+      { ...flags, json: true },
+      (auth) =>
+        auth.issueSession({
+          scopes: [AuthOrchestrationReadScope],
+          ttl: Duration.minutes(10),
+          label: "t3 usage export",
+        }),
+      Effect.fn("cli.usage.export")(function* ({ origin, token }) {
+        const url = new URL(USAGE_EXPORT_PATH, origin);
+        url.searchParams.set("since", flags.since);
+        Option.map(flags.until, (until) => url.searchParams.set("until", until));
+        Option.map(flags.timeZone, (zone) => url.searchParams.set("timeZone", zone));
+        const unreachable = (cause: unknown) => new ThreadServerUnreachableError({ origin, cause });
+        const response = yield* HttpClientRequest.get(url).pipe(
+          HttpClientRequest.bearerToken(token),
+          (yield* HttpClient.HttpClient).execute,
+          Effect.mapError(unreachable),
+        );
+        if (response.status !== 200) {
+          const detail = yield* response.text.pipe(Effect.orElseSucceed(() => ""));
+          return yield* new ThreadToolFailedError({
+            tool: "usage export",
+            detail: detail.trim() || `The server answered HTTP ${response.status}.`,
+          });
+        }
+        const stdio = yield* Stdio.Stdio;
+        yield* response.stream.pipe(
+          Stream.run(stdio.stdout({ endOnDone: false })),
+          Effect.mapError(unreachable),
+        );
+      }),
+    ).pipe(Effect.provide(FetchHttpClient.layer), reportThreadErrors),
+  ),
+);
+
 export const usageCommand = Command.make("usage").pipe(
   Command.withDescription("Read usage from the running server."),
-  Command.withSubcommands([usageReasonsCommand]),
+  Command.withSubcommands([usageReasonsCommand, usageExportCommand]),
 );

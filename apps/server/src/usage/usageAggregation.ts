@@ -4,6 +4,7 @@ import {
   type UsageBucket,
   type UsageCategoryCost,
   type UsageDay,
+  type UsageExportRecord,
   type UsageModelFilter,
   type UsageModelSelector,
   type UsageOriginPrompts,
@@ -16,7 +17,13 @@ import {
 
 import { EMPTY_TOTALS, type UsageRecord } from "@t3tools/provider-core/server/usage";
 import type { UsageOriginKey } from "./UsageOrigins.ts";
-import { cacheSavingsUsd, lookupRate, priceUsage, type RateTable } from "./usagePricing.ts";
+import {
+  cacheSavingsUsd,
+  lookupRate,
+  priceUsage,
+  type PricedUsage,
+  type RateTable,
+} from "./usagePricing.ts";
 
 // en-CA gives ISO-ordered parts in the requested zone; Date getters are host-local.
 function makeDayFormatter(timeZone: string): (timestampMs: number) => string {
@@ -86,6 +93,50 @@ export interface AggregateOptions {
     record: UsageRecord,
     sourcePath: string | undefined,
   ) => UsageOriginKey | null;
+  /** Sees each counted record once, after its copies merge, with its price and origin. */
+  readonly onRecord?: (counted: CountedRecord) => void;
+}
+
+export interface CountedRecord {
+  readonly record: UsageRecord;
+  readonly priced: PricedUsage;
+  readonly origin: UsageOriginKey | null;
+}
+
+/** A counted record in the export's shape; `final` says its origin label is written down. */
+export function toUsageExportRecord(
+  { record, priced, origin }: CountedRecord,
+  final: boolean,
+): UsageExportRecord {
+  return {
+    at: new Date(record.timestampMs).toISOString(),
+    provider: record.provider,
+    model: record.model,
+    sessionId: record.sessionId,
+    tokens: {
+      input: record.totals.uncachedInputTokens,
+      cacheRead: record.totals.cachedInputTokens,
+      cacheWrite: record.totals.cacheCreationTokens,
+      output: record.totals.outputTokens,
+    },
+    costUsd: priced.costSource === "unpriced" ? null : priced.costUsd,
+    origin:
+      origin === null
+        ? null
+        : {
+            device: origin.origin,
+            started: origin.via === undefined ? "direct" : "orchestrated",
+            ...(origin.via === undefined ? {} : { via: origin.via }),
+            basis: origin.basis,
+            reason: origin.reason,
+            ...(origin.claim === undefined ? {} : { claim: origin.claim }),
+            ...(origin.folder === true ? { folder: true as const } : {}),
+            ...(origin.registered === true ? { registered: true as const } : {}),
+            ...(origin.cause === true ? { cause: true as const } : {}),
+            ...(origin.root === undefined ? {} : { promptThreadId: origin.root.threadId }),
+          },
+    final,
+  };
 }
 
 type MutableOriginReasonUsage = {
@@ -370,29 +421,28 @@ export class UsageAggregator {
         record.totals.outputTokens;
     }
     if (priced.costSource === "providerReported") bucket.providerReportedRecords += 1;
-    if (this.#originUsage !== null) {
-      const key = this.#options.attributeOrigin?.(record, sourcePath) ?? null;
-      if (key !== null) {
-        const originKey = `${originKeyString(key)}\u0000${record.provider}\u0000${sourcePath ?? ""}`;
-        let origin = this.#originUsage.get(originKey);
-        if (origin === undefined) {
-          origin = {
-            key,
-            provider: record.provider,
-            sourcePath,
-            totals: { ...EMPTY_TOTALS },
-            costUsd: 0,
-          };
-          this.#originUsage.set(originKey, origin);
-        }
-        origin.totals.uncachedInputTokens += record.totals.uncachedInputTokens;
-        origin.totals.cachedInputTokens += record.totals.cachedInputTokens;
-        origin.totals.cacheCreationTokens += record.totals.cacheCreationTokens;
-        origin.totals.outputTokens += record.totals.outputTokens;
-        origin.totals.reasoningTokens += record.totals.reasoningTokens;
-        origin.costUsd += priced.costUsd;
-        this.#tallyReason(key, record, priced.costUsd);
+    const key = this.#options.attributeOrigin?.(record, sourcePath) ?? null;
+    this.#options.onRecord?.({ record, priced, origin: key });
+    if (this.#originUsage !== null && key !== null) {
+      const originKey = `${originKeyString(key)}\u0000${record.provider}\u0000${sourcePath ?? ""}`;
+      let origin = this.#originUsage.get(originKey);
+      if (origin === undefined) {
+        origin = {
+          key,
+          provider: record.provider,
+          sourcePath,
+          totals: { ...EMPTY_TOTALS },
+          costUsd: 0,
+        };
+        this.#originUsage.set(originKey, origin);
       }
+      origin.totals.uncachedInputTokens += record.totals.uncachedInputTokens;
+      origin.totals.cachedInputTokens += record.totals.cachedInputTokens;
+      origin.totals.cacheCreationTokens += record.totals.cacheCreationTokens;
+      origin.totals.outputTokens += record.totals.outputTokens;
+      origin.totals.reasoningTokens += record.totals.reasoningTokens;
+      origin.costUsd += priced.costUsd;
+      this.#tallyReason(key, record, priced.costUsd);
     }
   }
 

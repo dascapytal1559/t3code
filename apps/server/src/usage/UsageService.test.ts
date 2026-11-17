@@ -1981,6 +1981,15 @@ describe("UsageService", () => {
               ["phone", "journal", "session", 5],
             ],
           );
+          // The export labels records the same way, and says which labels are written down.
+          const records = yield* service.readRecords(window);
+          assert.deepStrictEqual(
+            records.map((record) => [record.at, record.origin?.device, record.final]),
+            [
+              ["2026-11-10T10:00:00.000Z", "phone", true],
+              ["2026-11-12T10:00:00.000Z", "computer", false],
+            ],
+          );
         }).pipe(
           Effect.scoped,
           Effect.provide(layerService({ prefix: "usage-service-close", home, settings })),

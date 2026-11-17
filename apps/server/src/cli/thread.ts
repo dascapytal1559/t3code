@@ -1,4 +1,5 @@
 import {
+  type AuthSessionId,
   OrchestratorMcpFailure,
   OrchestratorMcpThreadListResult,
   OrchestratorMcpThreadReadResult,
@@ -212,12 +213,15 @@ const makeThreadTools = (session: McpToolSession, origin: string) => {
 export type ThreadTools = ReturnType<typeof makeThreadTools>;
 
 /**
- * Signs in as a short-lived MCP client of the running server, the same way an
- * outside agent does, and revokes that session when the command ends.
+ * Signs in to the running server with a session `issue` makes for this command,
+ * and revokes that session when the command ends.
  */
-export const withThreadTools = Effect.fn("cli.thread.withThreadTools")(function* <A, E, R>(
+export const withServerSession = Effect.fn("cli.thread.withServerSession")(function* <A, E, R, IE>(
   flags: { readonly baseDir: Option.Option<string>; readonly json: boolean },
-  run: (tools: ThreadTools) => Effect.Effect<A, E, R>,
+  issue: (
+    auth: EnvironmentAuth.EnvironmentAuth["Service"],
+  ) => Effect.Effect<{ readonly sessionId: AuthSessionId; readonly token: string }, IE>,
+  run: (server: { readonly origin: string; readonly token: string }) => Effect.Effect<A, E, R>,
 ) {
   const logLevel = yield* GlobalFlag.LogLevel;
   const config = yield* resolveCliAuthConfig(flags, logLevel, { quietLogs: flags.json });
@@ -227,26 +231,11 @@ export const withThreadTools = Effect.fn("cli.thread.withThreadTools")(function*
     if (Option.isNone(runtimeState)) {
       return yield* new ThreadServerNotRunningError({ baseDir: config.baseDir });
     }
-    const origin = runtimeState.value.origin;
     const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
-    const issued = yield* Effect.acquireRelease(
-      environmentAuth.issueMcpClientSession({
-        label: "t3 thread cli",
-        // The CLI runs as the machine's owner. New threads still start at
-        // the project's default mode, never at this ceiling by default.
-        access: "full-access",
-        peerLink: false,
-        client: { deviceType: "bot" },
-      }),
-      (session) =>
-        environmentAuth.revokeSession(session.sessionId).pipe(Effect.ignore({ log: true })),
+    const issued = yield* Effect.acquireRelease(issue(environmentAuth), (session) =>
+      environmentAuth.revokeSession(session.sessionId).pipe(Effect.ignore({ log: true })),
     );
-    const session = yield* mcpToolSession({
-      endpoint: new URL("/mcp", origin).href,
-      authorization: `Bearer ${issued.token}`,
-      clientName: "t3-thread-cli",
-    }).pipe(Effect.mapError((cause) => new ThreadServerUnreachableError({ origin, cause })));
-    return yield* run(makeThreadTools(session, origin));
+    return yield* run({ origin: runtimeState.value.origin, token: issued.token });
   }).pipe(
     Effect.scoped,
     Effect.provideService(References.MinimumLogLevel, minimumLogLevel),
@@ -258,6 +247,33 @@ export const withThreadTools = Effect.fn("cli.thread.withThreadTools")(function*
     ),
   );
 });
+
+/** Signs in as a short-lived MCP client of the running server, the same way an outside agent does. */
+export const withThreadTools = <A, E, R>(
+  flags: { readonly baseDir: Option.Option<string>; readonly json: boolean },
+  run: (tools: ThreadTools) => Effect.Effect<A, E, R>,
+) =>
+  withServerSession(
+    flags,
+    (auth) =>
+      auth.issueMcpClientSession({
+        label: "t3 thread cli",
+        // The CLI runs as the machine's owner. New threads still start at
+        // the project's default mode, never at this ceiling by default.
+        access: "full-access",
+        peerLink: false,
+        client: { deviceType: "bot" },
+      }),
+    ({ origin, token }) =>
+      mcpToolSession({
+        endpoint: new URL("/mcp", origin).href,
+        authorization: `Bearer ${token}`,
+        clientName: "t3-thread-cli",
+      }).pipe(
+        Effect.mapError((cause) => new ThreadServerUnreachableError({ origin, cause })),
+        Effect.flatMap((session) => run(makeThreadTools(session, origin))),
+      ),
+  );
 
 const readMessageArgument = Effect.fn("cli.thread.readMessage")(function* (argument: string) {
   const text =

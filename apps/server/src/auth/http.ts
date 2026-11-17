@@ -123,7 +123,7 @@ export function failEnvironmentInvalidRequest(reason: EnvironmentRequestInvalidR
   );
 }
 
-export function failEnvironmentScopeRequired(requiredScope: AuthEnvironmentScope) {
+function failEnvironmentScopeRequired(requiredScope: AuthEnvironmentScope) {
   return currentEnvironmentTraceId.pipe(
     Effect.flatMap((traceId) =>
       Effect.fail(
@@ -186,6 +186,28 @@ export const authenticateMediaRequest =
       return yield* failEnvironmentScopeRequired(requiredScope);
     }
     return session;
+  });
+
+/** Authenticates a route outside the HTTP API by its bearer or cookie session. */
+export const authenticateRawRouteWithScope =
+  /* Request instrumentation already owns the span; keep this helper in that context. */
+  Effect.fnUntraced(function* (requiredScope: AuthEnvironmentScope) {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+    const session = yield* serverAuth.authenticateHttpRequest(request).pipe(
+      Effect.catchIf(EnvironmentAuth.isServerAuthCredentialError, (error) =>
+        failEnvironmentAuthInvalid(
+          EnvironmentAuth.serverAuthCredentialReason(error),
+          EnvironmentAuth.serverAuthDpopFailureReason(error),
+        ),
+      ),
+      Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>
+        failEnvironmentInternal("internal_error", error),
+      ),
+    );
+    if (!session.scopes.includes(requiredScope)) {
+      return yield* failEnvironmentScopeRequired(requiredScope);
+    }
   });
 
 export const failEnvironmentInternal =

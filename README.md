@@ -32,6 +32,8 @@ Also:
 - [Muted usage rows](fork/README.md#usage-rows-can-be-muted): click a provider on the Usage page to mute it.
 - [Usage in the sidebar](fork/README.md#usage-limits-in-the-sidebar): one bar per account shows what is left this week.
 - [Archived usage](fork/README.md#archived-usage): counts machines that no longer run T3.
+- [Usage export](fork/README.md#usage-export): `t3 usage export` prints each model call as T3 counted it, as JSON lines.
+- [Limits history](fork/README.md#limits-history): every limits reading is kept in a monthly log.
 - [Upstream release note](fork/README.md#upstream-release-indicator): the sidebar says when upstream ships a release.
 - [App-bundled CLIs](fork/README.md#app-bundled-clis-are-updated-by-their-app): a CLI inside a macOS app is left for that app to update.
 - [`~` in provider paths](fork/README.md#-in-a-providers-executable-path): works for every provider.

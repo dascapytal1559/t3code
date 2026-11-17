@@ -5,6 +5,7 @@ import {
   type ServerSettings as ServerSettingsValue,
   type UsageProviderKind,
   type UsageSource,
+  type UsageExportRecord,
   type UsageOriginReasonUsage,
   type UsagePricing,
   type UsageSummary,
@@ -42,7 +43,13 @@ import type {
   UsageRecord,
 } from "@t3tools/provider-core/server/usage";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
-import { canonicalModelFilter, resolveModelAliases, UsageAggregator } from "./usageAggregation.ts";
+import {
+  canonicalModelFilter,
+  resolveModelAliases,
+  toUsageExportRecord,
+  UsageAggregator,
+  type CountedRecord,
+} from "./usageAggregation.ts";
 import * as UsageClose from "./UsageClose.ts";
 import * as UsageOrigins from "./UsageOrigins.ts";
 import {
@@ -182,6 +189,10 @@ export class UsageService extends Context.Service<
     readonly readOriginReasons: (
       input: Pick<UsageSummaryInput, "sinceDay" | "untilDay" | "timeZone">,
     ) => Effect.Effect<readonly UsageOriginReasonUsage[], UsageReadError>;
+    /** The window's records one by one, oldest first, as the summary counts them. */
+    readonly readRecords: (
+      input: Pick<UsageSummaryInput, "sinceDay" | "untilDay" | "timeZone">,
+    ) => Effect.Effect<readonly UsageExportRecord[], UsageReadError>;
     readonly refreshRates: Effect.Effect<UsagePricing>;
   }
 >()("t3/usage/UsageService") {}
@@ -952,6 +963,7 @@ export const make = Effect.gen(function* () {
     input: UsageSummaryInput,
     settings: ServerSettingsValue,
     provisional: boolean,
+    withRecords: boolean,
   ) {
     if (input.sinceDay > input.untilDay) {
       return yield* new UsageReadError({
@@ -1211,6 +1223,7 @@ export const make = Effect.gen(function* () {
     const closedThroughMs = closedSpan?.throughMs ?? UsageClose.CLOSE_FROM_MS - 1;
 
     const summaryPricing = pricing();
+    const counted: CountedRecord[] | null = withRecords ? [] : null;
 
     const aggregator = new UsageAggregator({
       timeZone: input.timeZone,
@@ -1223,6 +1236,7 @@ export const make = Effect.gen(function* () {
       modelAliases,
       rateModel: (provider, model) => providerRateModels.get(provider)?.(model),
       ...(input.modelFilter === undefined ? {} : { modelFilter: input.modelFilter }),
+      ...(counted === null ? {} : { onRecord: (entry: CountedRecord) => counted.push(entry) }),
       ...(labelOf === null
         ? {}
         : {
@@ -1412,19 +1426,37 @@ export const make = Effect.gen(function* () {
       scanDurationMs: Math.max(0, finishedAtMs - startedAtMs),
       ...(input.modelFilter === undefined ? {} : { modelFilter: input.modelFilter }),
     } satisfies UsageSummary;
-    return { summary, originReasons: aggregated.originReasons ?? null, fromMemory, openRecords };
+    const records =
+      counted === null
+        ? null
+        : counted
+            .toSorted((a, b) => a.record.timestampMs - b.record.timestampMs)
+            .map((entry) =>
+              toUsageExportRecord(
+                entry,
+                entry.origin !== null && isClosedAt(entry.record.timestampMs),
+              ),
+            );
+    return {
+      summary,
+      originReasons: aggregated.originReasons ?? null,
+      records,
+      fromMemory,
+      openRecords,
+    };
   });
 
   const readWindow = Effect.fn("UsageService.readWindow")(function* (
     input: UsageSummaryInput,
     settings: ServerSettingsValue,
     provisional: boolean,
+    withRecords: boolean,
   ) {
-    const scanned = yield* scanSummary(input, settings, provisional);
+    const scanned = yield* scanSummary(input, settings, provisional, withRecords);
     // With nothing marked refreshing the client would keep a saved answer as final.
     return scanned.fromMemory &&
       !scanned.summary.sources.some((source) => source.refreshing === true)
-      ? yield* scanSummary(input, settings, false)
+      ? yield* scanSummary(input, settings, false, withRecords)
       : scanned;
   });
 
@@ -1435,6 +1467,7 @@ export const make = Effect.gen(function* () {
     input: UsageSummaryInput,
     settings: ServerSettingsValue,
     provisional: boolean,
+    withRecords: boolean,
   ): string =>
     JSON.stringify([
       input.timeZone,
@@ -1447,15 +1480,19 @@ export const make = Effect.gen(function* () {
       input.awaitRefresh === true,
       provisional,
       input.modelFilter ?? null,
+      withRecords,
     ]);
 
-  const readShared = Effect.fn("UsageService.readShared")(function* (requested: UsageSummaryInput) {
+  const readShared = Effect.fn("UsageService.readShared")(function* (
+    requested: UsageSummaryInput,
+    withRecords = false,
+  ) {
     const { modelFilter: requestedFilter, ...unfiltered } = requested;
     const modelFilter = canonicalModelFilter(requestedFilter);
     const input = modelFilter === undefined ? unfiltered : { ...unfiltered, modelFilter };
     const settings = yield* readSettings;
     const provisional = input.provisional === true && input.awaitRefresh !== true;
-    const key = scanKey(input, settings, provisional);
+    const key = scanKey(input, settings, provisional, withRecords);
     const deferred = yield* Effect.uninterruptible(
       Effect.gen(function* () {
         const existing = inflightScans.get(key);
@@ -1466,7 +1503,7 @@ export const make = Effect.gen(function* () {
         inflightScans.set(key, created);
         // Detach so caller departure cannot cancel shared scans; finished scans warm the cache.
         // Register writes before releasing waiters, but start writing after delivering their summary.
-        yield* readWindow(input, settings, provisional).pipe(
+        yield* readWindow(input, settings, provisional, withRecords).pipe(
           Effect.onExit((exit) =>
             Effect.sync(() => inflightScans.delete(key)).pipe(
               Effect.andThen(
@@ -1538,7 +1575,15 @@ export const make = Effect.gen(function* () {
     return originReasons;
   });
 
-  return { readSummary, readOriginReasons, refreshRates, awaitPersisted } as const;
+  const readRecords = Effect.fn("UsageService.readRecords")(function* (
+    window: Pick<UsageSummaryInput, "sinceDay" | "untilDay" | "timeZone">,
+  ) {
+    // Waits for every source, as a close does, so an export never holds part of a day.
+    const { records } = yield* readShared({ ...window, awaitRefresh: true }, true);
+    return records ?? [];
+  });
+
+  return { readSummary, readOriginReasons, readRecords, refreshRates, awaitPersisted } as const;
 });
 
 export const layer = Layer.effect(UsageService, make);

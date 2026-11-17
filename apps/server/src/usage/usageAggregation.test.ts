@@ -1,6 +1,11 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { resolveModelAliases, UsageAggregator } from "./usageAggregation.ts";
+import {
+  type CountedRecord,
+  resolveModelAliases,
+  toUsageExportRecord,
+  UsageAggregator,
+} from "./usageAggregation.ts";
 import type { RateTable } from "./usagePricing.ts";
 import type { UsageRecord } from "@t3tools/provider-core/server/usage";
 
@@ -284,6 +289,87 @@ describe("UsageAggregator", () => {
         costUsd: expect.closeTo(recordCost),
       },
     ]);
+  });
+
+  it("exports each counted record once, merged, priced and labelled as the totals count it", () => {
+    const counted: CountedRecord[] = [];
+    const aggregator = new UsageAggregator({
+      timeZone: "UTC",
+      sinceDay: "2026-08-01",
+      untilDay: "2026-08-31",
+      rates,
+      attributeOrigin: (item) =>
+        item.sessionId === "phone-session"
+          ? {
+              origin: "phone",
+              basis: "stamp",
+              reason: "typed",
+              root: { threadId: "thread-1", messageId: "message-1" },
+            }
+          : item.sessionId === "crew-session"
+            ? { origin: "computer", basis: "default", via: "crew", reason: "noCause", cause: true }
+            : null,
+      onRecord: (entry) => counted.push(entry),
+    });
+    const outputCopy = { ...record().totals, outputTokens: 80 };
+    for (const item of [
+      record({ sessionId: "phone-session", dedupeKey: "msg_1:" }),
+      record({ sessionId: "phone-session", dedupeKey: "msg_1:", totals: outputCopy }),
+      record({ sessionId: "phone-session", timestampMs: Date.parse("2026-07-30T00:00:00Z") }),
+      record({ sessionId: "crew-session", model: "unpriced-model" }),
+      record({ sessionId: "terminal-session" }),
+    ]) {
+      aggregator.add(item, "/claude");
+    }
+    const result = aggregator.finish();
+
+    const exported = counted.map((entry) => toUsageExportRecord(entry, false));
+    const tokens = { input: 100, cacheRead: 1000, cacheWrite: 10 };
+    const base = { at: "2026-08-07T04:05:13.944Z", provider: "claude", final: false } as const;
+    // Keyed usage is counted in finish(), after the unkeyed records.
+    expect(exported).toEqual([
+      {
+        ...base,
+        model: "unpriced-model",
+        sessionId: "crew-session",
+        tokens: { ...tokens, output: 50 },
+        costUsd: null,
+        origin: {
+          device: "computer",
+          started: "orchestrated",
+          via: "crew",
+          basis: "default",
+          reason: "noCause",
+          cause: true,
+        },
+      },
+      {
+        ...base,
+        model: "claude-fable-5",
+        sessionId: "terminal-session",
+        tokens: { ...tokens, output: 50 },
+        costUsd: expect.closeTo(0.004625, 9),
+        origin: null,
+      },
+      {
+        ...base,
+        model: "claude-fable-5",
+        sessionId: "phone-session",
+        tokens: { ...tokens, output: 80 },
+        costUsd: expect.closeTo(0.006125, 9),
+        origin: {
+          device: "phone",
+          started: "direct",
+          basis: "stamp",
+          reason: "typed",
+          promptThreadId: "thread-1",
+        },
+      },
+    ]);
+    expect(exported.reduce((sum, item) => sum + (item.costUsd ?? 0), 0)).toBeCloseTo(
+      result.buckets.reduce((sum, bucket) => sum + bucket.costUsd, 0),
+      9,
+    );
   });
 
   it("buckets by the day in the requested time zone", () => {

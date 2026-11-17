@@ -334,6 +334,53 @@ figures but does not show them yet. Code: `apps/server/src/usage/UsageOrigins.ts
 in `packages/shared/src/usageMerge.ts`, `apps/server/src/cli/usage.ts`, and
 `apps/web/src/components/usage/UsageOriginBreakdown.tsx`.
 
+## Usage export
+
+So another program (the captain's life archive) can keep exactly T3's figures
+without working them out again, `t3 usage export --since <day>` prints the
+running server's usage as JSON lines, one per model call, as the Usage page
+counts it: deduplicated, aliased, priced and labelled. `--until` (default
+today) and `--time-zone` (default the server's) set the window. A line, with
+made-up values:
+
+```json
+{
+  "at": "2026-11-10T09:14:02.511Z",
+  "provider": "claude",
+  "model": "claude-opus-5-5",
+  "sessionId": "5f0c…",
+  "tokens": { "input": 12, "cacheRead": 184220, "cacheWrite": 3105, "output": 890 },
+  "costUsd": 0.1342,
+  "origin": {
+    "device": "phone",
+    "started": "orchestrated",
+    "via": "agent",
+    "basis": "stamp",
+    "reason": "inherited",
+    "cause": true,
+    "promptThreadId": "thread-7"
+  },
+  "final": true
+}
+```
+
+- `costUsd` is null when no price is known; `origin` is null when the server
+  cannot read its T3 prompts. `started` is `direct` when the device's own
+  prompt started the work, `orchestrated` (with `via`) when an agent sent it.
+  `basis` and `reason` are as in [Usage by origin](#usage-by-origin).
+- `final` is true once the record's day is closed: its label is written down
+  and will not change. Re-export days with records that are not final yet.
+  Cost follows T3's price list, which can still change.
+- The lines come from `GET /api/usage/export?since=&until=&timeZone=` with any
+  session that can read orchestration; the command signs in like `t3 usage
+  reasons`, read-only. It is a route rather than an MCP tool because a week
+  runs to tens of megabytes.
+
+Code: `onRecord` and `toUsageExportRecord` in
+`apps/server/src/usage/usageAggregation.ts`, `readRecords` in `UsageService.ts`,
+`apps/server/src/usage/usageExportHttp.ts`, `UsageExportRecord` in
+`packages/contracts/src/usage.ts`, and `apps/server/src/cli/usage.ts`.
+
 ## Claude banked resets on macOS
 
 Upstream shows and redeems Claude's banked resets (weekly and Fable resets)
@@ -419,6 +466,42 @@ When syncing, if upstream changes the usage read or Claude changes the response,
 check `claudeOauthUsageRateLimits` against a fresh body; its test holds a
 recorded one. If upstream adds its own foreground check or reading age, take
 upstream's and drop the fork's.
+
+## Limits history
+
+Providers only ever answer with the limits as they stand now, so the server
+keeps a log of every reading it gets, to show later how close each week came to
+its limit. Each time a provider's or a limit source's limits refresh, the
+reading goes onto one file per UTC month beside the session register:
+`~/.t3-fork/userdata/usage-limits/2026-11.jsonl`. A line, with made-up values:
+
+```json
+{
+  "v": 1,
+  "at": "2026-11-17T01:10:00.000Z",
+  "provider": "claude",
+  "instanceId": "claude",
+  "account": "someone@example.com",
+  "windows": [
+    {
+      "id": "five-hour",
+      "kind": "session",
+      "label": "5h",
+      "usedPercent": 41,
+      "resetsAt": "2026-11-17T05:00:00.000Z"
+    },
+    { "id": "seven-day", "kind": "weekly", "label": "Week", "usedPercent": 12 }
+  ]
+}
+```
+
+- A reading is written when a figure or a reset time moved, and at least hourly
+  otherwise, so a gap means T3 was not running. Accounts read through a limit
+  source carry `source` (its label) instead of `instanceId`.
+- The file is append-only and holds no credentials: no tokens and no
+  credential fingerprint. Unavailable readings are left out.
+
+Code: `apps/server/src/usage/UsageLimitsLog.ts`.
 
 ## App-bundled CLIs are updated by their app
 

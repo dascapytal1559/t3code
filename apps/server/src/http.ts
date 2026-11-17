@@ -1,9 +1,5 @@
 import * as Mime from "effect/http/Mime";
-import {
-  AuthOrchestrationOperateScope,
-  AuthOrchestrationReadScope,
-  EnvironmentHttpApi,
-} from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope, EnvironmentHttpApi } from "@t3tools/contracts";
 import { isDevProxiedPath } from "@t3tools/shared/devProxy";
 import { injectMcpAppCookieBootstrap, injectMcpAppThemeBootstrap } from "@t3tools/shared/mcpApp";
 import { decodeOtlpTraceRecords } from "@t3tools/shared/observability";
@@ -38,14 +34,8 @@ import {
   validateAttachmentUploadToken,
 } from "./assets/AttachmentUpload.ts";
 import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts";
-import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import { traceRelayRequest } from "./cloud/traceRelayRequest.ts";
-import {
-  annotateEnvironmentRequest,
-  failEnvironmentScopeRequired,
-  failEnvironmentAuthInvalid,
-  failEnvironmentInternal,
-} from "./auth/http.ts";
+import { annotateEnvironmentRequest, authenticateRawRouteWithScope } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { WEBHOOK_ROUTE_PREFIX } from "./scheduledTasks/ScheduledTaskService.ts";
 import {
@@ -297,29 +287,6 @@ function resolveDevRedirectUrl(devUrl: URL, requestUrl: URL): string {
   redirectUrl.hash = requestUrl.hash;
   return redirectUrl.toString();
 }
-
-const authenticateRawRouteWithScope =
-  /* Request instrumentation already owns the span; keep this helper in that context. */
-  Effect.fnUntraced(function* (
-    scope: typeof AuthOrchestrationReadScope | typeof AuthOrchestrationOperateScope,
-  ) {
-    const request = yield* HttpServerRequest.HttpServerRequest;
-    const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-    const session = yield* serverAuth.authenticateHttpRequest(request).pipe(
-      Effect.catchIf(EnvironmentAuth.isServerAuthCredentialError, (error) =>
-        failEnvironmentAuthInvalid(
-          EnvironmentAuth.serverAuthCredentialReason(error),
-          EnvironmentAuth.serverAuthDpopFailureReason(error),
-        ),
-      ),
-      Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>
-        failEnvironmentInternal("internal_error", error),
-      ),
-    );
-    if (!session.scopes.includes(scope)) {
-      return yield* failEnvironmentScopeRequired(scope);
-    }
-  });
 
 export const layerServerEnvironmentHttpApi = HttpApiBuilder.group(
   EnvironmentHttpApi,

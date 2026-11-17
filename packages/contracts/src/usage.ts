@@ -187,6 +187,45 @@ export const UsageOriginReasons = Schema.Struct({
 });
 export type UsageOriginReasons = typeof UsageOriginReasons.Type;
 
+/** Streams `UsageExportRecord` JSON lines for `since`, `until` and `timeZone` query parameters. */
+export const USAGE_EXPORT_PATH = "/api/usage/export";
+
+/** One model call as Usage counted it: deduplicated, aliased, priced and labelled. */
+export const UsageExportRecord = Schema.Struct({
+  at: Schema.String,
+  provider: UsageProviderKind,
+  model: Schema.String,
+  /** The provider's own session id. */
+  sessionId: Schema.String,
+  tokens: Schema.Struct({
+    input: NonNegativeInt,
+    cacheRead: NonNegativeInt,
+    cacheWrite: NonNegativeInt,
+    output: NonNegativeInt,
+  }),
+  /** Null when no price is known for the model. */
+  costUsd: Schema.NullOr(Schema.Number),
+  /** Null when the server could not read its T3 prompts. */
+  origin: Schema.NullOr(
+    Schema.Struct({
+      device: UsageOrigin,
+      started: Schema.Literals(["direct", "orchestrated"]),
+      via: Schema.optional(UsageOriginVia),
+      basis: UsageOriginBasis,
+      reason: UsageOriginReason,
+      claim: Schema.optional(UsageOriginClaimKind),
+      folder: Schema.optional(Schema.Literal(true)),
+      registered: Schema.optional(Schema.Literal(true)),
+      cause: Schema.optional(Schema.Literal(true)),
+      /** The thread of the typed prompt that decided it. */
+      promptThreadId: Schema.optional(Schema.String),
+    }),
+  ),
+  /** Its day's labels are written down; until then a later export may label it differently. */
+  final: Schema.Boolean,
+});
+export type UsageExportRecord = typeof UsageExportRecord.Type;
+
 /** Usage of records inside a T3 run, by the origin of the run's starting message. */
 export const UsageOriginUsage = Schema.Struct({
   origin: UsageOrigin,
