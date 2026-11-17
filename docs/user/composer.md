@@ -314,9 +314,12 @@ earlier messages, and the thread marks where it began with **New session**.
 Earlier messages and diffs stay in the thread. Dismiss the notice above the
 composer to keep the current session instead.
 
-FirstMate's own thread does this by itself when a new message arrives after its
-Claude prompt cache has expired, usually after an hour idle, and the divider
-reads **New session · cache expired**. Other projects can do the same in
+T3 does this for FirstMate's own thread by itself as soon as its Claude prompt
+cache expires, usually after an hour idle: it sends a short note that starts the
+new session, FirstMate answers in a line, and neither makes a sound or a
+notification. The divider reads **New session · cache expired**. To cut a new
+session on FirstMate yourself, hover the context window meter beside the send
+button and press **Start a new session**. Other projects can do the same in
 **Settings → Projects → Fresh session after quiet**: pick **When Claude's cache
 expires**, or **After a set time** and enter a number of minutes. Once a thread
 there has been quiet that long, its next new message starts fresh instead of

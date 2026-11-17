@@ -335,6 +335,44 @@ it.each([
   },
 );
 
+// The note T3 sends to rotate FirstMate's session starts a supervision run like this one.
+it.each(
+  (["notifications", "sound", "notifications-and-sound"] as const).flatMap((mode) =>
+    (["all-threads", "firstmate"] as const).flatMap((soundScope) =>
+      [false, true].map((focused) => ({ mode, soundScope, focused })),
+    ),
+  ),
+)(
+  "keeps FirstMate's supervision run silent: no sound, notification, toast or badge ($mode, sound for $soundScope, focused: $focused)",
+  async ({ mode, soundScope, focused: windowFocused }) => {
+    await using app = setup();
+    state.mode = mode;
+    state.soundScope = soundScope;
+    state.inApp = true;
+    focused = windowFocused;
+    state.shells.set("one", shell({ id: "firstmate" }));
+    app.start();
+    const completed = shell({
+      id: "firstmate",
+      latestTurn: { turnId: "turn", state: "completed", completedAt: "2026-09-13T07:00:01.000Z" },
+    });
+    state.shells.set("one", {
+      ...completed,
+      snapshot: Option.map(completed.snapshot, ({ threads }) => ({
+        threads: threads.map((thread) => ({
+          ...thread,
+          coordinator: true,
+          latestRunSupervision: true,
+        })),
+      })),
+    });
+    expect(TestNotification.sent).toEqual([]);
+    expect(state.sound).not.toHaveBeenCalled();
+    expect(state.toast).not.toHaveBeenCalled();
+    expect(state.badge.mock.calls.filter(([count]) => count > 0)).toEqual([]);
+  },
+);
+
 it.each([false, true])(
   "presents one completion when a monitor ends with a final wake (disconnected: %s)",
   async (disconnect) => {

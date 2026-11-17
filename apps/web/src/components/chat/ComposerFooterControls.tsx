@@ -223,6 +223,8 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
   onCompactContext?: (() => void) | undefined;
   compactDisabled: boolean;
   compactDisabledReason: string | null;
+  onStartNewSession?: (() => void) | undefined;
+  startNewSessionDisabledReason: string | null;
   compactBeforeSendTokens: number | null;
   hideCompactToggle: boolean;
   keepFullHistory: boolean;
@@ -236,6 +238,8 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
           onCompact={props.onCompactContext}
           compactDisabled={props.compactDisabled}
           compactDisabledReason={props.compactDisabledReason}
+          onStartNewSession={props.onStartNewSession}
+          startNewSessionDisabledReason={props.startNewSessionDisabledReason}
         />
       ) : props.reserveContextWindowMeter ? (
         <ContextWindowMeterPlaceholder />

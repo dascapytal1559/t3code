@@ -70,6 +70,7 @@ import {
   type Citation,
   type ResponseContextRecord,
   type ChatFileAttachment,
+  isPrimaryCoordinator,
   isProviderNativeSubagentThread,
   type EnvironmentId,
   type MessageId,
@@ -491,6 +492,9 @@ export default function ChatView(props: ChatViewProps) {
     refresh: true,
   });
   const interruptThreadTurn = useOrchestrationCommand(threadEnvironment.interruptTurn, {
+    reportFailure: false,
+  });
+  const rotateThreadSession = useOrchestrationCommand(threadEnvironment.rotateSession, {
     reportFailure: false,
   });
   const loadEarlierThreadHistory = useAtomCommand(threadEnvironment.loadEarlierHistory, {
@@ -2558,6 +2562,15 @@ export default function ChatView(props: ChatViewProps) {
           ? "Compaction is unavailable for this provider"
           : "Compacting is unavailable right now"
     : null;
+  // Fork: FirstMate's main thread starts a fresh session from its context window.
+  const startsNewSession = activeThreadShell != null && isPrimaryCoordinator(activeThreadShell);
+  const startNewSessionDisabledReason = !canOperateThread
+    ? "This connection cannot change threads."
+    : isWorking || pendingApprovals.length > 0 || pendingUserInputs.length > 0
+      ? "FirstMate is busy. Start a new session once its turn ends."
+      : activeEnvironmentUnavailable || threadDetailLoading || isRevertingCheckpoint
+        ? "Starting a new session is unavailable right now"
+        : null;
   // The context window is the current conversation's, so a handoff destination never inherits it.
   const resumeCompactionTokens =
     activeContextWindow &&
@@ -2918,6 +2931,19 @@ export default function ChatView(props: ChatViewProps) {
     if (compactDisabled) return;
     void sendStandaloneCommand("/compact", "Failed to compact context.");
   };
+  const onStartNewSession = async () => {
+    if (!activeThreadShell || startNewSessionDisabledReason !== null) return;
+    const threadId = activeThreadShell.id;
+    setThreadError(threadId, null);
+    const result = await rotateThreadSession({ environmentId, input: { threadId } });
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      setThreadError(
+        threadId,
+        error instanceof Error ? error.message : "Failed to start a new session.",
+      );
+    }
+  };
 
   const {
     getModelDisabledReason,
@@ -3062,6 +3088,7 @@ export default function ChatView(props: ChatViewProps) {
   const sendPreviewAnnotationStable = useStableCallback(sendPreviewAnnotation);
   const onComposerResumeStable = useStableCallback(onResume);
   const onComposerCompactContextStable = useStableCallback(onCompactContext);
+  const onStartNewSessionStable = useStableCallback(onStartNewSession);
   // Read from the projection the footer renders, so the scroll below sees the new message.
   const pendingGuestMessageIds =
     serverProjection?.thread.guestShare?.messages.flatMap((message) =>
@@ -3826,6 +3853,10 @@ export default function ChatView(props: ChatViewProps) {
                                 onPageScrollKeyUp={onComposerPageScrollKeyUpStable}
                                 onPageScrollRelease={onComposerPageScrollReleaseStable}
                                 onCompactContext={onComposerCompactContextStable}
+                                onStartNewSession={
+                                  startsNewSession ? onStartNewSessionStable : undefined
+                                }
+                                startNewSessionDisabledReason={startNewSessionDisabledReason}
                                 onSend={onComposerSendStable}
                                 onResume={onComposerResumeStable}
                                 onInterrupt={onInterruptStable}

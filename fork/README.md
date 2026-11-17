@@ -1082,8 +1082,9 @@ Upstream never drops a thread's context on its own: a fresh session is the
 user's `/clear` or a caller's `freshContext`, and for a large thread whose
 prompt cache has expired it offers compaction, which keeps a summary. That suits
 threads whose conversation is the only record of the work. On the pinned
-FirstMate thread, a new exchange that starts after the cache has expired starts
-in a fresh session. FirstMate keeps its state in files and rebuilds its context
+FirstMate thread, the session is replaced by a fresh one the moment its cache
+expires (see the clock below), and a new exchange that starts on a cold session
+any other way starts fresh too. FirstMate keeps its state in files and rebuilds its context
 at session start, about 71k tokens, while reloading or compacting the old
 session re-sends all of it, 120k to 750k. A project can opt its own threads in
 (**Settings → Projects → Fresh session after quiet**, or `clearAfterQuiet` on
@@ -1131,9 +1132,33 @@ session" for a quiet clear. If Compact idle threads is turned on, its "When you
 return" compaction runs first, reloads the session and leaves it warm, so a
 cache clear does not happen.
 
-Code: `coldClearRule` and `startsFreshWhenCold` in
+On FirstMate's thread a check at the next input is not enough: FirstMate's own
+worker notifications wake the session from inside its process, so T3 sees that
+turn only after the cold reload has been paid. So T3's server keeps a clock
+there. After every run ends, and at server start, it waits until the same rule
+would hold (`coldAtMs`) on an idle thread, then sends `thread.session.rotate`.
+That command becomes a short system note, "T3 started a new session for this
+thread…", that starts the run through the same rule, so one function still
+decides. It is dropped without a turn if the thread has turned busy (a run, a
+queued message, a question, a fork or merge-back, or a pending restart) or the
+rule no longer holds, for example because the old session has background work.
+The fresh session is under the 100k floor, so it never trips the clock again,
+and its command id names the run that ended, so a restart or a repeated event
+rotates an idle spell at most once. The at-input rule stays as a backstop and
+cannot clear twice: whichever input comes first leaves a small fresh session.
+The note's run is a coordinator's supervision run, so its end makes no sound,
+notification, toast or badge in any notification mode, and the relay does not
+push it. **Start a new session** in FirstMate's context window popover sends the
+same command with `requested`, which starts a fresh session at once however warm
+the cache, and is refused while FirstMate is busy; **Compact context** steps back
+to a link below it there. Other threads keep their popover and their at-input
+rule.
+
+Code: `coldClearRule`, `startsFreshWhenCold` and `coldAtMs` in
 `apps/server/src/orchestration-v2/ColdClear.ts`, called where
 `startNextQueuedRun` and `message.dispatch` start a run in `Orchestrator.ts`;
+the clock in `SessionRotationService.ts` and `dispatchSessionRotate` in
+`Orchestrator.ts`;
 `freshContextReason` and `freshContextQuietMinutes` on user-message and
 notification turn items in `packages/contracts/src/orchestrationV2.ts`; and
 `FreshSessionRow` in `apps/web/src/components/chat/V2LifecycleRow.tsx`. The

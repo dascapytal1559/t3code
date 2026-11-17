@@ -452,6 +452,9 @@ export interface ChatComposerProps {
   onRemoveEditingQueuedAttachment: (attachmentId: string) => void;
 
   onCompactContext: () => void;
+  /** Fork: FirstMate's main thread only; leads the context window's actions. */
+  onStartNewSession?: (() => void) | undefined;
+  startNewSessionDisabledReason: string | null;
   onSend: (
     e?: { preventDefault: () => void },
     dispatchMode?: ComposerDispatchMode,
@@ -558,6 +561,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onPageScrollKeyUp,
     onPageScrollRelease,
     onCompactContext,
+    onStartNewSession,
+    startNewSessionDisabledReason,
     onSend,
     onResume,
     onInterrupt,
@@ -3806,6 +3811,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     {...(compactCommandAvailable
                       ? { onCompactContext: compactThreadContextStable }
                       : {})}
+                    onStartNewSession={onStartNewSession}
+                    startNewSessionDisabledReason={startNewSessionDisabledReason}
                   >
                     {speechInput.available ? (
                       <>

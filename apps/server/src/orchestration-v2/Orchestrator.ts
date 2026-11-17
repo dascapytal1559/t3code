@@ -121,7 +121,13 @@ import {
   SHARED_WORKSPACE_RESTORE_MESSAGE,
 } from "./CheckpointRestoreSafety.ts";
 import { CheckpointServiceV2 } from "./CheckpointService.ts";
-import { coldClearRule, startsFreshWhenCold, type ColdClearRule } from "./ColdClear.ts";
+import {
+  coldClearRule,
+  sessionRotationNote,
+  startsFreshWhenCold,
+  type ColdClearRule,
+  type SessionRotationReason,
+} from "./ColdClear.ts";
 import {
   CommandPolicyV2,
   followUpOwnerRun,
@@ -691,6 +697,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.model-selection.set":
     case "provider-session.detach":
     case "message.dispatch":
+    case "thread.session.rotate":
     case "notification.delivery.accept":
     case "prepared-run.release":
     case "prepared-run.progress":
@@ -7127,10 +7134,77 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     return thread;
   });
 
+  const declineSessionRotation = Effect.fn("Orchestrator.declineSessionRotation")(function* (
+    command: Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>,
+    rotation: SessionRotationReason,
+    thread: OrchestrationV2AppThread,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+  ) {
+    if (rotation === "requested") {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: "FirstMate is busy. Start a new session once its turn ends.",
+      });
+    }
+    yield* emit(
+      events,
+      command,
+    )({
+      type: "thread.metadata-updated",
+      threadId: command.threadId,
+      occurredAt: yield* DateTime.now,
+      payload: thread,
+    });
+  });
+
+  /** Fork: FirstMate's main thread starts a fresh session from T3's own quiet note. */
+  const dispatchSessionRotate = Effect.fn("Orchestrator.dispatchSessionRotate")(function* (
+    command: Extract<OrchestrationV2Command, { readonly type: "thread.session.rotate" }>,
+    events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
+    effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+  ) {
+    const thread = (yield* getProjectionWithPendingEvents(command.threadId, events)).thread;
+    // Its run ends quietly only as a coordinator's supervision run.
+    if (!isPrimaryCoordinator(thread)) {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: "Only FirstMate's main thread starts a new session this way.",
+      });
+    }
+    const note = sessionRotationNote(command.reason);
+    return yield* dispatchMessage(
+      {
+        type: "message.dispatch",
+        commandId: command.commandId,
+        threadId: command.threadId,
+        messageId: MessageId.make(`message:session-rotation:${command.commandId}`),
+        text: note.text,
+        notification: {
+          source: { kind: "system" },
+          outcome: "updated",
+          summary: note.summary,
+          detail: note.text,
+        },
+        attachments: [],
+        createdBy: "agent",
+        creationSource: "server",
+        ...(command.reason === "requested" ? { freshContext: true } : {}),
+        dispatchMode: { type: "queue_after_active" },
+      },
+      events,
+      effects,
+      command.reason,
+    );
+  });
+
   const dispatchMessage = Effect.fn("Orchestrator.dispatchMessage")(function* (
     command: Extract<OrchestrationV2Command, { readonly type: "message.dispatch" }>,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
     effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
+    /** Fork: the message is a session rotation's note (see `dispatchSessionRotate`). */
+    rotation?: SessionRotationReason,
   ) {
     // A compacted thread reads every run and turn item, but attempts, nodes, messages and provider
     // turns only for its recent runs and the runs this command names. An idle compaction reads
@@ -7872,6 +7946,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
     }
     const shouldQueue = (queueBehindRun !== undefined && startsOrQueuesRun) || queuesForRestart;
+    // Fork: a session rotation never waits behind other work; that work's end re-arms the clock.
+    if (
+      rotation !== undefined &&
+      (shouldQueue ||
+        projection.runs.some((run) => run.status === "queued") ||
+        projection.runtimeRequests.some((request) => request.status === "pending") ||
+        pendingForkTransferForThread(projection) !== undefined ||
+        pendingMergeBackTransfers.length > 0)
+    ) {
+      return yield* declineSessionRotation(command, rotation, projection.thread, events);
+    }
     // An explicit pick queued ahead reaches the thread only when its run starts. A goal or
     // restart command that stops the active run goes first, so nothing queued applies before it.
     // Buffered provider wakes drain output their own provider already produced.
@@ -8324,6 +8409,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         { nowMs: DateTime.toEpochMillis(now), rule: coldRule },
       ) && !(yield* freshContextEndsBackgroundWork(projection, activeProviderThread));
     if (coldClear) freshContext = true;
+    // Fork: the clock's note exists to start a fresh session, so it goes only where the rule does.
+    if (rotation === "cache_expired" && !coldClear) {
+      return yield* declineSessionRotation(command, rotation, projection.thread, events);
+    }
     if (
       freshContext &&
       (pendingForkTransfer !== undefined || pendingMergeBackTransfer !== undefined)
@@ -15620,6 +15709,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         yield* recordSubagentFollowup(dispatched, events).pipe(mapDispatchError(command));
         break;
       }
+      case "thread.session.rotate":
+        cancelUnsettledEffects = yield* dispatchSessionRotate(command, events, effects);
+        break;
       case "notification.delivery.accept":
         updateDelegatedCompletionOnlyRunId = yield* dispatchNotificationAccepted(command, events);
         break;

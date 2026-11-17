@@ -39,6 +39,7 @@ import {
   promoteQueuedRun,
   resumeThreadQueue,
   retryWorkspacePreparation,
+  rotateThreadSession,
   linkThreadPullRequest,
   respondToThreadApproval,
   respondToThreadUserInput,
@@ -396,6 +397,12 @@ export function createThreadEnvironmentAtoms<R, E>(
     retryWorkspacePreparation: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:retry-workspace-preparation",
       execute: retryWorkspacePreparation,
+      scheduler,
+      concurrency,
+    }),
+    rotateSession: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:thread:rotate-session",
+      execute: rotateThreadSession,
       scheduler,
       concurrency,
     }),

@@ -3618,6 +3618,17 @@ export const OrchestrationV2Command = Schema.Union([
       Schema.Struct({ type: Schema.Literal("start_immediately") }),
     ]),
   }),
+  /**
+   * Fork: T3 sends FirstMate's main thread a short system note that starts a fresh session.
+   * `requested` starts one now; `cache_expired`, the server's clock, only if the cold rule holds.
+   * Either is dropped while the thread is busy.
+   */
+  Schema.Struct({
+    type: Schema.Literal("thread.session.rotate"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    reason: Schema.Literals(["requested", "cache_expired"]),
+  }),
   Schema.Struct({
     type: Schema.Literal("prepared-run.release"),
     commandId: CommandId,

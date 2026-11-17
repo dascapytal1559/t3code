@@ -4,6 +4,7 @@ import {
   parseGoalCommand,
   type ChatAttachment,
   type OrchestrationV2AppThread,
+  type OrchestrationV2Command,
   type OrchestrationV2ContextTransfer,
   type OrchestrationV2Notification,
   type OrchestrationV2ProviderThread,
@@ -104,8 +105,8 @@ export function startsFreshWhenCold(
     // Goal controls act on the old session's goal.
     parseGoalCommand(input) !== null ||
     input.delegatedCompletion !== undefined ||
-    // T3's restart note is the only wake that begins an exchange; the rest report on old work,
-    // and a provider-buffered wake's content lives in the old session.
+    // T3's own system notes (restart, session rotation) are the only wakes that begin an
+    // exchange; the rest report on old work, and a provider-buffered wake's lives in the old session.
     (input.notification !== undefined && input.notification.source.kind !== "system") ||
     input.restartContinuationOfRunId !== undefined ||
     input.usageLimitContinuationOfRunId !== undefined ||
@@ -114,7 +115,21 @@ export function startsFreshWhenCold(
   ) {
     return false;
   }
-  if (
+  if (coldClearWaits({ thread, runs, runtimeRequests, contextTransfers })) return false;
+  // A provider switch re-reads no cache and hands the old context over on purpose.
+  if (providerThread?.providerInstanceId !== input.providerInstanceId) return false;
+  const coldAt = coldAtMs({ runs, providerTurns }, providerThread, rule);
+  return coldAt !== undefined && nowMs >= coldAt;
+}
+
+/** Fork: work that keeps the thread's session as it is: a live run, a question, a fork or merge. */
+export function coldClearWaits({
+  thread,
+  runs,
+  runtimeRequests,
+  contextTransfers,
+}: Pick<ColdClearRecords, "thread" | "runs" | "runtimeRequests" | "contextTransfers">): boolean {
+  return (
     runs.some(isActiveRun) ||
     runtimeRequests.some((request) => request.status === "pending") ||
     contextTransfers.some(
@@ -123,17 +138,21 @@ export function startsFreshWhenCold(
         transfer.targetThreadId === thread.id &&
         transfer.status === "pending",
     )
-  ) {
-    return false;
-  }
-  // A provider switch re-reads no cache and hands the old context over on purpose.
-  if (
-    providerThread === undefined ||
-    providerThread.providerInstanceId !== input.providerInstanceId ||
-    providerThread.nativeThreadRef === null
-  ) {
-    return false;
-  }
+  );
+}
+
+/**
+ * Fork: when `providerThread`'s session turns cold under `rule`, or undefined if it never does
+ * on these records: no session yet, a small one, or a provider that reports no cache lifetime.
+ */
+export function coldAtMs(
+  { runs, providerTurns }: Pick<ColdClearRecords, "runs" | "providerTurns">,
+  providerThread:
+    | Pick<OrchestrationV2ProviderThread, "id" | "driver" | "nativeThreadRef">
+    | undefined,
+  rule: ColdClearRule,
+): number | undefined {
+  if (providerThread === undefined || providerThread.nativeThreadRef === null) return undefined;
   if (rule.kind === "quiet") {
     // A queued run, this one included, has not touched the session yet.
     const lastActiveMs = Math.max(
@@ -141,18 +160,39 @@ export function startsFreshWhenCold(
         run.startedAt === null ? [] : [DateTime.toEpochMillis(run.completedAt ?? run.startedAt)],
       ),
     );
-    return Number.isFinite(lastActiveMs) && nowMs - lastActiveMs >= rule.minutes * MINUTE_MS;
+    return Number.isFinite(lastActiveMs) ? lastActiveMs + rule.minutes * MINUTE_MS : undefined;
   }
   // Only Claude reports cache expiry.
-  if (providerThread.driver !== "claudeAgent") return false;
+  if (providerThread.driver !== "claudeAgent") return undefined;
   const usage = providerTurns
     .filter((turn) => turn.providerThreadId === providerThread.id && turn.tokenUsage !== undefined)
     .map((turn) => turn.tokenUsage!)
     .toSorted((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0];
-  if (usage === undefined || usage.usedTokens <= rule.minContextTokens) return false;
+  if (usage === undefined || usage.usedTokens <= rule.minContextTokens) return undefined;
   const expiresMs =
     usage.promptCacheExpiresAt === undefined
       ? Date.parse(usage.updatedAt) + MAX_PROMPT_CACHE_TTL_MS
       : Date.parse(usage.promptCacheExpiresAt);
-  return Number.isFinite(expiresMs) && nowMs >= expiresMs;
+  return Number.isFinite(expiresMs) ? expiresMs : undefined;
+}
+
+export type SessionRotationReason = Extract<
+  OrchestrationV2Command,
+  { readonly type: "thread.session.rotate" }
+>["reason"];
+
+/** Fork: the note T3 sends FirstMate's main thread to start a fresh session. */
+export function sessionRotationNote(reason: SessionRotationReason): {
+  readonly summary: string;
+  readonly text: string;
+} {
+  return {
+    summary: "T3 started a new session",
+    text: [
+      reason === "requested"
+        ? "T3 started a new session for this thread at the user's request."
+        : "T3 started a new session for this thread because the previous one's prompt cache had expired.",
+      "No action needed: reply with one line.",
+    ].join(" "),
+  };
 }

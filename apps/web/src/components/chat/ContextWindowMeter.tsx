@@ -4,7 +4,7 @@ import { formatContextWindowTokens } from "~/lib/contextWindow";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { formatContextWindowCompactionMessage } from "./compaction.logic";
 import { formatContextWindowCost } from "./ContextWindowMeter.logic";
-import { Minimize2Icon } from "lucide-react";
+import { EraserIcon, Minimize2Icon } from "lucide-react";
 import { composerFloatingLayerProps } from "./composerEventScope";
 
 function formatPercentage(value: number | null): string | null {
@@ -22,8 +22,19 @@ export function ContextWindowMeter(props: {
   onCompact?: (() => void) | undefined;
   compactDisabled?: boolean | undefined;
   compactDisabledReason?: string | null | undefined;
+  /** Fork: FirstMate's main thread leads with a fresh session, and compaction steps back. */
+  onStartNewSession?: (() => void) | undefined;
+  startNewSessionDisabledReason?: string | null | undefined;
 }) {
-  const { usage, onCompact, compactDisabled, compactDisabledReason } = props;
+  const {
+    usage,
+    onCompact,
+    compactDisabled,
+    compactDisabledReason,
+    onStartNewSession,
+    startNewSessionDisabledReason,
+  } = props;
+  const hasActions = onCompact !== undefined || onStartNewSession !== undefined;
   const usedPercentage = formatPercentage(usage.usedPercentage);
   const normalizedPercentage = Math.max(0, Math.min(100, usage.usedPercentage ?? 0));
   const radius = 9.75;
@@ -41,7 +52,7 @@ export function ContextWindowMeter(props: {
       <PopoverTrigger
         openOnHover
         delay={150}
-        closeDelay={onCompact ? 150 : 0}
+        closeDelay={hasActions ? 150 : 0}
         render={
           <Button
             size="icon-sm"
@@ -147,7 +158,35 @@ export function ContextWindowMeter(props: {
               {formatContextWindowCompactionMessage(usage.autoCompactThreshold)}
             </div>
           ) : null}
-          {onCompact ? (
+          {onStartNewSession ? (
+            <>
+              <Button
+                size="xs"
+                className="mt-1 w-full justify-center"
+                disabled={startNewSessionDisabledReason != null}
+                onClick={onStartNewSession}
+              >
+                <EraserIcon aria-hidden="true" />
+                Start a new session
+              </Button>
+              {startNewSessionDisabledReason ? (
+                <div className="text-pretty text-secondary-label text-2xs">
+                  {startNewSessionDisabledReason}
+                </div>
+              ) : null}
+            </>
+          ) : null}
+          {onCompact && onStartNewSession ? (
+            <Button
+              size="xs"
+              variant="link"
+              className="justify-center"
+              disabled={compactDisabled}
+              onClick={onCompact}
+            >
+              Compact context
+            </Button>
+          ) : onCompact ? (
             <>
               <Button
                 size="xs"

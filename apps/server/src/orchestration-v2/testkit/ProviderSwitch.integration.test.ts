@@ -3678,6 +3678,186 @@ describe("orchestration v2 provider switching", () => {
       }),
   );
 
+  const rotateSession = (
+    key: string,
+    name: string,
+    reason: "requested" | "cache_expired",
+  ): OrchestrationV2Command => ({
+    type: "thread.session.rotate",
+    commandId: CommandId.make(`command:${key}:${name}`),
+    threadId: ThreadId.make(`thread:${key}`),
+    reason,
+  });
+  const rotationRun = (projection: OrchestrationV2ThreadProjection, key: string, name: string) =>
+    projection.runs.find(
+      (run) => run.userMessageId === `message:session-rotation:command:${key}:${name}`,
+    );
+
+  it.live.each<
+    readonly [
+      string,
+      {
+        readonly reason: "requested" | "cache_expired";
+        readonly cold: boolean;
+        readonly background?: true;
+        readonly fresh: boolean;
+      },
+    ]
+  >([
+    [
+      "the clock's note on a cold cache starts fresh",
+      { reason: "cache_expired", cold: true, fresh: true },
+    ],
+    [
+      "the clock's note on a warm cache is dropped",
+      { reason: "cache_expired", cold: false, fresh: false },
+    ],
+    [
+      "the clock's note is dropped while the old session runs background work",
+      { reason: "cache_expired", cold: true, background: true, fresh: false },
+    ],
+    [
+      "Start a new session starts fresh on a warm cache",
+      { reason: "requested", cold: false, fresh: true },
+    ],
+    [
+      "Start a new session starts fresh while the old session runs background work",
+      { reason: "requested", cold: false, background: true, fresh: true },
+    ],
+  ])(
+    "on FirstMate's idle thread, %s, with a quiet run",
+    ([, { reason, cold, background, fresh }]) =>
+      Effect.gen(function* () {
+        const key = `rotate-${reason}-${cold ? "cold" : "warm"}${background ? "-background" : ""}`;
+        const cwd = yield* checkpointWorkspace(key);
+        const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+        const closedSessions = yield* Ref.make<ReadonlyArray<string>>([]);
+        const harness = coldCacheHarness(key, cwd, {
+          cacheExpiresAt: cold ? COLD_CACHE_EXPIRY : "2999-01-01T00:00:00.000Z",
+          capturedTurns,
+          closedSessions,
+          nativeThreadGeneration: yield* Ref.make(0),
+          backgroundWork: yield* Ref.make(background === true),
+        });
+        const threadId = ThreadId.make(`thread:${key}`);
+        yield* Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+          yield* createColdCacheCoordinator(key, cwd);
+          yield* orchestrator.dispatch(coldCacheMessage(key, "alpha", "web"));
+          yield* worker.drain();
+          yield* waitForIdle(threadId);
+          const firstSession = (yield* orchestrator.getThreadProjection(threadId))
+            .providerSessions[0]!;
+          yield* orchestrator.dispatch(rotateSession(key, "rotate", reason));
+          yield* worker.drain();
+          const projection = yield* waitForIdle(threadId);
+          const run = rotationRun(projection, key, "rotate");
+          assert.deepEqual(yield* Ref.get(closedSessions), fresh ? [firstSession.id] : []);
+          if (!fresh) {
+            assert.isUndefined(run);
+            assert.equal(projection.runs.length, 1);
+            return;
+          }
+          assert.equal(run?.status, "completed");
+          assert.equal(run?.freshContext, true);
+          const item = projection.turnItems.find(
+            (candidate) => candidate.type === "notification" && candidate.runId === run?.id,
+          );
+          assert.deepEqual(
+            item?.type === "notification"
+              ? [item.source.kind, item.freshContext, item.freshContextReason]
+              : "missing",
+            ["system", true, reason === "cache_expired" ? "cache_expired" : undefined],
+          );
+          const turns = yield* Ref.get(capturedTurns);
+          const noteTurn = turns.find((turn) => turn.text.includes("T3 started a new session"));
+          const alphaTurn = turns.find((turn) => turn.text.endsWith("Prompt alpha"));
+          assert.notEqual(noteTurn?.providerThreadId, alphaTurn?.providerThreadId);
+          // The note's run is supervision, which ends without sound, notification, toast or badge.
+          assert.equal(
+            ProjectionStore.threadShellFromProjection(projection).latestRunSupervision,
+            true,
+          );
+        }).pipe(Effect.provide(harness));
+      }),
+  );
+
+  it.live.each(["requested", "cache_expired"] as const)(
+    "never queues a %s session rotation behind FirstMate's running turn",
+    (reason) =>
+      Effect.gen(function* () {
+        const key = `rotate-busy-${reason}`;
+        const cwd = yield* checkpointWorkspace(key);
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const harness = coldCacheHarness(key, cwd, {
+          cacheExpiresAt: COLD_CACHE_EXPIRY,
+          capturedTurns: yield* Ref.make<ReadonlyArray<CapturedTurn>>([]),
+          closedSessions: yield* Ref.make<ReadonlyArray<string>>([]),
+          nativeThreadGeneration: yield* Ref.make(0),
+          holdFirstTurn: started,
+          releaseFirstTurn: release,
+        });
+        const threadId = ThreadId.make(`thread:${key}`);
+        yield* Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+          yield* createColdCacheCoordinator(key, cwd);
+          yield* orchestrator.dispatch(coldCacheMessage(key, "alpha", "web"));
+          yield* Deferred.await(started);
+          yield* worker.drain();
+          // The button says why; the clock's note is dropped, and the run's end re-arms the clock.
+          const rotate = orchestrator.dispatch(rotateSession(key, "rotate", reason));
+          if (reason === "requested") {
+            const refused = yield* rotate.pipe(Effect.flip);
+            assert.include(String(refused.cause), "FirstMate is busy");
+          } else {
+            yield* rotate;
+          }
+          yield* Deferred.succeed(release, undefined);
+          yield* worker.drain();
+          const projection = yield* waitForIdle(threadId);
+          assert.isUndefined(rotationRun(projection, key, "rotate"));
+          assert.equal(projection.runs.length, 1);
+        }).pipe(Effect.provide(harness));
+      }),
+  );
+
+  it.live("refuses a session rotation on a thread that isn't FirstMate's main thread", () =>
+    Effect.gen(function* () {
+      const key = "rotate-not-coordinator";
+      const cwd = yield* checkpointWorkspace(key);
+      const harness = coldCacheHarness(key, cwd, {
+        cacheExpiresAt: COLD_CACHE_EXPIRY,
+        capturedTurns: yield* Ref.make<ReadonlyArray<CapturedTurn>>([]),
+        closedSessions: yield* Ref.make<ReadonlyArray<string>>([]),
+        nativeThreadGeneration: yield* Ref.make(0),
+      });
+      yield* Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        yield* orchestrator.dispatch({
+          type: "thread.create",
+          createdBy: "user",
+          creationSource: "web",
+          commandId: CommandId.make(`command:${key}:create`),
+          threadId: ThreadId.make(`thread:${key}`),
+          projectId: ProjectId.make(`project:${key}`),
+          title: "Worker",
+          modelSelection: CLAUDE_MODEL_SELECTION,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: cwd,
+        });
+        const refused = yield* orchestrator
+          .dispatch(rotateSession(key, "rotate", "requested"))
+          .pipe(Effect.flip);
+        assert.include(String(refused.cause), "Only FirstMate's main thread");
+      }).pipe(Effect.provide(harness));
+    }),
+  );
+
   it.live.each<
     readonly [string, ProjectClearAfterQuiet | null, number, Record<string, unknown> | null]
   >([

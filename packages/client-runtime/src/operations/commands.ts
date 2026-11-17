@@ -647,6 +647,18 @@ export const unsettleThread = Effect.fn("EnvironmentCommands.unsettleThread")(fu
   });
 });
 
+/** Fork: starts a fresh session on FirstMate's main thread with T3's quiet note. */
+export const rotateThreadSession = Effect.fn("EnvironmentCommands.rotateThreadSession")(function* (
+  input: ThreadCommandInput,
+) {
+  return yield* dispatch({
+    type: "thread.session.rotate",
+    commandId: yield* allocateCommandId(input),
+    threadId: input.threadId,
+    reason: "requested",
+  });
+});
+
 export const snoozeThread = Effect.fn("EnvironmentCommands.snoozeThread")(function* (
   input: SnoozeThreadInput,
 ) {
