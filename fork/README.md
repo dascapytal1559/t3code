@@ -1606,9 +1606,10 @@ editor, and opens Markdown as source.
 It draws headings, bold, italic, strikethrough, inline code, quotes, callouts,
 rules, lists and task boxes, code blocks with colours, tables, images from the
 project, Obsidian picture embeds (`![[shot.png|300]]`, found beside the note or
-by name in the project), links, and frontmatter as a properties card. Mermaid, maths,
-footnotes and raw HTML show as their source. A table, and the properties
-card, turn into their Markdown while the caret is in them. A line break in
+by name in the project), links, frontmatter as a properties card, and
+`<details>` blocks. Mermaid, maths, footnotes and other raw HTML show as their
+source. A table, and the properties card, turn into their Markdown while the
+caret is in them. A line break in
 the file stays a line break, so a paragraph wrapped at 80 columns keeps its
 short lines.
 
@@ -1634,6 +1635,15 @@ short lines.
   on the right. A narrower panel, the read-only view and a phone keep the
   outline button's list. Cmd+F finds and replaces. A section or a block folds
   from the chevron beside it.
+- A `<details>` block (a `<summary>` line, then Markdown, then `</details>`)
+  draws as its summary with a chevron, as in chat, and starts folded unless it
+  is written `<details open>`; one without a summary reads "Details". A click
+  on the summary opens or closes it, and the file's text never changes. Up and
+  Down stop on its tag lines, which then show as source for editing. Find, the
+  outline and a link to a line open a block they land in. The fold keys
+  (Cmd+Option+[ and ]) fold the block at the caret; Ctrl+Option+[ and ] fold
+  or unfold every block along with the headings. A block opened on disk starts
+  as written; one you type stays open. Nested blocks work.
 
 ![The live editor with the Fork editor badge in the toolbar and the outline pinned left of the page, the section on screen marked](media/live-markdown-outline.png)
 

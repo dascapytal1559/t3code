@@ -17,6 +17,7 @@ import {
 } from "@codemirror/view";
 import { markdownFrontmatterLength } from "@t3tools/shared/markdownFrontmatter";
 
+import { detailsDecorations, detailsField } from "./details";
 import { frontmatterRows } from "./frontmatter";
 import { HEADING_NODE, imageEmbedOf } from "./markdownSyntax";
 import {
@@ -103,6 +104,7 @@ function previewInputsChanged(before: EditorState, after: EditorState): boolean 
     searchPanelOpen(before) !== searchPanelOpen(after) ||
     before.field(frontmatterField) !== after.field(frontmatterField) ||
     before.field(imageUrlsField) !== after.field(imageUrlsField) ||
+    before.field(detailsField) !== after.field(detailsField) ||
     syntaxTree(before) !== syntaxTree(after)
   );
 }
@@ -114,6 +116,7 @@ export function blockDecorations(state: EditorState): DecorationSet {
   const { doc } = state;
   const touch = touchOf(state);
   const frontmatter = state.field(frontmatterField);
+  const folded = detailsDecorations(state, touch.onLines, frontmatter, out);
   if (frontmatter > 0 && !touch.onLines(0, frontmatter)) {
     const source = doc.sliceString(0, frontmatter);
     const shown =
@@ -128,11 +131,13 @@ export function blockDecorations(state: EditorState): DecorationSet {
     if (node.name !== "Table" || node.from < frontmatter) continue;
     const from = doc.lineAt(node.from).from;
     const to = doc.lineAt(node.to).to;
-    if (touch.touches(from, to)) continue;
+    if (touch.touches(from, to) || folded.some(([start, end]) => from >= start && to <= end)) {
+      continue;
+    }
     const widget = new TableWidget(doc.sliceString(from, to));
     out.push(Decoration.replace({ widget, block: true }).range(from, to));
   }
-  return Decoration.set(out);
+  return Decoration.set(out, true);
 }
 
 const blockPreview = StateField.define<DecorationSet>({
@@ -574,6 +579,7 @@ export function livePreview(config?: LivePreviewConfig): Extension {
     EditorView.focusChangeEffect.of((_state, focusing) => setFocused.of(focusing)),
     frontmatterField,
     imageUrlsField,
+    detailsField,
     blockPreview,
     inlinePreview,
     linkClicks,

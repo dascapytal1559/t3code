@@ -427,6 +427,51 @@
   transform: none;
 }
 
+/* <details>: the summary row of MarkdownDetails.tsx. Gaps are padding, as block widgets are measured without margins. */
+
+[data-live-markdown] .cm-lp-details {
+  padding-block: 0.25rem;
+}
+
+[data-live-markdown] .cm-lp-details-open {
+  padding-bottom: 0;
+}
+
+[data-live-markdown] .cm-lp-details-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-block: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  padding-block: 0.5rem;
+  color: var(--foreground);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+[data-live-markdown] .cm-lp-details-open .cm-lp-details-summary {
+  border-bottom: 0;
+}
+
+[data-live-markdown] .cm-lp-details-summary svg {
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  fill: none;
+  stroke: var(--muted-foreground);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+[data-live-markdown] .cm-lp-details-open .cm-lp-details-summary svg {
+  transform: rotate(90deg);
+}
+
+[data-live-markdown] .cm-lp-details-end {
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  height: 0.5rem;
+}
+
 [data-live-markdown] .cm-foldPlaceholder {
   margin-inline-start: 0.375rem;
   border: 0;

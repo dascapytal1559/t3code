@@ -10,6 +10,17 @@ const element = <K extends keyof HTMLElementTagNameMap>(tag: K, className: strin
   return node;
 };
 
+/** A chevron pointing right, which CSS turns down for something open. */
+export function chevronIcon(): SVGSVGElement {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "m9 6 6 6-6 6");
+  svg.append(path);
+  return svg;
+}
+
 export class BulletWidget extends WidgetType {
   override eq() {
     return true;

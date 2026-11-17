@@ -196,6 +196,34 @@ describe("live preview", () => {
     expect(view.lineClasses[2]).toBeUndefined();
   });
 
+  it("draws a <details> block as its summary, folded unless written open", () => {
+    const block = "<details>\n<summary>Ship it</summary>\n\nWe **ship**.\n\n</details>";
+    const folded = drawn(block);
+    expect(folded.widgets).toEqual(["DetailsSummaryWidget"]);
+    expect(folded.replaced[0]).toBe(block);
+    const open = drawn(block.replace("<details>", "<details open>"));
+    expect(open.widgets).toEqual(["DetailsSummaryWidget", "DetailsEndWidget"]);
+    expect(open.replaced).toEqual([
+      "<details open>\n<summary>Ship it</summary>",
+      "</details>",
+      "**",
+      "**",
+    ]);
+    // A table folded away is not drawn under the block that hides it.
+    const table = drawn("<details>\n\n| a |\n| - |\n| 1 |\n\n</details>");
+    expect(table.widgets).toEqual(["DetailsSummaryWidget"]);
+  });
+
+  it("shows a <details> block's tag lines as source at the caret, its body still folded", () => {
+    const view = drawn("<details>\n<summary>Ship| it</summary>\n\nWe **ship**.\n\n</details>");
+    expect(view.lineClasses[1]).toBe("cm-lp-src-line");
+    expect(view.lineClasses[2]).toBe("cm-lp-src-line");
+    expect(view.widgets).toEqual(["DetailsBodyWidget"]);
+    const closing = drawn("<details open>\n<summary>Ship it</summary>\n\nWe ship.\n\n</details>|");
+    expect(closing.widgets).toEqual(["DetailsSummaryWidget"]);
+    expect(closing.lineClasses[6]).toBe("cm-lp-src-line");
+  });
+
   it("draws everything while the editor has no focus", () => {
     const view = drawn("Some **bold** text.");
     expect(view.dimmed).toEqual([]);
