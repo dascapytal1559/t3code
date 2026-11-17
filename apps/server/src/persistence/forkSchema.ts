@@ -3,8 +3,14 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 // Fork columns live outside the numbered migrations: a fork migration id would collide with
 // upstream's next one, and the migrator skips every id up to the highest recorded.
+// A current schema gets no write: CLI startup reaches here without the server's write lock.
 export const ensureForkSchema = Effect.fn("ensureForkSchema")(function* () {
   const sql = yield* SqlClient.SqlClient;
+  const existing = new Set(
+    (yield* sql<{ readonly name: string }>`
+      SELECT name FROM sqlite_master WHERE type IN ('table', 'index')
+    `).map(({ name }) => name),
+  );
   const projectColumns = yield* sql<{ readonly name: string }>`
     PRAGMA table_info(projection_projects)
   `;
@@ -48,13 +54,15 @@ export const ensureForkSchema = Effect.fn("ensureForkSchema")(function* () {
     yield* sql`ALTER TABLE usage_claims ADD COLUMN bound_json TEXT`;
   }
   // The origin a scheduled task's runs count to, bound from the turn that created it.
-  yield* sql`
-    CREATE TABLE IF NOT EXISTS usage_scheduled_task_origins (
-      task_id TEXT PRIMARY KEY,
-      origin_json TEXT NOT NULL,
-      bound_at TEXT NOT NULL
-    )
-  `;
+  if (!existing.has("usage_scheduled_task_origins")) {
+    yield* sql`
+      CREATE TABLE IF NOT EXISTS usage_scheduled_task_origins (
+        task_id TEXT PRIMARY KEY,
+        origin_json TEXT NOT NULL,
+        bound_at TEXT NOT NULL
+      )
+    `;
+  }
   // The daily close: labels written down once and read as stored from then on. A session's label
   // from each time it changes, each prompt's label, and how far they are written (one row).
   // `device` is where the label counts; the other columns are the label as Usage read it.
@@ -70,36 +78,45 @@ export const ensureForkSchema = Effect.fn("ensureForkSchema")(function* () {
       cause INTEGER NOT NULL DEFAULT 0,
       root_thread_id TEXT,
       root_message_id TEXT`);
-  yield* sql`
-    CREATE TABLE IF NOT EXISTS usage_closed_session_labels (
-      session_id TEXT NOT NULL,
-      from_ms INTEGER NOT NULL,
-      ${labelColumns},
-      run_id TEXT,
-      typed INTEGER NOT NULL DEFAULT 0,
-      PRIMARY KEY (session_id, from_ms)
-    )
-  `;
-  yield* sql`
-    CREATE TABLE IF NOT EXISTS usage_closed_prompt_labels (
-      message_id TEXT PRIMARY KEY,
-      thread_id TEXT,
-      created_at_ms INTEGER NOT NULL,
-      ${labelColumns}
-    )
-  `;
-  yield* sql`
-    CREATE INDEX IF NOT EXISTS usage_closed_prompt_labels_created_idx
-      ON usage_closed_prompt_labels (created_at_ms)
-  `;
-  yield* sql`
-    CREATE TABLE IF NOT EXISTS usage_close (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      closed_from_ms INTEGER NOT NULL,
-      closed_through_ms INTEGER NOT NULL,
-      closed_at TEXT NOT NULL
-    )
-  `;
+  if (!existing.has("usage_closed_session_labels")) {
+    yield* sql`
+      CREATE TABLE IF NOT EXISTS usage_closed_session_labels (
+        session_id TEXT NOT NULL,
+        from_ms INTEGER NOT NULL,
+        ${labelColumns},
+        run_id TEXT,
+        typed INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (session_id, from_ms)
+      )
+    `;
+  }
+  if (!existing.has("usage_closed_prompt_labels")) {
+    yield* sql`
+      CREATE TABLE IF NOT EXISTS usage_closed_prompt_labels (
+        message_id TEXT PRIMARY KEY,
+        thread_id TEXT,
+        created_at_ms INTEGER NOT NULL,
+        ${labelColumns}
+      )
+    `;
+  }
+  if (!existing.has("usage_closed_prompt_labels_created_idx")) {
+    yield* sql`
+      CREATE INDEX IF NOT EXISTS usage_closed_prompt_labels_created_idx
+        ON usage_closed_prompt_labels (created_at_ms)
+    `;
+  }
+  if (!existing.has("usage_close")) {
+    yield* sql`
+      CREATE TABLE IF NOT EXISTS usage_close (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        closed_from_ms INTEGER NOT NULL,
+        closed_through_ms INTEGER NOT NULL,
+        closed_at TEXT NOT NULL
+      )
+    `;
+  }
+  if (claimColumns.length > 0 && !outdated) return;
   yield* sql.withTransaction(
     Effect.gen(function* () {
       // SQLite can't change a CHECK or primary key in place, so an older table is rebuilt once.
