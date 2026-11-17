@@ -1771,6 +1771,21 @@ composer path (`ChatView.tsx`, `ChatComposer.tsx`, `MessagesTimeline.tsx`,
 in `ChatView.tsx`; one mount each in `FilePreviewPanel.tsx` and
 `LiveMarkdownSurface.tsx`; and a paragraph in `docs/user/composer.md`.
 
+## File tabs name their folder
+
+![Three README.md tabs in the side panel; two show their folder dimmed before the name, and the one at the project's top folder shows the name alone](media/file-tab-folders.png)
+
+A file tab in the side panel shows the file's folder, dimmed, before its name
+(`reports/README.md`), so files that share a name (`README.md`, `index.md`,
+`report.md`) tell apart. When the tab runs out of room the folder shortens
+first and the file name stays whole; hovering a tab shows the full path. A
+file at the project's top folder and an attachment show the name alone. Every
+file type gets this, not only Markdown, since all files share the one tab.
+Upstream keeps tabs compact with the name alone and the name again on hover.
+Code: `fileTabParentFolder` and the file branch of `RightPanelTab` in
+`apps/web/src/components/RightPanelTabs.tsx`; file tabs are wider than other
+tabs (`max-w-52` instead of `max-w-36`) to make room.
+
 ## Version
 
 The fork keeps upstream's version number. The desktop app sets up an SSH or

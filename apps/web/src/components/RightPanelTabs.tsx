@@ -603,6 +603,17 @@ function RightPanelEmptyState(props: {
   );
 }
 
+function pathSeparatorIndex(path: string): number {
+  return Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"));
+}
+
+/** The folder a file tab names before its file name, so same-named files tell apart. */
+export function fileTabParentFolder(relativePath: string): string | null {
+  const parent = relativePath.slice(0, Math.max(pathSeparatorIndex(relativePath), 0));
+  if (parent.length === 0) return null;
+  return parent.slice(pathSeparatorIndex(parent) + 1);
+}
+
 function surfaceTitle(
   surface: RightPanelSurface,
   sessions: Readonly<Record<string, PreviewSessionSnapshot>>,
@@ -614,9 +625,7 @@ function surfaceTitle(
     case "files":
       return "Files";
     case "file":
-      return surface.relativePath.slice(
-        Math.max(surface.relativePath.lastIndexOf("/"), surface.relativePath.lastIndexOf("\\")) + 1,
-      );
+      return surface.relativePath.slice(pathSeparatorIndex(surface.relativePath) + 1);
     case "terminal":
       return (
         terminalLabelsById.get(surface.activeTerminalId) ??
@@ -946,6 +955,7 @@ function RightPanelTab(
   );
   const title = sideChatShell?.title ?? props.title;
   const sideChatState = sideChatTabState(sideChatShell);
+  const parentFolder = surface.kind === "file" ? fileTabParentFolder(surface.relativePath) : null;
   const content = (
     <>
       <PanelTabCloseButton label={`Close ${title}`} onClick={() => onClose(surface)}>
@@ -1023,7 +1033,11 @@ function RightPanelTab(
                 aria-label={sideChatState === null ? undefined : `${title}, ${sideChatState}`}
                 onClick={() => onActivate(surface)}
               >
-                <span className="truncate">{title}</span>
+                {parentFolder === null ? null : (
+                  <span className="min-w-0 truncate opacity-60">{parentFolder}/</span>
+                )}
+                {/* The folder gives up its space before the file name truncates. */}
+                <span className="max-w-full shrink-0 truncate">{title}</span>
               </button>
             }
           />
@@ -1034,6 +1048,8 @@ function RightPanelTab(
                 environmentId={props.environmentId}
                 title={title}
               />
+            ) : surface.kind === "file" ? (
+              surface.relativePath
             ) : (
               title
             )}
@@ -1053,7 +1069,8 @@ function RightPanelTab(
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
-        "cursor-pointer group/tab flex h-6 max-w-36 shrink-0 items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs",
+        "cursor-pointer group/tab flex h-6 shrink-0 items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs",
+        parentFolder === null ? "max-w-36" : "max-w-52",
         props.ownsDesktopTitleBar && "[-webkit-app-region:no-drag]",
         props.active
           ? "bg-accent text-foreground"

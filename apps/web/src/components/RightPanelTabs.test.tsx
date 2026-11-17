@@ -2,6 +2,7 @@ import { EnvironmentId, type ThreadPullRequestLink } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  fileTabParentFolder,
   resolvePullRequestTabLink,
   surfaceShortcutActionForKey,
   surfaceShortcutTargetsTypingContext,
@@ -165,5 +166,14 @@ describe("pull request tab snapshots", () => {
         link,
       ),
     ).toBe(newer);
+  });
+});
+
+describe("file tab parent folder", () => {
+  it("names only the nearest folder, on either separator, and none at the root", () => {
+    expect(fileTabParentFolder("docs/reports/report.md")).toBe("reports");
+    expect(fileTabParentFolder("docs\\reports\\report.md")).toBe("reports");
+    expect(fileTabParentFolder("scripts/index.md")).toBe("scripts");
+    expect(fileTabParentFolder("README.md")).toBeNull();
   });
 });
