@@ -159,7 +159,7 @@ export function closedSessionLabels(
     let last: ClosedSessionLabel | undefined;
     let lastAtMs = Number.NEGATIVE_INFINITY;
     for (const point of list) {
-      // One label per time; a record there labelled otherwise fails the close's check.
+      // One label per time: a record there labelled otherwise reads the first one's label.
       if (point.timestampMs === lastAtMs) continue;
       lastAtMs = point.timestampMs;
       const turn = index.turnAt(point);
@@ -198,12 +198,28 @@ export class ClosedLabels {
   }
 }
 
-/** The records whose stored label is not the label they were closed with. */
+/**
+ * The records whose stored label is not the label they were closed with. Records of one session
+ * at one time with different labels have one row between them, so they are not compared.
+ */
 export const differingRecords = (
   stored: ClosedLabels,
   index: UsageOriginIndex,
   records: readonly OriginRecord[],
-) => records.filter((record) => !sameKey(stored.labelAt(record), index.lookup(record)));
+) => {
+  const at = (record: OriginRecord) => `${record.sessionId}\0${record.timestampMs}`;
+  const labelled = records.map((record) => ({ record, key: index.lookup(record) }));
+  const first = new Map<string, UsageOriginKey>();
+  const shared = new Set<string>();
+  for (const { record, key } of labelled) {
+    const seen = first.get(at(record));
+    if (seen === undefined) first.set(at(record), key);
+    else if (!sameKey(seen, key)) shared.add(at(record));
+  }
+  return labelled.filter(
+    ({ record, key }) => !shared.has(at(record)) && !sameKey(stored.labelAt(record), key),
+  );
+};
 
 export class ClosedLabelsDiffer extends Schema.TaggedError<ClosedLabelsDiffer>()(
   "ClosedLabelsDiffer",

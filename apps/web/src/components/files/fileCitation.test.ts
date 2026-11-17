@@ -91,6 +91,26 @@ describe("renderedSelectionLines", () => {
     expect(
       renderedSelectionLines(lines, at(review, "the"), at(review, "pass", true)),
     ).toStrictEqual({ startLine: 4, endLine: 5 });
+    const linked = splitSourceLines("See [setup](docs/setup.md)\nsetup takes <b>a</b> minute.");
+    const setup = { block: { startLine: 1, endLine: 2 }, text: "See setup setup takes a minute." };
+    expect(
+      renderedSelectionLines(linked, at(setup, "setup takes"), at(setup, "minute", true)),
+    ).toStrictEqual({ startLine: 2, endLine: 2 });
+  });
+
+  it("ends a selection at the boundary of the block it stops at, as a triple click leaves it", () => {
+    const first = { block: { startLine: 7, endLine: 7 }, text: "Fix the build" };
+    const second = { block: { startLine: 8, endLine: 8 }, text: "Write the notes" };
+    expect(
+      renderedSelectionLines(lines, at(paragraph, "We"), { ...first, offset: 0 }),
+    ).toStrictEqual({ startLine: 3, endLine: 5 });
+    expect(
+      renderedSelectionLines(
+        lines,
+        { ...paragraph, offset: paragraph.text.length },
+        at(second, "Write", true),
+      ),
+    ).toStrictEqual({ startLine: 7, endLine: 8 });
   });
 
   it("spans blocks, from one list item to another", () => {

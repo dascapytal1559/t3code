@@ -7,7 +7,7 @@ import * as FiberMap from "effect/FiberMap";
 import * as Stream from "effect/Stream";
 
 import { forkParked } from "../serverActivation.ts";
-import { coldAtMs, coldClearRule, coldClearWaits } from "./ColdClear.ts";
+import { coldAtMs, coldClearRule, coldClearWaits, isSessionRotationMessage } from "./ColdClear.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 
@@ -60,8 +60,13 @@ export const make = Effect.gen(function* () {
           (candidate) => candidate.id === records.thread.activeProviderThreadId,
         );
         const coldAt = coldAtMs(records, providerThread, rule);
-        // A fresh session under the floor never turns cold, so one cold stretch rotates once.
-        if (latestRun === undefined || coldAt === undefined) return;
+        // Past a rotation's own note the clock waits for real work: one rotation per idle spell.
+        if (
+          latestRun === undefined ||
+          isSessionRotationMessage(latestRun.userMessageId) ||
+          coldAt === undefined
+        )
+          return;
         const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
         if (nowMs < coldAt) {
           yield* Effect.sleep(Duration.millis(coldAt - nowMs));

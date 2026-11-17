@@ -417,12 +417,14 @@ made-up values:
   cannot read its T3 prompts. `started` is `direct` when the device's own
   prompt started the work, `orchestrated` (with `via`) when an agent sent it.
   `basis` and `reason` are as in [Usage by origin](#usage-by-origin).
-- `final` is true once the record's day is closed: its label is written down
-  and will not change. Re-export days with records that are not final yet.
+- `final` is true once the record's label is written down and will not change:
+  a close writes down every record older than 24 hours (not a whole day), and a
+  transcript found after its time was closed stays not final, since its label
+  is still worked out live. Re-export days with records that are not final yet.
   Cost follows T3's price list, which can still change.
-- The lines come from `GET /api/usage/export?since=&until=&timeZone=` with any
-  session that can read orchestration; the command signs in like `t3 usage
-  reasons`, read-only. It is a route rather than an MCP tool because a week
+- The lines come from `GET /api/usage/export?since=&until=&timeZone=` with a
+  session that has the same diagnostics read scope as the Usage page; the
+  command signs in with a short-lived, read-only session of that scope. It is a route rather than an MCP tool because a week
   runs to tens of megabytes.
 
 Code: `onRecord` and `toUsageExportRecord` in
@@ -545,10 +547,13 @@ reading goes onto one file per UTC month beside the session register:
 ```
 
 - A reading is written when a figure or a reset time moved, and at least hourly
-  otherwise, so a gap means T3 was not running. Accounts read through a limit
-  source carry `source` (its label) instead of `instanceId`.
-- The file is append-only and holds no credentials: no tokens and no
-  credential fingerprint. Unavailable readings are left out.
+  otherwise while readings come in, plus once per account each time T3 starts.
+  A gap means no reading came in: T3 was not running, its provider refresh was
+  off or held back in the background, or the account's limits were unavailable
+  (those readings are left out). Accounts read through a limit source carry
+  `source` (its label) instead of `instanceId`.
+- The files are append-only, one per month, and are never pruned. They hold no
+  credentials: no tokens and no credential fingerprint.
 
 Code: `apps/server/src/usage/UsageLimitsLog.ts`.
 
@@ -1141,9 +1146,10 @@ thread…", that starts the run through the same rule, so one function still
 decides. It is dropped without a turn if the thread has turned busy (a run, a
 queued message, a question, a fork or merge-back, or a pending restart) or the
 rule no longer holds, for example because the old session has background work.
-The fresh session is under the 100k floor, so it never trips the clock again,
-and its command id names the run that ended, so a restart or a repeated event
-rotates an idle spell at most once. The at-input rule stays as a backstop and
+The clock does not arm again after the note's own run, however large the fresh
+session grows, so it waits for the next real run; and its command id names the
+run that ended, so a restart or a repeated event rotates an idle spell at most
+once. The at-input rule stays as a backstop and
 cannot clear twice: whichever input comes first leaves a small fresh session.
 The note's run is a coordinator's supervision run, so its end makes no sound,
 notification, toast or badge in any notification mode, and the relay does not

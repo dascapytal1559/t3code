@@ -129,6 +129,11 @@ describe("relative links inside a rendered host file", () => {
         { filePath: "/ws/docs/notes.md", heading: "part-two" },
       ],
       [
+        "heading that starts like a line",
+        resolveMarkdownFileLinkMeta("notes.md#l2-regularization", "/ws", "/ws/docs"),
+        { filePath: "/ws/docs/notes.md", heading: "l2-regularization" },
+      ],
+      [
         "chat message",
         resolveInlineCodeFileLinkMeta("src/main.ts", "/ws"),
         { filePath: "/ws/src/main.ts", workspaceRelativePath: "src/main.ts" },

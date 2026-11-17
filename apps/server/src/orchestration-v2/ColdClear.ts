@@ -1,9 +1,11 @@
 import {
+  type CommandId,
   isDelegatedAppThread,
   isPrimaryCoordinator,
   parseGoalCommand,
   type ChatAttachment,
   type OrchestrationV2AppThread,
+  MessageId,
   type OrchestrationV2Command,
   type OrchestrationV2ContextTransfer,
   type OrchestrationV2Notification,
@@ -180,6 +182,14 @@ export type SessionRotationReason = Extract<
   OrchestrationV2Command,
   { readonly type: "thread.session.rotate" }
 >["reason"];
+
+const SESSION_ROTATION_MESSAGE_PREFIX = "message:session-rotation:";
+
+export const sessionRotationMessageId = (commandId: CommandId) =>
+  MessageId.make(`${SESSION_ROTATION_MESSAGE_PREFIX}${commandId}`);
+
+export const isSessionRotationMessage = (messageId: MessageId) =>
+  messageId.startsWith(SESSION_ROTATION_MESSAGE_PREFIX);
 
 /** Fork: the note T3 sends FirstMate's main thread to start a fresh session. */
 export function sessionRotationNote(reason: SessionRotationReason): {

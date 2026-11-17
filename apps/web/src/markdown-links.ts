@@ -59,12 +59,11 @@ export function resolveInlineCodeFileLinkMeta(
   return resolveMarkdownFileLinkMeta(candidate, cwd, documentDir);
 }
 
-/** The heading a file link names after `#`, unless the fragment is a `#L12` line. */
+/** The text a file link names after `#`; a `#L12` line fragment is read as its line instead. */
 function linkedHeading(href: string): string | null {
   const destination = normalizeMarkdownLinkDestination(href);
   const { hash } = parseFileUrlHref(destination) ?? splitMarkdownLinkSearchAndHash(destination);
-  if (hash.length <= 1 || /^#L\d/i.test(hash)) return null;
-  return safeDecodeURIComponent(hash.slice(1));
+  return hash.length <= 1 ? null : safeDecodeURIComponent(hash.slice(1));
 }
 
 /**

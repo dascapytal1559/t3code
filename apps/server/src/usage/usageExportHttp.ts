@@ -1,4 +1,4 @@
-import { AuthOrchestrationReadScope, USAGE_EXPORT_PATH, UsageDay } from "@t3tools/contracts";
+import { AuthDiagnosticsReadScope, USAGE_EXPORT_PATH, UsageDay } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -27,7 +27,7 @@ export const layer = HttpRouter.add(
   "GET",
   USAGE_EXPORT_PATH,
   Effect.gen(function* () {
-    yield* authenticateRawRouteWithScope(AuthOrchestrationReadScope);
+    yield* authenticateRawRouteWithScope(AuthDiagnosticsReadScope);
     const url = requestUrl(yield* HttpServerRequest.HttpServerRequest);
     if (Option.isNone(url)) return badRequest("Bad Request");
     const params = url.value.searchParams;

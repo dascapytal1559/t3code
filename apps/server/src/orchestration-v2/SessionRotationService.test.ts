@@ -259,6 +259,20 @@ describe("SessionRotationService", () => {
       }),
     ],
     ["a fresh session under 100k", records({ usedTokens: 71_000 })],
+    // The fresh session a rotation started, even past the floor, waits for the next real run.
+    [
+      "the session a rotation started",
+      busy({
+        runs: [
+          {
+            ...records().runs[0]!,
+            userMessageId: MessageId.make(
+              `message:session-rotation:server:session-rotation:${threadId}:run-0`,
+            ),
+          },
+        ],
+      }),
+    ],
     ["a thread with no session yet", busy({ providerTurns: [] })],
     [
       "a thread that isn't a coordinator",

@@ -125,6 +125,7 @@ import {
 import { CheckpointServiceV2 } from "./CheckpointService.ts";
 import {
   coldClearRule,
+  sessionRotationMessageId,
   sessionRotationNote,
   startsFreshWhenCold,
   type ColdClearRule,
@@ -7184,7 +7185,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         type: "message.dispatch",
         commandId: command.commandId,
         threadId: command.threadId,
-        messageId: MessageId.make(`message:session-rotation:${command.commandId}`),
+        messageId: sessionRotationMessageId(command.commandId),
         text: note.text,
         notification: {
           source: { kind: "system" },

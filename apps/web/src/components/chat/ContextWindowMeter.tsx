@@ -176,29 +176,33 @@ export function ContextWindowMeter(props: {
               ) : null}
             </>
           ) : null}
-          {onCompact && onStartNewSession ? (
-            <Button
-              size="xs"
-              variant="link"
-              className="justify-center"
-              disabled={compactDisabled}
-              onClick={onCompact}
-            >
-              Compact context
-            </Button>
-          ) : onCompact ? (
+          {onCompact ? (
             <>
-              <Button
-                size="xs"
-                variant="outline"
-                className="mt-1 w-full justify-center"
-                disabled={compactDisabled}
-                onClick={onCompact}
-              >
-                <Minimize2Icon aria-hidden="true" />
-                Compact context
-              </Button>
-              {compactDisabled && compactDisabledReason ? (
+              {onStartNewSession ? (
+                <Button
+                  size="xs"
+                  variant="link"
+                  className="justify-center"
+                  disabled={compactDisabled}
+                  onClick={onCompact}
+                >
+                  Compact context
+                </Button>
+              ) : (
+                <Button
+                  size="xs"
+                  variant="outline"
+                  className="mt-1 w-full justify-center"
+                  disabled={compactDisabled}
+                  onClick={onCompact}
+                >
+                  <Minimize2Icon aria-hidden="true" />
+                  Compact context
+                </Button>
+              )}
+              {compactDisabled &&
+              compactDisabledReason &&
+              !(onStartNewSession && compactDisabledReason === startNewSessionDisabledReason) ? (
                 <div className="text-pretty text-secondary-label text-2xs">
                   {compactDisabledReason}
                 </div>

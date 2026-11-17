@@ -20,7 +20,7 @@ export const LIMITS_LOG_FOLDER_NAME = "usage-limits";
 
 const encodeLine = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
-/** A quiet account still gets a line this often, so a gap means T3 was not reading. */
+/** A quiet account still gets a line this often while readings come in. */
 const QUIET_READING_MS = 60 * 60 * 1000;
 
 /** One line of the limits log: an account's limit windows as one refresh read them. */

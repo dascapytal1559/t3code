@@ -1,5 +1,5 @@
 import {
-  AuthOrchestrationReadScope,
+  AuthDiagnosticsReadScope,
   USAGE_EXPORT_PATH,
   type UsageOriginReasonUsage,
   UsageOriginReasons,
@@ -145,7 +145,7 @@ const usageExportCommand = Command.make("export", {
       { ...flags, json: true },
       (auth) =>
         auth.issueSession({
-          scopes: [AuthOrchestrationReadScope],
+          scopes: [AuthDiagnosticsReadScope],
           ttl: Duration.minutes(10),
           label: "t3 usage export",
         }),

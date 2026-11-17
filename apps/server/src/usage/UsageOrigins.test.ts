@@ -1774,24 +1774,30 @@ describe("UsageOrigins daily close", () => {
       }).pipe(Effect.provide(layer)),
   );
 
-  it.effect("rolls a close back when a label reads back differently", () =>
+  it.effect("closes one session's records in two folders at the same moment", () =>
     Effect.gen(function* () {
       const origins = yield* UsageOrigins;
-      const sql = yield* SqlClient.SqlClient;
       yield* seedThread({ id: "worker", worktreePath: "/wt/worker", createdAt: iso("01:00") });
       yield* run("w1", 1, "worker", "01:00", "01:30", phone);
-      // One session, two folders at the same moment: one label per time cannot hold both.
-      const outcome = yield* origins.close(time("12:00"), [
+      const records = [
         { sessionId: "stray", timestampMs: time("01:10"), cwd: "/wt/worker/src" },
         { sessionId: "stray", timestampMs: time("01:10"), cwd: "/elsewhere" },
-      ]);
-      assert.deepStrictEqual(outcome, { closed: false, why: "differs" });
-      assert.isNull(yield* origins.closedSpan);
-      const [rows] = yield* sql<{ readonly count: number }>`
-        SELECT (SELECT count(*) FROM usage_closed_session_labels)
-          + (SELECT count(*) FROM usage_closed_prompt_labels) AS count
-      `;
-      assert.strictEqual(rows?.count, 0);
+      ];
+      const live = new UsageOriginIndex(yield* origins.read(time("00:00"), time("23:59")));
+      assert.notStrictEqual(label(live.lookup(records[0]!)), label(live.lookup(records[1]!)));
+      // One label per time cannot hold both, so it holds the first; the close still moves on.
+      const outcome = yield* origins.close(time("12:00"), records);
+      assert.include(outcome, { closed: true });
+      const stored = yield* origins.readClosed({
+        span: (yield* origins.closedSpan)!,
+        sessionIds: ["stray"],
+        sinceMs: time("00:00"),
+        untilMs: time("23:59"),
+      });
+      assert.deepStrictEqual(
+        records.map((record) => label(stored.labels.labelAt(record))),
+        [label(live.lookup(records[0]!)), label(live.lookup(records[0]!))],
+      );
     }).pipe(Effect.provide(layer)),
   );
 });

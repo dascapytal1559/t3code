@@ -1207,13 +1207,14 @@ export const make = Effect.gen(function* () {
         : orphanOrigins === null
           ? null
           : new UsageOrigins.UsageOriginIndex(orphanOrigins);
+    const storedLabelOf = (record: UsageRecord) =>
+      isClosedAt(record.timestampMs) ? closed?.labels.labelAt(record) : undefined;
     const labelOf =
       liveIndex === null || orphanIndex === null || (closed === null && overlapsClosed)
         ? null
         : (record: UsageRecord) =>
-            isClosedAt(record.timestampMs)
-              ? (closed?.labels.labelAt(record) ?? orphanIndex.lookup(record))
-              : liveIndex.lookup(record);
+            storedLabelOf(record) ??
+            (isClosedAt(record.timestampMs) ? orphanIndex : liveIndex).lookup(record);
     // What a close can write down next: this read's records after the last close.
     const openRecords: UsageOrigins.OriginRecord[] | null =
       labelOf === null || input.modelFilter !== undefined ? null : [];
@@ -1443,7 +1444,7 @@ export const make = Effect.gen(function* () {
             .map((entry) =>
               toUsageExportRecord(
                 entry,
-                entry.origin !== null && isClosedAt(entry.record.timestampMs),
+                entry.origin !== null && storedLabelOf(entry.record) !== undefined,
               ),
             );
     return {

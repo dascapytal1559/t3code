@@ -2004,12 +2004,17 @@ describe("UsageService", () => {
     () =>
       Effect.gen(function* () {
         const { transcript, settings, home } = yield* setup;
-        const line = (id: number, timestamp: string, outputTokens: number) =>
+        const line = (
+          id: number,
+          timestamp: string,
+          outputTokens: number,
+          sessionId = "session-1",
+        ) =>
           `${encodeUnknownJsonString({
             type: "assistant",
             timestamp,
             requestId: `req_${id}`,
-            sessionId: "session-1",
+            sessionId,
             message: {
               id: `msg_${id}`,
               model: "claude-fable-5",
@@ -2058,12 +2063,20 @@ describe("UsageService", () => {
               ["phone", "journal", "session", 5],
             ],
           );
+          // A transcript found after its time closed has no stored label, so it is not final.
+          yield* Effect.promise(() =>
+            NodeFSP.writeFile(
+              NodePath.join(NodePath.dirname(transcript), "late.jsonl"),
+              line(3, "2026-11-10T11:00:00Z", 3, "session-late"),
+            ),
+          );
           // The export labels records the same way, and says which labels are written down.
           const records = yield* service.readRecords(window);
           assert.deepStrictEqual(
             records.map((record) => [record.at, record.origin?.device, record.final]),
             [
               ["2026-11-10T10:00:00.000Z", "phone", true],
+              ["2026-11-10T11:00:00.000Z", "computer", false],
               ["2026-11-12T10:00:00.000Z", "computer", false],
             ],
           );
