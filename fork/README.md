@@ -1636,8 +1636,9 @@ short lines.
   outline button's list. Cmd+F finds and replaces. A section or a block folds
   from the chevron beside it.
 - A `<details>` block (a `<summary>` line, then Markdown, then `</details>`)
-  draws as its summary with a chevron, as in chat, and starts folded unless it
-  is written `<details open>`; one without a summary reads "Details". A click
+  draws as its summary with a chevron, folding like a heading, and starts
+  folded unless it is written `<details open>`; one without a summary reads
+  "Details". A click
   on the summary opens or closes it, and the file's text never changes. Up and
   Down stop on its tag lines, which then show as source for editing. Find, the
   outline and a link to a line open a block they land in. The fold keys

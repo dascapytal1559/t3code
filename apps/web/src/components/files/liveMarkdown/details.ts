@@ -216,7 +216,7 @@ function toggle(view: EditorView, block: DetailsBlock, open: boolean) {
 const blockWhere = (view: EditorView, test: (block: DetailsBlock) => boolean) =>
   view.state.field(detailsField).blocks.find(test);
 
-/** A block's summary row, drawn like the chat's: a chevron and the summary, ruled above. */
+/** A block's summary row, drawn like a folding heading: a margin chevron, the summary and, folded, a "…" chip. */
 class DetailsSummaryWidget extends WidgetType {
   readonly summary: string;
   readonly open: boolean;
@@ -235,9 +235,18 @@ class DetailsSummaryWidget extends WidgetType {
     row.className = "cm-lp-details-summary";
     row.setAttribute("role", "button");
     row.setAttribute("aria-expanded", String(this.open));
+    const chevron = document.createElement("span");
+    chevron.className = this.open ? "cm-lp-fold" : "cm-lp-fold cm-lp-fold-closed";
+    chevron.append(chevronIcon());
     const label = document.createElement("span");
     label.textContent = this.summary;
-    row.append(chevronIcon(), label);
+    row.append(chevron, label);
+    if (!this.open) {
+      const more = document.createElement("span");
+      more.className = "cm-foldPlaceholder";
+      more.textContent = "…";
+      row.append(more);
+    }
     wrap.append(row);
     // The press is taken so the caret stays where it was.
     wrap.addEventListener("mousedown", (event) => {
@@ -253,7 +262,7 @@ class DetailsSummaryWidget extends WidgetType {
   }
 }
 
-/** The rule under an open block, where its `</details>` is. */
+/** Hides an open block's `</details>` line; the blank line after it spaces the block. */
 class DetailsEndWidget extends WidgetType {
   override eq() {
     return true;
