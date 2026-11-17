@@ -13,7 +13,14 @@ import * as Claims from "../../../orchestration-v2/AttachmentClaims.ts";
 import * as ThreadMessageIntake from "../../../orchestration-v2/ThreadMessageIntake.ts";
 import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as UsageOrigins from "../../../usage/UsageOrigins.ts";
-import { bindUsageOrigin, newCommandId, readThread, unavailable } from "../../threadAccess.ts";
+import { isThreadManagementError, threadManagementFailure } from "../../OrchestratorMcpService.ts";
+import {
+  bindUsageOrigin,
+  dispatchFailure,
+  newCommandId,
+  readThread,
+  unavailable,
+} from "../../threadAccess.ts";
 import { AttachmentToolkit } from "./tools.ts";
 
 export function resolveAttachmentReferences(
@@ -124,7 +131,9 @@ export const layer = McpToolAccess.toLayer(
                       code: "orchestration_error",
                       message: error.message,
                     })
-                  : unavailable(),
+                  : isThreadManagementError(error)
+                    ? threadManagementFailure(error)
+                    : dispatchFailure(error),
               ),
             );
             return {

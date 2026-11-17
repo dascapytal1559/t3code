@@ -1291,21 +1291,37 @@ it.effect(
       });
       const parent = yield* projections.getThreadProjection(parentThreadId);
       const parentRun = parent.runs[0]!;
-      yield* orchestrator.dispatch({
-        type: "delegated_task.request",
-        commandId: CommandId.make("delegate-parent-pr"),
-        parentThreadId,
-        parentRunId: parentRun.id,
-        parentNodeId: parentRun.rootNodeId!,
-        task: "Review the changes",
-        modelSelection,
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        // Bound from the delegating turn, which a computer steer re-rooted.
-        usageOrigin: { origin: "computer", basis: "stamp", reason: "inherited" },
-        createdBy: "agent",
-        creationSource: "mcp",
+      const failedSpans: Array<string> = [];
+      const tracer = Tracer.make({
+        span(options) {
+          const span = new Tracer.NativeSpan(options);
+          const end = span.end.bind(span);
+          span.end = (time, exit) => {
+            end(time, exit);
+            if (Exit.isFailure(exit)) failedSpans.push(span.name);
+          };
+          return span;
+        },
       });
+      yield* orchestrator
+        .dispatch({
+          type: "delegated_task.request",
+          commandId: CommandId.make("delegate-parent-pr"),
+          parentThreadId,
+          parentRunId: parentRun.id,
+          parentNodeId: parentRun.rootNodeId!,
+          task: "Review the changes",
+          modelSelection,
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          // Bound from the delegating turn, which a computer steer re-rooted.
+          usageOrigin: { origin: "computer", basis: "stamp", reason: "inherited" },
+          createdBy: "agent",
+          creationSource: "mcp",
+        })
+        .pipe(Effect.withTracer(tracer));
+      // The child thread is created by this command; a failed span here reads as an error in traces.
+      assert.deepEqual(failedSpans, []);
       const updatedParent = yield* projections.getThreadProjection(parentThreadId);
       assert.deepEqual(updatedParent.subagents[0]!.modelSelection, modelSelection);
       const childThreadId = updatedParent.subagents[0]!.childThreadId!;
