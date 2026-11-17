@@ -422,19 +422,24 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
         const intervalMs = Duration.toMillis(Duration.fromInputUnsafe(refreshInterval));
         // @effect-diagnostics-next-line raceFirstWithSleepToTimeout:off - races the interval against a settings-change signal, not a timeout
         return Effect.raceFirst(
-          Effect.sleep(intervalMs <= 0 ? "60 seconds" : refreshInterval).pipe(Effect.as(true)),
-          Queue.take(refreshIntervalChanges).pipe(Effect.as(false)),
+          Effect.sleep(intervalMs <= 0 ? "60 seconds" : refreshInterval).pipe(
+            Effect.andThen(Clock.currentTimeMillis),
+          ),
+          Queue.take(refreshIntervalChanges).pipe(Effect.as(null)),
         ).pipe(
-          Effect.flatMap((intervalElapsed) =>
-            intervalElapsed && intervalMs > 0
+          Effect.flatMap((dueAt) =>
+            dueAt !== null && intervalMs > 0
               ? shouldRefreshOnInterval.pipe(
                   Effect.flatMap((shouldRefresh) =>
                     shouldRefresh
                       ? refreshSemaphore.withPermits(1)(
                           Effect.gen(function* () {
-                            const sinceLastCheck =
-                              (yield* Clock.currentTimeMillis) - (yield* Ref.get(lastCheckAtRef));
-                            if (sinceLastCheck < intervalMs) return;
+                            // A check that finished while this tick waited (a client's return
+                            // check) restarts the interval; checking again right after is waste.
+                            if ((yield* Ref.get(lastCheckAtRef)) >= dueAt) {
+                              if (recheckPending) yield* Ref.set(recheckPendingRef, true);
+                              return;
+                            }
                             yield* refreshOnInterval(!recheckPending);
                           }),
                         )
