@@ -1838,8 +1838,15 @@ const OrchestrationV2LinkRequestFields = {
   failure: Schema.optional(Schema.String),
 } as const;
 
-/** Fork: T3 started the new session itself because the old one's prompt cache had expired. */
-const OrchestrationV2FreshContextReason = Schema.optional(Schema.Literal("cache_expired"));
+/**
+ * Fork: T3 started the new session itself, because the old one's prompt cache had expired or the
+ * thread had been quiet this many minutes. Older clients reject an unknown reason, so a new one
+ * gets its own field.
+ */
+const OrchestrationV2ColdClearFields = {
+  freshContextReason: Schema.optional(Schema.Literal("cache_expired")),
+  freshContextQuietMinutes: Schema.optional(PositiveInt),
+};
 
 export const OrchestrationV2TurnItem = Schema.Union([
   Schema.Struct({
@@ -1847,7 +1854,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
     type: Schema.Literal("notification"),
     ...OrchestrationV2Notification.fields,
     freshContext: OrchestrationV2Run.fields.freshContext,
-    freshContextReason: OrchestrationV2FreshContextReason,
+    ...OrchestrationV2ColdClearFields,
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemBaseFields,
@@ -1860,7 +1867,7 @@ export const OrchestrationV2TurnItem = Schema.Union([
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
     freshContext: OrchestrationV2Run.fields.freshContext,
-    freshContextReason: OrchestrationV2FreshContextReason,
+    ...OrchestrationV2ColdClearFields,
     inputIntent: OrchestrationV2UserMessageInputIntent,
     text: Schema.String,
     /** Same as the text of message `messageId`. */
@@ -2788,7 +2795,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     type: Schema.Literal("notification"),
     ...OrchestrationV2Notification.fields,
     freshContext: OrchestrationV2Run.fields.freshContext,
-    freshContextReason: OrchestrationV2FreshContextReason,
+    ...OrchestrationV2ColdClearFields,
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
@@ -2801,7 +2808,7 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     idleCompaction: Schema.optional(OrchestrationV2IdleCompaction),
     workflowScript: OrchestrationV2ConversationMessage.fields.workflowScript,
     freshContext: OrchestrationV2Run.fields.freshContext,
-    freshContextReason: OrchestrationV2FreshContextReason,
+    ...OrchestrationV2ColdClearFields,
     inputIntent: OrchestrationV2UserMessageInputIntent,
     text: Schema.String,
     context: Schema.optional(OrchestrationMessageContext),

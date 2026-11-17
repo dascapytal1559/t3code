@@ -37,9 +37,9 @@ export const projectMutationOperation = Effect.fn("projectMutationOperation")(fu
           ? {}
           : { defaultModelSelection: mutation.defaultModelSelection }),
         ...(mutation.autoPull === undefined ? {} : { autoPull: mutation.autoPull }),
-        ...(mutation.coldClearMinTokens === undefined
+        ...(mutation.clearAfterQuiet === undefined
           ? {}
-          : { coldClearMinTokens: mutation.coldClearMinTokens }),
+          : { clearAfterQuiet: mutation.clearAfterQuiet }),
         ...(mutation.leanClaudeStartup === undefined
           ? {}
           : { leanClaudeStartup: mutation.leanClaudeStartup }),

@@ -163,7 +163,10 @@ export const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: WorkEn
     return (
       <>
         {item?.type === "notification" && item.freshContext ? (
-          <FreshSessionRow cacheExpired={item.freshContextReason === "cache_expired"} />
+          <FreshSessionRow
+            freshContextReason={item.freshContextReason}
+            freshContextQuietMinutes={item.freshContextQuietMinutes}
+          />
         ) : null}
         <WorkEntryLogRow {...props} />
       </>

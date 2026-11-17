@@ -5,6 +5,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import { ensureForkSchema } from "../persistence/forkSchema.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 
@@ -158,6 +159,75 @@ it.layer(ProjectStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemor
           Option.getOrNull(yield* projects.getShell(projectId))?.title,
           "custom repo",
         );
+      }),
+    );
+
+    it.effect("turns an old cache-expiry size floor into the cache-expiry choice", () =>
+      Effect.gen(function* () {
+        const projects = yield* ProjectStore.ProjectStoreV2;
+        const sql = yield* SqlClient.SqlClient;
+        const at = "2026-03-24T00:00:00.000Z";
+        const create = (id: string, sequence: number) =>
+          projects.apply({
+            sequence,
+            eventId: EventId.make(`event-${id}`),
+            aggregateKind: "project",
+            aggregateId: ProjectId.make(id),
+            occurredAt: at,
+            commandId: null,
+            causationEventId: null,
+            correlationId: null,
+            metadata: {},
+            type: "project.created",
+            payload: {
+              projectId: ProjectId.make(id),
+              title: id,
+              workspaceRoot: `/tmp/${id}`,
+              defaultModelSelection: null,
+              scripts: [],
+              createdAt: at,
+              updatedAt: at,
+            },
+          });
+        yield* create("project-floor", 1);
+        yield* create("project-no-floor", 2);
+        yield* sql`ALTER TABLE projection_projects DROP COLUMN clear_after_quiet_json`;
+        yield* sql`ALTER TABLE projection_projects ADD COLUMN cold_clear_min_tokens INTEGER`;
+        yield* sql`
+          UPDATE projection_projects SET cold_clear_min_tokens = 60000
+          WHERE project_id = 'project-floor'
+        `;
+
+        yield* ensureForkSchema();
+
+        const clearAfterQuiet = (id: string) =>
+          projects
+            .getShell(ProjectId.make(id))
+            .pipe(Effect.map((shell) => Option.getOrNull(shell)?.clearAfterQuiet));
+        assert.strictEqual(yield* clearAfterQuiet("project-floor"), "cache");
+        assert.strictEqual(yield* clearAfterQuiet("project-no-floor"), null);
+        const columns = yield* sql<{ readonly name: string }>`
+          PRAGMA table_info(projection_projects)
+        `;
+        assert.isFalse(columns.some(({ name }) => name === "cold_clear_min_tokens"));
+        yield* projects.apply({
+          sequence: 3,
+          eventId: EventId.make("event-project-floor-minutes"),
+          aggregateKind: "project",
+          aggregateId: ProjectId.make("project-floor"),
+          occurredAt: at,
+          commandId: null,
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          type: "project.meta-updated",
+          payload: {
+            projectId: ProjectId.make("project-floor"),
+            clearAfterQuiet: 10,
+            updatedAt: at,
+          },
+        });
+        assert.strictEqual(yield* clearAfterQuiet("project-floor"), 10);
       }),
     );
   },

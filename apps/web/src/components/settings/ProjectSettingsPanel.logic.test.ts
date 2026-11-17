@@ -5,6 +5,7 @@ import { planProjectRemoval } from "@t3tools/client-runtime/state/projects";
 import { buildSidebarProjectSnapshots } from "../../sidebarProjectGrouping";
 import type { Project } from "../../types";
 import {
+  parseQuietMinutes,
   projectGroupTitleNeedsUpdate,
   scopeProjectSettingsGroup,
 } from "./ProjectSettingsPanel.logic";
@@ -189,5 +190,20 @@ describe("projectGroupTitleNeedsUpdate", () => {
       false,
     );
     expect(projectGroupTitleNeedsUpdate([renamed, renamed], "repo", true)).toBe(false);
+  });
+});
+
+describe("parseQuietMinutes", () => {
+  it.each<readonly [string, number | null | undefined]>([
+    ["10", 10],
+    [" 45 ", 45],
+    ["2.6", 3],
+    ["0.2", 1],
+    ["", null],
+    ["0", null],
+    ["-5", null],
+    ["ten", undefined],
+  ])("reads %j as %s", (text, expected) => {
+    expect(parseQuietMinutes(text)).toBe(expected);
   });
 });

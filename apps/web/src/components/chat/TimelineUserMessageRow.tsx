@@ -262,7 +262,10 @@ export function UserMessageRow({ row }: { row: Extract<TimelineRow, { kind: "mes
   return (
     <>
       {item?.type === "user_message" && item.freshContext ? (
-        <FreshSessionRow cacheExpired={item.freshContextReason === "cache_expired"} />
+        <FreshSessionRow
+          freshContextReason={item.freshContextReason}
+          freshContextQuietMinutes={item.freshContextQuietMinutes}
+        />
       ) : null}
       {modelSwitch ? (
         <ModelSwitchRow environmentId={ctx.activeThreadEnvironmentId} modelSwitch={modelSwitch} />

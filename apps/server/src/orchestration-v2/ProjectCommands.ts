@@ -3,6 +3,7 @@ import {
   type EventId,
   MAX_SCRIPT_ID_LENGTH,
   type ModelSelection,
+  type ProjectClearAfterQuiet,
   type ProjectIconOverride,
   ProjectId,
   type ProjectScript,
@@ -35,7 +36,7 @@ export interface ProjectMetaUpdateCommand {
   readonly defaultModelSelection?: ModelSelection | null;
   readonly defaultThreadEnvMode?: ThreadEnvMode | null;
   readonly autoPull?: boolean;
-  readonly coldClearMinTokens?: number | null;
+  readonly clearAfterQuiet?: ProjectClearAfterQuiet | null;
   readonly leanClaudeStartup?: boolean;
   readonly faviconPath?: string | null;
   readonly projectIcon?: ProjectIconOverride | null;
@@ -211,9 +212,9 @@ export function planProjectCommand(input: {
             ? {}
             : { defaultThreadEnvMode: command.defaultThreadEnvMode }),
           ...(command.autoPull === undefined ? {} : { autoPull: command.autoPull }),
-          ...(command.coldClearMinTokens === undefined
+          ...(command.clearAfterQuiet === undefined
             ? {}
-            : { coldClearMinTokens: command.coldClearMinTokens }),
+            : { clearAfterQuiet: command.clearAfterQuiet }),
           ...(command.leanClaudeStartup === undefined
             ? {}
             : { leanClaudeStartup: command.leanClaudeStartup }),

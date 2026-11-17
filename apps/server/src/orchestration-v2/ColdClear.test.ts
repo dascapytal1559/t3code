@@ -14,11 +14,12 @@ import {
 import * as DateTime from "effect/DateTime";
 
 import {
-  coldClearMinContextTokens,
-  startsFreshOnColdCache,
-  type ColdCacheInput,
-  type ColdCacheRecords,
-} from "./ColdCache.ts";
+  coldClearRule,
+  startsFreshWhenCold,
+  type ColdClearInput,
+  type ColdClearRecords,
+  type ColdClearRule,
+} from "./ColdClear.ts";
 
 const NOW_MS = Date.parse("2026-11-15T06:00:00.000Z");
 const MINUTE_MS = 60_000;
@@ -59,19 +60,19 @@ const USAGE = {
   promptCacheExpiresAt: iso(-MINUTE_MS),
   updatedAt: iso(-61 * MINUTE_MS),
 } satisfies OrchestrationV2ProviderTurnTokenUsage;
-type FloorThread = Parameters<typeof coldClearMinContextTokens>[0];
-const LOGGER: FloorThread = {
+type RuleThread = Parameters<typeof coldClearRule>[0];
+const LOGGER: RuleThread = {
   lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
 };
-const FIRSTMATE: FloorThread = { ...LOGGER, coordinator: true };
-const COLD: ColdCacheRecords = {
+const FIRSTMATE: RuleThread = { ...LOGGER, coordinator: true };
+const COLD: ColdClearRecords = {
   thread: { id: threadId },
   runs: [RUN],
   providerTurns: [{ providerThreadId, tokenUsage: USAGE }],
   runtimeRequests: [],
   contextTransfers: [],
 };
-const INPUT: ColdCacheInput = {
+const INPUT: ColdClearInput = {
   text: "What's next?",
   attachments: [],
   providerInstanceId: instanceId,
@@ -84,35 +85,36 @@ const withUsage = (...usages: ReadonlyArray<OrchestrationV2ProviderTurnTokenUsag
 const notification = (
   source: OrchestrationV2Notification["source"],
 ): OrchestrationV2Notification => ({ source, outcome: "updated", summary: "Woke" });
-type Case = readonly [string, ColdCacheRecords, Partial<ColdCacheInput>];
-const FIRSTMATE_FLOOR = {
-  nowMs: NOW_MS,
-  minContextTokens: coldClearMinContextTokens(FIRSTMATE, undefined),
-};
-const decide = (records: ColdCacheRecords, input: Partial<ColdCacheInput>) =>
-  startsFreshOnColdCache(records, PROVIDER_THREAD, { ...INPUT, ...input }, FIRSTMATE_FLOOR);
+const CACHE_RULE: ColdClearRule = { kind: "cache", minContextTokens: 0 };
+const QUIET_RULE: ColdClearRule = { kind: "quiet", minutes: 10 };
+type Case = readonly [string, ColdClearRecords, Partial<ColdClearInput>];
+const FIRSTMATE_RULE = { nowMs: NOW_MS, rule: coldClearRule(FIRSTMATE, undefined) };
+const decide = (records: ColdClearRecords, input: Partial<ColdClearInput>) =>
+  startsFreshWhenCold(records, PROVIDER_THREAD, { ...INPUT, ...input }, FIRSTMATE_RULE);
 
-describe("coldClearMinContextTokens", () => {
-  const optedIn = { coldClearMinTokens: 60_000 };
+describe("coldClearRule", () => {
+  const cache = { clearAfterQuiet: "cache" as const };
+  const tenMinutes = { clearAfterQuiet: 10 };
   it.each<
-    readonly [
-      string,
-      FloorThread,
-      Parameters<typeof coldClearMinContextTokens>[1],
-      number | undefined,
-    ]
+    readonly [string, RuleThread, Parameters<typeof coldClearRule>[1], ColdClearRule | undefined]
   >([
-    ["FirstMate's main thread", FIRSTMATE, undefined, 100_000],
-    ["FirstMate's main thread in a project that opts in", FIRSTMATE, optedIn, 100_000],
-    ["a thread in a project that opts in", LOGGER, optedIn, 60_000],
-    ["a thread in a project that doesn't", LOGGER, { coldClearMinTokens: null }, undefined],
+    ["FirstMate's main thread", FIRSTMATE, undefined, { kind: "cache", minContextTokens: 100_000 }],
+    [
+      "FirstMate's main thread in a project that sets its own",
+      FIRSTMATE,
+      tenMinutes,
+      { kind: "cache", minContextTokens: 100_000 },
+    ],
+    ["a thread in a project that clears on cache expiry", LOGGER, cache, CACHE_RULE],
+    ["a thread in a project that clears after quiet", LOGGER, tenMinutes, QUIET_RULE],
+    ["a thread in a project that doesn't", LOGGER, { clearAfterQuiet: null }, undefined],
     ["a thread with no project record", LOGGER, undefined, undefined],
-    ["a secondmate", { ...FIRSTMATE, crewOf: ThreadId.make("thread:fm") }, optedIn, undefined],
-    ["a crew worker", { ...LOGGER, crewOf: ThreadId.make("thread:fm") }, optedIn, undefined],
+    ["a secondmate", { ...FIRSTMATE, crewOf: ThreadId.make("thread:fm") }, cache, undefined],
+    ["a crew worker", { ...LOGGER, crewOf: ThreadId.make("thread:fm") }, tenMinutes, undefined],
     [
       "a subagent",
       { lineage: { ...LOGGER.lineage, relationshipToParent: "subagent" } },
-      optedIn,
+      tenMinutes,
       undefined,
     ],
     [
@@ -125,28 +127,83 @@ describe("coldClearMinContextTokens", () => {
           title: "Parent",
         },
       },
-      optedIn,
+      tenMinutes,
       undefined,
     ],
   ])("for %s", (_name, thread, project, expected) => {
-    expect(coldClearMinContextTokens(thread, project)).toBe(expected);
+    expect(coldClearRule(thread, project)).toEqual(expected);
   });
 });
 
-describe("startsFreshOnColdCache", () => {
-  const atFloor = (usedTokens: number, minContextTokens: number | undefined) =>
-    startsFreshOnColdCache(withUsage({ ...USAGE, usedTokens }), PROVIDER_THREAD, INPUT, {
-      nowMs: NOW_MS,
-      minContextTokens,
-    });
+describe("startsFreshWhenCold", () => {
+  const withRule = (
+    rule: ColdClearRule | undefined,
+    records: ColdClearRecords = COLD,
+    providerThread: Parameters<typeof startsFreshWhenCold>[1] = PROVIDER_THREAD,
+  ) => startsFreshWhenCold(records, providerThread, INPUT, { nowMs: NOW_MS, rule });
+  const endedAgo = (minutes: number) => ({
+    ...COLD,
+    runs: [{ ...RUN, completedAt: DateTime.makeUnsafe(NOW_MS - minutes * MINUTE_MS) }],
+  });
 
-  it("starts fresh over a project's own floor, and not at or under it", () => {
-    expect(atFloor(60_001, 60_000)).toBe(true);
-    expect(atFloor(60_000, 60_000)).toBe(false);
+  it("starts fresh over FirstMate's floor, and not at or under it", () => {
+    const rule = { kind: "cache", minContextTokens: 100_000 } as const;
+    expect(withRule(rule, withUsage({ ...USAGE, usedTokens: 100_001 }))).toBe(true);
+    expect(withRule(rule, withUsage({ ...USAGE, usedTokens: 100_000 }))).toBe(false);
+  });
+
+  it("starts a project's small cold Claude session fresh too", () => {
+    expect(withRule(CACHE_RULE, withUsage({ ...USAGE, usedTokens: 2_000 }))).toBe(true);
   });
 
   it("keeps the old session where the rule is off", () => {
-    expect(atFloor(250_000, undefined)).toBe(false);
+    expect(withRule(undefined)).toBe(false);
+  });
+
+  it("starts fresh once the thread has been quiet for the set minutes, on any provider", () => {
+    for (const driver of ["claudeAgent", "grok", "codex"]) {
+      const providerThread = { ...PROVIDER_THREAD, driver: ProviderDriverKind.make(driver) };
+      expect(withRule(QUIET_RULE, endedAgo(10), providerThread)).toBe(true);
+      expect(withRule(QUIET_RULE, endedAgo(9), providerThread)).toBe(false);
+    }
+  });
+
+  it("counts quiet from the latest run that started, warm cache or not", () => {
+    const warm = withUsage({ ...USAGE, promptCacheExpiresAt: iso(30 * MINUTE_MS) });
+    expect(withRule(QUIET_RULE, { ...warm, runs: endedAgo(11).runs })).toBe(true);
+    expect(
+      withRule(QUIET_RULE, {
+        ...COLD,
+        runs: [
+          ...endedAgo(30).runs,
+          { ...RUN, id: RunId.make("run:2"), completedAt: DateTime.makeUnsafe(NOW_MS - MINUTE_MS) },
+        ],
+      }),
+    ).toBe(false);
+    // The run about to start was queued just now and has not started yet.
+    expect(
+      withRule(QUIET_RULE, {
+        ...COLD,
+        runs: [
+          ...endedAgo(30).runs,
+          {
+            ...RUN,
+            id: RunId.make("run:2"),
+            status: "queued",
+            requestedAt: DateTime.makeUnsafe(NOW_MS),
+            startedAt: null,
+            completedAt: null,
+          },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps the session of a provider that reports no cache expiry under the cache choice", () => {
+    for (const driver of ["grok", "codex"]) {
+      const providerThread = { ...PROVIDER_THREAD, driver: ProviderDriverKind.make(driver) };
+      expect(withRule(CACHE_RULE, COLD, providerThread)).toBe(false);
+    }
   });
 
   it.each<Case>([
@@ -162,15 +219,13 @@ describe("startsFreshOnColdCache", () => {
     expect(decide(records, input)).toBe(true);
   });
 
-  it.each<readonly [string, Parameters<typeof startsFreshOnColdCache>[1]]>([
+  it.each<readonly [string, Parameters<typeof startsFreshWhenCold>[1]]>([
     ["a thread with no earlier session", undefined],
     ["a session the provider never opened", { ...PROVIDER_THREAD, nativeThreadRef: null }],
-    [
-      "a provider that reports no cache expiry",
-      { ...PROVIDER_THREAD, driver: ProviderDriverKind.make("codex") },
-    ],
   ])("keeps the old session when it would resume %s", (_name, providerThread) => {
-    expect(startsFreshOnColdCache(COLD, providerThread, INPUT, FIRSTMATE_FLOOR)).toBe(false);
+    for (const rule of [CACHE_RULE, QUIET_RULE]) {
+      expect(startsFreshWhenCold(COLD, providerThread, INPUT, { nowMs: NOW_MS, rule })).toBe(false);
+    }
   });
 
   it.each<Case>([
@@ -190,6 +245,11 @@ describe("startsFreshOnColdCache", () => {
     ],
     ["a session of 100k tokens or less", withUsage({ ...USAGE, usedTokens: 100_000 }), {}],
     ["a session with no usage", { ...COLD, providerTurns: [] }, {}],
+  ])("keeps the old session for %s", (_name, records, input) => {
+    expect(decide(records, input)).toBe(false);
+  });
+
+  it.each<Case>([
     [
       "a switch to another provider",
       COLD,
@@ -237,7 +297,15 @@ describe("startsFreshOnColdCache", () => {
     ["a pull request watch", COLD, { notification: notification({ kind: "monitor" }) }],
     ["a wake the old session buffered", COLD, { notification: notification({ kind: "subagent" }) }],
     ["a background command", COLD, { notification: notification({ kind: "command" }) }],
-  ])("keeps the old session for %s", (_name, records, input) => {
+  ])("keeps the old session for %s, under either rule", (_name, records, input) => {
     expect(decide(records, input)).toBe(false);
+    expect(
+      startsFreshWhenCold(
+        records,
+        PROVIDER_THREAD,
+        { ...INPUT, ...input },
+        { nowMs: NOW_MS, rule: QUIET_RULE },
+      ),
+    ).toBe(false);
   });
 });

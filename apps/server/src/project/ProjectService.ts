@@ -204,7 +204,7 @@ export const make = Effect.gen(function* () {
     defaultModelSelection: row.defaultModelSelection,
     defaultThreadEnvMode: row.defaultThreadEnvMode,
     autoPull: row.autoPull,
-    coldClearMinTokens: row.coldClearMinTokens ?? null,
+    clearAfterQuiet: row.clearAfterQuiet ?? null,
     leanClaudeStartup: row.leanClaudeStartup ?? false,
     projectIcon: row.projectIcon,
     scripts: row.scripts,
@@ -445,9 +445,7 @@ export const make = Effect.gen(function* () {
           ? {}
           : { defaultModelSelection: input.defaultModelSelection }),
         ...(input.autoPull === undefined ? {} : { autoPull: input.autoPull }),
-        ...(input.coldClearMinTokens === undefined
-          ? {}
-          : { coldClearMinTokens: input.coldClearMinTokens }),
+        ...(input.clearAfterQuiet === undefined ? {} : { clearAfterQuiet: input.clearAfterQuiet }),
         ...(input.leanClaudeStartup === undefined
           ? {}
           : { leanClaudeStartup: input.leanClaudeStartup }),

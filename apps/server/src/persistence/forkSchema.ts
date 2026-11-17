@@ -12,8 +12,20 @@ export const ensureForkSchema = Effect.fn("ensureForkSchema")(function* () {
   if (!hasProjectColumn("agent_name")) {
     yield* sql`ALTER TABLE projection_projects ADD COLUMN agent_name TEXT`;
   }
-  if (!hasProjectColumn("cold_clear_min_tokens")) {
-    yield* sql`ALTER TABLE projection_projects ADD COLUMN cold_clear_min_tokens INTEGER`;
+  if (!hasProjectColumn("clear_after_quiet_json")) {
+    yield* sql.withTransaction(
+      Effect.gen(function* () {
+        yield* sql`ALTER TABLE projection_projects ADD COLUMN clear_after_quiet_json TEXT`;
+        // The size floor this replaced had no project equivalent left, so an opted-in project
+        // keeps clearing on cache expiry, now at any size.
+        if (!hasProjectColumn("cold_clear_min_tokens")) return;
+        yield* sql`
+          UPDATE projection_projects SET clear_after_quiet_json = '"cache"'
+          WHERE cold_clear_min_tokens IS NOT NULL
+        `;
+        yield* sql`ALTER TABLE projection_projects DROP COLUMN cold_clear_min_tokens`;
+      }),
+    );
   }
   if (!hasProjectColumn("lean_claude_startup")) {
     yield* sql`

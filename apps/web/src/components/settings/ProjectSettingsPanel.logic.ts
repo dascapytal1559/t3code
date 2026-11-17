@@ -51,3 +51,23 @@ export function hasDefaultProjectIcon(
     icon.color === SCRATCH_PROJECT_ICON.color
   );
 }
+
+/** Typed quiet minutes: whole minutes, null for empty or zero (off), undefined when unreadable. */
+export function parseQuietMinutes(text: string): number | null | undefined {
+  const trimmed = text.trim();
+  if (trimmed === "") return null;
+  const minutes = Number(trimmed);
+  if (!Number.isFinite(minutes)) return undefined;
+  return minutes <= 0 ? null : Math.max(1, Math.round(minutes));
+}
+
+export const QUIET_CLEAR_MODES = ["off", "cache", "minutes"] as const;
+export type QuietClearMode = (typeof QUIET_CLEAR_MODES)[number];
+export const QUIET_CLEAR_MODE_LABELS: Record<QuietClearMode, string> = {
+  off: "Off",
+  cache: "When Claude's cache expires",
+  minutes: "After a set time",
+};
+export function isQuietClearMode(value: unknown): value is QuietClearMode {
+  return QUIET_CLEAR_MODES.includes(value as QuietClearMode);
+}

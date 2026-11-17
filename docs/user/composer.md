@@ -317,12 +317,16 @@ composer to keep the current session instead.
 FirstMate's own thread does this by itself when a new message arrives after its
 Claude prompt cache has expired, usually after an hour idle, and the divider
 reads **New session · cache expired**. Other projects can do the same in
-**Settings → Projects → Fresh session after cache expiry**: enter a size in
-thousands of tokens, and a conversation larger than that starts fresh instead
-of reloading. It suits a standing agent whose messages stand alone, such as a
-log; an answer to a question from the previous session arrives in a session
-that no longer has the question. This needs **Compact idle threads** in
-**Settings > Providers > Advanced** set to **Never** for Claude.
+**Settings → Projects → Fresh session after quiet**: pick **When Claude's cache
+expires**, or **After a set time** and enter a number of minutes. Once a thread
+there has been quiet that long, its next new message starts fresh instead of
+reloading, and the divider says why. Only Claude reports when its cache
+expires, so threads on Grok, Codex and other providers clear only after a set
+time. It suits a standing agent whose messages stand alone, such as a log or a
+search thread; an answer to a question from the previous session arrives in a
+session that no longer has the question. For Claude threads, set **Compact idle
+threads** in **Settings > Providers > Advanced** to **Never**, or it reloads
+the session first.
 
 **Lean Claude startup**, beside it, makes each fresh session smaller: Claude
 starts with only the folder's `.mcp.json` servers and T3 Code's own tools, and

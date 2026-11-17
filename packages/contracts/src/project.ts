@@ -153,6 +153,10 @@ export const ReceivedProjectIcon = ForwardCompatibleUnion(projectIconMembers, "k
 
 export const ProjectAgentName = TrimmedNonEmptyString.check(Schema.isMaxLength(64));
 
+/** Fork: "cache" is when Claude's prompt cache expires; a number is minutes of quiet. */
+export const ProjectClearAfterQuiet = Schema.Union([Schema.Literal("cache"), PositiveInt]);
+export type ProjectClearAfterQuiet = typeof ProjectClearAfterQuiet.Type;
+
 export const Project = Schema.Struct({
   id: ProjectId,
   title: TrimmedNonEmptyString,
@@ -166,8 +170,8 @@ export const Project = Schema.Struct({
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   // Opt-in because background sync performs network I/O and may move the checkout.
   autoPull: Schema.optional(Schema.Boolean),
-  // Fork: a standing agent's cold session starts fresh over this size; null is off.
-  coldClearMinTokens: Schema.optional(Schema.NullOr(PositiveInt)),
+  // Fork: a new exchange after the thread is this quiet starts a fresh session; null is off.
+  clearAfterQuiet: Schema.optional(Schema.NullOr(ProjectClearAfterQuiet)),
   // Fork: Claude starts with only T3's and the folder's MCP servers, and no skills list.
   leanClaudeStartup: Schema.optional(Schema.Boolean),
   scripts: Schema.Array(ProjectScript),
@@ -204,10 +208,10 @@ export const ProjectUpdatePayload = Schema.Struct({
   workspaceRoot: Schema.optional(TrimmedNonEmptyString),
   defaultModelSelection: Schema.optional(Schema.NullOr(ModelSelection)),
   autoPull: Schema.optional(Schema.Boolean),
-  coldClearMinTokens: Schema.optional(
-    Schema.NullOr(PositiveInt).annotate({
+  clearAfterQuiet: Schema.optional(
+    Schema.NullOr(ProjectClearAfterQuiet).annotate({
       description:
-        "Start fresh after the prompt cache expires, over this many tokens. null is off.",
+        'Quiet minutes before a new message starts a fresh session, or "cache" for Claude\'s cache expiry. null is off.',
     }),
   ),
   leanClaudeStartup: Schema.optional(

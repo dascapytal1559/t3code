@@ -350,6 +350,69 @@ describe("project organization", () => {
   });
 });
 
+describe("fresh session after quiet", () => {
+  const quietCalls = () =>
+    state.update.mock.calls.map(([request]) => [
+      request.environmentId,
+      request.input.clearAfterQuiet,
+    ]);
+  const quietSelect = () => page.getByRole("combobox", { name: "Fresh session after quiet" });
+  const minutesInput = () => page.getByLabelText("Quiet minutes before a fresh session");
+
+  it("saves typed minutes on every checkout only once they are typed", async () => {
+    setup();
+    await using _screen = await mountPanel();
+    await userEvent.click(quietSelect());
+    await userEvent.click(page.getByRole("option", { name: "After a set time" }));
+    await expect.element(minutesInput()).toBeVisible();
+    expect(state.update).not.toHaveBeenCalled();
+
+    await userEvent.fill(minutesInput(), "10");
+    await userEvent.keyboard("{Enter}");
+    await vi.waitFor(() =>
+      expect(quietCalls()).toEqual([
+        [primaryId, 10],
+        [remoteId, 10],
+      ]),
+    );
+  });
+
+  it("shows saved minutes and turns the setting off", async () => {
+    setup();
+    state.projects = state.projects.map((project) => ({ ...project, clearAfterQuiet: 10 }));
+    await using _screen = await mountPanel();
+    await expect.element(minutesInput()).toHaveValue("10");
+    await userEvent.click(quietSelect());
+    await userEvent.click(page.getByRole("option", { name: "Off" }));
+    await vi.waitFor(() =>
+      expect(quietCalls()).toEqual([
+        [primaryId, null],
+        [remoteId, null],
+      ]),
+    );
+  });
+
+  it("saves the cache-expiry choice, and leaves an emptied minutes field unsaved", async () => {
+    setup();
+    await using _screen = await mountPanel();
+    await userEvent.click(quietSelect());
+    await userEvent.click(page.getByRole("option", { name: "After a set time" }));
+    await userEvent.fill(minutesInput(), "");
+    await userEvent.keyboard("{Enter}");
+    await expect.element(minutesInput()).not.toBeInTheDocument();
+    expect(state.update).not.toHaveBeenCalled();
+
+    await userEvent.click(quietSelect());
+    await userEvent.click(page.getByRole("option", { name: "When Claude's cache expires" }));
+    await vi.waitFor(() =>
+      expect(quietCalls()).toEqual([
+        [primaryId, "cache"],
+        [remoteId, "cache"],
+      ]),
+    );
+  });
+});
+
 describe("project settings permissions", () => {
   it("disables shared edits when any member lacks project access", async () => {
     setup();

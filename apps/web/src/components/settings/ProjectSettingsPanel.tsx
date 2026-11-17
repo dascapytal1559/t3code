@@ -5,7 +5,11 @@ import { useEnvironmentsWithScope } from "../../state/session";
 import { mapAtomCommandResult, settlePromise } from "@t3tools/client-runtime/state/runtime";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { planProjectRemoval } from "@t3tools/client-runtime/state/projects";
-import { type EnvironmentId, type SidebarProjectGroupingMode } from "@t3tools/contracts";
+import {
+  type EnvironmentId,
+  type ProjectClearAfterQuiet,
+  type SidebarProjectGroupingMode,
+} from "@t3tools/contracts";
 import {
   checkProjectAccess,
   reportProjectFailure,
@@ -54,7 +58,12 @@ import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import {
   defaultProjectIcon,
   hasDefaultProjectIcon,
+  isQuietClearMode,
+  parseQuietMinutes,
   projectGroupTitleNeedsUpdate,
+  QUIET_CLEAR_MODE_LABELS,
+  QUIET_CLEAR_MODES,
+  type QuietClearMode,
   SCRATCH_PROJECT_TITLE,
   scopeProjectSettingsGroup,
 } from "./ProjectSettingsPanel.logic";
@@ -322,23 +331,47 @@ function ProjectDetail({
     void updateAllMembers({ agentName: next }, "Failed to save agent name");
   };
 
-  // Shown and typed in thousands of tokens; stored in tokens.
-  const coldClearMinTokens = filePickerProject.coldClearMinTokens ?? null;
-  const coldClearShown = coldClearMinTokens === null ? "" : String(coldClearMinTokens / 1000);
-  const typeColdClearFloor = (input: HTMLInputElement) => {
-    const text = input.value.trim();
-    const thousands = Number(text);
-    if (!Number.isFinite(thousands)) {
-      input.value = coldClearShown;
-      return;
-    }
-    saveColdClearFloor(
-      text === "" || thousands <= 0 ? null : Math.max(1, Math.round(thousands * 1000)),
+  const clearAfterQuiet = filePickerProject.clearAfterQuiet ?? null;
+  // Picking "after a set time" waits for the minutes before it saves anything. The pick lasts
+  // until the stored setting changes, by its save or from elsewhere.
+  const [quietPickFrom, setQuietPickFrom] = useState<ProjectClearAfterQuiet | null>();
+  if (quietPickFrom !== undefined && quietPickFrom !== clearAfterQuiet) {
+    setQuietPickFrom(undefined);
+  }
+  const pickingQuietMinutes = quietPickFrom !== undefined;
+  const quietMode: QuietClearMode =
+    pickingQuietMinutes || typeof clearAfterQuiet === "number"
+      ? "minutes"
+      : clearAfterQuiet === "cache"
+        ? "cache"
+        : "off";
+  const quietMinutesShown = typeof clearAfterQuiet === "number" ? String(clearAfterQuiet) : "";
+  const saveClearAfterQuiet = (next: ProjectClearAfterQuiet | null) => {
+    if (typeof next !== "number") setQuietPickFrom(undefined);
+    if (next === clearAfterQuiet) return;
+    void updateAllMembers(
+      { clearAfterQuiet: next },
+      "Failed to save the fresh-session-after-quiet setting",
     );
   };
-  const saveColdClearFloor = (next: number | null) => {
-    if (next === coldClearMinTokens) return;
-    void updateAllMembers({ coldClearMinTokens: next }, "Failed to save the cache-expiry setting");
+  const chooseQuietMode = (mode: QuietClearMode) => {
+    if (mode === "minutes") {
+      if (typeof clearAfterQuiet !== "number") setQuietPickFrom(clearAfterQuiet);
+      return;
+    }
+    saveClearAfterQuiet(mode === "cache" ? "cache" : null);
+  };
+  const typeQuietMinutes = (input: HTMLInputElement) => {
+    const minutes = parseQuietMinutes(input.value);
+    if (minutes === undefined) {
+      input.value = quietMinutesShown;
+      return;
+    }
+    if (minutes === null && typeof clearAfterQuiet !== "number") {
+      setQuietPickFrom(undefined);
+      return;
+    }
+    saveClearAfterQuiet(minutes);
   };
   const leanClaudeStartup = filePickerProject.leanClaudeStartup === true;
 
@@ -629,33 +662,60 @@ function ProjectDetail({
             }
           />
           <SettingsRow
-            title="Fresh session after cache expiry"
-            description="Claude threads here start a fresh session at the first message after their prompt cache expired, when the conversation is over this many thousand tokens. Empty is off."
+            title="Fresh session after quiet"
+            description="Once a thread here has been quiet this long, its next new message starts a fresh session. Only Claude reports cache expiry, so other providers clear only after a set time."
             resetAction={
-              coldClearMinTokens !== null ? (
+              clearAfterQuiet !== null ? (
                 <SettingResetButton
-                  label="cache-expiry setting"
+                  label="fresh-session-after-quiet setting"
                   disabled={!canEditGroup}
-                  onClick={() => saveColdClearFloor(null)}
+                  onClick={() => saveClearAfterQuiet(null)}
                 />
               ) : null
             }
             control={
-              <Input
-                key={`${group.projectKey}:cold-clear:${coldClearMinTokens ?? ""}`}
-                size="sm"
-                className="w-full sm:w-32"
-                aria-label="Fresh session after cache expiry, thousands of tokens"
-                placeholder="Off"
-                inputMode="numeric"
-                disabled={!canEditGroup}
-                defaultValue={coldClearShown}
-                onBlur={(event) => typeColdClearFloor(event.currentTarget)}
-                onKeyDown={(event) => {
-                  if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-                  if (event.key === "Enter") event.currentTarget.blur();
-                }}
-              />
+              <div className="flex w-full items-center gap-2 sm:w-auto">
+                <Select
+                  value={quietMode}
+                  onValueChange={(value) => {
+                    if (isQuietClearMode(value)) chooseQuietMode(value);
+                  }}
+                  disabled={!canEditGroup}
+                >
+                  <SelectTrigger
+                    size="sm"
+                    className="min-w-0 flex-1 sm:w-48 sm:flex-none"
+                    aria-label="Fresh session after quiet"
+                  >
+                    <SelectValue>{QUIET_CLEAR_MODE_LABELS[quietMode]}</SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    {QUIET_CLEAR_MODES.map((mode) => (
+                      <SelectItem hideIndicator key={mode} value={mode}>
+                        {QUIET_CLEAR_MODE_LABELS[mode]}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+                {quietMode === "minutes" ? (
+                  <Input
+                    key={`${group.projectKey}:quiet-minutes:${quietMinutesShown}`}
+                    size="sm"
+                    className="w-24"
+                    aria-label="Quiet minutes before a fresh session"
+                    placeholder="Minutes"
+                    inputMode="numeric"
+                    autoFocus={pickingQuietMinutes}
+                    disabled={!canEditGroup}
+                    defaultValue={quietMinutesShown}
+                    onBlur={(event) => typeQuietMinutes(event.currentTarget)}
+                    onKeyDown={(event) => {
+                      if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+                      if (event.key === "Enter") event.currentTarget.blur();
+                    }}
+                  />
+                ) : null}
+              </div>
             }
           />
           <SettingsRow

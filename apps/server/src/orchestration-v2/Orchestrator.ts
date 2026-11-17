@@ -121,7 +121,7 @@ import {
   SHARED_WORKSPACE_RESTORE_MESSAGE,
 } from "./CheckpointRestoreSafety.ts";
 import { CheckpointServiceV2 } from "./CheckpointService.ts";
-import { coldClearMinContextTokens, startsFreshOnColdCache } from "./ColdCache.ts";
+import { coldClearRule, startsFreshWhenCold, type ColdClearRule } from "./ColdClear.ts";
 import {
   CommandPolicyV2,
   followUpOwnerRun,
@@ -1447,6 +1447,13 @@ function appendContextHandoffId(
   return handoffId === null ? handoffIds : Array.from(new Set([...handoffIds, handoffId]));
 }
 
+/** Fork: how a turn item marks the fresh session a cold clear started. */
+function coldClearMark(rule: ColdClearRule | undefined) {
+  return rule?.kind === "quiet"
+    ? { freshContextQuietMinutes: rule.minutes }
+    : { freshContextReason: "cache_expired" as const };
+}
+
 /** A fresh-session schedule run starts a side conversation; the thread's own one continues past it. */
 function isScheduledFreshRun(
   run: Pick<OrchestrationV2Run, "freshContext" | "userMessageId">,
@@ -1460,8 +1467,9 @@ function isScheduledFreshRun(
         item.type === "user_message" &&
         item.messageId === run.userMessageId &&
         item.scheduledTaskId !== undefined &&
-        // Fork: a cold FirstMate thread's scheduled task replaces the conversation instead.
-        item.freshContextReason === undefined,
+        // Fork: a cold thread's scheduled task replaces the conversation instead.
+        item.freshContextReason === undefined &&
+        item.freshContextQuietMinutes === undefined,
     )
   );
 }
@@ -1840,13 +1848,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   });
 
   // Fork: a project the store can't read opts nothing in, so a message never fails on it.
-  const coldClearFloor = (thread: OrchestrationV2AppThread) =>
+  const threadColdClearRule = (thread: OrchestrationV2AppThread) =>
     isPrimaryCoordinator(thread)
-      ? Effect.succeed(coldClearMinContextTokens(thread, undefined))
+      ? Effect.succeed(coldClearRule(thread, undefined))
       : projects.get(thread.projectId).pipe(
-          Effect.map((project) =>
-            coldClearMinContextTokens(thread, Option.getOrUndefined(project)),
-          ),
+          Effect.map((project) => coldClearRule(thread, Option.getOrUndefined(project))),
           Effect.orElseSucceed(() => undefined),
         );
 
@@ -2767,8 +2773,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         queuedRun.freshContext === true,
       );
       // Fork: a new exchange on a cold FirstMate or opted-in thread starts fresh, like an armed /clear.
+      const coldRule = yield* threadColdClearRule(projection.thread);
       const coldClear =
-        startsFreshOnColdCache(
+        startsFreshWhenCold(
           projection,
           activeProviderThread,
           {
@@ -2780,10 +2787,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             manualContinuationOfRunId: queuedRun.manualContinuationOfRunId,
             steerFollowUpOfRunId: queuedRun.steerWhenReadyRunId,
           },
-          {
-            nowMs: DateTime.toEpochMillis(now),
-            minContextTokens: yield* coldClearFloor(projection.thread),
-          },
+          { nowMs: DateTime.toEpochMillis(now), rule: coldRule },
         ) && !(yield* freshContextEndsBackgroundWork(projection, activeProviderThread));
       const freshContext = queuedRun.freshContext === true || coldClear;
       const contextBoundary = freshContext ? ordinal : contextBoundaryOrdinal(projection);
@@ -3191,7 +3195,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             : { idleCompaction: queuedMessage.idleCompaction }),
         }),
         ...(freshContext ? { freshContext: true } : {}),
-        ...(coldClear ? { freshContextReason: "cache_expired" as const } : {}),
+        ...(coldClear ? coldClearMark(coldRule) : {}),
         providerThreadId: queuedProviderThread.id,
         inputIntent: "queued_turn",
         status: "completed",
@@ -8311,15 +8315,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
     }
     // Fork: a new exchange on a cold FirstMate or opted-in thread starts fresh, like an armed /clear.
+    const coldRule = yield* threadColdClearRule(projection.thread);
     const coldClear =
-      startsFreshOnColdCache(
+      startsFreshWhenCold(
         projection,
         activeProviderThread,
         { ...command, delegatedCompletion, providerInstanceId: modelSelection.instanceId },
-        {
-          nowMs: DateTime.toEpochMillis(now),
-          minContextTokens: yield* coldClearFloor(projection.thread),
-        },
+        { nowMs: DateTime.toEpochMillis(now), rule: coldRule },
       ) && !(yield* freshContextEndsBackgroundWork(projection, activeProviderThread));
     if (coldClear) freshContext = true;
     if (
@@ -8621,7 +8623,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...(command.context ? { context: command.context } : {}),
         attachments: command.attachments,
         ...(freshContext ? { freshContext: true } : {}),
-        ...(coldClear ? { freshContextReason: "cache_expired" as const } : {}),
+        ...(coldClear ? coldClearMark(coldRule) : {}),
         ...(run.contextHandoffId === null ? modelSwitchSince(projection, modelSelection) : {}),
       };
       const preparationTurnItem: OrchestrationV2TurnItem | null =

@@ -606,11 +606,20 @@ function EnvironmentHandoffRow({
 }
 
 /** Marks where `/clear` or an automation started a new provider session in this thread. */
-export function FreshSessionRow(props: { readonly cacheExpired: boolean }) {
+export function FreshSessionRow(props: {
+  readonly freshContextReason?: "cache_expired" | undefined;
+  readonly freshContextQuietMinutes?: number | undefined;
+}) {
   return (
     <TimelineSystemDivider
       label="New session"
-      detail={props.cacheExpired ? "cache expired" : null}
+      detail={
+        props.freshContextReason === "cache_expired"
+          ? "cache expired"
+          : props.freshContextQuietMinutes !== undefined
+            ? `quiet ${props.freshContextQuietMinutes} min`
+            : null
+      }
       icon={EraserIcon}
     />
   );

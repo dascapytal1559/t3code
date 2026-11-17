@@ -15,6 +15,7 @@ import {
   type OrchestrationV2CreationSource,
   type PlanId,
   type ProjectId,
+  type ProjectClearAfterQuiet,
   type ProjectIconOverride,
   type ProjectScript,
   type ProviderApprovalDecision,
@@ -68,7 +69,7 @@ export interface UpdateProjectInput extends CommandMetadata {
   readonly workspaceRoot?: string;
   readonly defaultModelSelection?: ModelSelection | null;
   readonly autoPull?: boolean;
-  readonly coldClearMinTokens?: number | null;
+  readonly clearAfterQuiet?: ProjectClearAfterQuiet | null;
   readonly leanClaudeStartup?: boolean;
   readonly projectIcon?: ProjectIconOverride | null;
   readonly faviconPath?: string | null;
@@ -449,9 +450,7 @@ export const updateProject = Effect.fn("EnvironmentCommands.updateProject")(func
       ? {}
       : { defaultModelSelection: input.defaultModelSelection }),
     ...(input.autoPull === undefined ? {} : { autoPull: input.autoPull }),
-    ...(input.coldClearMinTokens === undefined
-      ? {}
-      : { coldClearMinTokens: input.coldClearMinTokens }),
+    ...(input.clearAfterQuiet === undefined ? {} : { clearAfterQuiet: input.clearAfterQuiet }),
     ...(input.leanClaudeStartup === undefined
       ? {}
       : { leanClaudeStartup: input.leanClaudeStartup }),

@@ -14,6 +14,7 @@ import {
   type OrchestrationV2ProviderThread,
   type OrchestrationV2ProviderTurnTokenUsage,
   type OrchestrationV2ThreadProjection,
+  type ProjectClearAfterQuiet,
   ProjectId,
   ProviderInstanceId,
   ProviderSessionId,
@@ -25,6 +26,7 @@ import {
   ProviderDriverKind,
 } from "@t3tools/contracts";
 import { derivePendingBackgroundWork } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
+import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -3676,13 +3678,22 @@ describe("orchestration v2 provider switching", () => {
       }),
   );
 
-  it.live.each([
-    ["over its project's floor starts fresh", 200_000, true],
-    ["at its project's floor keeps its session", 250_000, false],
-    ["in a project that does not opt in keeps its session", null, false],
-  ] as const)("an unpinned thread with a cold cache %s", ([, floor, fresh]) =>
+  it.live.each<
+    readonly [string, ProjectClearAfterQuiet | null, number, Record<string, unknown> | null]
+  >([
+    ["clearing on cache expiry starts fresh", "cache", 0, { freshContextReason: "cache_expired" }],
+    [
+      "clearing after 10 quiet minutes starts fresh once they pass",
+      10,
+      11,
+      { freshContextQuietMinutes: 10 },
+    ],
+    ["clearing after 10 quiet minutes keeps a session quiet for less", 10, 9, null],
+    ["not clearing keeps its session", null, 0, null],
+  ])("an unpinned thread with a cold cache in a project %s", ([, setting, quietMinutes, mark]) =>
     Effect.gen(function* () {
-      const key = `cold-cache-project-${floor ?? "off"}`;
+      const fresh = mark !== null;
+      const key = `cold-cache-project-${setting ?? "off"}-${quietMinutes}`;
       const cwd = yield* checkpointWorkspace(key);
       const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
       const harness = coldCacheHarness(key, cwd, {
@@ -3693,6 +3704,13 @@ describe("orchestration v2 provider switching", () => {
       });
       const threadId = ThreadId.make(`thread:${key}`);
       const loggerProjectId = ProjectId.make(`project:${key}`);
+      // Every fiber reads this clock, so the first exchange can run `quietMinutes` in the past.
+      const clock = yield* Clock.Clock;
+      let offsetMs = quietMinutes * 60_000;
+      const shiftedClock = Object.assign(Object.create(clock) as Clock.Clock, {
+        currentTimeMillisUnsafe: () => clock.currentTimeMillisUnsafe() - offsetMs,
+        currentTimeMillis: Effect.sync(() => clock.currentTimeMillisUnsafe() - offsetMs),
+      });
       yield* Effect.gen(function* () {
         const orchestrator = yield* Orchestrator.OrchestratorV2;
         const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
@@ -3731,10 +3749,10 @@ describe("orchestration v2 provider switching", () => {
             updatedAt: occurredAt,
           },
         });
-        yield* commit("floor", {
-          ...envelope("floor"),
+        yield* commit("setting", {
+          ...envelope("setting"),
           type: "project.meta-updated",
-          payload: { projectId: loggerProjectId, coldClearMinTokens: floor, updatedAt: occurredAt },
+          payload: { projectId: loggerProjectId, clearAfterQuiet: setting, updatedAt: occurredAt },
         });
         yield* orchestrator.dispatch({
           type: "thread.create",
@@ -3753,6 +3771,7 @@ describe("orchestration v2 provider switching", () => {
         yield* orchestrator.dispatch(coldCacheMessage(key, "alpha", "web"));
         yield* worker.drain();
         yield* waitForIdle(threadId);
+        offsetMs = 0;
         yield* orchestrator.dispatch(coldCacheMessage(key, "beta", "web"));
         yield* worker.drain();
         const projection = yield* waitForIdle(threadId);
@@ -3763,15 +3782,20 @@ describe("orchestration v2 provider switching", () => {
           (candidate) => candidate.type === "user_message" && candidate.runId === run.id,
         );
         assert.equal(run.freshContext === true, fresh);
-        assert.equal(
-          item?.type === "user_message" ? item.freshContextReason : "missing",
-          fresh ? "cache_expired" : undefined,
+        assert.deepEqual(
+          item?.type === "user_message"
+            ? {
+                freshContextReason: item.freshContextReason,
+                freshContextQuietMinutes: item.freshContextQuietMinutes,
+              }
+            : "missing",
+          { freshContextReason: undefined, freshContextQuietMinutes: undefined, ...mark },
         );
         const turns = yield* Ref.get(capturedTurns);
         const turnFor = (name: string) =>
           turns.find((turn) => turn.text.endsWith(`Prompt ${name}`))!;
         assert.equal(turnFor("beta").providerThreadId !== turnFor("alpha").providerThreadId, fresh);
-      }).pipe(Effect.provide(harness));
+      }).pipe(Effect.provide(harness), Effect.provideService(Clock.Clock, shiftedClock));
     }),
   );
 

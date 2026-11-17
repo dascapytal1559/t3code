@@ -7,7 +7,6 @@ import {
   EventId,
   IsoDateTime,
   NonNegativeInt,
-  PositiveInt,
   ProjectId,
   ProviderItemId,
   TrimmedNonEmptyString,
@@ -16,7 +15,7 @@ import { AuthClientMetadataDeviceType } from "./auth.ts";
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
 import { ModelSelection } from "./modelSelection.ts";
 import type { OrchestrationV2StoredEvent } from "./orchestrationV2.ts";
-import { ProjectScript, StoredProjectIcon } from "./project.ts";
+import { ProjectClearAfterQuiet, ProjectScript, StoredProjectIcon } from "./project.ts";
 
 /** The client that sent a command. Only the server stamps it; absent means unknown. */
 export const OrchestrationClientOrigin = Schema.Struct({
@@ -62,7 +61,7 @@ export const ApplicationProjectMetaUpdatedPayload = Schema.Struct({
   // Absent = leave unchanged; null = clear the override.
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   autoPull: Schema.optional(Schema.Boolean),
-  coldClearMinTokens: Schema.optional(Schema.NullOr(PositiveInt)),
+  clearAfterQuiet: Schema.optional(Schema.NullOr(ProjectClearAfterQuiet)),
   leanClaudeStartup: Schema.optional(Schema.Boolean),
   faviconPath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   projectIcon: Schema.optional(Schema.NullOr(StoredProjectIcon)),

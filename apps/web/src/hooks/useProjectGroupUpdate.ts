@@ -1,4 +1,8 @@
-import { AuthOrchestrationOperateScope, type ProjectIconOverride } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  type ProjectClearAfterQuiet,
+  type ProjectIconOverride,
+} from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   mapAtomCommandResult,
@@ -19,7 +23,7 @@ import { useOrchestrationCommand } from "../state/use-orchestration-command";
 export type ProjectGroupUpdate = Partial<{
   title: string;
   agentName: string | null;
-  coldClearMinTokens: number | null;
+  clearAfterQuiet: ProjectClearAfterQuiet | null;
   leanClaudeStartup: boolean;
   faviconPath: string | null;
   projectIcon: ProjectIconOverride | null;

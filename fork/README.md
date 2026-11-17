@@ -1076,7 +1076,7 @@ keeps upstream's behaviour. Code: `retiresBusySessions` and its two uses in
 `apps/server/src/orchestration-v2/Orchestrator.ts` (the queued start and
 `message.dispatch`).
 
-## A cold FirstMate thread starts fresh
+## A cold thread starts fresh
 
 Upstream never drops a thread's context on its own: a fresh session is the
 user's `/clear` or a caller's `freshContext`, and for a large thread whose
@@ -1086,50 +1086,61 @@ FirstMate thread, a new exchange that starts after the cache has expired starts
 in a fresh session. FirstMate keeps its state in files and rebuilds its context
 at session start, about 71k tokens, while reloading or compacting the old
 session re-sends all of it, 120k to 750k. A project can opt its own threads in
-with its own size floor (**Settings → Projects → Fresh session after cache
-expiry**, or `coldClearMinTokens` on `t3_project_update`; `null` turns it off),
-for a standing agent such as the life log, whose messages stand alone and whose
-fresh start is far smaller than FirstMate's. Crew, secondmate and delegated
-threads stay out even then, since their context is another agent's work, and
-FirstMate's own thread keeps its 100k whatever its project says. Every other
-thread keeps upstream's behaviour. This relies on Compact idle threads being set
-to Never for that thread's provider.
+(**Settings → Projects → Fresh session after quiet**, or `clearAfterQuiet` on
+`t3_project_update`): `"cache"` clears when Claude's prompt cache has expired,
+and a number clears once the thread has been quiet that many minutes, on any
+provider. `null` turns it off. It suits a standing agent such as the life log,
+whose messages stand alone, or a search thread that needs no earlier context
+after a few minutes. Crew, secondmate and delegated threads stay out even then,
+since their context is another agent's work, and FirstMate's own thread keeps
+its rule whatever its project says. Every other thread keeps upstream's
+behaviour. For a Claude thread this relies on Compact idle threads being set to
+Never.
 
 The check runs when a run is about to start, at the two places a run starts, so
 every client and route is covered, the stock phone app included. It starts the
-run exactly as an armed `/clear` does, which also retires the old session. Cold
-means the newest usage of the Claude session the run would resume reports a
-cache expiry at or before now; a request served fully from cache reports none, so its time plus one
-hour, Claude's longest cache lifetime, stands in. Other providers report no
-expiry and are never cold. It applies only when that session is over the floor
-(100k on FirstMate's thread), since a smaller one reloads for about the price of
-a fresh start, and
-when the run stays on the same provider. A message from any client or over MCP,
-T3's restart note and a scheduled task begin an exchange. These continue the old
-session instead: a steer, anything while a run is active or a question or
-approval is pending, `/compact`, `/logout` and `/goal`, every other wake
-(background work, a delegated task or a pull request watch reporting in, and any
-wake the old session buffered), the continuations after a restart, a usage
-limit or a manual Continue, and any start while the old session still has
-background work running. An armed `/clear`, or a pending fork or merge-back,
-leaves the start as it is. Inputs on one thread run one at a time, so two that
-arrive together give one fresh session, and the second continues it. A cold
-scheduled task's session becomes the thread's conversation, unlike a
-fresh-session schedule's side conversation. The divider reads "New session ·
-cache expired", above a message or the restart note. The stock phone app drops
-the mark: it shows a plain "New session" above a message and none above the
-note. If Compact idle threads is turned on, its
-"When you return" compaction runs first, reloads the session and leaves it warm,
-so nothing clears.
+run exactly as an armed `/clear` does, which also retires the old session; that
+path opens a new native session on every provider. Cold on cache expiry means
+the newest usage of the Claude session the run would resume reports a cache
+expiry at or before now; a request served fully from cache reports none, so its
+time plus one hour, Claude's longest cache lifetime, stands in. Only Claude
+reports an expiry, so the cache choice never clears another provider's thread:
+xAI documents no fixed cache lifetime for Grok, and OpenAI's depends on the
+model and retention policy, which Codex does not report. On FirstMate's thread
+the session must also be over 100k, since a smaller one reloads for about the
+price of its 71k fresh start; a project's cache choice has no size floor, since
+its fresh start is far smaller. Cold after quiet means no run on the thread has
+started or ended for that many minutes. Either way it applies only when the run
+stays on the same provider. A message from any client or over MCP, T3's restart
+note and a scheduled task begin an exchange. These continue the old session
+instead: a steer, anything while a run is active or a question or approval is
+pending, `/compact`, `/logout` and `/goal`, every other wake (background work, a
+delegated task or a pull request watch reporting in, and any wake the old
+session buffered), the continuations after a restart, a usage limit or a manual
+Continue, and any start while the old session still has background work
+running. An armed `/clear`, or a pending fork or merge-back, leaves the start
+as it is. Inputs on one thread run one at a time, so two that arrive together
+give one fresh session, and the second continues it. A cold scheduled task's
+session becomes the thread's conversation, unlike a fresh-session schedule's
+side conversation. The divider reads "New session · cache expired" or "New
+session · quiet 10 min", above a message or the restart note. The quiet mark
+travels in its own field, `freshContextQuietMinutes`, because clients reject a
+turn item whose `freshContextReason` holds a value they do not know. The stock
+phone app drops both marks, and the fork's phone app shows a plain "New
+session" for a quiet clear. If Compact idle threads is turned on, its "When you
+return" compaction runs first, reloads the session and leaves it warm, so a
+cache clear does not happen.
 
-Code: `coldClearMinContextTokens` and `startsFreshOnColdCache` in
-`apps/server/src/orchestration-v2/ColdCache.ts`, called where
+Code: `coldClearRule` and `startsFreshWhenCold` in
+`apps/server/src/orchestration-v2/ColdClear.ts`, called where
 `startNextQueuedRun` and `message.dispatch` start a run in `Orchestrator.ts`;
-`freshContextReason` on user-message and notification turn items in
-`packages/contracts/src/orchestrationV2.ts`; and the divider's
-`cacheExpired` in `apps/web/src/components/chat/V2LifecycleRow.tsx`. The
-project's floor is the `cold_clear_min_tokens` column, added by
-`apps/server/src/persistence/forkSchema.ts` like `agent_name`.
+`freshContextReason` and `freshContextQuietMinutes` on user-message and
+notification turn items in `packages/contracts/src/orchestrationV2.ts`; and
+`FreshSessionRow` in `apps/web/src/components/chat/V2LifecycleRow.tsx`. The
+project's setting is the `clear_after_quiet_json` column, added by
+`apps/server/src/persistence/forkSchema.ts` like `agent_name`; it replaced
+`cold_clear_min_tokens`, a size floor, and a project that had one set now
+clears on cache expiry.
 
 ## Lean Claude startup
 
