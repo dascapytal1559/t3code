@@ -396,20 +396,6 @@ export function UsageProviderChart({
     // Fills a taller column, such as a long providers list beside it, and never shrinks below h-56.
     <div className="flex flex-1 flex-col gap-1">
       <div className="flex min-h-56 flex-1 gap-2">
-        <div aria-hidden className="relative w-14 shrink-0">
-          {scale.labeled
-            ? scale.ticks.map((tick) => (
-                <span
-                  key={tick}
-                  className="absolute right-0 -translate-y-1/2 text-3xs text-muted-foreground tabular-nums"
-                  style={{ top: `${(toY(tick) / VIEW_HEIGHT) * 100}%` }}
-                >
-                  {tick === 0 ? "0" : format(tick)}
-                </span>
-              ))
-            : null}
-        </div>
-
         <UsageChartPlot
           periods={periods}
           columns={columns}
@@ -445,11 +431,24 @@ export function UsageProviderChart({
             />
           ))}
         </UsageChartPlot>
+        <div aria-hidden className="relative w-14 shrink-0">
+          {scale.labeled
+            ? scale.ticks.map((tick) => (
+                <span
+                  key={tick}
+                  className="absolute left-0 -translate-y-1/2 text-3xs text-muted-foreground tabular-nums"
+                  style={{ top: `${(toY(tick) / VIEW_HEIGHT) * 100}%` }}
+                >
+                  {tick === 0 ? "0" : format(tick)}
+                </span>
+              ))
+            : null}
+        </div>
       </div>
 
       <div
         aria-hidden
-        className="relative ml-16 h-4 text-3xs whitespace-nowrap text-muted-foreground uppercase"
+        className="relative mr-16 h-4 text-3xs whitespace-nowrap text-muted-foreground uppercase"
       >
         {axisLabelIndices(periods.length).map((index) => {
           // Past a week the edge bars hug the plot's sides, so their labels align to the sides.

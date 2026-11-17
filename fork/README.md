@@ -118,7 +118,9 @@ compare them:
   columns too.
 - **The chart is as tall as the provider list.** With four or more providers
   the bars stretch so the chart ends level with the last row. It is never
-  shorter than upstream's.
+  shorter than upstream's. Its value labels sit on the right of the bars, and
+  its title is centered over them; upstream puts the labels on the left and
+  the title flush left.
 - **Whole dollars from $100.** The page's standing dollar figures drop cents
   from $100 up (`formatUsdShort`). The chart's tooltip and a model's pop-up
   keep cents.
@@ -131,8 +133,9 @@ and the missing Totals section in
 `apps/web/src/components/usage/UsagePage.tsx`; the legend in
 `UsageShareBar.tsx` and the segment order in `usageBreakdown.ts`; the legend
 in `UsageOriginBreakdown.tsx`; `min-h-56 flex-1` in place of upstream's fixed
-`h-56` in `UsageProviderChart.tsx`; the scale in `usageEmphasis.ts`; and
-`formatUsdShort` in `packages/shared/src/usageFormat.ts`.
+`h-56` and the value labels after the plot in `UsageProviderChart.tsx`, with
+the chart title's `pr-16 text-center` in `UsagePage.tsx`; the scale in
+`usageEmphasis.ts`; and `formatUsdShort` in `packages/shared/src/usageFormat.ts`.
 
 ## Usage accounts follow the providers tab
 

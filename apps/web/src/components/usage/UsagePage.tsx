@@ -811,7 +811,8 @@ function UsageOverview({
         </div>
 
         <div className="flex min-w-0 flex-col gap-3">
-          <h2 className="text-sm font-medium text-foreground">
+          {/* pr-16 matches the chart's y-axis gutter, so the title centers over the bars. */}
+          <h2 className="pr-16 text-center text-sm font-medium text-foreground">
             {usageChartTitle(metric, shownHourly, days.length)}
           </h2>
           {activeProviders.length === 0 && excludedProviders.size > 0 ? (
