@@ -2,12 +2,14 @@
 
 This fork tracks `pingdotgg/t3code` `main`. Each feature section says what it
 does, shows a picture where one helps, then what each upstream sync must carry
-forward. Keep this list current. Pictures live in `fork/media/` and show
-made-up data. Earlier fork work is archived on the local branch
+forward, and ends with how much of it upstream has. A feature that is half in
+the [FirstMate fork](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md)
+links to that half. The front page lists every section in this order. Keep this
+list current. Pictures live in `fork/media/` and show made-up data. Earlier fork work is archived on the local branch
 `archive/fork-legacy-2026-10-19` and is out of scope for syncs; take from it
 only on request.
 
-## Desktop identity
+## Its own app
 
 The fork's desktop app runs beside the official T3 Code on one Mac. Neither app
 can read or migrate the other's database.
@@ -42,7 +44,12 @@ Four things are still shared with the official app:
   command does follow that feed, but the app never runs it: its server is
   desktop-managed (`apps/server/src/cloud/selfUpdate.ts`).
 
-## Usage reaches twelve months
+Upstream: none.
+
+## 6 and 12 months
+
+The Usage page reaches back 6 and 12 months, not just 90 days, and draws every
+period as stacked bars, so a long range stays readable.
 
 ![The Usage page's 12 months view: a year of daily cost as stacked bars, split by Claude Code, Grok Build, Codex and Pi](media/usage-12-months.png)
 
@@ -68,7 +75,14 @@ Upstream's "N malformed or inconsistent usage record(s) were skipped" sentence
 shows as a small muted footnote at the bottom of the page instead of a notice
 at the top (`apps/web/src/components/usage/UsagePage.tsx`).
 
-## Usage rows can be muted
+Upstream: partly ([#28111](https://github.com/pingdotgg/t3code/pull/28111)): it
+keeps usage history as long as you set, but its views stop at 90 days and draw
+lines.
+
+## Mute a provider
+
+Click a provider on the Usage page to leave it out of every figure; its row
+stays, greyed, showing what it would have added.
 
 ![The Usage page with Grok Build and Codex muted and grayed out, leaving Claude Code and Pi in the headline, the chart and the bars under it](media/usage-provider-filter.png)
 
@@ -88,7 +102,13 @@ adds: `excludedProviders` in `apps/web/src/state/usage.ts` and the rows in
 provider's Limits cards, so a row muted here hides them too. The mobile app
 has no row toggles.
 
-## Usage figures line up and fade by size
+Upstream: partly: the provider menu in its Usage header filters the same way;
+clicking a row is the fork's.
+
+## Figures that read
+
+On the Usage page the figures you compare sit in columns and fade by size, so
+the big ones stand out, and upstream's Totals row is gone.
 
 ![The Usage page's Tokens tab: a headline with sessions and a dollar total, four provider rows whose counts fade from 1.93B down to 32.3M, a chart as tall as the provider list, and Tokens by type and Tokens by origin with their figures in columns](media/usage-figures.png)
 
@@ -136,7 +156,12 @@ in `UsageOriginBreakdown.tsx`; `min-h-56 flex-1` in place of upstream's fixed
 the chart title's `pr-16 text-center` in `UsagePage.tsx`; the scale in
 `usageEmphasis.ts`; and `formatUsdShort` in `packages/shared/src/usageFormat.ts`.
 
-## Usage accounts follow the providers tab
+Upstream: none.
+
+## Accounts in your order
+
+Every usage view lists a provider's accounts in the order Settings › Providers
+lists them, so an account never jumps around as its reset times change.
 
 Wherever usage lists a provider's accounts (the Usage page's Limits columns,
 the sidebar readout, the composer's `/usage-limits` panel, and the mobile app's
@@ -150,7 +175,12 @@ Both keep one order for every window row, so columns stay aligned. The rule is
 `sortByProvidersTab` and `LimitAccount.providerOrder` in
 `packages/shared/src/usageLimits.ts`; syncs must carry it.
 
-## Usage limits in the sidebar
+Upstream: none.
+
+## Limits in the sidebar
+
+The sidebar shows one small bar per account with what is left of its week and a
+pace mark, so you see your limits without opening the Usage page.
 
 The captain wants usage visible without opening the Usage page, so the web and
 desktop sidebar shows a small readout between the thread list and the bottom
@@ -159,7 +189,7 @@ thin bar in the account's accent colour and the percent left in that account's
 own weekly window, or its first window when it has no weekly one. A provider
 with several accounts (Claude and Claude2) gets one line each, because each
 account resets on its own clock. A provider's lines follow the providers tab
-(see [Usage accounts follow the providers tab](#usage-accounts-follow-the-providers-tab)). Model windows such as Weekly · Fable stay on
+(see [Accounts in your order](#accounts-in-your-order)). Model windows such as Weekly · Fable stay on
 the page. Each bar carries the Usage page's pace mark: a small line, in a gap
 cut from the bar, where the bar would end if usage kept pace with the time
 elapsed in that account's window. The tooltip names each account (its display
@@ -176,6 +206,10 @@ view's environment and muted-provider filter, moved out of
 sidebar hears a mute in the same tab (`usagePagePreferences.ts`). The mount is
 one line in `SidebarChromeFooter`. Code:
 `apps/web/src/components/sidebar/SidebarUsageMini.tsx`.
+
+Upstream: none. Open PR [#31597](https://github.com/pingdotgg/t3code/pull/31597)
+(by an outside contributor, not merged) adds a different, opt-in usage popover
+to the sidebar.
 
 ## Archived usage
 
@@ -202,7 +236,12 @@ defaults to `["~/.t3-usage-archive"]` and can be changed in
 - A remote that still runs T3 and is connected would be counted again next to
   its archive copy. Archive a host after T3 is removed from it.
 
-## Usage by origin
+Upstream: none.
+
+## Phone vs computer split
+
+The Usage page splits tokens and cost by where the work started: on your phone
+or your computer, typed by you or started by an agent for you.
 
 The captain wants to see the prompts he sent from his phone and the work they
 started, so the Usage page on web and desktop has a **Tokens by origin** bar
@@ -211,7 +250,7 @@ or orchestrated. Usage with no phone evidence counts to the computer; in the
 captain's words, "the computer is sort of its true back end … ever since we
 have T3 code we're starting to add phone label to what would otherwise be
 computer". It is built from what T3 records (see
-[Messages record which client sent them](#messages-record-which-client-sent-them))
+[Which device sent it](#which-device-sent-it))
 and what agents claim.
 
 - A prompt is a user-role message. A run belongs to its `userMessageId`,
@@ -224,7 +263,7 @@ and what agents claim.
   or `creationSource` `mcp`/`provider` is Agent; everything else (older web
   messages, server-made messages) is Unknown.
 - An agent prompt (Agent or crew) follows its recorded cause (see
-  [Work records the prompt that caused it](#work-records-the-prompt-that-caused-it)):
+  [Work records its cause](#work-records-its-cause)):
   its own `causedBy`, else its thread's. If the chain reaches a Phone or
   Computer prompt within 8 hops, the prompt and its run count there, keeping
   the root's basis and adding `via` (`agent` or `crew`) for who sent it. A
@@ -384,7 +423,15 @@ figures but does not show them yet. Code: `apps/server/src/usage/UsageOrigins.ts
 in `packages/shared/src/usageMerge.ts`, `apps/server/src/cli/usage.ts`, and
 `apps/web/src/components/usage/UsageOriginBreakdown.tsx`.
 
+FirstMate half, in the FirstMate fork:
+[Nightly usage-labels check](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#nightly-usage-labels-check).
+
+Upstream: none.
+
 ## Usage export
+
+`t3 usage export` prints every model call exactly as the Usage page counts it,
+one JSON line each, so another program can keep T3's own figures.
 
 So another program (the captain's life archive) can keep exactly T3's figures
 without working them out again, `t3 usage export --since <day>` prints the
@@ -417,7 +464,7 @@ made-up values:
 - `costUsd` is null when no price is known; `origin` is null when the server
   cannot read its T3 prompts. `started` is `direct` when the device's own
   prompt started the work, `orchestrated` (with `via`) when an agent sent it.
-  `basis` and `reason` are as in [Usage by origin](#usage-by-origin).
+  `basis` and `reason` are as in [Phone vs computer split](#phone-vs-computer-split).
 - `final` is true once the record's label is written down and will not change:
   a close writes down every record older than 24 hours (not a whole day), and a
   transcript found after its time was closed stays not final, since its label
@@ -433,7 +480,13 @@ Code: `onRecord` and `toUsageExportRecord` in
 `apps/server/src/usage/usageExportHttp.ts`, `UsageExportRecord` in
 `packages/contracts/src/usage.ts`, and `apps/server/src/cli/usage.ts`.
 
-## Claude banked resets on macOS
+Upstream: none.
+
+## Banked resets on a Mac
+
+On a Mac, Claude accounts show their banked weekly and Fable resets and let you
+redeem them, as Codex accounts already do, and each limit row offers only the
+resets that refill it.
 
 Upstream shows and redeems Claude's banked resets (weekly and Fable resets)
 using the Claude Code login's access token, but reads that login only from
@@ -456,7 +509,7 @@ macOS too, so Claude accounts there show banked resets the way Codex does.
 
 When syncing, keep upstream's request, parsing and redemption code as is, apart
 from the windows the fork also reads from that response (see
-[Usage limits stay current](#usage-limits-stay-current)). The fork's part is `claudeKeychainService` and `readKeychainAccessToken`, called
+[Limits stay current](#limits-stay-current)). The fork's part is `claudeKeychainService` and `readKeychainAccessToken`, called
 from the darwin branch of `readAccessToken` in
 `apps/server/src/provider/claudeResetCredits.ts`, plus the `cliEnvironment`
 that `ClaudeDriver.ts` passes to it. If Claude Code changes how it names the
@@ -486,7 +539,16 @@ keeps upstream's reading and only adds a `kind` to each option (`kind` in
 rows and treats an option with no known kind as refilling every row. If upstream
 lands per-window resets, take its version and drop the fork's `kind`.
 
-## Usage limits stay current
+Upstream: partly: it shows and redeems Claude's banked resets everywhere but
+macOS, and offers every reset on every row. Open PRs
+[#34099](https://github.com/pingdotgg/t3code/pull/34099) (macOS) and
+[#33553](https://github.com/pingdotgg/t3code/pull/33553) (resets per row), both
+by outside contributors, not merged.
+
+## Limits stay current
+
+Usage limits show a fresh reading on every check, Refresh included, and say how
+old the reading is wherever they appear.
 
 Upstream reads Claude's 5-hour, weekly and per-model windows through the CLI
 (`get_usage`) and caches that probe for 5 minutes, so Refresh on the Usage page
@@ -519,7 +581,12 @@ check `claudeOauthUsageRateLimits` against a fresh body; its test holds a
 recorded one. If upstream adds its own foreground check or reading age, take
 upstream's and drop the fork's.
 
+Upstream: none.
+
 ## Limits history
+
+T3 keeps every usage-limits reading in a monthly log, so you can later see how
+close each week came to its limit.
 
 Providers only ever answer with the limits as they stand now, so the server
 keeps a log of every reading it gets, to show later how close each week came to
@@ -558,7 +625,12 @@ reading goes onto one file per UTC month beside the session register:
 
 Code: `apps/server/src/usage/UsageLimitsLog.ts`.
 
-## App-bundled CLIs are updated by their app
+Upstream: none.
+
+## App-bundled tools
+
+A provider CLI that lives inside a Mac app is left for that app to update, so T3
+never offers an update that fails or changes the wrong copy.
 
 On macOS, a provider CLI whose real path is inside an app bundle
 (`*.app/Contents/...`) is left to that app. T3 shows no Update button for it and
@@ -569,7 +641,9 @@ Claude) and package-manager layouts inside an app. Without it they offer an
 update that fails or changes the wrong copy. This works like upstream's handling
 of WinGet's Claude, in `packages/provider-core/src/server/maintenanceResolver.ts`.
 
-## `~` in a provider's executable path
+Upstream: partly: it does this for the usual app-bundled Codex.
+
+## `~` in tool paths
 
 A provider path that starts with `~` works for every provider. Upstream's Grok,
 Pi and ACP registry drivers use a configured path such as `~/.local/bin/grok`
@@ -583,7 +657,15 @@ sync finds upstream expanding `~` in these drivers, keep upstream's. Open
 upstream PR https://github.com/pingdotgg/t3code/pull/29330 does this for
 OpenCode, Grok and Pi, not the ACP registry.
 
-## Idle agent release is a server setting
+Upstream: partly ([#35171](https://github.com/pingdotgg/t3code/pull/35171), for
+fx, Kiro and Antigravity). Open PR
+[#29330](https://github.com/pingdotgg/t3code/pull/29330) (by a maintainer, not
+merged) covers OpenCode, Grok and Pi.
+
+## Agents kept alive
+
+Idle agents can be kept running for good, or released after a time you choose,
+instead of always being closed after 30 idle minutes.
 
 The server setting `providerSessionIdleTimeoutMinutes` (whole minutes from 1 to
 1440, default 30, `null` is Never) replaces the hardcoded 30-minute idle
@@ -597,7 +679,14 @@ controls. Upstream closed that PR on 17 Nov 2026 as not something it wants to
 take on, so the setting stays the fork's. If upstream ships an equivalent, drop
 this copy and keep upstream's.
 
-## Upstream release indicator
+Upstream: none. This is the server half of
+[#25624](https://github.com/pingdotgg/t3code/pull/25624), by an outside
+contributor, which upstream closed unmerged on 17 Nov 2026.
+
+## Upstream release note
+
+The sidebar tells you when upstream T3 Code ships a new release, so you know
+when to ask FirstMate to sync the fork.
 
 <img src="media/upstream-release.jpg" width="361" alt="The sidebar update icon's popover: T3 Code v0.1.5 is out. This build is v0.1.4. Ask FirstMate to sync the fork. Release notes and Dismiss buttons.">
 
@@ -612,7 +701,12 @@ desktop updater is running. Code: `apps/web/src/state/upstreamRelease.ts` and
 `apps/web/src/components/sidebar/SidebarUpstreamRelease.tsx`; a later "Ask
 FirstMate to update" button belongs in that popover.
 
+Upstream: none.
+
 ## Board
+
+A Board tab in the side panel lets you sketch on screenshots and attach the
+result to the chat.
 
 ![A chat beside its Board tab: a pasted Usage screenshot with a circle, an arrow and the note "Why the spike?"](media/board.png)
 
@@ -640,7 +734,13 @@ at 18, and upstream's `strictPeerDependencies` refuses that, so an override in
 `pnpm-workspace.yaml` moves it to a 1.1 release that accepts React 19. The
 mobile app has no board.
 
-## FirstMate crew in the sidebar
+Upstream: none.
+
+## Crew in the sidebar
+
+FirstMate and the workers it launches sit together at the top of the sidebar as
+one tree, and each worker's card says what it is doing, such as "Testing" with a
+timer.
 
 <img src="media/firstmate-sidebar.jpg" width="256" alt="The sidebar: a FirstMate card reading started 1d ago at top right, with two crewmate threads in a tree below it">
 
@@ -764,7 +864,18 @@ second coordinator. Code: `apps/server/src/orchestration-v2/CoordinatorRestartNo
 and its two calls in `continueRestartedRun`
 (`apps/server/src/orchestration-v2/RestartContinuation.ts`).
 
-## Motion when FirstMate starts or finishes a worker
+FirstMate halves, in the FirstMate fork:
+[Workers listed as crew](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#workers-listed-as-crew),
+[Readable titles](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#readable-titles),
+[Card status](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#card-status).
+
+Upstream: none.
+
+## The branching animation
+
+When FirstMate starts a worker, its branch draws down into the crew tree, and
+when the worker is cleaned up the same motion plays backwards; an optional trace
+light rides the branch.
 
 <img src="media/crew-motion.jpg" width="640" alt="Six moments of a second worker joining the crew tree with the trace light on: a space opens under FirstMate, a blue light runs down the line just ahead of the branch it draws, and the card snaps in with a faint blue wash">
 
@@ -819,7 +930,12 @@ Upstream code it touches, for syncs:
   `AppearanceSettingsPanel.tsx`, its search entry in `settingsSearch.ts`, and
   its two lines in `SettingsPanels.tsx` (changed-settings label and reset).
 
-## A crewmate's message box sends to FirstMate
+Upstream: none.
+
+## Reply box goes to FirstMate
+
+On a worker's thread, the message box sends your words to FirstMate instead of
+the worker, and shows how full the worker's context is.
 
 <img src="media/crew-reply.jpg" width="560" alt="The box at the foot of a worker's thread, holding a typed reply, with the context ring and a Send to FirstMate button">
 
@@ -848,7 +964,7 @@ in the FirstMate fork). `kept-thread` is the marker an earlier build sent and
 that reader already knows, so it stays. Enter sends and Shift+Enter starts a
 new line. The box takes text only, with no attachments, mentions or commands,
 and keeps no draft when the user leaves the thread. It also carries the
-[context window ring](#context-window-meter), for the worker's own window and
+[context window ring](#context-ring), for the worker's own window and
 without Compact, since compacting a worker is FirstMate's call.
 
 While the worker runs, a small Stop button sits above the box, and a Resume
@@ -868,7 +984,15 @@ the message in `CrewReply.logic.ts`, and `CrewRunControls.tsx` beside them. For
 syncs: `CrewComposerGate` stands where upstream's `<div className="relative">`
 wraps the composer, so the composer's own lines keep upstream's indentation.
 
-## The captain settles; FirstMate archives
+FirstMate half, in the FirstMate fork:
+[Reply on a worker's thread](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#reply-on-a-workers-thread).
+
+Upstream: none.
+
+## Settle, never archive
+
+Thread menus offer Settle instead of Archive, Snoozed stays pinned at the bottom
+of the sidebar, and settling or snoozing a worker tells FirstMate.
 
 <img src="media/snoozed-pinned.jpg" width="256" alt="The sidebar: FirstMate with a worker, the active threads, then the Snoozed row and the Settled section with their counts at the bottom">
 <img src="media/settle-menu.jpg" width="272" alt="A worker card's right-click menu with Settle thread and Snooze, and no Archive">
@@ -924,7 +1048,7 @@ and `readTops` in `Sidebar.shiftGuard.ts`, which skips sticky rows.
 ### Settling or snoozing a worker tells FirstMate
 
 When the captain settles, un-settles, snoozes or wakes a crew thread (the
-membership the [message box](#a-crewmates-message-box-sends-to-firstmate)
+membership the [message box](#reply-box-goes-to-firstmate)
 uses), the client posts one ordinary user message to its coordinator, sent the
 way that box sends: queued behind a running turn, or starting one when the
 coordinator is idle; the worker gets nothing. FirstMate keeps its records of
@@ -955,7 +1079,16 @@ and the Undo snooze step in `useThreadActions.ts`, and from the chat's
 Un-settle and Wake in `useThreadLifecycle.tsx`; the message is
 `formatCrewThreadAction` in `apps/web/src/components/chat/CrewReply.logic.ts`.
 
+FirstMate half, in the FirstMate fork:
+[Reply on a worker's thread](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#reply-on-a-workers-thread).
+
+Upstream: partly ([#4026](https://github.com/pingdotgg/t3code/pull/4026)):
+Settle, Un-settle and the Settled section are upstream's.
+
 ## Indefinite snooze
+
+Every snooze menu starts with Indefinitely: the thread stays snoozed until you
+wake it or something new happens on it.
 
 <img src="media/indefinite-snooze-menu.jpg" width="512" alt="A thread's right-click Snooze submenu with Indefinitely first, above upstream's timed options and Custom…">
 
@@ -989,7 +1122,13 @@ empty countdown in `snoozeWakeLabel`, the indefinite labels in
 default and read in `toolkits/thread/handlers.ts` and `threadSnooze` in
 `OrchestratorMcpService.ts`.
 
-## Only top-level threads alert
+Upstream: none.
+
+## Quiet workers, quiet wakes
+
+Only your own threads alert you: FirstMate's workers stay silent, and
+FirstMate's thread sounds only when you started the turn or FirstMate says it
+needs you.
 
 T3's thread alerts are the sound, toast and desktop notification chosen under
 Thread notifications in Settings (off by default), and the paired phone's
@@ -1044,7 +1183,15 @@ relay; `isSupervisionRunForShell` and its SQL mirror `isSupervisionShellRun` in
 `notificationSoundScope` client setting, read by `alertPlaysSound` in
 `apps/web/src/threadNotifications.ts`.
 
-## FirstMate's doorbell folds to one short line
+FirstMate half, in the FirstMate fork:
+[Alerts only when needed](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#alerts-only-when-needed).
+
+Upstream: none.
+
+## Tidy instruction line
+
+FirstMate's fixed "instruction waiting" line to a worker shows as a short
+**FirstMate · New instruction** card instead of the raw command.
 
 When FirstMate has a new instruction for a worker, it sends the worker one
 fixed line (`: Firstmate instruction waiting: list "$FM_TASK_INBOX"/*.msg …`,
@@ -1070,7 +1217,12 @@ way. Code: `resolveAgentMessageFold` in
 `apps/mobile/src/features/threads/ThreadQueueControl.tsx`. If FirstMate changes
 the line, change the pattern with it.
 
-## A fresh start on FirstMate ends the old session
+Upstream: none.
+
+## A fresh start really ends the old one
+
+Starting FirstMate fresh (`/clear`) always ends its old session, even a busy
+one, so two FirstMates never run side by side.
 
 Upstream closes the previous provider session on a fresh start (`/clear`, or
 `t3_thread_send` with `freshContext`) only when it has no background work, and
@@ -1089,7 +1241,16 @@ keeps upstream's behaviour. Code: `retiresBusySessions` and its two uses in
 `apps/server/src/orchestration-v2/Orchestrator.ts` (the queued start and
 `message.dispatch`).
 
-## A cold thread starts fresh
+FirstMate half, in the FirstMate fork:
+[Fresh sessions take over](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#fresh-sessions-take-over).
+
+Upstream: none.
+
+## Auto clearing (cold clear)
+
+FirstMate's thread starts a fresh session the moment its prompt cache expires,
+instead of paying to reload the old one later; the history stays on screen, and
+any project can opt its threads in.
 
 Upstream never drops a thread's context on its own: a fresh session is the
 user's `/clear` or a caller's `freshContext`, and for a large thread whose
@@ -1181,13 +1342,19 @@ project's setting is the `clear_after_quiet_json` column, added by
 `cold_clear_min_tokens`, a size floor, and a project that had one set now
 clears on cache expiry.
 
+FirstMate halves, in the FirstMate fork:
+[Auto clearing on a notification](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#auto-clearing-on-a-notification),
+[Pointer to the previous dialog](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#pointer-to-the-previous-dialog).
+
+Upstream: none. It offers compaction, which keeps a summary.
+
 ## Lean Claude startup
 
 A project can start its Claude sessions lean (**Settings → Projects → Lean
 Claude startup**, or `leanClaudeStartup` on `t3_project_update`): only T3's
 own MCP server and the servers in the folder's own `.mcp.json`, and no skills
 list. Each fresh session writes its own startup to the prompt cache, so for a
-thread that starts fresh often (see the cold clear above) this is a recurring
+thread that starts fresh often (see [Auto clearing](#auto-clearing-cold-clear) above) this is a recurring
 cost. On a copy of the life log's folder it cut a fresh session's first request
 from 51.6k to 39.2k tokens, and what it writes to the cache from 18.9k to 6.5k;
 the 32.7k before that is shared with every other T3 Claude session either way.
@@ -1211,6 +1378,8 @@ Only the Claude adapter reads the setting. Code:
 `makeClaudeQueryOptions` and `leanClaudeStartup` in
 `apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts`; the project
 flows to it through `RuntimePolicy.ts`.
+
+Upstream: none.
 
 ## Bridge
 
@@ -1285,7 +1454,16 @@ entries and tab title and icon in `RightPanelTabs.tsx`,
 open tabs by kind, so a renamed kind would leave a blank tab where the Bridge
 was.
 
-## Restart registry
+FirstMate halves, in the FirstMate fork:
+[Routing table on the Bridge](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#routing-table-on-the-bridge),
+[Priorities and objectives](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#priorities-and-objectives).
+
+Upstream: none.
+
+## Clean restarts
+
+A restart of T3 waits until every running turn has finished and holds new
+messages until after it, so nobody's work is cut off.
 
 Whoever restarts T3 (FirstMate installing a build) first registers the restart,
 so no new turn starts and nobody's message is cut off. While it is pending:
@@ -1321,7 +1499,7 @@ caller, like `t3_objectives_set`; status needs only orchestration access.
   replaces its reason, cause and origin when one is pending. `causedBy` is the
   prompt whose work the restart installs, checked like `t3_thread_launch`'s;
   `fromThread` names the thread of that work instead, and T3 stores where it
-  counts by value (see [Usage by origin](#usage-by-origin)). `requestedBy` is
+  counts by value (see [Phone vs computer split](#phone-vs-computer-split)). `requestedBy` is
   the caller thread's title or the MCP client's label. Returns the status below.
 - `t3_restart_status` `{}` returns `{ pending, reason, requestedAt, causedBy,
   activeTurns, drained, serverStartedAt }`. `activeTurns` counts threads with a
@@ -1330,7 +1508,7 @@ caller, like `t3_objectives_set`; status needs only orchestration access.
   `activeTurns === 0`. `reason` and `requestedAt` (ISO 8601) are null when
   nothing is pending. `serverStartedAt` (ISO 8601) is when this server process
   started, so it changes across the restart the request waited for (see the
-  restart note under [FirstMate crew in the sidebar](#firstmate-crew-in-the-sidebar)).
+  restart note under [Crew in the sidebar](#crew-in-the-sidebar)).
 - `t3_restart_cancel` `{}` clears the request and releases its holds. Returns
   the status.
 
@@ -1370,7 +1548,16 @@ larger `agentContextBudget.json`; on the web, `useRestartPendingBanner.tsx`
 `useRestartPending.ts` and the `restartPending` prop
 of `ComposerPrimaryActions.tsx`.
 
-## One-line thread cards
+FirstMate halves, in the FirstMate fork:
+[Clean T3 restarts](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#clean-t3-restarts),
+[Restart recovery](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#restart-recovery).
+
+Upstream: none.
+
+## One-line cards
+
+Each sidebar thread is one line: project icon, title, status; account badges
+read 1, 2, 3 instead of the account's initials.
 
 <img src="media/one-line-cards.png" width="256" alt="Five one-line sidebar cards: each starts with its project's icon (a dashed speech bubble for No project, letter tiles for the others), then the title, then its age">
 
@@ -1418,6 +1605,8 @@ icon and keeps upstream's rows and initials badge. Leave
 `resolveThreadProviderStack` and `providerInstanceHistory` as upstream has them:
 mobile and the hover card read them.
 
+Upstream: none.
+
 ## Agent names on cards
 
 A project can carry an agent name (**Settings → Projects → Agent name**, or
@@ -1430,17 +1619,26 @@ Mobile is unchanged. The column (`agent_name`) is added by
 than by a numbered migration, which would collide with upstream's next id. Code:
 `resolveThreadCardHeading` in `apps/web/src/components/Sidebar.logic.ts`.
 
-## No repeated project name on cards
+Upstream: none.
+
+## No repeated project name
+
+A card whose title is its project's name leaves out the repeated project label.
 
 This now matters only for FirstMate cards, the one place a card still has a
-project line (see [One-line thread cards](#one-line-thread-cards)). When a
+project line (see [One-line cards](#one-line-cards)). When a
 thread's title matches its project's name (ignoring case and surrounding
 spaces), as for a standing thread named after its project, the card leaves the
 project label out of its first line, which keeps the project icon, pin, status
 and time. The title line is unchanged, and the hover card and screen-reader label
 still name the project. Code: `projectLabel` from `resolveThreadCardHeading`.
 
-## Thread details open hidden
+Upstream: none.
+
+## Thread details hidden
+
+New threads open without the thread details card; a setting shows it by default
+again.
 
 Upstream shows the thread details card on every thread until you hide it. Here a
 thread you have not toggled opens with the card hidden, unless **Settings →
@@ -1450,7 +1648,9 @@ you show or hide it, whichever way the setting points. Code:
 `defaultThreadPanelVisibility` in `apps/web/src/rightPanelStore.ts`, whose
 persisted map now keeps open choices too.
 
-## Context window meter
+Upstream: none.
+
+## Context ring
 
 The composer's footer shows a ring for how full the thread's context window
 is. Hovering it opens the usage, total processed tokens, cost, the
@@ -1465,7 +1665,7 @@ https://github.com/pingdotgg/t3code/pull/27892). The fork's part is the ring in
 the composer, always on, not the toggle, because a glance at the composer is
 the quickest way to see when a long thread needs compacting. A FirstMate worker's thread, which has no composer,
 shows the same ring on its
-[reply box](#a-crewmates-message-box-sends-to-firstmate) so the captain can see
+[reply box](#reply-box-goes-to-firstmate) so the captain can see
 how much context each worker holds; there it has no Compact context button.
 
 Upstream's branch `maria/redesign/6-workspace-panes` has its own view of what
@@ -1483,9 +1683,13 @@ sentence on the ring in `docs/user/composer.md`. The fork's `CrewReply.tsx`
 renders it too. The meter
 offers no Refresh context; the fork removed that feature.
 
-## The window grows for the right panel
+Upstream: partly: it had this ring and removed it
+([#33131](https://github.com/pingdotgg/t3code/pull/33131)); its thread details
+card has an opt-in context row instead
+([#26904](https://github.com/pingdotgg/t3code/pull/26904),
+[#27892](https://github.com/pingdotgg/t3code/pull/27892)).
 
-![The desktop app with a README open in the right panel: the window grew by the panel's width, and the sidebar and chat kept theirs](media/window-grows-for-panel.jpg)
+## Window grows for the panel
 
 In the desktop app, opening the right panel (a file link, the Files list, any
 surface) widens the window to the right by the panel's width, so the sidebar
@@ -1493,6 +1697,8 @@ and chat keep the widths you chose. Closing it takes the panel's width as it is
 then back off. Upstream's panel shares the window, so the window never moves or
 resizes on its own. The fork changes that on purpose: the window is kept at a
 chosen width, and opening a document used to squeeze the chat to make room.
+
+![The desktop app with a README open in the right panel: the window grew by the panel's width, and the sidebar and chat kept theirs](media/window-grows-for-panel.jpg)
 
 - The chat column keeps its width and the panel takes the rest of the row, on
   desktop and in the browser alike, so a window resize or a sidebar toggle
@@ -1546,7 +1752,12 @@ and the frame it draws), the `setRightPanelOpen` bridge method,
 resizes), and `apps/web/src/hooks/usePreviewPanelInlineSize.ts` (the kept chat
 width), each web hook with its browser test.
 
-## A closed Claude session waits for its CLI to exit
+Upstream: none.
+
+## Clean session close
+
+When a Claude session closes, T3 waits for its process to exit, so FirstMate's
+next session keeps its session lock instead of coming up read-only.
 
 Upstream's `/clear` ends the thread's agent session and opens a fresh one. On
 the FirstMate thread the old Claude CLI process must be gone first: FirstMate's
@@ -1560,7 +1771,12 @@ The fork once had a Refresh context button for this. Its first version wrote a
 `thread.session-replaced` event; nothing writes it now, and the contracts keep
 it so stored events still decode.
 
-## Per-thread environment and instructions
+Upstream: none.
+
+## Any agent as a worker
+
+Any agent can be FirstMate's worker: a launched thread gets its own environment
+variables and instructions, on every provider that can apply them.
 
 An agent that launches a thread can give it its own environment variables and
 instructions. `t3_thread_launch` takes optional `environment` (env vars, at most
@@ -1587,7 +1803,15 @@ server (`serverUrl`), on either OpenCode adapter, has an environment T3 does not
 know or cannot reach, so it takes instructions only. Code:
 `packages/provider-opencode/src/server/v2/adapter.ts`.
 
-## Agents answer approvals over MCP
+FirstMate half, in the FirstMate fork:
+[Any agent as a worker](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#any-agent-as-a-worker).
+
+Upstream: none.
+
+## FirstMate answers approvals
+
+FirstMate, or any agent driving T3 over MCP, can allow or deny a worker's
+permission prompt itself, so you are not asked.
 
 Claude asks for some commands even with full access (its own safety checks and
 the user's ask rules). An agent driving T3 over MCP, such as FirstMate, can
@@ -1601,7 +1825,15 @@ timeline row record `respondedBy: "agent"`, which web and mobile show as
 "answered by agent". `orchestrator_capabilities` reports `approvalResponses`.
 Code: `apps/server/src/mcp/toolkits/thread/handlers.ts`.
 
-## Stopped turns close their approvals
+FirstMate half, in the FirstMate fork:
+[Approvals at once](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#approvals-at-once).
+
+Upstream: none.
+
+## Stopped turns close approvals
+
+When a turn is stopped or fails, its approval prompts close instead of staying
+pending forever.
 
 On the normal path, upstream closes only a stopped turn's questions, so an
 approval such as a Claude command prompt stays pending forever: the app keeps
@@ -1622,7 +1854,13 @@ OpenCode subagent's) stays pending either way; upstream's own question-only
 `apps/server/src/orchestration-v2/ProviderEventIngestor.ts` and
 `guardRequestClosures` in `EventSink.ts`.
 
-## Waits end on a question or approval
+Upstream: partly ([#30695](https://github.com/pingdotgg/t3code/pull/30695)): its
+Stop on a stalled run already closes them.
+
+## Approvals reach FirstMate at once
+
+FirstMate hears a worker's question or approval the moment it appears, without
+checking every thread once a second.
 
 T3 sends an MCP client no event when a thread starts waiting on a question or
 approval, so FirstMate used to re-list every watched thread's pending requests
@@ -1641,7 +1879,16 @@ Code: `apps/server/src/orchestration-v2/ThreadManagementService.ts`
 https://github.com/pingdotgg/t3code/pull/24712 adds a similar return on a
 pending question or approval to thread waits.
 
-## FirstMate's sign-in lasts 10 years
+FirstMate half, in the FirstMate fork:
+[Approvals at once](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#approvals-at-once).
+
+Upstream: open PR ([#24712](https://github.com/pingdotgg/t3code/pull/24712), by
+an outside contributor, not merged) adds a similar return to thread waits.
+
+## Long sign-in
+
+FirstMate's sign-in to T3 lasts 10 years instead of 30 days, so it never needs
+renewing.
 
 Upstream gives every MCP sign-in a 30-day pass, most likely so a leaked or
 forgotten pass does not stay valid forever. Here the pass for the client named
@@ -1658,7 +1905,11 @@ signs in locally, so nothing changes for it. Code:
 https://github.com/pingdotgg/t3code/pull/37679 makes the lifetime configurable
 instead, one for every client.
 
-## Messages record which client sent them
+Upstream: none. Open PR [#37679](https://github.com/pingdotgg/t3code/pull/37679)
+(by an outside contributor, not merged) makes the lifetime configurable instead,
+one for every client.
+
+## Which device sent it
 
 Every user message records the client that sent it, so an outside reader can
 count prompts from the phone against the computer without parsing text. This
@@ -1680,13 +1931,19 @@ none, which means unknown; nothing is backfilled. A run's sender is its
 `apps/server/src/orchestration-v2/ThreadManagementService.ts`, `messageProvenance`
 in `Orchestrator.ts`, `clientOrigin` in `apps/server/src/ws.ts`.
 
-## Work records the prompt that caused it
+Upstream: partly: its v1 events recorded the sending client, and its v2
+orchestrator dropped that.
+
+## Work records its cause
+
+Each worker records which of your prompts started it, so its work can be traced
+back to your phone or computer.
 
 An MCP-sent message is stamped `mcp`/`bot`, which says an agent sent it but
 not why. So FirstMate can tie a worker back to the phone or computer prompt
 it acted on, `t3_thread_launch` and `t3_thread_send` take an optional
 `causedBy`. T3 now binds where launched and steered work counts itself, from
-the calling thread (see [Usage by origin](#usage-by-origin)); `causedBy` is
+the calling thread (see [Phone vs computer split](#phone-vs-computer-split)); `causedBy` is
 still checked, stored and followed for work that has no bound origin:
 
 ```json
@@ -1718,11 +1975,19 @@ still checked, stored and followed for work that has no bound origin:
   a restart's note and continuations count to it when the request carries no
   bound origin, and a claimed session, folder or turn counts to it.
 
-Usage follows these links ([Usage by origin](#usage-by-origin)). Code:
+Usage follows these links ([Phone vs computer split](#phone-vs-computer-split)). Code:
 `verifyCause` in `apps/server/src/mcp/threadAccess.ts`, `OrchestrationV2CausedBy`
 in `packages/contracts/src/orchestrationV2.ts`.
 
-## Queued messages can be stashed
+FirstMate half, in the FirstMate fork:
+[Work records its cause](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#work-records-its-cause).
+
+Upstream: none.
+
+## Stash a queued message
+
+A queued message can be moved into the prompt stash with all its images and
+files.
 
 ![A held queued message with three images and a file; the bookmark beside Send now and the pencil reads "Move to the stash, with its attachments"](media/queued-stash.png)
 
@@ -1749,7 +2014,10 @@ or the stash entry schema need merging onto this model. Upstream fixes to its
 async step (`finalizeEntryImages`, `pendingImageCount`, orphaned counts after a
 reload, cross-tab finalize) have nothing to land on here and are dropped.
 
-## Telemetry off by default
+Upstream: partly: the prompt stash is upstream's; stashing a queued message, and
+keeping every image whole, are the fork's.
+
+## Telemetry off
 
 The fork sends no product analytics and no T3 Connect relay traces unless you
 opt in. `T3CODE_TELEMETRY_ENABLED` governs both and defaults to `false` here
@@ -1764,7 +2032,16 @@ takes effect from the second launch. For it to take effect at once, run
 the app from a terminal that has the variable set. Your own OpenTelemetry export
 and the mobile app's crash reports have their own settings.
 
-## File references
+FirstMate half, in the FirstMate fork:
+[Telemetry warning](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#telemetry-warning).
+
+Upstream: none. It sends telemetry unless you opt out.
+
+## Links that work
+
+Links and paths in a Markdown file open from that file's own folder, a link to a
+heading or line opens there, video plays in the panel, and any file can open in
+its default app.
 
 A path written in a Markdown file is read from that file's own folder, and only
 there, as GitHub, VS Code and Obsidian read it: in `data/demo/report.md`,
@@ -1804,7 +2081,13 @@ On syncs, keep `resolveMarkdownFileLinkMeta`'s `documentDir` (unset only for
 chat, which alone sets `workspaceLookupPath`) and `ChatMarkdown`'s `imageBaseDir`
 passed through as that folder, not defaulted to `cwd`.
 
-## FirstMate edits files in any project
+Upstream: partly ([#16950](https://github.com/pingdotgg/t3code/pull/16950)): it
+opens inline-code paths from the project's top folder.
+
+## FirstMate edits any file
+
+FirstMate's own thread can edit and save files in any project, which upstream
+opens read-only.
 
 Upstream's file panel edits only files inside the open thread's project
 folder; any other file on the machine opens read-only, and the server refuses
@@ -1828,9 +2111,9 @@ field in `ProjectWriteFileInput`, the `projects.writeFile` handler in
 `apps/server/src/ws.ts`, and `resolveHostWriteTarget` in
 `apps/server/src/workspace/WorkspaceFileSystem.ts`.
 
-## Live Markdown editor
+Upstream: none.
 
-![A report open in the file panel as a rendered page, with the caret inside bold text whose two asterisk marks show dimmed](media/live-markdown.png)
+## Live Markdown editor
 
 A Markdown file that can be edited opens in the file panel as a rendered page
 you type into, like Obsidian's Live Preview. Markdown marks show, dimmed, only
@@ -1839,6 +2122,8 @@ text and never converts it, so nothing an agent wrote is reformatted on save,
 line endings included; a file that mixes line endings is saved with the one it
 uses most once you edit it. Upstream offers a read-only rendered view or a source
 editor, and opens Markdown as source.
+
+![A report open in the file panel as a rendered page, with the caret inside bold text whose two asterisk marks show dimmed](media/live-markdown.png)
 
 It draws headings, bold, italic, strikethrough, inline code, quotes, callouts,
 rules, lists and task boxes, code blocks with colours, tables, images from the
@@ -1857,7 +2142,7 @@ short lines.
   stays out of the undo history. The caret, the scroll position and undo
   stay, and the changed lines are tinted for two seconds.
 - A plain click follows a link, an inline-code path or a bare absolute path:
-  a file opens in the panel ([File references](#file-references)), a web
+  a file opens in the panel ([Links that work](#links-that-work)), a web
   address in the browser. Option-click puts the caret in it. `[[wiki-links]]`
   are drawn but do not open. A link to a line (`report.md:42`) scrolls to it
   here; the read-only view still switches to source for that.
@@ -1919,9 +2204,9 @@ which the outline uses for heading anchors; the pre-bundled packages in
 upstream ships its own editable rendered view, choose one of the two. The
 mobile app is otherwise unchanged.
 
-## Cite in Markdown files
+Upstream: none. It offers a read-only rendered view or a source editor.
 
-![A Markdown file in the side panel with text selected and the right-click menu offering Cite and Copy; two file quotes sit as chips in the message box](media/markdown-file-cite.jpg)
+## Cite from a Markdown file
 
 Selecting text in a Markdown file in the side panel offers Cite the way an
 assistant response does: the same floating Cite button, and a Cite item in the
@@ -1934,6 +2219,8 @@ for a fresh one. Upstream cites assistant responses, and its file comments
 the source view to the composer as a File comment chip. The fork's part is
 citing from the rendered views, quoting the exact selection, and the shared
 Cite button and right-click menu.
+
+![A Markdown file in the side panel with text selected and the right-click menu offering Cite and Copy; two file quotes sit as chips in the message box](media/markdown-file-cite.jpg)
 
 - The agent gets each file quote as `[file-quote-N]` in the message and a
   `<file_citations>` block after it, framed like upstream's
@@ -1976,9 +2263,10 @@ composer path (`ChatView.tsx`, `ChatComposer.tsx`, `MessagesTimeline.tsx`,
 in `ChatView.tsx`; one mount each in `FilePreviewPanel.tsx` and
 `LiveMarkdownSurface.tsx`; and a paragraph in `docs/user/composer.md`.
 
-## File tabs name their folder
+Upstream: partly: citing assistant replies, and line comments from the source
+view ([#3115](https://github.com/pingdotgg/t3code/pull/3115)), are upstream's.
 
-![Three README.md tabs in the side panel; two show their folder dimmed before the name, and the one at the project's top folder shows the name alone](media/file-tab-folders.png)
+## File tabs name their folder
 
 A file tab in the side panel shows the file's folder, dimmed, before its name
 (`reports/README.md`), so files that share a name (`README.md`, `index.md`,
@@ -1991,7 +2279,11 @@ Code: `fileTabParentFolder` and the file branch of `RightPanelTab` in
 `apps/web/src/components/RightPanelTabs.tsx`; file tabs are wider than other
 tabs (`max-w-52` instead of `max-w-36`) to make room.
 
-## Closing a tab returns to the one viewed before it
+![Three README.md tabs in the side panel; two show their folder dimmed before the name, and the one at the project's top folder shows the name alone](media/file-tab-folders.png)
+
+Upstream: none.
+
+## Closing a tab goes back
 
 Closing the active tab in the side panel shows the tab viewed just before it,
 the way VS Code and Firefox do, so closing a tab opened from a link in a report
@@ -2010,6 +2302,8 @@ forward: `previousSurfaceIds`, `lastViewedSurfaceId` and its three callers
 (`closeSurface`, `closeTerminal` when the last pane closes,
 `closeSurfacesToRight`), and `previousSurfaceIdsFrom` in the migration, all in
 `apps/web/src/rightPanelStore.ts`.
+
+Upstream: none.
 
 ## Mouse Back and Forward do nothing
 
@@ -2031,6 +2325,8 @@ Carry forward: `installThumbButtonGuard` in `apps/web/src/thumbButtons.ts`
 (installed from `startAppServices`), `beforeMouse` in
 `apps/desktop/src/preview/Manager.ts`, and the absent `swipe` listener in
 `apps/desktop/src/window/DesktopWindow.ts`.
+
+Upstream: none.
 
 ## Version
 

@@ -4,45 +4,60 @@ This fork and [the FirstMate fork](https://github.com/dascapytal1559/firstmate) 
 
 A fork of [pingdotgg/t3code](https://github.com/pingdotgg/t3code), built to host the FirstMate fork and its crew.
 
-For FirstMate:
+Every difference from upstream, in the order [fork/README.md](fork/README.md) describes them. A feature with a second half in the FirstMate fork links to it from its section.
 
-- [Crew sidebar](fork/README.md#firstmate-crew-in-the-sidebar): FirstMate and its workers as a tree, with short status labels.
-- [Worker replies go to FirstMate](fork/README.md#a-crewmates-message-box-sends-to-firstmate): a worker thread's message box sends to FirstMate, not the worker, and shows how full the worker's context is.
-- [Settle, not archive](fork/README.md#the-captain-settles-firstmate-archives): the menus offer upstream's Settle but no Archive, Snoozed stays pinned at the bottom, and settling a worker tells FirstMate.
-- [Approvals over MCP](fork/README.md#agents-answer-approvals-over-mcp): FirstMate answers a worker's permission prompts.
-- [Waits end on a question](fork/README.md#waits-end-on-a-question-or-approval): FirstMate hears a question or approval the moment it appears.
-- [Per-thread settings](fork/README.md#per-thread-environment-and-instructions): each launched worker gets its own environment and instructions.
-- [Idle agents](fork/README.md#idle-agent-release-is-a-server-setting): idle release is a setting, and agents can be kept for good.
-- [Long sign-in](fork/README.md#firstmates-sign-in-lasts-10-years): FirstMate's sign-in lasts 10 years instead of 30 days, so it never needs renewing.
-- [Bridge](fork/README.md#bridge): your objectives and FirstMate's model routing, in the right panel's Bridge tab.
-- [Clean session close](fork/README.md#a-closed-claude-session-waits-for-its-cli-to-exit): a closed Claude session waits for its CLI to exit, so FirstMate's next one keeps its lock.
-- [Cold clear](fork/README.md#a-cold-thread-starts-fresh): once FirstMate's prompt cache has expired, T3 starts it a fresh session at once with a short quiet note instead of reloading the old one later, and its context window offers **Start a new session**; a project can opt its own threads in, on cache expiry or after a set number of quiet minutes on any provider.
-- [Lean Claude startup](fork/README.md#lean-claude-startup): a project can start Claude with only T3's and its folder's MCP servers, and no skills list.
-- [Edit any file](fork/README.md#firstmate-edits-files-in-any-project): FirstMate's thread edits files outside its project folder, which upstream opens read-only.
-
-Also:
-
-- [Its own app](fork/README.md#desktop-identity): T3 Code (Fork) runs beside the official one.
-- [Live Markdown editor](fork/README.md#live-markdown-editor): a Markdown file opens as a rendered page you type into, like Obsidian's Live Preview.
-- [File references](fork/README.md#file-references): a path in a Markdown file opens from that file's folder (inline code also from the project's top folder), clickable in the live editor too, and media opens in its default app.
-- [File tabs name their folder](fork/README.md#file-tabs-name-their-folder): `reports/README.md`, so same-named files tell apart.
-- [Telemetry off](fork/README.md#telemetry-off-by-default): nothing is sent unless you opt in.
-- [Board](fork/README.md#board): a tab to sketch on screenshots and attach them to the chat.
-- [Twelve months of usage](fork/README.md#usage-reaches-twelve-months): longer periods, drawn as stacked bars.
-- [Muted usage rows](fork/README.md#usage-rows-can-be-muted): click a provider on the Usage page to mute it.
-- [Usage figures](fork/README.md#usage-figures-line-up-and-fade-by-size): shares and aligned columns on the Usage page, and the big numbers stand out.
-- [Usage in the sidebar](fork/README.md#usage-limits-in-the-sidebar): one bar per account shows what is left this week.
-- [Archived usage](fork/README.md#archived-usage): counts machines that no longer run T3.
+- [Its own app](fork/README.md#its-own-app): T3 Code (Fork) runs beside the official app, with its own data.
+- [6 and 12 months](fork/README.md#6-and-12-months): the Usage page reaches back 6 and 12 months, drawn as stacked bars.
+- [Mute a provider](fork/README.md#mute-a-provider): click a provider on the Usage page to leave it out of every figure.
+- [Figures that read](fork/README.md#figures-that-read): Usage figures sit in columns and fade by size; the big ones stand out.
+- [Accounts in your order](fork/README.md#accounts-in-your-order): usage lists accounts in the Settings › Providers order.
+- [Limits in the sidebar](fork/README.md#limits-in-the-sidebar): one bar per account shows what is left this week, with a pace mark.
+- [Archived usage](fork/README.md#archived-usage): usage counts machines and accounts that no longer run T3.
+- [Phone vs computer split](fork/README.md#phone-vs-computer-split): tokens and cost split by phone or computer, typed or started by an agent.
 - [Usage export](fork/README.md#usage-export): `t3 usage export` prints each model call as T3 counted it, as JSON lines.
+- [Banked resets on a Mac](fork/README.md#banked-resets-on-a-mac): Claude's banked resets show and can be redeemed on macOS, each on the rows it refills.
+- [Limits stay current](fork/README.md#limits-stay-current): a fresh limits reading on every check, with its age shown.
 - [Limits history](fork/README.md#limits-history): every limits reading is kept in a monthly log.
-- [Upstream release note](fork/README.md#upstream-release-indicator): the sidebar says when upstream ships a release.
-- [App-bundled CLIs](fork/README.md#app-bundled-clis-are-updated-by-their-app): a CLI inside a macOS app is left for that app to update.
-- [`~` in provider paths](fork/README.md#-in-a-providers-executable-path): works for every provider.
-- [Stopped turns](fork/README.md#stopped-turns-close-their-approvals): their approvals close instead of staying pending.
-- [One-line cards](fork/README.md#one-line-thread-cards): each top-level sidebar card is one line: project icon, title, status.
-- [Thread details hidden](fork/README.md#thread-details-open-hidden): new threads open without the details card; a setting shows it.
-- [Window grows for the panel](fork/README.md#the-window-grows-for-the-right-panel): opening the right panel widens the desktop window, so the chat keeps its width.
-- [Message origin](fork/README.md#messages-record-which-client-sent-them): each user message records which client sent it.
+- [App-bundled tools](fork/README.md#app-bundled-tools): a CLI inside a macOS app is left for that app to update.
+- [`~` in tool paths](fork/README.md#-in-tool-paths): a provider path starting with `~` works for every provider.
+- [Agents kept alive](fork/README.md#agents-kept-alive): idle agents can be kept for good (a server setting).
+- [Upstream release note](fork/README.md#upstream-release-note): the sidebar says when upstream ships a release.
+- [Board](fork/README.md#board): a tab to sketch on screenshots and attach them to the chat.
+- [Crew in the sidebar](fork/README.md#crew-in-the-sidebar): FirstMate and its workers as one tree, each card saying what the worker is doing.
+- [The branching animation](fork/README.md#the-branching-animation): a worker's branch draws into the crew tree and folds back when it is cleaned up.
+- [Reply box goes to FirstMate](fork/README.md#reply-box-goes-to-firstmate): typing on a worker's thread reaches FirstMate, not the worker.
+- [Settle, never archive](fork/README.md#settle-never-archive): menus offer Settle and no Archive, Snoozed stays pinned, and settling a worker tells FirstMate.
+- [Indefinite snooze](fork/README.md#indefinite-snooze): snooze with no return time, first in every snooze menu.
+- [Quiet workers, quiet wakes](fork/README.md#quiet-workers-quiet-wakes): only your own threads alert, and FirstMate's only when it needs you.
+- [Tidy instruction line](fork/README.md#tidy-instruction-line): FirstMate's instruction line shows as "FirstMate · New instruction".
+- [A fresh start really ends the old one](fork/README.md#a-fresh-start-really-ends-the-old-one): `/clear` on FirstMate stops the old session even when busy.
+- [Auto clearing (cold clear)](fork/README.md#auto-clearing-cold-clear): FirstMate starts fresh once its cache expires; any project can opt in.
+- [Lean Claude startup](fork/README.md#lean-claude-startup): a project can start Claude with only T3's and its folder's MCP servers, for a smaller first request.
+- [Bridge](fork/README.md#bridge): your objectives and FirstMate's model routing, in a side-panel tab.
+- [Clean restarts](fork/README.md#clean-restarts): a restart waits for running turns and holds new messages until after it.
+- [One-line cards](fork/README.md#one-line-cards): each thread is one line: project icon, title, status; accounts numbered 1, 2, 3.
+- [Agent names on cards](fork/README.md#agent-names-on-cards): a standing agent's threads show its name, such as a life log.
+- [No repeated project name](fork/README.md#no-repeated-project-name): a card titled with its project's name drops the repeat.
+- [Thread details hidden](fork/README.md#thread-details-hidden): new threads open without the details card; a setting shows it.
+- [Context ring](fork/README.md#context-ring): the ring for how full a thread's context is stays in the message box.
+- [Window grows for the panel](fork/README.md#window-grows-for-the-panel): opening the side panel widens the desktop window, so the chat keeps its width.
+- [Clean session close](fork/README.md#clean-session-close): a closed Claude session waits for its process to exit, so FirstMate's next one keeps its lock.
+- [Any agent as a worker](fork/README.md#any-agent-as-a-worker): each launched worker gets its own environment and instructions, on any provider.
+- [FirstMate answers approvals](fork/README.md#firstmate-answers-approvals): FirstMate can allow or deny a worker's permission prompt.
+- [Stopped turns close approvals](fork/README.md#stopped-turns-close-approvals): a stopped turn's approval prompts close instead of hanging.
+- [Approvals reach FirstMate at once](fork/README.md#approvals-reach-firstmate-at-once): FirstMate hears a worker's question or approval the moment it appears.
+- [Long sign-in](fork/README.md#long-sign-in): FirstMate's sign-in lasts 10 years instead of 30 days.
+- [Which device sent it](fork/README.md#which-device-sent-it): every message records whether it came from the phone, the computer or an agent.
+- [Work records its cause](fork/README.md#work-records-its-cause): each worker records which of your prompts started it.
+- [Stash a queued message](fork/README.md#stash-a-queued-message): move a queued message into the stash with its images and files.
+- [Telemetry off](fork/README.md#telemetry-off): nothing is sent unless you opt in.
+- [Links that work](fork/README.md#links-that-work): a path in a Markdown file opens from that file's folder; headings and lines open; media plays.
+- [FirstMate edits any file](fork/README.md#firstmate-edits-any-file): FirstMate's thread edits files outside its own project.
+- [Live Markdown editor](fork/README.md#live-markdown-editor): a Markdown file opens as a rendered page you type into, like Obsidian.
+- [Cite from a Markdown file](fork/README.md#cite-from-a-markdown-file): select text in a Markdown file and Cite it into the chat.
+- [File tabs name their folder](fork/README.md#file-tabs-name-their-folder): `reports/README.md`, so same-named files tell apart.
+- [Closing a tab goes back](fork/README.md#closing-a-tab-goes-back): closing a side-panel tab shows the tab you viewed before it.
+- [Mouse Back and Forward do nothing](fork/README.md#mouse-back-and-forward-do-nothing): the mouse thumb buttons take no action in the app, so they stay free for your own bindings.
 
 Details and pictures: [fork/README.md](fork/README.md).
 
