@@ -170,13 +170,15 @@ export function UsageLimitRecoveryCard({
                 )
             : chatGptLimit
               ? (resetText ?? gt("Review your usage settings in ChatGPT."))
-              : resetDate !== null
-                ? resumes
-                  ? gt("Usage limit reached. Resumes {date}.", { date: resetDate })
-                  : gt("Usage limit reached. Resets {date}.", { date: resetDate })
-                : gt(
-                    "Usage limit reached. The provider did not report a reset time. Retry manually when your limit is available.",
-                  )}
+              : displayAt && isIndefiniteSnooze(displayAt)
+                ? gt("Usage limit reached. Resumes when you wake it.")
+                : resetDate !== null
+                  ? resumes
+                    ? gt("Usage limit reached. Resumes {date}.", { date: resetDate })
+                    : gt("Usage limit reached. Resets {date}.", { date: resetDate })
+                  : gt(
+                      "Usage limit reached. The provider did not report a reset time. Retry manually when your limit is available.",
+                    )}
         </Text>
         {chatGptLimit || canSchedule ? (
           // The margins cancel the 44pt touch height so the links sit 8pt under the text.

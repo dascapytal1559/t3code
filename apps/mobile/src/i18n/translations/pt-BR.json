@@ -4509,6 +4509,7 @@
   "6c65e7acd6e3b473": "Solicitação copiada. Envie-a ao administrador do seu workspace.",
   "6b927e12047d36ed": "Você atingiu o limite do seu workspace para usar o plano do ChatGPT em outros apps. Copie um pedido para solicitar ao administrador do workspace limites de uso maiores.",
   "3c842d1f3db7c6b3": "Revise suas configurações de uso no ChatGPT.",
+  "a3d2bb3fe364c188": "Usage limit reached. Resumes when you wake it.",
   "7c4d4a4481a7051d": "Limite de uso atingido. Retoma {date}.",
   "e4fa62fc48f25391": "Limite de uso atingido. Redefine {date}.",
   "2e3243344196188b": "Limite de uso atingido. O provedor não informou um horário de redefinição. Tente novamente manualmente quando seu limite estiver disponível.",

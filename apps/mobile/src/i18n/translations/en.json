@@ -4516,6 +4516,7 @@
   "6c65e7acd6e3b473": "Request copied. Send it to your workspace admin.",
   "6b927e12047d36ed": "You've reached your workspace's limit for using your ChatGPT plan in other apps. Copy a request to ask your workspace admin for increased usage limits.",
   "3c842d1f3db7c6b3": "Review your usage settings in ChatGPT.",
+  "a3d2bb3fe364c188": "Usage limit reached. Resumes when you wake it.",
   "7c4d4a4481a7051d": "Usage limit reached. Resumes {date}.",
   "e4fa62fc48f25391": "Usage limit reached. Resets {date}.",
   "2e3243344196188b": "Usage limit reached. The provider did not report a reset time. Retry manually when your limit is available.",
