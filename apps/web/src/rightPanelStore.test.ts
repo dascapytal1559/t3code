@@ -901,6 +901,7 @@ describe("rightPanelStore", () => {
     expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
       isOpen: true,
       activeSurfaceId: "file:README.md",
+      previousSurfaceIds: ["file:src/index.ts"],
       surfaces: [
         {
           id: "file:src/index.ts",
@@ -1244,6 +1245,76 @@ describe("rightPanelStore", () => {
 
     expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)?.id).toBe(
       "browser:tab-a",
+    );
+  });
+
+  it("closing the active tab returns to the tab viewed before it, across a reload", async () => {
+    const store = useRightPanelStore.getState();
+    store.openFile(refA, "reports/report.md");
+    store.openFile(refA, "notes.md");
+    store.activateSurface(refA, "file:reports/report.md");
+    store.openFile(refA, "src/linked.ts");
+    await reloadRightPanelStore();
+
+    useRightPanelStore.getState().closeSurface(refA, "file:src/linked.ts");
+
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.surfaces.map((surface) => surface.id)).toEqual([
+      "file:reports/report.md",
+      "file:notes.md",
+    ]);
+    expect(state.activeSurfaceId).toBe("file:reports/report.md");
+    useRightPanelStore.getState().closeSurface(refA, "file:reports/report.md");
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)?.id).toBe(
+      "file:notes.md",
+    );
+  });
+
+  it("forgets a closed background tab and keeps the active one", () => {
+    const store = useRightPanelStore.getState();
+    store.openFile(refA, "a.md");
+    store.openFile(refA, "b.md");
+    store.openFile(refA, "c.md");
+    store.closeSurface(refA, "file:b.md");
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)?.id).toBe(
+      "file:c.md",
+    );
+    store.closeSurface(refA, "file:c.md");
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)?.id).toBe(
+      "file:a.md",
+    );
+  });
+
+  it("falls back to the neighbouring tab when no view history was saved", () => {
+    const store = useRightPanelStore.getState();
+    store.openFile(refA, "a.md");
+    store.openFile(refA, "b.md");
+    store.openFile(refA, "c.md");
+    const { surfaces } = selectThreadRightPanelState(
+      useRightPanelStore.getState().byThreadKey,
+      refA,
+    );
+    useRightPanelStore.setState({
+      byThreadKey: {
+        "env-1:thread-A": { isOpen: true, activeSurfaceId: "file:b.md", surfaces },
+      },
+    });
+    useRightPanelStore.getState().closeSurface(refA, "file:b.md");
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)?.id).toBe(
+      "file:c.md",
+    );
+  });
+
+  it("closing tabs to the right returns to the last viewed tab that stays", () => {
+    const store = useRightPanelStore.getState();
+    store.openFile(refA, "a.md");
+    store.openFile(refA, "b.md");
+    store.openFile(refA, "c.md");
+    store.activateSurface(refA, "file:a.md");
+    store.activateSurface(refA, "file:c.md");
+    store.closeSurfacesToRight(refA, "file:b.md");
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)?.id).toBe(
+      "file:a.md",
     );
   });
 

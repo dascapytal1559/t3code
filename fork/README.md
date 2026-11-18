@@ -1986,6 +1986,26 @@ Code: `fileTabParentFolder` and the file branch of `RightPanelTab` in
 `apps/web/src/components/RightPanelTabs.tsx`; file tabs are wider than other
 tabs (`max-w-52` instead of `max-w-36`) to make room.
 
+## Closing a tab returns to the one viewed before it
+
+Closing the active tab in the side panel shows the tab viewed just before it,
+the way VS Code and Firefox do, so closing a tab opened from a link in a report
+brings the report back. Upstream shows the tab that slides into the closed
+tab's place, usually the rightmost when new tabs open at the end. Tab positions,
+drag reordering and where new tabs open stay upstream's. "Close to the right"
+also lands on the most recently viewed tab that stays, where upstream lands on
+the clicked tab; "Close others" and "Close all" are unchanged.
+
+The store keeps each thread's open tabs in the order they were viewed,
+`previousSurfaceIds` beside `activeSurfaceId`, updated in one place
+(`withViewHistory` in `updateThreadStateMap`) so every path that changes the
+active tab feeds it. It is saved with the panel; state saved before it, or a
+history with no open tab left, falls back to upstream's position rule. Carry
+forward: `previousSurfaceIds`, `lastViewedSurfaceId` and its three callers
+(`closeSurface`, `closeTerminal` when the last pane closes,
+`closeSurfacesToRight`), and `previousSurfaceIdsFrom` in the migration, all in
+`apps/web/src/rightPanelStore.ts`.
+
 ## Version
 
 The fork keeps upstream's version number. The desktop app sets up an SSH or

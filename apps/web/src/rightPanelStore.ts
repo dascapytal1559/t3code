@@ -129,6 +129,8 @@ export interface ThreadRightPanelState {
   isOpen: boolean;
   activeSurfaceId: string | null;
   surfaces: RightPanelSurface[];
+  /** Fork: open tabs viewed before the active one, least recent first. */
+  previousSurfaceIds?: string[];
   dismissedDeviceSurfaceIds?: string[];
   maximized?: true;
   proactiveDiffTurnId?: RunId;
@@ -406,13 +408,45 @@ const upsertSurface = (
   activeSurfaceId: activate ? surface.id : current.activeSurfaceId,
 });
 
+/** The tab a close should land on: the most recently viewed one still open. */
+const lastViewedSurfaceId = (
+  current: ThreadRightPanelState,
+  surfaces: readonly RightPanelSurface[],
+): string | undefined =>
+  current.previousSurfaceIds?.findLast((id) => surfaces.some((surface) => surface.id === id));
+
+const withViewHistory = (
+  current: ThreadRightPanelState,
+  next: ThreadRightPanelState,
+): ThreadRightPanelState => {
+  if (next.activeSurfaceId === current.activeSurfaceId && next.surfaces === current.surfaces) {
+    return next;
+  }
+  const history = next.previousSurfaceIds ?? [];
+  const viewed =
+    next.activeSurfaceId !== current.activeSurfaceId && current.activeSurfaceId !== null
+      ? [...history.filter((id) => id !== current.activeSurfaceId), current.activeSurfaceId]
+      : history;
+  const previousSurfaceIds = viewed.filter(
+    (id) => id !== next.activeSurfaceId && next.surfaces.some((surface) => surface.id === id),
+  );
+  if (
+    previousSurfaceIds.length === history.length &&
+    previousSurfaceIds.every((id, index) => id === history[index])
+  ) {
+    return next;
+  }
+  const { previousSurfaceIds: _previous, ...rest } = next;
+  return previousSurfaceIds.length > 0 ? { ...rest, previousSurfaceIds } : rest;
+};
+
 const updateThreadStateMap = (
   byThreadKey: Record<string, ThreadRightPanelState>,
   threadKey: string,
   updater: (current: ThreadRightPanelState) => ThreadRightPanelState,
 ): Record<string, ThreadRightPanelState> => {
   const current = byThreadKey[threadKey] ?? EMPTY_THREAD_STATE;
-  const next = updater(current);
+  const next = withViewHistory(current, updater(current));
   if (
     !next.isOpen &&
     next.activeSurfaceId === null &&
@@ -566,6 +600,21 @@ function normalizeRevealLine(line: number | undefined): number | null {
   return Math.max(1, Math.trunc(line));
 }
 
+function previousSurfaceIdsFrom(
+  threadState: ThreadRightPanelState | null,
+  surfaces: readonly RightPanelSurface[],
+  activeSurfaceId: string | null,
+): Pick<ThreadRightPanelState, "previousSurfaceIds"> {
+  if (!Array.isArray(threadState?.previousSurfaceIds)) return {};
+  const previousSurfaceIds = threadState.previousSurfaceIds.filter(
+    (id): id is string =>
+      typeof id === "string" &&
+      id !== activeSurfaceId &&
+      surfaces.some((surface) => surface.id === id),
+  );
+  return previousSurfaceIds.length > 0 ? { previousSurfaceIds } : {};
+}
+
 export function migratePersistedRightPanelState(persistedState: unknown): {
   byThreadKey: Record<string, ThreadRightPanelState>;
   threadPanelVisibilityByThreadKey: Record<string, ThreadPanelVisibility>;
@@ -708,6 +757,7 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                   isOpen,
                   surfaces,
                   activeSurfaceId,
+                  ...previousSurfaceIdsFrom(validThreadState, surfaces, activeSurfaceId),
                   ...(typeof validThreadState?.proactiveDiffTurnId === "string"
                     ? { proactiveDiffTurnId: RunId.make(validThreadState.proactiveDiffTurnId) }
                     : {}),
@@ -1058,15 +1108,16 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             if (terminalIds.length === 0) {
               const index = current.surfaces.findIndex((entry) => entry.id === surfaceId);
               const surfaces = current.surfaces.filter((entry) => entry.id !== surfaceId);
-              const fallback = surfaces[Math.min(index, surfaces.length - 1)] ?? null;
+              const fallback =
+                lastViewedSurfaceId(current, surfaces) ??
+                surfaces[Math.min(index, surfaces.length - 1)]?.id ??
+                null;
               return {
                 ...current,
                 isOpen: surfaces.length > 0 && current.isOpen,
                 surfaces,
                 activeSurfaceId:
-                  current.activeSurfaceId === surfaceId
-                    ? (fallback?.id ?? null)
-                    : current.activeSurfaceId,
+                  current.activeSurfaceId === surfaceId ? fallback : current.activeSurfaceId,
               };
             }
             return {
@@ -1108,10 +1159,12 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             if (current.activeSurfaceId !== surfaceId) {
               return next;
             }
-            const fallback = surfaces[Math.min(index, surfaces.length - 1)] ?? null;
             return {
               ...next,
-              activeSurfaceId: fallback?.id ?? null,
+              activeSurfaceId:
+                lastViewedSurfaceId(current, surfaces) ??
+                surfaces[Math.min(index, surfaces.length - 1)]?.id ??
+                null,
             };
           }),
         ),
@@ -1140,7 +1193,9 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             return {
               ...current,
               surfaces,
-              activeSurfaceId: activeStillExists ? current.activeSurfaceId : surfaceId,
+              activeSurfaceId: activeStillExists
+                ? current.activeSurfaceId
+                : (lastViewedSurfaceId(current, surfaces) ?? surfaceId),
             };
           }),
         ),
