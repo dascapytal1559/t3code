@@ -379,7 +379,7 @@ describe("live preview", () => {
 
   it("opens a drawn table that find steps into while the find bar has the focus", () => {
     let state = editorOn("Before\n\n| a | b |\n|---|---|\n| 417 | 2 |\n\nAfter", "^");
-    state = state.update({ effects: StateEffect.appendConfig.of(findReplace) }).state;
+    state = state.update({ effects: StateEffect.appendConfig.of(findReplace()) }).state;
     // Opening the find bar reads and writes only the state.
     const findBar = {
       get state() {

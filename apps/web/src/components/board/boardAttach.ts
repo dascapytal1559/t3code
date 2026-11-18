@@ -1,4 +1,5 @@
 import { PROVIDER_SEND_TURN_MAX_IMAGE_BYTES, type ScopedThreadRef } from "@t3tools/contracts";
+import { msg } from "gt-react";
 
 import {
   type DraftId,
@@ -7,6 +8,7 @@ import {
 } from "../../composerDraftStore";
 import { compressImageToByteLimit, readFileAsDataUrl } from "../../lib/imageCompression";
 import { randomUUID } from "../../lib/utils";
+import { m } from "../../i18n/messages";
 
 export type BoardAttachTarget = DraftId | ScopedThreadRef;
 
@@ -17,7 +19,7 @@ export async function attachBoardImage(target: BoardAttachTarget, png: Blob): Pr
     }),
     PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   );
-  if (!compressed.ok) throw new Error("The board is too large to attach.");
+  if (!compressed.ok) throw new Error(m(msg("The board is too large to attach.")));
   const { file } = compressed;
   const dataUrl = await readFileAsDataUrl(file);
   const id = randomUUID();
@@ -31,7 +33,7 @@ export async function attachBoardImage(target: BoardAttachTarget, png: Blob): Pr
     previewUrl: dataUrl,
     file,
   });
-  if (!added) throw new Error("Remove an attachment from that chat, then try again.");
+  if (!added) throw new Error(m(msg("Remove an attachment from that chat, then try again.")));
   const persisted: PersistedComposerImageAttachment = {
     id,
     name: file.name,

@@ -393,6 +393,7 @@ function UsageChartAnnotations({
   /** Each period's bar top in chart units. */
   readonly barTops: readonly number[];
 }) {
+  const locale = useLocale();
   const layerRef = useRef<HTMLDivElement | null>(null);
   const chipRefs = useRef<(HTMLDivElement | null)[]>([]);
 
@@ -453,7 +454,7 @@ function UsageChartAnnotations({
               top: `var(--annotation-${slot}-top)`,
             }}
           >
-            <span className="sr-only">{formatDayShort(annotation.date)}: </span>
+            <span className="sr-only">{formatDayShort(annotation.date, locale)}: </span>
             {annotation.label}
             {annotation.logo === "t3" ? <T3Badge /> : null}
           </div>

@@ -71,7 +71,7 @@ export function createLiveMarkdownEditor(options: LiveMarkdownEditorOptions): Li
     lineFlash,
     outlineTracker,
     folding,
-    findReplace,
+    findReplace(),
     keymap.of([...formatKeymap, ...listKeymap, ...historyKeymap, ...defaultKeymap]),
     EditorView.contentAttributes.of({
       spellcheck: "true",

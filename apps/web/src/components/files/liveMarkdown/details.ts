@@ -8,6 +8,8 @@ import {
 } from "@codemirror/state";
 import { Decoration, type EditorView, type KeyBinding, WidgetType } from "@codemirror/view";
 
+import { msg } from "gt-react";
+import { m } from "~/i18n/messages";
 import { chevronIcon } from "./widgets";
 
 // `<details>` blocks draw folded, as the rendered view and the chat draw them.
@@ -285,7 +287,7 @@ class DetailsBodyWidget extends WidgetType {
     wrap.className = "cm-lp-details-body";
     const button = document.createElement("span");
     button.className = "cm-foldPlaceholder";
-    button.title = "Unfold";
+    button.title = m(msg("Unfold", { $context: "verb, expands a folded section" }));
     button.textContent = "…";
     wrap.append(button);
     wrap.addEventListener("mousedown", (event) => {
