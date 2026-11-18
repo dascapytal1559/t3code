@@ -4,7 +4,7 @@ This fork tracks `pingdotgg/t3code` `main`. Each feature section says what it
 does, shows a picture where one helps, then what each upstream sync must carry
 forward, and ends with how much of it upstream has. A feature that is half in
 the [FirstMate fork](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md)
-links to that half. The front page lists every section in this order. Keep this
+links to that half. The front page lists every feature section in this order. Keep this
 list current. Pictures live in `fork/media/` and show made-up data. Fork text on
 screen goes through upstream's translation calls, as
 [Translating the UI](../docs/internals/i18n.md) describes, or lint fails. The
