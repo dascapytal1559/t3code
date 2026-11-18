@@ -66,6 +66,7 @@ import { installCommandPaletteCommands } from "./shortcuts/commandPaletteCommand
 import { registerOpenFavoriteEditorCommand } from "./components/chat/OpenInPickerShortcut";
 import { environmentThreadShells, threadEnvironment } from "./state/threads";
 import { resolveActiveThreadRouteRef, resolveThreadRouteTarget } from "./threadRoutes";
+import { installThumbButtonGuard } from "./thumbButtons";
 
 /** Writes appearance settings onto the document, touching only the groups that changed. */
 function startClientAppearance(): void {
@@ -260,6 +261,7 @@ export function startAppServices(): AppRouter {
   }
 
   installDesktopPasteAsText(window.desktopBridge, window);
+  installThumbButtonGuard(window);
 
   startClientAppearance();
   startI18n();

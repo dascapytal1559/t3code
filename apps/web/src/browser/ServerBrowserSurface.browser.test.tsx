@@ -158,18 +158,15 @@ const mouseUp = (canvas: HTMLCanvasElement, button: number) => {
 };
 
 describe("ServerBrowserSurface history", () => {
-  it("routes mouse thumb buttons to the preview's history instead of the app", async () => {
+  it("leaves the preview's history alone on mouse thumb buttons", async () => {
     setup();
     const { screen, input } = await renderSurface("you");
     await using _screen = screen;
     const canvas = input.closest("[data-server-browser-surface]")!.querySelector("canvas")!;
 
-    expect(mouseUp(canvas, 3).defaultPrevented).toBe(true);
-    expect(mouseUp(canvas, 4).defaultPrevented).toBe(true);
-    expect(mocks.sent).toEqual([
-      { type: "history", delta: -1 },
-      { type: "history", delta: 1 },
-    ]);
+    mouseUp(canvas, 3);
+    mouseUp(canvas, 4);
+    expect(mocks.sent).toEqual([]);
   });
 
   it("leaves other mouse buttons alone", async () => {

@@ -2011,6 +2011,27 @@ forward: `previousSurfaceIds`, `lastViewedSurfaceId` and its three callers
 `closeSurfacesToRight`), and `previousSurfaceIdsFrom` in the migration, all in
 `apps/web/src/rightPanelStore.ts`.
 
+## Mouse Back and Forward do nothing
+
+The mouse thumb buttons (mouse 4 and 5) take no action anywhere in the app, so
+they stay free for whatever the user binds them to outside it. Upstream uses
+them as Back and Forward: in the thread view they step the app's history, over
+the side panel with a browser tab open they step that tab's history, and on
+macOS a swipe (which some mouse drivers send for these buttons) steps the app's
+history too.
+
+One capture listener on the window cancels both presses' defaults, which stops
+Chromium's history step on mouseup and the focus change on mousedown, so a press
+over a menu or the URL bar does nothing either. The preview guest still cancels
+the press in the main process, since Chromium would otherwise step the host
+app, but no longer steps the tab. Upstream's panel and menu handlers are
+removed, and macOS swipes no longer navigate, trackpad three-finger swipes
+included. The browser panel's toolbar Back and Forward buttons are unchanged.
+Carry forward: `installThumbButtonGuard` in `apps/web/src/thumbButtons.ts`
+(installed from `startAppServices`), `beforeMouse` in
+`apps/desktop/src/preview/Manager.ts`, and the absent `swipe` listener in
+`apps/desktop/src/window/DesktopWindow.ts`.
+
 ## Version
 
 The fork keeps upstream's version number. The desktop app sets up an SSH or

@@ -23,7 +23,6 @@ import {
   type ClipboardEvent,
   type FormEvent,
   type KeyboardEvent,
-  type MouseEvent,
   type PointerEvent,
   type Ref,
   useEffect,
@@ -99,10 +98,6 @@ const buttonOf = (button: number): PreviewStreamMouseButton =>
 
 const pressedButtonOf = (buttons: number): PreviewStreamMouseButton =>
   buttons & 1 ? "left" : buttons & 2 ? "right" : buttons & 4 ? "middle" : "none";
-
-// Mouse thumb buttons: `button === 3` is Back, `button === 4` is Forward.
-const historyDeltaOf = (button: number): -1 | 1 | null =>
-  button === 3 ? -1 : button === 4 ? 1 : null;
 
 /** Browsers may refuse a write that arrives after the key press; a toast button is a fresh gesture. */
 async function copyPageText(text: string) {
@@ -501,8 +496,8 @@ export function ServerBrowserSurface(props: {
 
   const handlePointer = (event: PointerEvent<HTMLCanvasElement>) => {
     if (controlRef.current?.controller !== "you") return;
-    // Thumb buttons drive this tab's history in handleMouseUp, never the page.
-    if (historyDeltaOf(event.button) !== null) return;
+    // Fork: thumb buttons do nothing, here or in the page.
+    if (event.button === 3 || event.button === 4) return;
     const { type, pointerId, clientX, clientY } = event;
     const cancelled = type === "pointercancel";
     const touch = touchRef.current;
@@ -639,16 +634,6 @@ export function ServerBrowserSurface(props: {
     }
   };
 
-  // Chromium runs a thumb button's back/forward on mouseup in this document, which
-  // would move the app's router. Cancel it and send the press to the preview, as
-  // the toolbar does.
-  const handleMouseUp = (event: MouseEvent<HTMLDivElement>) => {
-    const delta = historyDeltaOf(event.button);
-    if (delta === null) return;
-    event.preventDefault();
-    send({ type: "history", delta });
-  };
-
   const resetInput = (textarea: HTMLTextAreaElement) => {
     keySentRef.current = false;
     textarea.value = INPUT_SENTINEL;
@@ -746,7 +731,6 @@ export function ServerBrowserSurface(props: {
     <div
       className={cn("relative flex flex-col overflow-hidden", className)}
       data-server-browser-surface={tabId}
-      onMouseUp={handleMouseUp}
     >
       <div
         className={cn(

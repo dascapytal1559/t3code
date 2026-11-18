@@ -105,14 +105,13 @@ it("closes without taking focus back when focus moves elsewhere", async () => {
   expect(document.activeElement).toBe(destination);
 });
 
-it("takes thumb Back and Forward presses so the app router stays put", () => {
+it("stays open on thumb Back and Forward presses", () => {
   using _fixture = setup();
   void showContextMenuFallback(items);
-  for (const button of [3, 4]) {
-    const event = new MouseEvent("mouseup", { button, bubbles: true, cancelable: true });
-    document.activeElement!.dispatchEvent(event);
-    // Chromium runs history back/forward on a thumb-button mouseup nobody cancelled.
-    expect(event.defaultPrevented).toBe(true);
+  for (const type of ["mousedown", "mouseup"]) {
+    for (const button of [3, 4]) {
+      document.activeElement!.dispatchEvent(new MouseEvent(type, { button, bubbles: true }));
+    }
   }
   expect(isContextMenuOpen()).toBe(true);
 });

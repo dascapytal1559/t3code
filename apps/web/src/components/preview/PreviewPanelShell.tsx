@@ -1,7 +1,6 @@
 import {
   type CSSProperties,
   type FocusEvent,
-  type MouseEventHandler,
   type ReactNode,
   useLayoutEffect,
   useRef,
@@ -31,8 +30,6 @@ interface PreviewPanelShellProps {
   /** Use a distinct key per surface to keep remembered widths independent. */
   widthStorageKey?: string;
   defaultWidth?: number;
-  onMouseDown?: MouseEventHandler<HTMLDivElement>;
-  onMouseUp?: MouseEventHandler<HTMLDivElement>;
   children: ReactNode;
 }
 
@@ -158,8 +155,6 @@ function PreviewPanelShellFrame(
       {...(props.workspaceArea ? panelArea : {})}
       data-workspace-focus-key={props.workspaceFocusKey}
       data-workspace-unavailable={collapsible && !open ? "true" : undefined}
-      onMouseDown={props.onMouseDown}
-      onMouseUp={props.onMouseUp}
       className={cn(
         "relative flex h-full min-h-0 min-w-0 max-w-full flex-col self-stretch bg-background",
         isInline

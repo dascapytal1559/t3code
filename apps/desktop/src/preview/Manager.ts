@@ -1520,6 +1520,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       runFork(handleHumanInput(rawSignal));
     };
     // Chromium navigates the outermost WebContents (the host app) on thumb buttons, even from guest iframes.
+    // Fork: the press is cancelled and the tab's history stays put too.
     const beforeMouse = (event: Electron.Event, mouse: Electron.MouseInputEvent): void => {
       // Electron reports thumb buttons as "back" and "forward", which its typings omit.
       const button: string | undefined = mouse.button;
@@ -1535,16 +1536,6 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         mouse.x / zoom,
         mouse.y / zoom,
         button === "back" ? 3 : 4,
-      );
-      if (phase !== "up") return;
-      runFork(
-        attempt({ operation: "mouseNavigate", tabId, webContentsId: wc.id }, () => {
-          if (button === "back") {
-            if (wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
-          } else if (wc.navigationHistory.canGoForward()) {
-            wc.navigationHistory.goForward();
-          }
-        }).pipe(Effect.ignore),
       );
     };
     // Every guest of a focused window reports focus; GuestInput handles guests without a focused frame.

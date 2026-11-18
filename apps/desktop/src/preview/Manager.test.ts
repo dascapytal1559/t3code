@@ -882,17 +882,16 @@ describe("PreviewManager", () => {
     ),
   );
 
-  effectIt.effect("keeps mouse back and forward buttons inside the preview tab", () =>
+  effectIt.effect("cancels mouse back and forward buttons without navigating the preview tab", () =>
     withManager((manager) =>
       Effect.gen(function* () {
         const preview = makeFaviconWebContents();
         const goBack = vi.fn();
         const goForward = vi.fn();
         const send = vi.fn();
-        let canGoBack = false;
         Object.assign(preview.webContents, {
           navigationHistory: {
-            canGoBack: () => canGoBack,
+            canGoBack: () => true,
             canGoForward: () => true,
             goBack,
             goForward,
@@ -913,29 +912,19 @@ describe("PreviewManager", () => {
           return preventDefault;
         };
 
-        // At the start of tab history the press is still swallowed, or the host app goes back instead.
+        // The press is always swallowed, or the host app goes back instead; the tab stays put too.
         expect(press("mouseDown", "back")).toHaveBeenCalledOnce();
         expect(press("mouseUp", "back")).toHaveBeenCalledOnce();
-        expect(goBack).not.toHaveBeenCalled();
-
-        canGoBack = true;
-        expect(press("mouseDown", "back")).toHaveBeenCalledOnce();
-        expect(goBack).not.toHaveBeenCalled();
-        expect(press("mouseUp", "back")).toHaveBeenCalledOnce();
-        expect(goBack).toHaveBeenCalledOnce();
         expect(press("mouseDown", "forward")).toHaveBeenCalledOnce();
         expect(press("mouseUp", "forward")).toHaveBeenCalledOnce();
-        expect(goForward).toHaveBeenCalledOnce();
         for (const button of ["left", "right"]) {
           expect(press("mouseDown", button)).not.toHaveBeenCalled();
           expect(press("mouseUp", button)).not.toHaveBeenCalled();
         }
-        expect(goBack).toHaveBeenCalledOnce();
-        expect(goForward).toHaveBeenCalledOnce();
+        expect(goBack).not.toHaveBeenCalled();
+        expect(goForward).not.toHaveBeenCalled();
         // The guest replays dropped presses for human input and recordings, in CSS px.
         expect(send.mock.calls.filter(([channel]) => channel === "preview:thumb-press")).toEqual([
-          ["preview:thumb-press", "down", 5, 5, 3],
-          ["preview:thumb-press", "up", 5, 5, 3],
           ["preview:thumb-press", "down", 5, 5, 3],
           ["preview:thumb-press", "up", 5, 5, 3],
           ["preview:thumb-press", "down", 5, 5, 4],
