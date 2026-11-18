@@ -1,6 +1,7 @@
 import { toServerClock } from "@t3tools/client-runtime/clock";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { LimitAccount } from "@t3tools/shared/usageLimits";
+import { useGT } from "gt-react";
 
 import { useRelativeTimeState } from "../../hooks/useRelativeTimeState";
 
@@ -19,8 +20,7 @@ export function useLimitsAge(
   const age = useRelativeTimeState(
     checkedAt === null ? null : onClientClock(checkedAt, environmentId),
   );
-  if (age.status !== "relative") return null;
-  return age.suffix ? `${age.value} ${age.suffix}` : age.value;
+  return age.status === "relative" ? age.label : null;
 }
 
 /** The stalest reading on this client's clock, so a pooled view never looks fresher than its oldest account. */
@@ -41,6 +41,7 @@ export function LimitsUpdated({
   readonly environmentId: EnvironmentId | null;
   readonly className?: string;
 }) {
+  const gt = useGT();
   const age = useLimitsAge(checkedAt, environmentId);
-  return age ? <span className={className}>Updated {age}</span> : null;
+  return age ? <span className={className}>{gt("Updated {age}", { age })}</span> : null;
 }

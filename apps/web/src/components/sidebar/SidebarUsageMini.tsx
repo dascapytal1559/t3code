@@ -4,13 +4,14 @@ import {
   collectLimitAccounts,
   collectLimitPools,
   displayLimitWindows,
-  formatResetsIn,
   type LimitAccount,
   type LimitPresentations,
   paceRemainingPercent,
   remainingPercent,
 } from "@t3tools/shared/usageLimits";
+import { formatResetsIn } from "@t3tools/shared/usageLimitsCopy";
 import { useNavigate } from "@tanstack/react-router";
+import { T, useGT, useMessages } from "gt-react";
 import { useState } from "react";
 
 import { formatRelativeTimeLabel } from "../../timestampFormat";
@@ -59,10 +60,14 @@ function usageRows(presentations: LimitPresentations, now: number): readonly Usa
   });
 }
 
-function rowSummary(row: UsageRow): string {
-  return `${row.name} ${row.remaining}% left${
-    row.timeLeft === null ? "" : `, ${row.timeLeft}% of the window left`
-  }`;
+function rowSummary(row: UsageRow, gt: ReturnType<typeof useGT>): string {
+  return row.timeLeft === null
+    ? gt("{name} {remaining}% left", { name: row.name, remaining: row.remaining })
+    : gt("{name} {remaining}% left, {timeLeft}% of the window left", {
+        name: row.name,
+        remaining: row.remaining,
+        timeLeft: row.timeLeft,
+      });
 }
 
 function rowColor(row: UsageRow): string {
@@ -73,6 +78,7 @@ export function SidebarUsageMini() {
   const presentations = useLimitPresentations(null, useUsageHiddenProviders());
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
+  const gt = useGT();
   const [mountedAt] = useState(Date.now);
   const rows = usageRows(presentations, mountedAt);
   if (rows.length === 0) return null;
@@ -88,7 +94,9 @@ export function SidebarUsageMini() {
           <button
             type="button"
             data-sidebar-usage
-            aria-label={`Usage: ${rows.map(rowSummary).join(", ")}`}
+            aria-label={gt("Usage: {summary}", {
+              summary: rows.map((row) => rowSummary(row, gt)).join(", "),
+            })}
             onClick={openUsage}
             className="flex w-full cursor-pointer flex-col gap-1.5 rounded-md px-2.5 py-1.5 outline-hidden hover:bg-sidebar-row-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
           />
@@ -148,28 +156,48 @@ function UsageBar({ row }: { readonly row: UsageRow }) {
 /** Mounts on each open, so reset times count from when it opened. */
 function UsageTooltip({ rows }: { readonly rows: readonly UsageRow[] }) {
   const [now] = useState(Date.now);
+  const gt = useGT();
+  const m = useMessages();
   return (
     <div className="flex flex-col gap-2 text-xs">
       {rows.map((row) => {
         const age = formatRelativeTimeLabel(
           onClientClock(row.account.limits.checkedAt, row.account.checkedBy),
           now,
+          m,
         );
-        const details = [formatResetsIn(row.window, now), age && `updated ${age}`].filter(Boolean);
+        const details = [
+          formatResetsIn(row.window, now, m),
+          age && gt("updated {age}", { age }),
+        ].filter(Boolean);
         return (
           <div key={row.account.key} className="flex flex-col gap-0.5">
             <span className="text-foreground">
-              {row.name} · {row.window.label} · {row.remaining}% left
-              {row.timeLeft === null ? "" : ` · ${row.timeLeft}% of the window left`}
+              {row.timeLeft === null
+                ? gt("{name} · {window} · {remaining}% left", {
+                    name: row.name,
+                    window: row.window.label,
+                    remaining: row.remaining,
+                  })
+                : gt("{name} · {window} · {remaining}% left · {timeLeft}% of the window left", {
+                    name: row.name,
+                    window: row.window.label,
+                    remaining: row.remaining,
+                    timeLeft: row.timeLeft,
+                  })}
             </span>
             <span className="text-muted-foreground tabular-nums">{details.join(" · ")}</span>
           </div>
         );
       })}
       {rows.some((row) => row.timeLeft !== null) ? (
-        <span className="text-muted-foreground">The line is where even spending would be.</span>
+        <span className="text-muted-foreground">
+          <T>The line is where even spending would be.</T>
+        </span>
       ) : null}
-      <span className="text-muted-foreground">Click to open Usage</span>
+      <span className="text-muted-foreground">
+        <T>Click to open Usage</T>
+      </span>
     </div>
   );
 }

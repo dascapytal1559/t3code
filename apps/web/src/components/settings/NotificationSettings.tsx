@@ -1,4 +1,5 @@
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
+import { useGT, useMessages } from "gt-react";
 import { useState } from "react";
 
 import {
@@ -10,10 +11,13 @@ import {
 } from "../../threadNotifications";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SettingsRow } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 
 export function NotificationSettings() {
+  const searchableSetting = useSearchableSetting();
+  const gt = useGT();
+  const m = useMessages();
   const mode = useScopedSettings((settings) => settings.notificationMode);
   const soundScope = useScopedSettings((settings) => settings.notificationSoundScope);
   const updateSettings = useUpdateScopedSettings();
@@ -26,7 +30,9 @@ export function NotificationSettings() {
         {...searchableSetting("thread-notifications")}
         description={
           permissionMessage ??
-          "System alerts when a thread finishes, fails, or needs input or approval. Applies to this device while T3 Code is open."
+          gt(
+            "System alerts when a thread finishes, fails, or needs input or approval. Applies to this device while T3 Code is open.",
+          )
         }
         control={
           <Select
@@ -45,7 +51,9 @@ export function NotificationSettings() {
               if (hasDesktopNotifications(value)) {
                 if (typeof Notification === "undefined" || !window.isSecureContext) {
                   setPermissionMessage(
-                    "Notifications need a supported browser over HTTPS, or the desktop app. Sound only is still available.",
+                    gt(
+                      "Notifications need a supported browser over HTTPS, or the desktop app. Sound only is still available.",
+                    ),
                   );
                   return;
                 }
@@ -54,13 +62,17 @@ export function NotificationSettings() {
                 setRequesting(false);
                 if (permission._tag === "Failure") {
                   setPermissionMessage(
-                    "Notifications are unavailable in this browser. Sound only is still available.",
+                    gt(
+                      "Notifications are unavailable in this browser. Sound only is still available.",
+                    ),
                   );
                   return;
                 }
                 if (permission.value !== "granted") {
                   setPermissionMessage(
-                    "Allow notifications in your browser or system settings, then choose this option again. Sound only is still available.",
+                    gt(
+                      "Allow notifications in your browser or system settings, then choose this option again. Sound only is still available.",
+                    ),
                   );
                   return;
                 }
@@ -68,13 +80,17 @@ export function NotificationSettings() {
               updateSettings({ notificationMode: value });
             }}
           >
-            <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Thread notifications">
-              <SelectValue>{NOTIFICATION_MODE_LABELS[mode]}</SelectValue>
+            <SelectTrigger
+              size="sm"
+              className="w-full sm:w-56"
+              aria-label={gt("Thread notifications")}
+            >
+              <SelectValue>{m(NOTIFICATION_MODE_LABELS[mode])}</SelectValue>
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
               {Object.entries(NOTIFICATION_MODE_LABELS).map(([value, label]) => (
                 <SelectItem key={value} hideIndicator value={value}>
-                  {label}
+                  {m(label)}
                 </SelectItem>
               ))}
             </SelectPopup>
@@ -84,7 +100,7 @@ export function NotificationSettings() {
       {hasNotificationSound(mode) ? (
         <SettingsRow
           {...searchableSetting("notification-sound-scope")}
-          description="Which threads play the sound. Other threads still notify, silently."
+          description={gt("Which threads play the sound. Other threads still notify, silently.")}
           control={
             <Select
               value={soundScope}
@@ -93,13 +109,13 @@ export function NotificationSettings() {
                 updateSettings({ notificationSoundScope: value });
               }}
             >
-              <SelectTrigger size="sm" className="w-full sm:w-56" aria-label="Sound for">
-                <SelectValue>{NOTIFICATION_SOUND_SCOPE_LABELS[soundScope]}</SelectValue>
+              <SelectTrigger size="sm" className="w-full sm:w-56" aria-label={gt("Sound for")}>
+                <SelectValue>{m(NOTIFICATION_SOUND_SCOPE_LABELS[soundScope])}</SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
                 {Object.entries(NOTIFICATION_SOUND_SCOPE_LABELS).map(([value, label]) => (
                   <SelectItem key={value} hideIndicator value={value}>
-                    {label}
+                    {m(label)}
                   </SelectItem>
                 ))}
               </SelectPopup>

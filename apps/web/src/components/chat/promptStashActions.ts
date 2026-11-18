@@ -6,6 +6,7 @@ import {
 } from "@t3tools/contracts";
 import { stripAttachmentOnlyBootstrapPrompt } from "@t3tools/shared/composerContextReferences";
 import * as Schema from "effect/Schema";
+import { msg } from "gt-react";
 
 import { releasePersistedAttachmentUpload } from "../../lib/attachmentUploadQueue";
 import { deleteStashMedia, writeStashMedia } from "../../promptStashMedia";
@@ -19,6 +20,7 @@ import { asKnownContextRecord } from "~/lib/composerContextRecords";
 import { producerIdFromComposerContextId } from "~/lib/composerContextReferences";
 import { randomUUID } from "~/lib/utils";
 import { toastManager } from "../ui/toast";
+import { m } from "~/i18n/messages";
 
 const isImageAttachment = Schema.is(ChatImageAttachment);
 const isFileAttachment = Schema.is(ChatFileAttachment);
@@ -40,8 +42,12 @@ export function settleStashEviction(evicted: PromptStashEntry | null): void {
   discardStashEntryAttachments(evicted);
   toastManager.add({
     type: "warning",
-    title: "Oldest stashed prompt discarded",
-    description: `The stash holds ${MAX_STASH_ENTRIES} prompts; the oldest was removed to make room.`,
+    title: m(msg("Oldest stashed prompt discarded")),
+    description: m(
+      msg("The stash holds {max} prompts; the oldest was removed to make room.", {
+        max: MAX_STASH_ENTRIES,
+      }),
+    ),
     data: { hideCopyButton: true },
   });
 }
@@ -61,14 +67,17 @@ export async function stashQueuedMessage(input: {
   readonly download: (attachment: ChatAttachment) => Promise<Blob | null>;
   readonly removeFromQueue: () => Promise<boolean>;
 }): Promise<QueuedMessageStashOutcome> {
-  const stillQueued = " The message is still queued.";
   const unsupported = input.attachments.filter(
     (attachment) => !isImageAttachment(attachment) && !isFileAttachment(attachment),
   );
   if (unsupported.length > 0) {
     return {
       ok: false,
-      reason: `The stash cannot hold ${unsupported.map((attachment) => attachment.name).join(", ")}.${stillQueued}`,
+      reason: m(
+        msg("The stash cannot hold {names}. The message is still queued.", {
+          names: unsupported.map((attachment) => attachment.name).join(", "),
+        }),
+      ),
     };
   }
 
@@ -77,7 +86,11 @@ export async function stashQueuedMessage(input: {
   if (failed.length > 0) {
     return {
       ok: false,
-      reason: `Couldn't download ${failed.map((attachment) => attachment.name).join(", ")}.${stillQueued}`,
+      reason: m(
+        msg("Couldn't download {names}. The message is still queued.", {
+          names: failed.map((attachment) => attachment.name).join(", "),
+        }),
+      ),
     };
   }
 
@@ -126,7 +139,11 @@ export async function stashQueuedMessage(input: {
     console.error("[PROMPT-STASH] Could not store queued message attachments.", error);
     return {
       ok: false,
-      reason: `Browser storage rejected its attachments. Free up site data and try again.${stillQueued}`,
+      reason: m(
+        msg(
+          "Browser storage rejected its attachments. Free up site data and try again. The message is still queued.",
+        ),
+      ),
     };
   }
 
@@ -142,7 +159,11 @@ export async function stashQueuedMessage(input: {
     deleteStashMedia(entryId);
     return {
       ok: false,
-      reason: `Browser storage rejected the write. Free up site data and try again.${stillQueued}`,
+      reason: m(
+        msg(
+          "Browser storage rejected the write. Free up site data and try again. The message is still queued.",
+        ),
+      ),
     };
   }
 

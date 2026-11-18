@@ -3,6 +3,7 @@ import {
   type EditorId,
   type EnvironmentId,
 } from "@t3tools/contracts";
+import { useGT } from "gt-react";
 import { SquareArrowOutUpRightIcon } from "lucide-react";
 
 import { useRemoteOpenState } from "~/remoteOpen";
@@ -21,6 +22,7 @@ export function OpenInDefaultAppAction(props: {
   readonly absolutePath: string;
   readonly availableEditors: ReadonlyArray<EditorId>;
 }) {
+  const gt = useGT();
   const remote = useRemoteOpenState(props.environmentId);
   const canOperateHost = useEnvironmentScope(props.environmentId, AuthOrchestrationOperateScope);
   const openInEditor = useAtomCommand(shellEnvironment.openInEditor, "open in default app");
@@ -33,7 +35,7 @@ export function OpenInDefaultAppAction(props: {
   }
   return (
     <FileSurfaceAction
-      label="Open in default app"
+      label={gt("Open in default app")}
       onPress={() =>
         void openInEditor({
           environmentId: props.environmentId,

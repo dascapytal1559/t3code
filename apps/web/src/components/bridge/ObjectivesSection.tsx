@@ -1,4 +1,5 @@
 import type { EnvironmentId, Objectives } from "@t3tools/contracts";
+import { useGT } from "gt-react";
 import { ChevronRightIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -15,12 +16,13 @@ export function ObjectivesSection(props: {
   readonly objectives: Objectives;
   readonly environmentId: EnvironmentId;
 }) {
+  const gt = useGT();
   const [pinned, setPinned] = useObjectivesPinned();
   const entries = splitObjectives(props.objectives.markdown);
   return (
     <BridgeSection
       id="objectives"
-      title="Objectives"
+      title={gt("Objectives")}
       count={entries.length}
       pin={{ pinned, onToggle: () => setPinned(!pinned) }}
     >

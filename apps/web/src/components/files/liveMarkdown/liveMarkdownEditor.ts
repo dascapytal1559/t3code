@@ -17,6 +17,8 @@ import { liveMarkdownExtensions } from "./markdownSyntax";
 import { headingAnchors, type MarkdownOutlineSource } from "./outline";
 import { NO_OUTLINE, type OutlineSnapshot, outlineTracker } from "./outlineTracker";
 import type { LivePreviewConfig } from "./previewConfig";
+import { msg } from "gt-react";
+import { m } from "~/i18n/messages";
 
 export interface LiveMarkdownEditorOptions extends LivePreviewConfig {
   readonly parent: HTMLElement;
@@ -73,7 +75,7 @@ export function createLiveMarkdownEditor(options: LiveMarkdownEditorOptions): Li
     keymap.of([...formatKeymap, ...listKeymap, ...historyKeymap, ...defaultKeymap]),
     EditorView.contentAttributes.of({
       spellcheck: "true",
-      "aria-label": "File contents",
+      "aria-label": m(msg("File contents")),
       // Opening a file from the tree focuses this, as it does the source editor.
       "data-file-content-focus": "",
     }),

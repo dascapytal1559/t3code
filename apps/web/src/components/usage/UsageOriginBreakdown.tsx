@@ -1,5 +1,6 @@
 import { formatPercent } from "@t3tools/shared/usageFormat";
 import type { MergedOrigins } from "@t3tools/shared/usageMerge";
+import { msg, T, useGT, useMessages } from "gt-react";
 import type { CSSProperties, ReactNode } from "react";
 
 import { cn } from "../../lib/utils";
@@ -10,11 +11,11 @@ import { originAxes, type OriginDevice } from "./usageOriginAxes";
 // Amber and blue: no provider on the Usage page uses either hue.
 const DEVICE: Record<OriginDevice, { readonly label: string; readonly color: string }> = {
   phone: {
-    label: "Phone",
+    label: msg("Phone", { $context: "device a usage origin traces to" }),
     color: "[--origin:oklch(0.72_0.16_65)] dark:[--origin:oklch(0.78_0.15_70)]",
   },
   computer: {
-    label: "Computer",
+    label: msg("Computer", { $context: "device a usage origin traces to" }),
     color: "[--origin:oklch(0.55_0.19_264)] dark:[--origin:oklch(0.66_0.17_264)]",
   },
 };
@@ -38,6 +39,8 @@ export function UsageOriginBreakdown({
   readonly valueOf: (amount: { readonly costUsd: number; readonly totalTokens: number }) => number;
   readonly format: (value: number) => string;
 }) {
+  const gt = useGT();
+  const m = useMessages();
   const axes = originAxes(origins);
   const parts = DEVICES.map((key) => {
     const direct = valueOf(axes[key].direct);
@@ -64,14 +67,14 @@ export function UsageOriginBreakdown({
       value: part.direct,
       className: DEVICE[part.key].color,
       style: SOLID,
-      name: `${DEVICE[part.key].label} direct`,
+      name: gt("{device} direct", { device: m(DEVICE[part.key].label) }),
     },
     {
       id: `${part.key}-coordinated`,
       value: part.coordinated,
       className: DEVICE[part.key].color,
       style: STRIPED,
-      name: `${DEVICE[part.key].label} orchestrated`,
+      name: gt("{device} orchestrated", { device: m(DEVICE[part.key].label) }),
     },
   ]);
 
@@ -80,16 +83,23 @@ export function UsageOriginBreakdown({
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="text-sm font-medium text-foreground">{label}</h3>
         <span className="flex gap-3 text-xs text-muted-foreground">
-          <Swatch style={{ backgroundColor: NEUTRAL_INK }}>Direct</Swatch>
-          <Swatch style={{ backgroundImage: stripes(NEUTRAL_INK) }}>Orchestrated</Swatch>
+          <Swatch style={{ backgroundColor: NEUTRAL_INK }}>
+            <T>Direct</T>
+          </Swatch>
+          <Swatch style={{ backgroundImage: stripes(NEUTRAL_INK) }}>
+            <T>Orchestrated</T>
+          </Swatch>
         </span>
       </div>
       <div
         role="img"
         aria-label={`${label}: ${parts
-          .map(
-            (part) =>
-              `${DEVICE[part.key].label} ${format(part.direct)} direct, ${format(part.coordinated)} orchestrated`,
+          .map((part) =>
+            gt("{device} {direct} direct, {orchestrated} orchestrated", {
+              device: m(DEVICE[part.key].label),
+              direct: format(part.direct),
+              orchestrated: format(part.coordinated),
+            }),
           )
           .join("; ")}`}
         className="flex h-2 gap-0.5"
@@ -121,7 +131,7 @@ export function UsageOriginBreakdown({
           .map((part) => (
             <div key={part.key} className="contents">
               <Dot className={DEVICE[part.key].color} style={SOLID} />
-              <span className="text-muted-foreground">{DEVICE[part.key].label}</span>
+              <span className="text-muted-foreground">{m(DEVICE[part.key].label)}</span>
               {figure(part.total)}
               <span className="text-right text-muted-foreground">
                 {formatPercent(part.total / total, 0)}

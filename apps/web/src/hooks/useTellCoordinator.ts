@@ -4,6 +4,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { ScopedThreadRef } from "@t3tools/contracts";
+import { msg } from "gt-react";
 
 import {
   coordinatorMessageInput,
@@ -12,6 +13,7 @@ import {
 } from "../components/chat/CrewReply.logic";
 import { isCrewOf } from "../components/sidebar/coordinatorGroup.logic";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
+import { m } from "../i18n/messages";
 import { newMessageId } from "../lib/utils";
 import { readThreadShell } from "../state/entities";
 import { threadEnvironment } from "../state/threads";
@@ -43,8 +45,8 @@ export function useTellCoordinator() {
       toastManager.add(
         stackedThreadToast({
           type: "error",
-          title: "Could not tell FirstMate",
-          description: error instanceof Error ? error.message : "An error occurred.",
+          title: m(msg("Could not tell FirstMate")),
+          description: error instanceof Error ? error.message : m(msg("An error occurred.")),
         }),
       );
     });

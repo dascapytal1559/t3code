@@ -13,6 +13,7 @@ import {
 } from "@t3tools/shared/assistantCitations";
 import { fileBasename, workspaceRelativeFilePath } from "@t3tools/shared/path";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { useGT } from "gt-react";
 import { PencilIcon, QuoteIcon } from "lucide-react";
 import {
   use,
@@ -132,6 +133,7 @@ export function AssistantCitationEmbed({
   leading: boolean;
   trailing: boolean;
 }) {
+  const gt = useGT();
   const wholeResponse = citation.prefix === "" && citation.suffix === "";
   const { comment, ...quoted } = citation;
   return (
@@ -139,7 +141,7 @@ export function AssistantCitationEmbed({
       citation={citation}
       copyMarkdown={serializeAssistantCitation(citation)}
       cardCopyMarkdown={serializeAssistantCitation(quoted)}
-      label={`Go to quoted response: ${assistantCitationLabel(quoted)}`}
+      label={gt("Go to quoted response: {label}", { label: assistantCitationLabel(quoted) })}
       comment={comment}
       leading={leading}
       trailing={trailing}
@@ -172,11 +174,12 @@ export function ResponseReplyCard({
   leading: boolean;
   trailing: boolean;
 }) {
+  const gt = useGT();
   return (
     <ResponseCard
       citation={record.citation}
       copyMarkdown={copyMarkdown}
-      label={`Go to the response this replies to: ${record.label}`}
+      label={gt("Go to the response this replies to: {label}", { label: record.label })}
       title={record.subagents?.map((subagent) => subagent.title).join(", ")}
       preview={flat(record.citation.text)}
       leading={leading}
@@ -202,6 +205,7 @@ export function FileCitationEmbed({
   trailing: boolean;
   onOpen: (() => void) | undefined;
 }) {
+  const gt = useGT();
   const { comment, ...quoted } = citation;
   const where = `${fileBasename(citation.path)}, ${fileCitationLines(citation)}`;
   return (
@@ -214,7 +218,10 @@ export function FileCitationEmbed({
         data-markdown-copy={serializeAssistantCitation(quoted)}
         data-thread-find-ignore
         disabled={!onOpen}
-        aria-label={`Open quoted file: ${citation.path}, ${fileCitationLines(citation)}`}
+        aria-label={gt("Open quoted file: {path}, {lines}", {
+          path: citation.path,
+          lines: fileCitationLines(citation),
+        })}
         onClick={onOpen}
         className="block w-full min-w-0 rounded-lg bg-black/10 px-2.5 py-1.5 text-start text-sm text-muted-foreground wrap-break-word enabled:hover:bg-black/14 focus-visible:outline-2 focus-visible:outline-ring dark:bg-black/35 dark:enabled:hover:bg-black/50"
       >
@@ -238,12 +245,13 @@ const CHIP_SOURCE_CLASS_NAME =
   "inline-flex min-w-0 items-center gap-[0.2em] self-baseline text-inherit no-underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-current rounded-sm";
 
 function ResponseChipSource({ citation, label }: { citation: AssistantCitation; label: string }) {
+  const gt = useGT();
   const sourceLinkProps = useCitationSourceLinkProps(citation);
   return (
     <Link
       {...sourceLinkProps}
       className={CHIP_SOURCE_CLASS_NAME}
-      aria-label={`View cited assistant text: ${label}`}
+      aria-label={gt("View cited assistant text: {label}", { label })}
     >
       <QuoteIcon aria-hidden="true" />
       <ContextChipLabel className="max-w-[16em]" dir={textDirection(label)}>
@@ -254,6 +262,7 @@ function ResponseChipSource({ citation, label }: { citation: AssistantCitation; 
 }
 
 function FileChipSource({ citation, label }: { citation: FileCitation; label: string }) {
+  const gt = useGT();
   const actions = use(ComposerContextActionsContext);
   const where = `${citation.path}, ${fileCitationLines(citation)}`;
   // A file on another environment cannot open in this thread's panel.
@@ -267,7 +276,7 @@ function FileChipSource({ citation, label }: { citation: FileCitation; label: st
       disabled={!open}
       onClick={open}
       className={CHIP_SOURCE_CLASS_NAME}
-      aria-label={`View cited file text: ${label} (${where})`}
+      aria-label={gt("View cited file text: {label} ({where})", { label, where })}
     >
       <QuoteIcon aria-hidden="true" />
       <ContextChipLabel className="max-w-[16em]" dir={textDirection(label)}>
@@ -294,6 +303,7 @@ export function AssistantCitationChip({
     onRestoreFocus?: () => void;
   };
 }) {
+  const gt = useGT();
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
   const commentPopupRef = useRef<HTMLDivElement>(null);
   const draftCommentRef = useRef<string | null>(null);
@@ -381,7 +391,9 @@ export function AssistantCitationChip({
           }}
         >
           <PopoverTrigger
-            aria-label={citation.comment ? "Edit citation comment" : "Add comment to citation"}
+            aria-label={
+              citation.comment ? gt("Edit citation comment") : gt("Add comment to citation")
+            }
             data-citation-comment-trigger="true"
             render={<ContextChipAction />}
           >
@@ -420,7 +432,7 @@ export function AssistantCitationChip({
                   : undefined
               }
               ref={commentPopupRef}
-              aria-label="Edit citation comment"
+              aria-label={gt("Edit citation comment")}
               width="md"
               padding="compact"
               onPointerDown={(event) => event.stopPropagation()}

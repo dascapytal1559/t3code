@@ -1,4 +1,5 @@
 import { markdownFrontmatterLength } from "@t3tools/shared/markdownFrontmatter";
+import { T } from "gt-react";
 
 import { frontmatterRows } from "./frontmatter";
 import "./markdownProperties.css";
@@ -13,7 +14,9 @@ export function MarkdownPropertiesCard(props: {
   return (
     <div className={props.className}>
       <div data-markdown-properties>
-        <div data-head>Properties</div>
+        <div data-head>
+          <T>Properties</T>
+        </div>
         {rows.map((row, index) => (
           // oxlint-disable-next-line react/no-array-index-key -- a key can repeat in frontmatter; rows follow the block's order
           <div key={`${index}:${row.key}`} className="contents">

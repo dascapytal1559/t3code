@@ -1,4 +1,5 @@
 import type { ProjectIconOverride } from "@t3tools/contracts";
+import { msg } from "gt-react";
 
 import type {
   SidebarProjectGroupMember,
@@ -64,9 +65,9 @@ export function parseQuietMinutes(text: string): number | null | undefined {
 export const QUIET_CLEAR_MODES = ["off", "cache", "minutes"] as const;
 export type QuietClearMode = (typeof QUIET_CLEAR_MODES)[number];
 export const QUIET_CLEAR_MODE_LABELS: Record<QuietClearMode, string> = {
-  off: "Off",
-  cache: "When Claude's cache expires",
-  minutes: "After a set time",
+  off: msg("Off", { $context: "setting is disabled" }),
+  cache: msg("When Claude's cache expires"),
+  minutes: msg("After a set time"),
 };
 export function isQuietClearMode(value: unknown): value is QuietClearMode {
   return QUIET_CLEAR_MODES.includes(value as QuietClearMode);

@@ -1,3 +1,4 @@
+import { T, useGT } from "gt-react";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 
 import { cn } from "~/lib/utils";
@@ -11,6 +12,7 @@ import type { LiveMarkdownEditor } from "./liveMarkdownEditor";
 export function MarkdownOutlineColumn({ editor }: { readonly editor: LiveMarkdownEditor }) {
   const { headings, active } = useSyncExternalStore(editor.watchOutline, editor.outlineSnapshot);
   const listRef = useRef<HTMLOListElement>(null);
+  const gt = useGT();
   const top = Math.min(...headings.map((heading) => heading.level));
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the marked heading inside the column's own scroll area, which React does not own
@@ -27,13 +29,17 @@ export function MarkdownOutlineColumn({ editor }: { readonly editor: LiveMarkdow
 
   return (
     <nav
-      aria-label="Outline"
+      aria-label={gt("Outline")}
       data-markdown-outline-column
       className="flex w-44 shrink-0 flex-col border-e pt-4 text-xs"
     >
-      <div className="shrink-0 px-4 pb-1.5 text-2xs font-medium text-muted-foreground">Outline</div>
+      <div className="shrink-0 px-4 pb-1.5 text-2xs font-medium text-muted-foreground">
+        <T>Outline</T>
+      </div>
       {headings.length === 0 ? (
-        <p className="px-4 text-muted-foreground">No headings</p>
+        <p className="px-4 text-muted-foreground">
+          <T>No headings</T>
+        </p>
       ) : (
         <ol ref={listRef} className="relative min-h-0 flex-1 overflow-y-auto px-2 pb-4">
           {headings.map((heading, index) => (
@@ -49,7 +55,7 @@ export function MarkdownOutlineColumn({ editor }: { readonly editor: LiveMarkdow
                 )}
                 style={{ paddingInlineStart: `${0.5 + (heading.level - top) * 0.75}rem` }}
               >
-                {heading.text || "Untitled"}
+                {heading.text || gt("Untitled", { $context: "a heading with no text" })}
               </button>
             </li>
           ))}

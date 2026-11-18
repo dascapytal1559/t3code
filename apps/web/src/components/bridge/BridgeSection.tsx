@@ -1,5 +1,6 @@
 import { ChevronRightIcon, PinIcon } from "lucide-react";
 import * as Schema from "effect/Schema";
+import { useGT } from "gt-react";
 import { useId, type ReactNode } from "react";
 
 import { useLocalStorage } from "../../hooks/useLocalStorage";
@@ -27,11 +28,15 @@ export function BridgeSection(props: {
   readonly pin?: { readonly pinned: boolean; readonly onToggle: () => void };
   readonly children: ReactNode;
 }) {
+  const gt = useGT();
   const [collapsed, setCollapsed] = useLocalStorage(collapsedKey(props.id), false, Schema.Boolean);
   const bodyId = useId();
   const pinned = props.pin?.pinned === true;
   const expanded = pinned || !collapsed;
   const label = props.count === undefined ? props.title : `${props.title} · ${props.count}`;
+  const pinLabel = pinned
+    ? gt("Unpin {section}", { section: props.title })
+    : gt("Pin {section} open", { section: props.title });
 
   return (
     <section aria-label={props.title} className="mb-4">
@@ -55,8 +60,8 @@ export function BridgeSection(props: {
             size="icon-xs"
             variant="ghost-muted"
             aria-pressed={pinned}
-            aria-label={pinned ? `Unpin ${props.title}` : `Pin ${props.title} open`}
-            title={pinned ? `Unpin ${props.title}` : `Pin ${props.title} open`}
+            aria-label={pinLabel}
+            title={pinLabel}
             onClick={props.pin.onToggle}
           >
             <PinIcon className={cn("size-3.5", pinned && "fill-current text-foreground")} />

@@ -19,11 +19,13 @@ import type {
   ExcalidrawInitialDataState,
 } from "@excalidraw/excalidraw/types";
 import { ClipboardCopyIcon, MessageSquarePlusIcon, Trash2Icon } from "lucide-react";
+import { msg, T, useGT } from "gt-react";
 import { useEffect, useRef, useState } from "react";
 
 import { useTheme } from "../../hooks/useTheme";
 import { readFileAsDataUrl } from "../../lib/imageCompression";
 import { randomUUID } from "../../lib/utils";
+import { m } from "../../i18n/messages";
 import { readLocalApi } from "../../localApi";
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
@@ -46,7 +48,7 @@ async function loadInitialData(): Promise<ExcalidrawInitialDataState> {
   const saved = await loadBoard().catch((error: unknown) => {
     toastManager.add({
       type: "error",
-      title: "Could not load the saved board",
+      title: m(msg("Could not load the saved board")),
       description: errorMessage(error),
     });
     return null;
@@ -160,13 +162,13 @@ function exportBoardPng(api: ExcalidrawImperativeAPI) {
 function emptyBoardToast() {
   toastManager.add({
     type: "info",
-    title: "The board is empty",
-    description: "Paste a screenshot first.",
+    title: m(msg("The board is empty")),
+    description: m(msg("Paste a screenshot first.")),
   });
 }
 
 function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Try again.";
+  return error instanceof Error ? error.message : m(msg("Try again."));
 }
 
 /** The paste reaches the board only while focus is in the panel showing it, never the chat beside it. */
@@ -180,6 +182,7 @@ function isPasteForBoard(board: HTMLElement, event: ClipboardEvent) {
 export function BoardPanel(props: { readonly composerDraftTarget: BoardAttachTarget }) {
   const { composerDraftTarget } = props;
   const { resolvedTheme } = useTheme();
+  const gt = useGT();
   const boardRef = useRef<HTMLDivElement>(null);
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const [hasSelection, setHasSelection] = useState(false);
@@ -190,7 +193,7 @@ export function BoardPanel(props: { readonly composerDraftTarget: BoardAttachTar
         void saveBoard(snapshot).catch((error: unknown) =>
           toastManager.add({
             type: "error",
-            title: "Could not save the board",
+            title: m(msg("Could not save the board")),
             description: errorMessage(error),
           }),
         ),
@@ -233,7 +236,7 @@ export function BoardPanel(props: { readonly composerDraftTarget: BoardAttachTar
       void pasteImagesAtViewportCentre(api, images).catch((error: unknown) =>
         toastManager.add({
           type: "error",
-          title: "Could not paste the image",
+          title: m(msg("Could not paste the image")),
           description: errorMessage(error),
         }),
       );
@@ -250,12 +253,12 @@ export function BoardPanel(props: { readonly composerDraftTarget: BoardAttachTar
       await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
       toastManager.add({
         type: "success",
-        title: hasSelection ? "Copied the selection" : "Copied the board",
+        title: hasSelection ? gt("Copied the selection") : gt("Copied the board"),
       });
     } catch (error) {
       toastManager.add({
         type: "error",
-        title: "Could not copy",
+        title: gt("Could not copy"),
         description: errorMessage(error),
       });
     }
@@ -270,12 +273,14 @@ export function BoardPanel(props: { readonly composerDraftTarget: BoardAttachTar
       await attachBoardImage(composerDraftTarget, await exporting);
       toastManager.add({
         type: "success",
-        title: hasSelection ? "Attached the selection to chat" : "Attached the board to chat",
+        title: hasSelection
+          ? gt("Attached the selection to chat")
+          : gt("Attached the board to chat"),
       });
     } catch (error) {
       toastManager.add({
         type: "error",
-        title: "Could not attach the board",
+        title: gt("Could not attach the board"),
         description: errorMessage(error),
       });
     }
@@ -284,21 +289,19 @@ export function BoardPanel(props: { readonly composerDraftTarget: BoardAttachTar
 
   const clear = async () => {
     if (!api) return;
-    const confirmed = await readLocalApi()?.dialogs.confirm("Clear the board?", {
+    const confirmed = await readLocalApi()?.dialogs.confirm(gt("Clear the board?"), {
       variant: "destructive",
     });
     if (!confirmed) return;
     api.updateScene({ elements: [], captureUpdate: CaptureUpdateAction.IMMEDIATELY });
   };
 
-  const scope = hasSelection ? "selection" : "board";
-
   return (
     <div ref={boardRef} className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
       <div className="flex shrink-0 items-center justify-end gap-1.5 border-b px-2 py-1.5">
         <Button size="xs" variant="ghost" disabled={!api} onClick={() => void copyPng()}>
           <ClipboardCopyIcon />
-          Copy {scope}
+          {hasSelection ? gt("Copy selection") : gt("Copy board")}
         </Button>
         <Button
           size="xs"
@@ -307,12 +310,12 @@ export function BoardPanel(props: { readonly composerDraftTarget: BoardAttachTar
           onClick={() => void attachToChat()}
         >
           <MessageSquarePlusIcon />
-          Attach {scope} to chat
+          {hasSelection ? gt("Attach selection to chat") : gt("Attach board to chat")}
         </Button>
         <Button
           size="icon-xs"
           variant="ghost-destructive"
-          aria-label="Clear board"
+          aria-label={gt("Clear board")}
           disabled={!api}
           onClick={() => void clear()}
         >
@@ -322,7 +325,7 @@ export function BoardPanel(props: { readonly composerDraftTarget: BoardAttachTar
       {/* The canvas owns its keys: letters pick tools, Cmd+Z undoes strokes, Delete removes. */}
       <div
         role="application"
-        aria-label="Board"
+        aria-label={gt("Board", { $context: "side panel tab showing a kanban board" })}
         data-editable-canvas
         className="relative min-h-0 flex-1"
       >
@@ -343,7 +346,7 @@ export function BoardPanel(props: { readonly composerDraftTarget: BoardAttachTar
           <WelcomeScreen>
             <WelcomeScreen.Center>
               <WelcomeScreen.Center.Heading>
-                Paste a screenshot or drop an image here
+                <T>Paste a screenshot or drop an image here</T>
               </WelcomeScreen.Center.Heading>
             </WelcomeScreen.Center>
             <WelcomeScreen.Hints.ToolbarHint />

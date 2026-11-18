@@ -4,6 +4,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { T, useGT } from "gt-react";
 import { RotateCwIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -24,6 +25,7 @@ export function useRestartPendingBanner(
     serverEnvironment.cancelRestartRequest.permissionAtom(environmentId),
   );
   const [cancelling, setCancelling] = useState(false);
+  const gt = useGT();
 
   if (request === null) return null;
 
@@ -35,7 +37,7 @@ export function useRestartPendingBanner(
       const error = squashAtomCommandFailure(result);
       toastManager.add({
         type: "error",
-        title: "Could not cancel the restart",
+        title: gt("Could not cancel the restart"),
         description: error instanceof Error ? error.message : undefined,
       });
     }
@@ -46,8 +48,10 @@ export function useRestartPendingBanner(
     variant: "info",
     group: "environment",
     icon: <RotateCwIcon />,
-    title: "T3 will restart when running turns finish",
-    description: `${request.reason}. New messages queue and send after the restart.`,
+    title: gt("T3 will restart when running turns finish"),
+    description: gt("{reason}. New messages queue and send after the restart.", {
+      reason: request.reason,
+    }),
     actions: (
       <Button
         size="xs"
@@ -55,7 +59,7 @@ export function useRestartPendingBanner(
         disabled={!permitted || cancelling}
         onClick={() => void cancelRestart()}
       >
-        Cancel restart
+        <T>Cancel restart</T>
       </Button>
     ),
   };

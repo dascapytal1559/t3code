@@ -1,3 +1,4 @@
+import { T, useGT } from "gt-react";
 import { CircleArrowUpIcon, ExternalLinkIcon } from "lucide-react";
 
 import {
@@ -14,7 +15,8 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 /** Informational only: this build has no update feed, so nothing installs from here. */
 export function SidebarUpstreamRelease({ notice }: { readonly notice: UpstreamReleaseNotice }) {
   const { release, dismiss } = notice;
-  const title = `T3 Code v${release.version} is out`;
+  const gt = useGT();
+  const title = gt("T3 Code v{version} is out", { version: release.version });
   const releaseUrl = getDesktopUpdateReleaseUrl(release.version, UPSTREAM_RELEASE_REPOSITORY);
 
   return (
@@ -43,9 +45,13 @@ export function SidebarUpstreamRelease({ notice }: { readonly notice: UpstreamRe
             <div className="text-sm leading-5 font-medium">{title}</div>
             <div className="mt-0.5 text-xs leading-4 text-muted-foreground">
               {release.releaseCount > 1
-                ? `${release.releaseCount} releases ahead of this build (v${release.currentVersion}).`
-                : `This build is v${release.currentVersion}.`}{" "}
-              Ask FirstMate to sync the fork.
+                ? gt(
+                    "{count} releases ahead of this build (v{current}). Ask FirstMate to sync the fork.",
+                    { count: release.releaseCount, current: release.currentVersion },
+                  )
+                : gt("This build is v{current}. Ask FirstMate to sync the fork.", {
+                    current: release.currentVersion,
+                  })}
             </div>
             <div className="mt-3 flex items-center gap-2">
               {releaseUrl ? (
@@ -56,12 +62,12 @@ export function SidebarUpstreamRelease({ notice }: { readonly notice: UpstreamRe
                   size="xs"
                   variant="outline"
                 >
-                  Release notes
+                  <T>Release notes</T>
                   <ExternalLinkIcon aria-hidden />
                 </Button>
               ) : null}
               <Button onClick={dismiss} size="xs" variant="ghost">
-                Dismiss
+                <T>Dismiss</T>
               </Button>
             </div>
           </div>

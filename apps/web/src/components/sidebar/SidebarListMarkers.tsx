@@ -1,5 +1,6 @@
 import { CollapsibleSectionHeader } from "../ui/collapsible-section-header";
 import { useSortable } from "@dnd-kit/sortable";
+import { useGT } from "gt-react";
 import { ChevronRightIcon } from "lucide-react";
 import { CSS } from "@dnd-kit/utilities";
 import { type ReactNode, useLayoutEffect } from "react";
@@ -121,6 +122,7 @@ export function SidebarCrewToggle(props: {
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const gt = useGT();
   return (
     <SortableSidebarMarker
       marker="crew-toggle"
@@ -134,7 +136,7 @@ export function SidebarCrewToggle(props: {
         data-sidebar-row="shelf:crew"
         aria-expanded={props.expanded}
         data-crew-tree={props.expanded ? "" : undefined}
-        aria-label={`Crewmates, ${props.count}`}
+        aria-label={gt("Crewmates, {count}", { count: props.count })}
         onClick={props.onToggle}
         className={
           props.expanded

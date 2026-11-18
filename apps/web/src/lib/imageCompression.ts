@@ -7,6 +7,9 @@ import {
   IMAGE_DIMENSIONS_HEADER_BYTES,
   readImageDimensions,
 } from "@t3tools/shared/imageDimensions";
+import { msg } from "gt-react";
+
+import { m } from "../i18n/messages";
 
 const MAX_DIMENSION = IMAGE_ATTACHMENT_MAX_EDGE;
 /** Bound source decoding: enormous ImageBitmaps can OOM the tab before resizing. */
@@ -113,10 +116,10 @@ export function readFileAsDataUrl(file: Blob): Promise<string> {
         resolve(reader.result);
         return;
       }
-      reject(new Error("Could not read image data."));
+      reject(new Error(m(msg("Could not read image data."))));
     });
     reader.addEventListener("error", () => {
-      reject(reader.error ?? new Error("Failed to read image."));
+      reject(reader.error ?? new Error(m(msg("Failed to read image."))));
     });
     reader.readAsDataURL(file);
   });

@@ -3,6 +3,8 @@ import { type EditorView, WidgetType } from "@codemirror/view";
 import { frontmatterRows } from "./frontmatter";
 import { clickedLink, previewConfig } from "./previewConfig";
 import { type TableCell, type TableInline, tableModel } from "./tableModel";
+import { msg } from "gt-react";
+import { m } from "~/i18n/messages";
 
 const element = <K extends keyof HTMLElementTagNameMap>(tag: K, className: string) => {
   const node = document.createElement(tag);
@@ -66,7 +68,12 @@ export class CheckboxWidget extends WidgetType {
     box.type = "checkbox";
     box.checked = this.checked;
     box.disabled = view.state.readOnly;
-    box.setAttribute("aria-label", this.checked ? "Completed task" : "Open task");
+    box.setAttribute(
+      "aria-label",
+      this.checked
+        ? m(msg("Completed task"))
+        : m(msg("Open task", { $context: "an unchecked task" })),
+    );
     // Keeps the caret where it is; the box is no place to type.
     box.addEventListener("mousedown", (event) => event.preventDefault());
     // The box is drawn from the text, so a click edits the text and never the box itself.

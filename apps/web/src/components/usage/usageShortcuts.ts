@@ -1,21 +1,23 @@
+import { msg } from "gt-react";
 import type { KeybindingCommand, ResolvedKeybindingsConfig } from "@t3tools/contracts";
 import type { UsageChartMetric } from "./UsageProviderChart";
 import { resolveShortcutCommand, type ShortcutEventLike } from "../../keybindings";
+import { m, type MessageResolver } from "../../i18n/messages";
 
 export type UsageMetric = UsageChartMetric | "limits";
 export const METRIC_OPTIONS = [
-  { value: "cost", label: "Cost", command: "usage.cost" },
-  { value: "tokens", label: "Tokens", command: "usage.tokens" },
-  { value: "limits", label: "Limits", command: "usage.limits" },
+  { value: "cost", label: msg("Cost"), command: "usage.cost" },
+  { value: "tokens", label: msg("Tokens"), command: "usage.tokens" },
+  { value: "limits", label: msg("Limits"), command: "usage.limits" },
 ] as const satisfies readonly { value: UsageMetric; label: string; command: KeybindingCommand }[];
 
 export const WINDOW_OPTIONS = [
-  { days: 1, label: "Past 24h", command: "usage.period.day" },
-  { days: 7, label: "7 days", command: "usage.period.week" },
-  { days: 30, label: "30 days", command: "usage.period.month" },
-  { days: 90, label: "90 days", command: "usage.period.quarter" },
-  { days: 180, label: "6 months", command: "usage.period.halfYear" },
-  { days: 365, label: "12 months", command: "usage.period.year" },
+  { days: 1, label: msg("Past 24h"), command: "usage.period.day" },
+  { days: 7, label: msg("7 days"), command: "usage.period.week" },
+  { days: 30, label: msg("30 days"), command: "usage.period.month" },
+  { days: 90, label: msg("90 days"), command: "usage.period.quarter" },
+  { days: 180, label: msg("6 months"), command: "usage.period.halfYear" },
+  { days: 365, label: msg("12 months"), command: "usage.period.year" },
 ] as const;
 
 export function resolveUsageShortcut(
@@ -41,10 +43,22 @@ export function resolveUsageShortcut(
   });
 }
 
-export function usageChartTitle(metric: UsageChartMetric, hourly: boolean, dayCount: number) {
-  const subject = metric === "tokens" ? "processed tokens" : "cost";
-  if (hourly) return `${metric === "tokens" ? "Processed tokens" : "Cost"}, last 24 hours`;
-  const period =
-    WINDOW_OPTIONS.find((option) => option.days === dayCount)?.label ?? `${dayCount} days`;
-  return `Daily ${subject} over ${period}`;
+export function usageChartTitle(
+  metric: UsageChartMetric,
+  hourly: boolean,
+  dayCount: number,
+  resolve: MessageResolver = m,
+) {
+  if (hourly) {
+    return metric === "tokens"
+      ? resolve(msg("Processed tokens, last 24 hours"))
+      : resolve(msg("Cost, last 24 hours"));
+  }
+  const option = WINDOW_OPTIONS.find((candidate) => candidate.days === dayCount);
+  const period = option
+    ? resolve(option.label)
+    : resolve(msg("{count, plural, one {{count} day} other {{count} days}}"), { count: dayCount });
+  return metric === "tokens"
+    ? resolve(msg("Daily processed tokens over {period}"), { period })
+    : resolve(msg("Daily cost over {period}"), { period });
 }

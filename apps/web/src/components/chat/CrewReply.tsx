@@ -4,6 +4,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import { T, useGT } from "gt-react";
 import { ArrowUpIcon } from "lucide-react";
 import { useState, type KeyboardEvent, type ReactNode } from "react";
 
@@ -37,6 +38,7 @@ export function CrewReply(props: {
   readonly disabled: boolean;
 }) {
   const { thread, coordinator } = props;
+  const gt = useGT();
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const startTurn = useOrchestrationCommand(threadEnvironment.startTurn, { reportFailure: false });
@@ -60,13 +62,13 @@ export function CrewReply(props: {
       const error = squashAtomCommandFailure(result);
       toastManager.add({
         type: "error",
-        title: "Could not send to FirstMate",
+        title: gt("Could not send to FirstMate"),
         description: error instanceof Error ? error.message : undefined,
       });
       return;
     }
     setText((current) => (current === sent ? "" : current));
-    toastManager.add({ type: "success", title: "Sent to FirstMate" });
+    toastManager.add({ type: "success", title: gt("Sent to FirstMate") });
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -78,9 +80,9 @@ export function CrewReply(props: {
   return (
     <div className="rounded-2xl border border-border bg-card shadow-xs/5 focus-within:border-ring">
       <textarea
-        aria-label="Reply to FirstMate about this thread"
+        aria-label={gt("Reply to FirstMate about this thread")}
         className="field-sizing-content block max-h-64 min-h-16 w-full resize-none bg-transparent px-3 py-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground"
-        placeholder="Reply to FirstMate about this thread…"
+        placeholder={gt("Reply to FirstMate about this thread…")}
         value={text}
         disabled={props.disabled}
         onChange={(event) => setText(event.target.value)}
@@ -93,7 +95,7 @@ export function CrewReply(props: {
           disabled={props.disabled || sending || text.trim().length === 0}
           onClick={() => void send()}
         >
-          Send to FirstMate
+          <T>Send to FirstMate</T>
           <ArrowUpIcon aria-hidden />
         </Button>
       </div>

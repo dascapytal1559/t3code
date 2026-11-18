@@ -4,10 +4,12 @@ import {
   type ContextMenuItem,
   type EnvironmentId,
 } from "@t3tools/contracts";
+import { msg } from "gt-react";
 import { use, useEffect, useEffectEvent } from "react";
 
 import { contextMenuSourceOf } from "~/contextMenuSource";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
+import { m } from "~/i18n/messages";
 import { readLocalApi } from "~/localApi";
 
 import { AssistantSelectionToolbar, type CitationCapture } from "../chat/AssistantSelectionToolbar";
@@ -186,9 +188,23 @@ export function FileSelectionCite({
       const tooLong = captured.citation.text.length > ASSISTANT_CITATION_MAX_TEXT_LENGTH;
       const copied = selection?.toString() ?? "";
       const items: ContextMenuItem<FileSelectionAction>[] = [
-        { id: "cite", label: tooLong ? "Shorten selection to cite" : "Cite", disabled: tooLong },
-        ...(editable ? [{ id: "cut" as const, label: "Cut", separatorBefore: true }] : []),
-        { id: "copy", label: "Copy", separatorBefore: !editable },
+        {
+          id: "cite",
+          label: tooLong
+            ? m(msg("Shorten selection to cite"))
+            : m(msg("Cite", { $context: "verb, quote the selection in the composer" })),
+          disabled: tooLong,
+        },
+        ...(editable
+          ? [
+              {
+                id: "cut" as const,
+                label: m(msg("Cut", { $context: "verb" })),
+                separatorBefore: true,
+              },
+            ]
+          : []),
+        { id: "copy", label: m(msg("Copy", { $context: "verb" })), separatorBefore: !editable },
       ];
       const position =
         source === "mouse"

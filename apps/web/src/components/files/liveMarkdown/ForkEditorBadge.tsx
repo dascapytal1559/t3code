@@ -1,3 +1,4 @@
+import { T } from "gt-react";
 import { GitForkIcon } from "lucide-react";
 
 import { Badge } from "~/components/ui/badge";
@@ -9,10 +10,10 @@ export function ForkEditorBadge() {
     <Tooltip>
       <TooltipTrigger render={<Badge variant="info" size="sm" data-fork-editor-badge />}>
         <GitForkIcon />
-        Fork editor
+        <T>Fork editor</T>
       </TooltipTrigger>
       <TooltipPopup>
-        The fork's live Markdown editor. Upstream shows a read-only preview.
+        <T>The fork's live Markdown editor. Upstream shows a read-only preview.</T>
       </TooltipPopup>
     </Tooltip>
   );

@@ -1,3 +1,4 @@
+import { T, useGT } from "gt-react";
 import { ListTreeIcon } from "lucide-react";
 import { type RefObject, useState } from "react";
 
@@ -21,12 +22,13 @@ export function MarkdownOutlineAction(props: {
   readonly rendered: RefObject<HTMLElement | null>;
   readonly column: OutlineColumn;
 }) {
+  const gt = useGT();
   // Read when the list opens, so it always matches the file as it is now.
   const [headings, setHeadings] = useState<readonly OutlineItem[] | null>(null);
   if (props.column.fits) {
     return (
       <FileSurfaceAction
-        label={props.column.pinned ? "Hide outline" : "Show outline"}
+        label={props.column.pinned ? gt("Hide outline") : gt("Show outline")}
         pressed={props.column.pinned}
         onPress={props.column.togglePinned}
       >
@@ -47,8 +49,8 @@ export function MarkdownOutlineAction(props: {
           <Button
             type="button"
             className="shrink-0"
-            aria-label="Outline"
-            title="Outline"
+            aria-label={gt("Outline")}
+            title={gt("Outline")}
             variant="ghost"
             size="icon-sm"
           />
@@ -57,7 +59,11 @@ export function MarkdownOutlineAction(props: {
         <ListTreeIcon className="size-3.5" />
       </MenuTrigger>
       <MenuPopup align="end" className="max-w-80">
-        {headings?.length === 0 ? <MenuItem disabled>No headings</MenuItem> : null}
+        {headings?.length === 0 ? (
+          <MenuItem disabled>
+            <T>No headings</T>
+          </MenuItem>
+        ) : null}
         {headings?.map((heading, index) => (
           <MenuItem
             // oxlint-disable-next-line react/no-array-index-key -- headings repeat, and the list is rebuilt each time it opens
@@ -68,7 +74,7 @@ export function MarkdownOutlineAction(props: {
               className="min-w-0 truncate"
               style={{ paddingInlineStart: `${(heading.level - top) * 0.75}rem` }}
             >
-              {heading.text || "Untitled"}
+              {heading.text || gt("Untitled", { $context: "a heading with no text" })}
             </span>
           </MenuItem>
         ))}

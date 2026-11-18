@@ -1,11 +1,13 @@
 import type { LegendListRef } from "@legendapp/list/react";
 import type { AssistantCitation, Citation, MessageId, ScopedThreadRef } from "@t3tools/contracts";
 import { isFileCitation } from "@t3tools/shared/assistantCitations";
+import { msg } from "gt-react";
 import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 import {
   resolveAssistantCitationRange,
   type AssistantCitationSourceAnchor,
 } from "~/lib/assistantTextSelection";
+import { m } from "~/i18n/messages";
 import { toastManager } from "../ui/toast";
 import { observeResize } from "~/lib/observeResize";
 
@@ -198,8 +200,8 @@ function observeAssistantCitationSource({
             request.onComplete();
             toastManager.add({
               type: "warning",
-              title: "Could not open the cited response",
-              description: "Click the citation to try again.",
+              title: m(msg("Could not open the cited response")),
+              description: m(msg("Click the citation to try again.")),
             });
           },
         );
@@ -219,8 +221,8 @@ function observeAssistantCitationSource({
       if (!range) {
         toastManager.add({
           type: "warning",
-          title: "The quoted text has changed",
-          description: "Showing the source response. The saved quote is unchanged.",
+          title: m(msg("The quoted text has changed")),
+          description: m(msg("Showing the source response. The saved quote is unchanged.")),
         });
       }
     }

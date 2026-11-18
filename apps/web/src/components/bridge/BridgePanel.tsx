@@ -1,4 +1,5 @@
 import type { EnvironmentId, ModelRouting, ScopedThreadRef } from "@t3tools/contracts";
+import { useGT } from "gt-react";
 
 import { useServerConfigs } from "../../state/entities";
 import ChatMarkdown from "../ChatMarkdown";
@@ -32,8 +33,9 @@ function ModelRoutingSection(props: {
   readonly modelRouting: ModelRouting;
   readonly environmentId: EnvironmentId;
 }) {
+  const gt = useGT();
   return (
-    <BridgeSection id="model-routing" title="Model routing">
+    <BridgeSection id="model-routing" title={gt("Model routing")}>
       <ChatMarkdown
         text={props.modelRouting.markdown}
         cwd={undefined}

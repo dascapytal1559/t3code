@@ -1,3 +1,4 @@
+import { T } from "gt-react";
 import { PlayIcon, SquareIcon } from "lucide-react";
 
 import { Button } from "../ui/button";
@@ -22,13 +23,13 @@ export function CrewRunControls(props: {
           ) : (
             <PlayIcon className="size-3 fill-current" aria-hidden="true" />
           )}
-          Resume
+          <T>Resume</T>
         </Button>
       )}
       {props.onStop === null ? null : (
         <Button size="xs" variant="outline" onClick={props.onStop}>
           <SquareIcon className="size-3 fill-current" />
-          Stop
+          <T>Stop</T>
         </Button>
       )}
     </div>
