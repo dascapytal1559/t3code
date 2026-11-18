@@ -953,7 +953,7 @@ describe("CursorAdapterV2", () => {
       );
       assert.deepEqual(
         yield* send(false, true),
-        told(true, true),
+        told(true, true, true),
         "the rewound conversation may have dropped instructions a later turn carried",
       );
 
@@ -975,7 +975,7 @@ describe("CursorAdapterV2", () => {
       providerThread = rolledBack.providerThread;
       assert.deepEqual(
         yield* send(false, false),
-        told(true, true),
+        told(true, true, true),
         "the fresh agent after a rollback has been told nothing",
       );
     }).pipe(
