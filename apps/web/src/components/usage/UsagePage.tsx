@@ -966,7 +966,11 @@ function UsageOverview({
               label={metric === "tokens" ? gt("Tokens by origin") : gt("Cost by origin")}
               origins={merged.origins}
               valueOf={(amount) => (metric === "tokens" ? amount.totalTokens : amount.costUsd)}
-              format={metric === "tokens" ? formatTokens : formatUsdShort}
+              format={
+                metric === "tokens"
+                  ? formatTokens
+                  : (value: number) => formatUsdShort(value, locale)
+              }
             />
           ) : null}
         </section>

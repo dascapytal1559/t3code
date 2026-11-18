@@ -465,7 +465,11 @@ export function useComposerStash(input: {
     }
     if (restoredMedia.missingNames.length > 0) {
       missingImageReasons.push(
-        `${restoredMedia.missingNames.join(", ")} could not be found in browser storage.`,
+        m(
+          msg("{names} could not be found in browser storage.", {
+            names: restoredMedia.missingNames.join(", "),
+          }),
+        ),
       );
     }
     if (entry.unreadableImageNames && entry.unreadableImageNames.length > 0) {

@@ -80,7 +80,9 @@ function readImageSize(dataUrl: string) {
     image.addEventListener("load", () =>
       resolve({ width: image.naturalWidth, height: image.naturalHeight }),
     );
-    image.addEventListener("error", () => reject(new Error("The pasted image could not be read.")));
+    image.addEventListener("error", () =>
+      reject(new Error(m(msg("The pasted image could not be read.")))),
+    );
     image.src = dataUrl;
   });
 }

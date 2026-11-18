@@ -170,7 +170,7 @@ export class FrontmatterWidget extends WidgetType {
     card.dataset.markdownProperties = "";
     const head = document.createElement("div");
     head.dataset.head = "";
-    head.textContent = "Properties";
+    head.textContent = m(msg("Properties"));
     card.append(head);
     for (const row of frontmatterRows(this.source)) {
       const key = document.createElement("span");
@@ -225,7 +225,7 @@ export class ImageWidget extends WidgetType {
     const wrap = element("span", "cm-lp-image");
     if (this.url === null) {
       wrap.classList.add("cm-lp-image-missing");
-      wrap.textContent = this.alt || "Image";
+      wrap.textContent = this.alt || m(msg("Image"));
       return wrap;
     }
     const image = document.createElement("img");

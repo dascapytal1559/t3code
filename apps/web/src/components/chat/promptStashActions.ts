@@ -173,7 +173,9 @@ export async function stashQueuedMessage(input: {
     }
     return {
       ok: false,
-      reason: "It could not be taken out of the queue, so it was not stashed. It may have started.",
+      reason: m(
+        msg("It could not be taken out of the queue, so it was not stashed. It may have started."),
+      ),
     };
   }
   settleStashEviction(evicted);

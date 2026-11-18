@@ -2569,21 +2569,21 @@ export default function ChatView(props: ChatViewProps) {
   const compactDisabled = compactThreadUnavailable;
   const compactDisabledReason = compactDisabled
     ? !canOperateThread
-      ? "This connection cannot change threads."
+      ? gt("This connection cannot change threads.")
       : !activeProject
-        ? "Choose a project before compacting"
+        ? gt("Choose a project before compacting")
         : !manualCompactionProviderAvailable
-          ? "Compaction is unavailable for this provider"
-          : "Compacting is unavailable right now"
+          ? gt("Compaction is unavailable for this provider")
+          : gt("Compacting is unavailable right now")
     : null;
   // Fork: FirstMate's main thread starts a fresh session from its context window.
   const startsNewSession = activeThreadShell != null && isPrimaryCoordinator(activeThreadShell);
   const startNewSessionDisabledReason = !canOperateThread
-    ? "This connection cannot change threads."
+    ? gt("This connection cannot change threads.")
     : isWorking || pendingApprovals.length > 0 || pendingUserInputs.length > 0
-      ? "FirstMate is busy. Start a new session once its turn ends."
+      ? gt("FirstMate is busy. Start a new session once its turn ends.")
       : activeEnvironmentUnavailable || threadDetailLoading || isRevertingCheckpoint
-        ? "Starting a new session is unavailable right now"
+        ? gt("Starting a new session is unavailable right now")
         : null;
   // The context window is the current conversation's, so a handoff destination never inherits it.
   const resumeCompactionTokens =

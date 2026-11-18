@@ -507,7 +507,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       ? [gt("Render math")]
       : []),
     ...(settings.crewTraceLightEnabled !== DEFAULT_UNIFIED_SETTINGS.crewTraceLightEnabled
-      ? ["Crew trace light"]
+      ? [gt("Crew trace light")]
       : []),
     ...(settings.panelAnimationDurationMs !== DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs
       ? [gt("Panel animations")]
@@ -524,7 +524,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       ? [gt("Thread notifications")]
       : []),
     ...(settings.notificationSoundScope !== DEFAULT_UNIFIED_SETTINGS.notificationSoundScope
-      ? ["Sound for"]
+      ? [gt("Sound for")]
       : []),
     ...(settings.inAppNotificationsEnabled !== DEFAULT_UNIFIED_SETTINGS.inAppNotificationsEnabled
       ? [gt("In-app notifications")]
