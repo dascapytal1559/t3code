@@ -329,6 +329,15 @@ export const UsageSummaryInput = Schema.Struct({
 });
 export type UsageSummaryInput = typeof UsageSummaryInput.Type;
 
+/** A dated note the server owner keeps in `usage-annotations.json`, drawn on the Usage chart. */
+export const UsageAnnotation = Schema.Struct({
+  date: UsageDay,
+  label: TrimmedNonEmptyString,
+  /** A logo drawn after the label. */
+  logo: Schema.optional(Schema.Literals(["t3"])),
+});
+export type UsageAnnotation = typeof UsageAnnotation.Type;
+
 export const UsageSummary = Schema.Struct({
   contractVersion: Schema.Number,
   readAt: Schema.String,
@@ -343,6 +352,8 @@ export const UsageSummary = Schema.Struct({
   modelFilter: Schema.optional(UsageModelFilter),
   /** Absent when the server cannot read its T3 prompts, including servers that predate origins. */
   origins: Schema.optional(UsageOrigins),
+  /** Absent when the server has no annotations file. */
+  annotations: Schema.optional(ForwardCompatibleArray(UsageAnnotation)),
 });
 export type UsageSummary = typeof UsageSummary.Type;
 

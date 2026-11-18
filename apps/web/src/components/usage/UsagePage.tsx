@@ -6,10 +6,17 @@ import { Atom } from "effect/reactivity";
 import {
   USAGE_CONTRACT_VERSION,
   type EnvironmentId,
+  type UsageAnnotation,
   type UsageProviderKind,
   type UsageSummaryInput,
 } from "@t3tools/contracts";
-import { CircleAlertIcon, ChevronDownIcon, InfoIcon, SlidersHorizontalIcon } from "lucide-react";
+import {
+  CircleAlertIcon,
+  ChevronDownIcon,
+  InfoIcon,
+  MilestoneIcon,
+  SlidersHorizontalIcon,
+} from "lucide-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
@@ -69,6 +76,7 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 import { AppRouteModal, AppRouteModalClose } from "../AppRouteModal";
 import { Skeleton } from "../ui/skeleton";
 import { Toggle, ToggleGroup } from "../ui/toggle-group";
+import { Toggle as ToggleButton } from "../ui/toggle";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import {
   WorkspaceBreadcrumb,
@@ -80,6 +88,7 @@ import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { UsageLimitsSection } from "./UsageLimits";
 import { UsagePriceOverrides } from "./UsagePriceOverrides";
 import { UsageProviderChart } from "./UsageProviderChart";
+import { collectUsageAnnotations, placeUsageAnnotations } from "./usageAnnotations";
 import { splitSkippedRecords } from "./usageSkippedRecords";
 import { SpeedPremium, UsageModelDialog } from "./UsageModelDialog";
 import { UsageShareBar } from "./UsageShareBar";
@@ -234,6 +243,10 @@ export function UsagePage() {
   const canReadDiagnostics = selectedEnvironments.some(
     (environment) => environment.canReadDiagnostics,
   );
+  const annotations = collectUsageAnnotations(
+    selectedEnvironments.map((environment) => environment.summary?.annotations),
+  );
+  const showAnnotations = preferences.showAnnotations !== false;
 
   const updatePreferences = (patch: Partial<UsagePagePreferences>) => {
     const nextPreferences = { ...preferences, ...patch };
@@ -361,6 +374,19 @@ export function UsagePage() {
     shownHourly && shownWindow.sinceTime !== undefined && shownWindow.untilTime !== undefined
       ? `${formatDateTimeShort(shownWindow.sinceTime, shownWindow.timeZone, hour12)} to ${formatDateTimeShort(shownWindow.untilTime, shownWindow.timeZone, hour12)}`
       : `${formatDayShort(shownWindow.sinceDay)} to ${formatDayShort(shownWindow.untilDay)}`;
+  const annotationsToggle =
+    showingLimits || annotations.length === 0 ? null : (
+      <ToggleButton
+        aria-label="Chart annotations"
+        title={showAnnotations ? "Hide chart annotations" : "Show chart annotations"}
+        pressed={showAnnotations}
+        onPressedChange={(pressed) => updatePreferences({ showAnnotations: pressed })}
+        size="sm"
+        variant="ghost"
+      >
+        <MilestoneIcon aria-hidden />
+      </ToggleButton>
+    );
   const topbarContent = (
     <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 py-2 @4xl/usage-header:flex">
       <WorkspaceBreadcrumb ariaLabel="Usage breadcrumb" className="min-w-0">
@@ -430,6 +456,7 @@ export function UsagePage() {
             </Toggle>
           ))}
         </ToggleGroup>
+        {annotationsToggle}
         <Button
           onClick={refreshWindow}
           aria-label={showingLimits ? "Refresh limits" : "Refresh usage"}
@@ -491,6 +518,7 @@ export function UsagePage() {
             ))}
           </SelectPopup>
         </Select>
+        {annotationsToggle}
         <Button
           onClick={refreshWindow}
           aria-label={showingLimits ? "Refresh limits" : "Refresh usage"}
@@ -557,6 +585,7 @@ export function UsagePage() {
                 refreshingUsage={refreshingUsage}
                 showChatGptSharing={showChatGptSharing}
                 onSelectModel={selectUsageModel}
+                annotations={showAnnotations ? annotations : []}
               />
             )}
           </WorkspacePageContainer>
@@ -606,6 +635,7 @@ function UsageOverview({
   refreshingUsage,
   showChatGptSharing,
   onSelectModel,
+  annotations,
 }: {
   readonly merged: SelectedUsage;
   readonly shownWindow: UsageSummaryInput;
@@ -620,6 +650,7 @@ function UsageOverview({
   readonly refreshingUsage: boolean;
   readonly showChatGptSharing: boolean;
   readonly onSelectModel: (key: string) => void;
+  readonly annotations: readonly UsageAnnotation[];
 }) {
   const [breakdown, setBreakdown] = useState<"model" | "time">("model");
   const shownHourly = shownWindow.resolution === "hour";
@@ -832,6 +863,12 @@ function UsageOverview({
               resolution={shownHourly ? "hour" : "day"}
               timeZone={shownWindow.timeZone}
               hour12={hour12}
+              annotations={placeUsageAnnotations(
+                annotations,
+                shownHourly ? hours : days,
+                shownHourly ? "hour" : "day",
+                shownWindow.timeZone,
+              )}
             />
           )}
         </div>

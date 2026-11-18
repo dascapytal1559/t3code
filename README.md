@@ -15,6 +15,7 @@ Every difference from upstream, in the order [fork/README.md](fork/README.md) de
 - [Archived usage](fork/README.md#archived-usage): usage counts machines and accounts that no longer run T3.
 - [Phone vs computer split](fork/README.md#phone-vs-computer-split): tokens and cost split by phone or computer, typed or started by an agent.
 - [Usage export](fork/README.md#usage-export): `t3 usage export` prints each model call as T3 counted it, as JSON lines.
+- [Chart annotations](fork/README.md#chart-annotations): dated notes from a local file show on the Usage chart, with an on/off button.
 - [Banked resets on a Mac](fork/README.md#banked-resets-on-a-mac): Claude's banked resets show and can be redeemed on macOS, each on the rows it refills.
 - [Limits stay current](fork/README.md#limits-stay-current): a fresh limits reading on every check, with its age shown.
 - [Limits history](fork/README.md#limits-history): every limits reading is kept in a monthly log.

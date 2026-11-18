@@ -12,6 +12,8 @@ const UsagePagePreferencesSchema = Schema.Struct({
   metric: Schema.Literals(["cost", "tokens", "limits"]),
   windowDays: Schema.Literals([1, 7, 30, 90, 180, 365]),
   hiddenProviders: Schema.optional(Schema.Array(UsageProviderKind)),
+  /** Chart annotations show unless switched off. */
+  showAnnotations: Schema.optional(Schema.Boolean),
 });
 export type UsagePagePreferences = typeof UsagePagePreferencesSchema.Type;
 

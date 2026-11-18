@@ -52,6 +52,7 @@ import {
 } from "./usageAggregation.ts";
 import * as UsageClose from "./UsageClose.ts";
 import * as UsageOrigins from "./UsageOrigins.ts";
+import { readUsageAnnotations, USAGE_ANNOTATIONS_FILE_NAME } from "./usageAnnotations.ts";
 import {
   discoverUsageArchive,
   upgradeArchivedScanCache,
@@ -1566,10 +1567,15 @@ export const make = Effect.gen(function* () {
     Effect.map(trackPending),
   );
 
+  const annotationsPath = path.join(config.stateDir, USAGE_ANNOTATIONS_FILE_NAME);
   const readSummary = Effect.fn("UsageService.readSummary")(function* (
     requested: UsageSummaryInput,
   ) {
-    return (yield* readShared(requested)).summary;
+    const { summary } = yield* readShared(requested);
+    const annotations = yield* readUsageAnnotations(annotationsPath).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+    );
+    return annotations.length === 0 ? summary : { ...summary, annotations };
   });
 
   const readOriginReasons = Effect.fn("UsageService.readOriginReasons")(function* (

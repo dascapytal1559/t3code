@@ -482,6 +482,46 @@ Code: `onRecord` and `toUsageExportRecord` in
 
 Upstream: none.
 
+## Chart annotations
+
+Dated notes from a file of your own show on the Usage chart: a thin line rises
+from the date to a dark chip with your label. The button by the chart's
+controls switches them off and on.
+
+Put the file at `usage-annotations.json` in the server's data folder
+(`~/.t3-fork/userdata/` for the desktop app). It is a list; each note has a
+`date` (a calendar day in the chart's time zone), a `label`, and optionally
+`"logo": "t3"`, which draws T3's logo after the label:
+
+```json
+[
+  { "date": "2026-03-04", "label": "Launch" },
+  { "date": "2026-05-20", "label": "New editor +", "logo": "t3" }
+]
+```
+
+- A note shows on every period that covers its day; in Past 24h it sits on the
+  hour holding that day's midnight. With several servers selected, each
+  server's notes show, once each.
+- Chips sit just above the bars under them and clear of each other, beside
+  their line when the bars under its centre reach the top. Only when the bars
+  leave no room anywhere near it does a chip cover the top of one. Chips never
+  take the mouse, so the tooltip works under them.
+- The server reads the file on each Usage request, so edits show on the next
+  refresh. A missing file means no notes and no button; a file that is not
+  such a list is ignored, with a warning in the server log.
+- The notes stay on that server and reach only the clients it serves, inside
+  the usage summary they already read with the diagnostics read scope. Nothing
+  in the repo or a build carries them. The on/off choice is saved per browser.
+- The mobile app does not draw them.
+
+Code: `apps/server/src/usage/usageAnnotations.ts` (read in `readSummary` in
+`UsageService.ts`), `UsageAnnotation` in `packages/contracts/src/usage.ts`,
+`apps/web/src/components/usage/usageAnnotations.ts` (placement) and
+`UsageChartAnnotations` in `UsageProviderChart.tsx`.
+
+Upstream: none.
+
 ## Banked resets on a Mac
 
 On a Mac, Claude accounts show their banked weekly and Fable resets and let you

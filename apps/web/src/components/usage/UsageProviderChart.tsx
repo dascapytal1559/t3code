@@ -1,5 +1,5 @@
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
-import type { UsageProviderKind } from "@t3tools/contracts";
+import type { UsageAnnotation, UsageProviderKind } from "@t3tools/contracts";
 import { useLayoutEffect, useRef, useState } from "react";
 
 import type { DailyTotals, HourlyTotals } from "@t3tools/shared/usageMerge";
@@ -13,6 +13,8 @@ import {
 import { cn } from "~/lib/utils";
 import { PROVIDER_ORDER, PROVIDER_PRESENTATION } from "./usageProviders";
 import { observeResize } from "~/lib/observeResize";
+import { T3Wordmark } from "../T3Wordmark";
+import { layoutAnnotationChips, type PlacedUsageAnnotation } from "./usageAnnotations";
 
 const VIEW_WIDTH = 960;
 const VIEW_HEIGHT = 260;
@@ -21,6 +23,7 @@ const PLOT_TOP = 8;
 const MAX_BAR_WIDTH = 64;
 const MAX_AXIS_LABELS = 5;
 const NONE_LOADING: ReadonlySet<UsageProviderKind> = new Set();
+const NO_ANNOTATIONS: readonly PlacedUsageAnnotation[] = [];
 
 export type UsageChartMetric = "tokens" | "cost";
 
@@ -36,6 +39,7 @@ interface UsageProviderChartProps {
   readonly resolution: "day" | "hour";
   readonly timeZone: string;
   readonly hour12: boolean;
+  readonly annotations?: readonly PlacedUsageAnnotation[];
 }
 
 export interface DayColumn {
@@ -158,6 +162,7 @@ function buildChart(
 
   // The largest provider sits at the bottom of every bar; each provider is one path.
   const paths = series.map(({ provider, loading }) => ({ provider, loading, d: "" }));
+  const barTops: number[] = [];
   for (const [periodIndex, column] of columns.entries()) {
     const x = (periodIndex * bar.step + bar.inset).toFixed(2);
     let base = 0;
@@ -171,9 +176,10 @@ function buildChart(
       if (path === undefined) continue;
       path.d += `M${x},${top.toFixed(2)}h${bar.width.toFixed(2)}V${bottom.toFixed(2)}h-${bar.width.toFixed(2)}Z`;
     }
+    barTops.push(valueToY(base, scale.max));
   }
 
-  return { columns, scale, bar, paths };
+  return { columns, scale, bar, paths, barTops };
 }
 
 function UsageChartTooltip({
@@ -243,6 +249,7 @@ function UsageChartPlot({
   loadingProviders,
   format,
   formatTooltipPeriod,
+  overlay,
   children,
 }: {
   readonly periods: readonly string[];
@@ -252,6 +259,7 @@ function UsageChartPlot({
   readonly loadingProviders: ReadonlySet<UsageProviderKind>;
   readonly format: (value: number) => string;
   readonly formatTooltipPeriod: (period: string) => string;
+  readonly overlay?: React.ReactNode;
   readonly children: React.ReactNode;
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -340,6 +348,7 @@ function UsageChartPlot({
         )}
         {children}
       </svg>
+      {overlay}
 
       {hoverIndex === null || hoveredPeriod === undefined ? null : (
         <UsageChartTooltip
@@ -351,6 +360,102 @@ function UsageChartPlot({
           format={format}
         />
       )}
+    </div>
+  );
+}
+
+function T3Badge() {
+  return (
+    <span
+      aria-label="T3"
+      className="inline-flex h-4 items-center rounded-sm bg-info px-0.75 ring-1 ring-white/25"
+    >
+      <T3Wordmark aria-hidden className="h-2 w-auto text-white" />
+    </span>
+  );
+}
+
+function annotationKey({ date, label, logo }: UsageAnnotation): string {
+  return `${date}:${label}:${logo ?? ""}`;
+}
+
+/** Each chip rises on a line from its date on the axis; it never takes pointer input from the plot. */
+function UsageChartAnnotations({
+  placed,
+  periodCount,
+  barTops,
+}: {
+  readonly placed: readonly PlacedUsageAnnotation[];
+  readonly periodCount: number;
+  /** Each period's bar top in chart units. */
+  readonly barTops: readonly number[];
+}) {
+  const layerRef = useRef<HTMLDivElement | null>(null);
+  const chipRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- places chips from measured chip and plot sizes through CSS variables before paint and on ResizeObserver
+  useLayoutEffect(() => {
+    const layer = layerRef.current;
+    if (layer === null) return;
+    const position = () => {
+      const chips = placed.map(({ index }, slot) => ({
+        index,
+        width: chipRefs.current[slot]?.offsetWidth ?? 0,
+      }));
+      const chipHeight = chipRefs.current[0]?.offsetHeight ?? 0;
+      const plotHeight = layer.clientHeight;
+      const layout = layoutAnnotationChips({
+        chips,
+        periodCount,
+        plotWidth: layer.clientWidth,
+        plotHeight,
+        chipHeight,
+        barTop: (index) => ((barTops[index] ?? VIEW_HEIGHT) / VIEW_HEIGHT) * plotHeight,
+      });
+      layout.forEach(({ left, top, x }, slot) => {
+        layer.style.setProperty(`--annotation-${slot}-left`, `${left}px`);
+        layer.style.setProperty(`--annotation-${slot}-top`, `${top}px`);
+        layer.style.setProperty(`--annotation-${slot}-line-top`, `${top + chipHeight}px`);
+        layer.style.setProperty(`--annotation-${slot}-x`, `${x}px`);
+      });
+    };
+    position();
+    return observeResize([layer], position);
+  }, [placed, periodCount, barTops]);
+
+  return (
+    <div ref={layerRef} className="pointer-events-none absolute inset-0">
+      {placed.map(({ annotation }, slot) => (
+        <div key={annotationKey(annotation)}>
+          <div
+            aria-hidden
+            className="absolute bottom-0 w-px -translate-x-1/2 bg-foreground"
+            style={{
+              left: `var(--annotation-${slot}-x)`,
+              top: `var(--annotation-${slot}-line-top)`,
+            }}
+          />
+          <div
+            aria-hidden
+            className="absolute bottom-0 size-1.5 -translate-x-1/2 translate-y-1/2 rounded-full bg-foreground"
+            style={{ left: `var(--annotation-${slot}-x)` }}
+          />
+          <div
+            ref={(element) => {
+              chipRefs.current[slot] = element;
+            }}
+            className="absolute flex h-6 items-center gap-1 rounded-md bg-foreground px-2 text-xs font-semibold whitespace-nowrap text-background shadow-sm"
+            style={{
+              left: `var(--annotation-${slot}-left)`,
+              top: `var(--annotation-${slot}-top)`,
+            }}
+          >
+            <span className="sr-only">{formatDayShort(annotation.date)}: </span>
+            {annotation.label}
+            {annotation.logo === "t3" ? <T3Badge /> : null}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -367,13 +472,14 @@ export function UsageProviderChart({
   resolution,
   timeZone,
   hour12,
+  annotations = NO_ANNOTATIONS,
 }: UsageProviderChartProps) {
   const periods = resolution === "hour" ? hours : days;
   const totals: readonly (DailyTotals | HourlyTotals)[] = resolution === "hour" ? hourly : daily;
   const byPeriod = new Map(
     totals.map((entry) => ["hourStart" in entry ? entry.hourStart : entry.day, entry]),
   );
-  const { columns, scale, bar, paths } = buildChart(
+  const { columns, scale, bar, paths, barTops } = buildChart(
     periods,
     byPeriod,
     metric,
@@ -404,6 +510,15 @@ export function UsageProviderChart({
           loadingProviders={loadingProviders}
           format={format}
           formatTooltipPeriod={formatTooltipPeriod}
+          overlay={
+            annotations.length === 0 ? undefined : (
+              <UsageChartAnnotations
+                placed={annotations}
+                periodCount={periods.length}
+                barTops={barTops}
+              />
+            )
+          }
         >
           {scale.ticks.map((tick) => {
             const y = toY(tick);
