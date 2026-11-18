@@ -5,7 +5,11 @@ does, shows a picture where one helps, then what each upstream sync must carry
 forward, and ends with how much of it upstream has. A feature that is half in
 the [FirstMate fork](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md)
 links to that half. The front page lists every section in this order. Keep this
-list current. Pictures live in `fork/media/` and show made-up data. Earlier fork work is archived on the local branch
+list current. Pictures live in `fork/media/` and show made-up data. Fork text on
+screen goes through upstream's translation calls, as
+[Translating the UI](../docs/internals/i18n.md) describes, or lint fails. The
+fork's keys show English in the other languages until someone translates them.
+Earlier fork work is archived on the local branch
 `archive/fork-legacy-2026-10-19` and is out of scope for syncs; take from it
 only on request.
 
