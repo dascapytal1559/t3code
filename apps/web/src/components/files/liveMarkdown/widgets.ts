@@ -318,8 +318,8 @@ export class TableWidget extends WidgetType {
       view.focus();
     });
     wrap.addEventListener("click", (event) => {
-      const href = clickedLink(event);
-      if (href !== null) view.state.facet(previewConfig).onOpenLink(href, event);
+      const link = clickedLink(event);
+      if (link !== null) view.state.facet(previewConfig).onOpenLink(link, event);
     });
     return wrap;
   }

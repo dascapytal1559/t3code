@@ -24,7 +24,7 @@ Also:
 
 - [Its own app](fork/README.md#desktop-identity): T3 Code (Fork) runs beside the official one.
 - [Live Markdown editor](fork/README.md#live-markdown-editor): a Markdown file opens as a rendered page you type into, like Obsidian's Live Preview.
-- [File references](fork/README.md#file-references): a path in a Markdown file opens from that file's folder, clickable in the live editor too, and media opens in its default app.
+- [File references](fork/README.md#file-references): a path in a Markdown file opens from that file's folder (inline code also from the project's top folder), clickable in the live editor too, and media opens in its default app.
 - [File tabs name their folder](fork/README.md#file-tabs-name-their-folder): `reports/README.md`, so same-named files tell apart.
 - [Telemetry off](fork/README.md#telemetry-off-by-default): nothing is sent unless you opt in.
 - [Board](fork/README.md#board): a tab to sketch on screenshots and attach them to the chat.

@@ -9,8 +9,11 @@ import {
 import {
   markdownFileCopyPaths,
   markdownFileEditorTarget,
+  pickMarkdownFilePath,
   resolveMarkdownFileHostPath,
 } from "./markdownFileHostPath";
+
+const noPathsExist = async () => null;
 
 describe("isLocalEditorFileHref", () => {
   it("accepts absolute file deep links of known editors", () => {
@@ -74,7 +77,7 @@ describe("relative links inside a rendered host file", () => {
       [
         label: string,
         meta: ReturnType<typeof resolveMarkdownFileLinkMeta>,
-        expected: { filePath: string; workspaceRelativePath?: string | null; heading?: string },
+        expected: Partial<NonNullable<ReturnType<typeof resolveMarkdownFileLinkMeta>>>,
       ]
     > = [
       [
@@ -88,11 +91,12 @@ describe("relative links inside a rendered host file", () => {
         { filePath: "/ws/data/videos/sources/a.mp4" },
       ],
       [
-        "a top-folder path is not retried from the top folder",
+        "a top-folder path in inline code reads beside the document first",
         resolveInlineCodeFileLinkMeta("data/report.md", "/ws", "/ws/data/videos/scripts"),
         {
           filePath: "/ws/data/videos/scripts/data/report.md",
           workspaceRelativePath: "data/videos/scripts/data/report.md",
+          rootFallbackPath: "/ws/data/report.md",
         },
       ],
       [
@@ -156,8 +160,67 @@ describe("relative links inside a rendered host file", () => {
     expect(fromChat.workspaceLookupPath).toBe("user.ts");
     expect(fromDocument.workspaceLookupPath).toBeNull();
     await expect(
-      resolveMarkdownFileHostPath({ meta: fromDocument, cwd: "/ws", findWorkspaceMatch: search }),
+      resolveMarkdownFileHostPath({
+        meta: fromDocument,
+        cwd: "/ws",
+        findWorkspaceMatch: search,
+        pathsExist: noPathsExist,
+      }),
     ).resolves.toEqual({ absolutePath: "/ws/user.ts", matched: false });
+  });
+});
+
+// Fork: docs write inline-code paths from the repository's top folder.
+describe("inline code falls back to the workspace root", () => {
+  const existing =
+    (...found: string[]) =>
+    async (paths: readonly string[]) =>
+      paths.map((path) => found.includes(path));
+  const inline = resolveInlineCodeFileLinkMeta("apps/web/src/App.tsx:12", "/ws", "/ws/fork");
+  if (!inline) throw new Error("Expected a file link");
+
+  it("opens beside the document, then from the root, then beside the document again", async () => {
+    const cases: ReadonlyArray<[label: string, found: string[], expected: string]> = [
+      [
+        "own folder hit",
+        ["/ws/fork/apps/web/src/App.tsx", "/ws/apps/web/src/App.tsx"],
+        "/ws/fork/apps/web/src/App.tsx",
+      ],
+      ["root fallback", ["/ws/apps/web/src/App.tsx"], "/ws/apps/web/src/App.tsx"],
+      ["neither found", [], "/ws/fork/apps/web/src/App.tsx"],
+    ];
+    for (const [label, found, expected] of cases) {
+      await expect(pickMarkdownFilePath(inline, existing(...found)), label).resolves.toBe(expected);
+    }
+    await expect(pickMarkdownFilePath(inline, noPathsExist)).resolves.toBe(inline.filePath);
+    const hostPath = await resolveMarkdownFileHostPath({
+      meta: inline,
+      cwd: "/ws",
+      findWorkspaceMatch: async () => null,
+      pathsExist: existing("/ws/apps/web/src/App.tsx"),
+    });
+    expect(markdownFileCopyPaths(inline, hostPath, "/ws")).toEqual({
+      fullPath: "/ws/apps/web/src/App.tsx:12",
+      relativePath: "apps/web/src/App.tsx:12",
+    });
+  });
+
+  it("never applies to links, explicit relative paths, chat, or a document at the root", async () => {
+    const link = resolveMarkdownFileLinkMeta("apps/web/src/App.tsx", "/ws", "/ws/fork");
+    if (!link) throw new Error("Expected a file link");
+    expect(link.rootFallbackPath).toBeNull();
+    await expect(pickMarkdownFilePath(link, existing("/ws/apps/web/src/App.tsx"))).resolves.toBe(
+      "/ws/fork/apps/web/src/App.tsx",
+    );
+    for (const [label, meta] of [
+      ["./ path", resolveInlineCodeFileLinkMeta("./src/main.ts", "/ws", "/ws/docs")],
+      ["../ path", resolveInlineCodeFileLinkMeta("../src/main.ts", "/ws", "/ws/docs/a")],
+      ["chat", resolveInlineCodeFileLinkMeta("src/main.ts", "/ws")],
+      ["root document", resolveInlineCodeFileLinkMeta("src/main.ts", "/ws", "/ws")],
+      ["outside the workspace", resolveInlineCodeFileLinkMeta("src/main.ts", "/ws", "/tmp/r")],
+    ] as const) {
+      expect(meta?.rootFallbackPath, label).toBeNull();
+    }
   });
 });
 
@@ -217,6 +280,7 @@ describe("chat file chip paths", () => {
       meta,
       cwd,
       findWorkspaceMatch: async () => "src/discord/events/user.ts",
+      pathsExist: noPathsExist,
     });
 
     expect(markdownFileEditorTarget(meta, hostPath)).toBe(

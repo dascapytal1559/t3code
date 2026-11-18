@@ -1770,12 +1770,17 @@ A path written in a Markdown file is read from that file's own folder, and only
 there, as GitHub, VS Code and Obsidian read it: in `data/demo/report.md`,
 `scripts/run.md` is `data/demo/scripts/run.md` and `../clips/a.mp4` is
 `data/clips/a.mp4`. That holds for links, inline-code paths and images, in the
-rendered view and the live editor alike. `/…` and `~/…` mean the host path they
-name. A path in a chat message reads from the thread's workspace, with
-upstream's project-wide search when it misses, as upstream does. Upstream reads
-inline code that has a folder from the project's top folder instead
-(https://github.com/pingdotgg/t3code/pull/16950), and a file at the top folder
-also gets the search; the fork reads both from the file's folder. When the file is not there, the panel shows the one path it tried.
+rendered view and the live editor alike, with one exception: docs write
+inline-code paths from the repository's top folder, so an inline-code path with
+no file beside the document opens from the project's top folder when the file
+is there (`rootFallbackPath` in `apps/web/src/markdown-links.ts`, checked on
+click). Real links and `./`, `../` paths never fall back. `/…` and `~/…` mean
+the host path they name. A path in a chat message reads from the thread's
+workspace, with upstream's project-wide search when it misses, as upstream
+does. Upstream reads inline code that has a folder from the project's top
+folder only (https://github.com/pingdotgg/t3code/pull/16950), and a file at the
+top folder also gets the search. When the file is in neither place, the panel
+shows the path beside the document.
 
 - One click handler opens a reference from chat, the rendered view and the live
   editor (`openFileReference.ts`). The live editor also makes inline-code paths

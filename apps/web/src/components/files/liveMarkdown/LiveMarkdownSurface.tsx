@@ -11,12 +11,13 @@ import {
   inlineCodeFilePathCandidate,
   normalizeMarkdownLinkDestination,
 } from "@t3tools/shared/markdownLinks";
-import { resolveWorkspaceFilePath } from "@t3tools/shared/path";
+import { resolveWorkspaceFilePath, workspaceRelativeFilePath } from "@t3tools/shared/path";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { useAssetUrls } from "~/assets/assetUrls";
 import { useOpenLink } from "~/browser/useOpenLink";
-import { resolveMarkdownFileLinkMeta } from "~/markdown-links";
+import { resolveInlineCodeFileLinkMeta, resolveMarkdownFileLinkMeta } from "~/markdown-links";
+import { pickMarkdownFilePath } from "~/markdownFileHostPath";
 import { openFileReference } from "~/openFileReference";
 import { filesystemEnvironment } from "~/state/filesystem";
 import { projectEnvironment } from "~/state/projects";
@@ -34,6 +35,7 @@ import {
 } from "../projectFilesQueryState";
 import { captureEditorFileSelection, FileSelectionCite } from "../FileSelectionCite";
 import { createLiveMarkdownEditor, type LiveMarkdownEditor } from "./liveMarkdownEditor";
+import type { ClickedLink } from "./previewConfig";
 import {
   findImageEmbed,
   imageAssetResource,
@@ -159,9 +161,11 @@ export default function LiveMarkdownSurface({
     reportFailure: false,
     refresh: true,
   });
-  const followLink = useEffectEvent((href: string, event: MouseEvent) => {
+  const followLink = useEffectEvent(({ href, inlineCode }: ClickedLink, event: MouseEvent) => {
     const destination = normalizeMarkdownLinkDestination(href);
-    const file = resolveMarkdownFileLinkMeta(destination, cwd, baseDir);
+    const file = inlineCode
+      ? resolveInlineCodeFileLinkMeta(href, cwd, baseDir)
+      : resolveMarkdownFileLinkMeta(destination, cwd, baseDir);
     if (file === null) {
       if (destination.startsWith("#")) {
         // A link to a heading of this file.
@@ -173,7 +177,25 @@ export default function LiveMarkdownSurface({
       );
       return;
     }
-    openFileReference(threadRef, file);
+    if (file.rootFallbackPath === null) {
+      openFileReference(threadRef, file);
+      return;
+    }
+    void pickMarkdownFilePath(file, async (paths) => {
+      if (!readEnvironmentScope(environmentId, AuthFilesystemReadScope)) return null;
+      const metadata = await getFilesystemMetadata({ environmentId, input: { paths: [...paths] } });
+      return metadata._tag === "Success"
+        ? metadata.value.entries.map((entry) => entry !== null)
+        : null;
+    }).then((filePath) =>
+      openFileReference(
+        threadRef,
+        file,
+        filePath === file.filePath
+          ? undefined
+          : (workspaceRelativeFilePath(filePath, cwd) ?? filePath),
+      ),
+    );
   });
   const resolveImage = useEffectEvent((source: string) => imageSourceOf(source, baseDir));
   const searchEntries = useAtomQueryRunner(projectEnvironment.searchEntries, {
@@ -244,7 +266,7 @@ export default function LiveMarkdownSurface({
       resolveImage: (source) => resolveImage(source),
       resolveImageEmbed: imageEmbedSourceOf,
       onImageNeeded: (key) => imageNeeded(key),
-      onOpenLink: (href, event) => followLink(href, event),
+      onOpenLink: (link, event) => followLink(link, event),
       inlineCodeLink: inlineCodeFilePathCandidate,
       bareLinks: absoluteFilePathMatches,
     });

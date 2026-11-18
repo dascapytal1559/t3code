@@ -8,7 +8,11 @@ import {
   safeDecodeURIComponent,
   splitMarkdownLinkSearchAndHash,
 } from "@t3tools/shared/markdownLinks";
-import { parseFileUrlHref, splitFilePathPosition } from "@t3tools/shared/fileLinks";
+import {
+  parseFileUrlHref,
+  resolvePathLinkTarget,
+  splitFilePathPosition,
+} from "@t3tools/shared/fileLinks";
 
 import { formatWorkspaceRelativePath } from "./filePathDisplay";
 import { isTerminalLinkActivation } from "./terminal-links";
@@ -19,6 +23,8 @@ export interface MarkdownFileLinkMeta {
   targetPath: string;
   displayPath: string;
   workspaceRelativePath: string | null;
+  /** Fork: inline code's workspace-root reading, opened when nothing sits beside the document. */
+  rootFallbackPath: string | null;
   basename: string;
   line?: number;
   column?: number;
@@ -55,8 +61,35 @@ export function resolveInlineCodeFileLinkMeta(
 ): MarkdownFileLinkMeta | null {
   const candidate = inlineCodeFilePathCandidate(codeText);
   if (candidate === null) return null;
+  const meta = resolveMarkdownFileLinkMeta(candidate, cwd, documentDir);
+  if (meta === null) return null;
+  return {
+    ...meta,
+    rootFallbackPath: rootFallbackPath(candidate, meta.filePath, cwd, documentDir),
+  };
+}
 
-  return resolveMarkdownFileLinkMeta(candidate, cwd, documentDir);
+/**
+ * Docs write inline-code paths from the repository's top folder, so inline code in a
+ * document below the workspace root also reads from there. Links never do.
+ */
+function rootFallbackPath(
+  candidate: string,
+  filePath: string,
+  cwd: string | undefined,
+  documentDir: string | undefined,
+): string | null {
+  if (!cwd || documentDir === undefined) return null;
+  const source = parseMarkdownFileLink(candidate);
+  if (source === null || isAbsolutePath(source.path) || /^(?:~|\.{1,2})[\\/]/.test(source.path)) {
+    return null;
+  }
+  const documentFolder = workspaceRelativeFilePath(documentDir, cwd);
+  if (documentFolder === null || documentFolder === ".") return null;
+  const fallback = resolvePathLinkTarget(source.path, cwd);
+  return fallback !== filePath && workspaceRelativeFilePath(fallback, cwd) !== null
+    ? fallback
+    : null;
 }
 
 /** The text a file link names after `#`; a `#L12` line fragment is read as its line instead. */
@@ -68,8 +101,9 @@ function linkedHeading(href: string): string | null {
 
 /**
  * Fork: a path written in a document reads from `documentDir`, the document's own folder,
- * and only there. Without one the path is from a chat message: it reads from the workspace,
- * and a miss falls back to upstream's workspace search (`workspaceLookupPath`).
+ * and only there (inline code adds `rootFallbackPath`). Without one the path is from a chat
+ * message: it reads from the workspace, and a miss falls back to upstream's workspace search
+ * (`workspaceLookupPath`).
  */
 export function resolveMarkdownFileLinkMeta(
   href: string | undefined,
@@ -82,6 +116,7 @@ export function resolveMarkdownFileLinkMeta(
   const heading = href ? linkedHeading(href) : null;
   return {
     ...buildFileLinkMetaFromTarget(targetPath, cwd),
+    rootFallbackPath: null,
     ...(source?.endLine !== undefined ? { endLine: source.endLine } : {}),
     ...(heading !== null && source?.line === undefined ? { heading } : {}),
     workspaceLookupPath:

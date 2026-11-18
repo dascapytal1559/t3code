@@ -14,7 +14,7 @@ export interface LivePreviewConfig {
   readonly resolveImageEmbed: (target: string) => ImageSource;
   /** Called once for each asset key that comes into view. */
   readonly onImageNeeded: (key: string) => void;
-  readonly onOpenLink: (href: string, event: MouseEvent) => void;
+  readonly onOpenLink: (link: ClickedLink, event: MouseEvent) => void;
   /** The link inline code stands for, such as a file path, or null to keep it plain code. */
   readonly inlineCodeLink: (code: string) => string | null;
   /** Paths in a line of prose that open like links, by their offset in the line. */
@@ -36,11 +36,19 @@ export const previewConfig = Facet.define<LivePreviewConfig, LivePreviewConfig>(
   combine: (values) => values[0] ?? standalone,
 });
 
+/** A followed link; `inlineCode` marks a path written as inline code rather than a link. */
+export interface ClickedLink {
+  readonly href: string;
+  readonly inlineCode: boolean;
+}
+
 /**
  * The link under a plain click. Alt-click is left alone so the caret can be put
  * inside a link to edit it.
  */
-export function clickedLink(event: MouseEvent): string | null {
+export function clickedLink(event: MouseEvent): ClickedLink | null {
   if (event.button !== 0 || event.altKey || !(event.target instanceof Element)) return null;
-  return event.target.closest<HTMLElement>("[data-href]")?.dataset.href ?? null;
+  const link = event.target.closest<HTMLElement>("[data-href]");
+  const href = link?.dataset.href;
+  return href === undefined ? null : { href, inlineCode: link?.dataset.inlineCode !== undefined };
 }

@@ -163,7 +163,10 @@ const wikiLinkMark = Decoration.mark({ class: "cm-lp-wikilink" });
 const linkMark = (href: string) =>
   Decoration.mark({ class: "cm-lp-link", attributes: { "data-href": href } });
 const codeLinkMark = (href: string) =>
-  Decoration.mark({ class: "cm-lp-code cm-lp-link", attributes: { "data-href": href } });
+  Decoration.mark({
+    class: "cm-lp-code cm-lp-link",
+    attributes: { "data-href": href, "data-inline-code": "" },
+  });
 
 // A bare path links only in prose, not inside code, a link or an address of its own.
 const NOT_PROSE = new Set([
@@ -599,10 +602,10 @@ const linkClicks = EditorView.domEventHandlers({
     return true;
   },
   click(event, view) {
-    const href = clickedLink(event);
-    if (href === null) return false;
+    const link = clickedLink(event);
+    if (link === null) return false;
     event.preventDefault();
-    view.state.facet(previewConfig).onOpenLink(href, event);
+    view.state.facet(previewConfig).onOpenLink(link, event);
     return true;
   },
 });
