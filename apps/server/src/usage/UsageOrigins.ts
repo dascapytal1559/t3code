@@ -862,10 +862,12 @@ export class UsageOrigins extends Context.Service<
     /**
      * Writes down the label of every record and prompt after the last close through `throughMs`,
      * as Usage reads them now, then reads them back; anything read back differently rolls it back.
+     * A dry run works the labels out and writes nothing.
      */
     readonly close: (
       throughMs: number,
       records: readonly OriginRecord[],
+      options?: { readonly dryRun?: boolean },
     ) => Effect.Effect<CloseOutcome, UsageOriginsReadError>;
   }
 >()("t3/usage/UsageOrigins") {}
@@ -890,16 +892,18 @@ export const storedOrigin = (key: UsageOriginKey, boundAtMs?: number) =>
       }
     : undefined;
 
+export interface CloseCounts {
+  readonly span: UsageClose.ClosedSpan;
+  readonly records: number;
+  readonly sessionRows: number;
+  readonly promptRows: number;
+  /** How the labels written at birth compared; null before they were written. */
+  readonly born: UsageLabelStore.BornCheck | null;
+}
+
 export type CloseOutcome =
-  | {
-      readonly closed: true;
-      readonly span: UsageClose.ClosedSpan;
-      readonly records: number;
-      readonly sessionRows: number;
-      readonly promptRows: number;
-      /** How the labels written at birth compared; null before they were written. */
-      readonly born: UsageLabelStore.BornCheck | null;
-    }
+  | ({ readonly closed: true } & CloseCounts)
+  | ({ readonly closed: false; readonly why: "dryRun" } & CloseCounts)
   | { readonly closed: false; readonly why: "notDue" | "superseded" | "differs" };
 
 /**
@@ -1829,8 +1833,8 @@ const make = Effect.gen(function* () {
   );
 
   /**
-   * The born labels of a span just closed, against what the close worked out for it: records
-   * and prompts after born labels began. Every difference is logged by reason.
+   * The born labels of a span, against what the close works out for it: records and prompts
+   * after born labels began, each difference counted by reason.
    */
   const checkBorn = Effect.fn("UsageOrigins.checkBorn")(function* (input: {
     readonly throughMs: number;
@@ -1842,7 +1846,7 @@ const make = Effect.gen(function* () {
     if (cursor === null) return null;
     const records = input.records.filter((record) => record.timestampMs > cursor.fromMs);
     const sessionIds = [...new Set(records.map((record) => record.sessionId))];
-    const check = UsageLabelStore.checkBorn({
+    return UsageLabelStore.checkBorn({
       born: new UsageClose.ClosedLabels(
         yield* labelStore.sessionLabels(sessionIds, input.throughMs),
       ),
@@ -1851,14 +1855,14 @@ const make = Effect.gen(function* () {
       bornPrompts: yield* labelStore.promptLabels(cursor.fromMs + 1, input.throughMs + 1),
       derivedPrompts: input.prompts.filter((prompt) => prompt.createdAtMs > cursor.fromMs),
     });
-    yield* check.differingRecords + check.differingPrompts === 0
-      ? Effect.logInfo("Usage labels written at birth match the close", check)
-      : Effect.logWarning("Usage labels written at birth differ from the close", check);
-    return check;
   });
 
   const close = Effect.fn("UsageOrigins.close")(
-    function* (throughMs: number, records: readonly OriginRecord[]) {
+    function* (
+      throughMs: number,
+      records: readonly OriginRecord[],
+      options?: { readonly dryRun?: boolean },
+    ) {
       const span = yield* store.span;
       const afterMs = span?.throughMs ?? UsageClose.CLOSE_FROM_MS - 1;
       if (throughMs <= afterMs) return { closed: false, why: "notDue" } satisfies CloseOutcome;
@@ -1879,6 +1883,25 @@ const make = Effect.gen(function* () {
           : [{ ...prompt, messageId: prompt.messageId }],
       );
       const next = { fromMs: span?.fromMs ?? UsageClose.CLOSE_FROM_MS, throughMs };
+      // The check only reports: a close never waits on or fails for the labels it checks.
+      const bornCheck = checkBorn({ throughMs, index, records: closing, prompts }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Usage could not check born labels against the close", cause).pipe(
+            Effect.as(null),
+          ),
+        ),
+      );
+      if (options?.dryRun === true) {
+        return {
+          closed: false,
+          why: "dryRun",
+          span: next,
+          records: closing.length,
+          sessionRows: sessions.length,
+          promptRows: prompts.length,
+          born: yield* bornCheck,
+        } satisfies CloseOutcome;
+      }
       const closedAt = DateTime.formatIso(yield* DateTime.now);
       const outcome = yield* sql
         .withTransaction(
@@ -1929,14 +1952,11 @@ const make = Effect.gen(function* () {
           }),
         );
       if (!outcome.closed) return outcome;
-      // The check only reports: a close never waits on or fails for the labels it checks.
-      const born = yield* checkBorn({ throughMs, index, records: closing, prompts }).pipe(
-        Effect.catchCause((cause) =>
-          Effect.logWarning("Usage could not check born labels against the close", cause).pipe(
-            Effect.as(null),
-          ),
-        ),
-      );
+      const born = yield* bornCheck;
+      if (born !== null)
+        yield* born.differingRecords + born.differingPrompts === 0
+          ? Effect.logInfo("Usage labels written at birth match the close", born)
+          : Effect.logWarning("Usage labels written at birth differ from the close", born);
       return { ...outcome, born } satisfies CloseOutcome;
     },
     Effect.mapError((cause) => new UsageOriginsReadError({ cause })),

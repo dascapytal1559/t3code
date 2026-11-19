@@ -9,8 +9,10 @@ import {
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import type * as SqlClient from "effect/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import type {
   OriginPrompt,
@@ -232,6 +234,52 @@ export class ClosedLabelsDiffer extends Schema.TaggedError<ClosedLabelsDiffer>()
 }
 
 export class CloseSuperseded extends Schema.TaggedError<CloseSuperseded>()("CloseSuperseded", {}) {}
+
+/** A close through a chosen time that wrote nothing; `failed` is the server's fault, not the time's. */
+export class UsageCloseError extends Schema.TaggedError<UsageCloseError>()("UsageCloseError", {
+  reason: Schema.Literals([
+    "future",
+    "alreadyClosed",
+    "refreshing",
+    "superseded",
+    "differs",
+    "failed",
+  ]),
+  detail: Schema.String,
+}) {
+  override get message(): string {
+    return `Usage did not close: ${this.detail}`;
+  }
+}
+
+const CLOSED_TABLES = [
+  "usage_close",
+  "usage_closed_session_labels",
+  "usage_closed_prompt_labels",
+] as const;
+const encodeBackup = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
+
+/** Writes the closed tables as they stand to `<dir>/<id>.backup.json`, before anything changes them. */
+export const backupClosedTables = Effect.fn("UsageClose.backup")(function* (input: {
+  readonly dir: string;
+  readonly id: string;
+  readonly takenAt: string;
+}) {
+  const sql = yield* SqlClient.SqlClient;
+  const fs = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const tables: Record<string, unknown> = {};
+  for (const table of CLOSED_TABLES) {
+    tables[table] = yield* sql`SELECT * FROM ${sql(table)} ORDER BY rowid`;
+  }
+  const backupPath = path.join(input.dir, `${input.id}.backup.json`);
+  yield* fs.makeDirectory(input.dir, { recursive: true });
+  yield* fs.writeFileString(
+    backupPath,
+    yield* encodeBackup({ id: input.id, takenAt: input.takenAt, tables }),
+  );
+  return backupPath;
+});
 
 const encodeIds = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.String)));
 

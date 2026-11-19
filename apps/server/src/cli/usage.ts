@@ -1,12 +1,17 @@
 import {
   AuthDiagnosticsReadScope,
+  AuthEnvironmentMaintainScope,
+  USAGE_CLOSE_PATH,
   USAGE_EXPORT_PATH,
+  USAGE_ORIGINS_RECORDED_SINCE,
+  UsageCloseResult,
   type UsageOriginReasonUsage,
   UsageOriginReasons,
 } from "@t3tools/contracts";
 import { formatPercent, formatTokens } from "@t3tools/shared/usageFormat";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Console from "effect/Console";
+import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -16,7 +21,7 @@ import * as Path from "effect/Path";
 import * as Stdio from "effect/Stdio";
 import * as Stream from "effect/Stream";
 import { Command, Flag, GlobalFlag } from "effect/cli";
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
 import * as ServerConfig from "../config.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
@@ -184,6 +189,80 @@ const usageExportCommand = Command.make("export", {
   ),
 );
 
+function formatClose(result: UsageCloseResult): readonly string[] {
+  const born = result.born;
+  return [
+    `${result.dryRun ? "Would close" : "Closed"} Usage's labels after ${result.closedThrough ?? `the start of device stamps (${USAGE_ORIGINS_RECORDED_SINCE})`} through ${result.through}:`,
+    `  ${result.records} records, ${result.sessionRows} session rows, ${result.promptRows} prompts.`,
+    born === null
+      ? "  No labels were written at birth in this span."
+      : `  Labels written at birth: ${born.differingRecords} of ${born.records} records and ${born.differingPrompts} of ${born.prompts} prompts differ.`,
+    ...Object.entries(born?.byReason ?? {}).map(([reason, count]) => `    ${reason}  ${count}`),
+    result.backupPath === null
+      ? "Dry run: nothing was written."
+      : `Backup of the closed labels before it: ${result.backupPath}`,
+  ];
+}
+
+// An instant without its offset would be read in whatever zone the shell runs in.
+const OFFSET_PATTERN = /(?:Z|[+-]\d{2}:?\d{2})$/i;
+
+const usageCloseCommand = Command.make("close", {
+  ...projectLocationFlags,
+  through: Flag.String("through").pipe(
+    Flag.filterMap(
+      (value) => (OFFSET_PATTERN.test(value.trim()) ? DateTime.make(value.trim()) : Option.none()),
+      () => "an instant with its offset, such as 2026-11-19T15:00:00+11:00 or 2026-11-19T04:00:00Z",
+    ),
+    Flag.withDescription(
+      "Close through this instant, with its offset (2026-11-19T15:00:00+11:00 or ...Z).",
+    ),
+  ),
+  dryRun: Flag.Boolean("dry-run").pipe(
+    Flag.withDescription("Say what the close would write, and write nothing."),
+    Flag.withDefault(false),
+  ),
+  json: jsonFlag,
+}).pipe(
+  Command.withDescription(
+    "Close the running server's usage labels now through a time, as the daily close would, instead of waiting for it.",
+  ),
+  Command.withHandler((flags) =>
+    withServerSession(
+      flags,
+      (auth) =>
+        auth.issueSession({
+          scopes: [AuthEnvironmentMaintainScope],
+          ttl: Duration.minutes(10),
+          label: "t3 usage close",
+        }),
+      Effect.fn("cli.usage.close")(function* ({ origin, token }) {
+        const url = new URL(USAGE_CLOSE_PATH, origin);
+        url.searchParams.set("through", String(DateTime.toEpochMillis(flags.through)));
+        if (flags.dryRun) url.searchParams.set("dryRun", "1");
+        const unreachable = (cause: unknown) => new ThreadServerUnreachableError({ origin, cause });
+        const response = yield* HttpClientRequest.post(url).pipe(
+          HttpClientRequest.bearerToken(token),
+          (yield* HttpClient.HttpClient).execute,
+          Effect.mapError(unreachable),
+        );
+        if (response.status !== 200) {
+          const detail = yield* response.text.pipe(Effect.orElseSucceed(() => ""));
+          return yield* new ThreadToolFailedError({
+            tool: "usage close",
+            detail: detail.trim() || `The server answered HTTP ${response.status}.`,
+          });
+        }
+        const result = yield* HttpClientResponse.schemaBodyJson(UsageCloseResult)(response).pipe(
+          Effect.mapError(unreachable),
+        );
+        if (flags.json) return yield* printJson(result);
+        for (const line of formatClose(result)) yield* Console.log(line);
+      }),
+    ).pipe(Effect.provide(FetchHttpClient.layer), reportThreadErrors),
+  ),
+);
+
 function formatRelabelPlan(plan: UsageRelabel.RelabelPlan, reason: string): readonly string[] {
   const moves = Object.entries(plan.moves)
     .map(([move, rows]) => `${move.replace(">", " to ")} ${rows}`)
@@ -303,6 +382,13 @@ const usageRelabelCommand = Command.make("relabel", {
 );
 
 export const usageCommand = Command.make("usage").pipe(
-  Command.withDescription("Read usage from the running server, or correct its closed labels."),
-  Command.withSubcommands([usageReasonsCommand, usageExportCommand, usageRelabelCommand]),
+  Command.withDescription(
+    "Read usage from the running server, close its labels now, or correct closed labels.",
+  ),
+  Command.withSubcommands([
+    usageReasonsCommand,
+    usageExportCommand,
+    usageCloseCommand,
+    usageRelabelCommand,
+  ]),
 );

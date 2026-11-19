@@ -10,6 +10,7 @@ import {
   type UsagePricing,
   type UsageSummary,
   type UsageSummaryInput,
+  type UsageCloseResult,
   UsageDay,
   UsageReadError,
 } from "@t3tools/contracts";
@@ -28,6 +29,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
+import * as SqlClient from "effect/sql/SqlClient";
 import { HttpClient, HttpClientResponse } from "effect/http";
 
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
@@ -189,6 +191,14 @@ export class UsageService extends Context.Service<
       input: Pick<UsageSummaryInput, "sinceDay" | "untilDay" | "timeZone">,
     ) => Effect.Effect<readonly UsageExportRecord[], UsageReadError>;
     readonly refreshRates: Effect.Effect<UsagePricing>;
+    /**
+     * Closes Usage's labels now through `throughMs`, as the daily close would, instead of waiting
+     * for it; the daily close continues from there. A dry run says what it would write.
+     */
+    readonly closeThrough: (input: {
+      readonly throughMs: number;
+      readonly dryRun: boolean;
+    }) => Effect.Effect<UsageCloseResult, UsageClose.UsageCloseError>;
   }
 >()("t3/usage/UsageService") {}
 
@@ -220,6 +230,7 @@ export const make = Effect.gen(function* () {
   const hostname = yield* HostProcess.Hostname;
   const readerContext = yield* Effect.context<BuiltInUsageReadersEnv>();
   const usageOrigins = yield* UsageOrigins.UsageOrigins;
+  const sql = yield* SqlClient.SqlClient;
 
   const fileCache: ScanCache = new Map();
   // Reads from concurrent windows can still hold the original record after it is corrected.
@@ -1531,28 +1542,38 @@ export const make = Effect.gen(function* () {
     return yield* Deferred.await(deferred);
   });
 
+  const utcDay = (ms: number) =>
+    UsageDay.make(DateTime.formatIso(DateTime.makeUnsafe(ms)).slice(0, 10));
   /**
-   * Writes down every label older than a day once the open tail is longer than two days. It reads
-   * the UTC days that tail spans, so it does not depend on which window a client asked for.
+   * The records a close after `afterMs` through `throughMs` labels. It reads the UTC days the span
+   * covers, so it does not depend on which window a client asked for. Undefined while a source is
+   * still refreshing, since it has not given all its records yet.
    */
-  const closeDue = Effect.gen(function* () {
-    const span = yield* usageOrigins.closedSpan;
-    const nowMs = yield* Clock.currentTimeMillis;
-    const afterMs = span?.throughMs ?? UsageClose.CLOSE_FROM_MS - 1;
-    if (nowMs - afterMs <= UsageClose.CLOSE_DUE_MS) return;
-    const throughMs = nowMs - UsageClose.CLOSE_AGE_MS;
-    const utcDay = (ms: number) =>
-      UsageDay.make(DateTime.formatIso(DateTime.makeUnsafe(ms)).slice(0, 10));
+  const closingRecords = Effect.fn("UsageService.closingRecords")(function* (
+    afterMs: number,
+    throughMs: number,
+  ) {
     const read = yield* readShared({
       timeZone: "UTC",
       sinceDay: utcDay(afterMs + 1),
       untilDay: utcDay(throughMs),
       awaitRefresh: true,
     });
-    // A source still refreshing has not given all its records yet.
-    if (read.openRecords === null || read.summary.sources.some((source) => source.refreshing))
-      return;
-    const outcome = yield* usageOrigins.close(throughMs, read.openRecords);
+    return read.openRecords === null || read.summary.sources.some((source) => source.refreshing)
+      ? undefined
+      : read.openRecords;
+  });
+
+  /** Writes down every label older than a day once the open tail is longer than two days. */
+  const closeDue = Effect.gen(function* () {
+    const span = yield* usageOrigins.closedSpan;
+    const nowMs = yield* Clock.currentTimeMillis;
+    const afterMs = span?.throughMs ?? UsageClose.CLOSE_FROM_MS - 1;
+    if (nowMs - afterMs <= UsageClose.CLOSE_DUE_MS) return;
+    const throughMs = nowMs - UsageClose.CLOSE_AGE_MS;
+    const records = yield* closingRecords(afterMs, throughMs);
+    if (records === undefined) return;
+    const outcome = yield* usageOrigins.close(throughMs, records);
     if (outcome.closed) yield* Effect.logInfo("Usage closed its labels", outcome);
   });
   const closeLock = yield* Semaphore.make(1);
@@ -1565,6 +1586,66 @@ export const make = Effect.gen(function* () {
     Effect.withSpan("UsageService.closeDue"),
     Effect.forkIn(layerScope),
     Effect.map(trackPending),
+  );
+
+  const isoAt = (ms: number) => DateTime.formatIso(DateTime.makeUnsafe(ms));
+  const closeBackupDir = path.join(config.stateDir, "usage-closes");
+  const refuse = (reason: UsageClose.UsageCloseError["reason"], detail: string) =>
+    new UsageClose.UsageCloseError({ reason, detail });
+  // Waits for a daily close already running, and keeps one from starting meanwhile.
+  const closeThrough = Effect.fn("UsageService.closeThrough")(
+    function* (input: { readonly throughMs: number; readonly dryRun: boolean }) {
+      const { throughMs, dryRun } = input;
+      const nowMs = yield* Clock.currentTimeMillis;
+      if (throughMs > nowMs)
+        return yield* refuse("future", `${isoAt(throughMs)} is in the future.`);
+      const span = yield* usageOrigins.closedSpan;
+      const afterMs = span?.throughMs ?? UsageClose.CLOSE_FROM_MS - 1;
+      if (throughMs <= afterMs)
+        return yield* refuse(
+          "alreadyClosed",
+          `labels are already closed through ${isoAt(afterMs)}; a close never moves back.`,
+        );
+      const records = yield* closingRecords(afterMs, throughMs);
+      if (records === undefined)
+        return yield* refuse("refreshing", "a usage source is still refreshing; try again.");
+      let backupPath: string | null = null;
+      if (!dryRun) {
+        const takenAt = DateTime.formatIso(yield* DateTime.now);
+        backupPath = yield* UsageClose.backupClosedTables({
+          dir: closeBackupDir,
+          id: `close-${takenAt.replace(/[-:.]/g, "").slice(0, 15)}`,
+          takenAt,
+        }).pipe(
+          Effect.provideService(SqlClient.SqlClient, sql),
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, path),
+        );
+      }
+      const outcome = yield* usageOrigins.close(throughMs, records, { dryRun });
+      if (outcome.closed) yield* Effect.logInfo("Usage closed its labels on request", outcome);
+      if (!outcome.closed && outcome.why !== "dryRun")
+        return yield* outcome.why === "differs"
+          ? refuse(
+              "differs",
+              "labels read back differently, so nothing was written (see the server log).",
+            )
+          : refuse("superseded", "another close moved the closed span meanwhile; try again.");
+      return {
+        dryRun,
+        closedThrough: span === null ? null : isoAt(span.throughMs),
+        through: isoAt(throughMs),
+        records: outcome.records,
+        sessionRows: outcome.sessionRows,
+        promptRows: outcome.promptRows,
+        born: outcome.born,
+        backupPath,
+      } satisfies UsageCloseResult;
+    },
+    closeLock.withPermits(1),
+    Effect.mapError((error) =>
+      error._tag === "UsageCloseError" ? error : refuse("failed", error.message),
+    ),
   );
 
   const annotationsPath = path.join(config.stateDir, USAGE_ANNOTATIONS_FILE_NAME);
@@ -1599,7 +1680,14 @@ export const make = Effect.gen(function* () {
     return records ?? [];
   });
 
-  return { readSummary, readOriginReasons, readRecords, refreshRates, awaitPersisted } as const;
+  return {
+    readSummary,
+    readOriginReasons,
+    readRecords,
+    refreshRates,
+    closeThrough,
+    awaitPersisted,
+  } as const;
 });
 
 export const layer = Layer.effect(UsageService, make);

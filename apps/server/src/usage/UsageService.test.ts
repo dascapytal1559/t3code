@@ -2089,6 +2089,98 @@ describe("UsageService", () => {
       }),
   );
 
+  it.effect(
+    "closes through a chosen time on request, never forward of now or back, and the daily close continues from it",
+    () =>
+      Effect.gen(function* () {
+        const { transcript, settings, home } = yield* setup;
+        const line = (id: number, timestamp: string) =>
+          `${encodeUnknownJsonString({
+            type: "assistant",
+            timestamp,
+            requestId: `req_${id}`,
+            sessionId: `session-${id}`,
+            message: {
+              id: `msg_${id}`,
+              model: "claude-fable-5",
+              usage: { input_tokens: 0, output_tokens: 1 },
+            },
+          })}\n`;
+        yield* Effect.promise(() =>
+          NodeFSP.writeFile(
+            transcript,
+            line(1, "2026-11-07T12:00:00Z") +
+              line(2, "2026-11-08T06:00:00Z") +
+              line(3, "2026-11-08T20:00:00Z"),
+          ),
+        );
+        // Under two days since device stamps began, so the daily close is not due yet.
+        yield* TestClock.setTime(Date.parse("2026-11-08T22:00:00Z"));
+        yield* Effect.gen(function* () {
+          const origins = yield* UsageOrigins.UsageOrigins;
+          const sql = yield* SqlClient.SqlClient;
+          const service = yield* UsageService.make;
+          const closedRows = sql<{ readonly n: number }>`
+            SELECT count(*) AS n FROM usage_closed_session_labels
+          `.pipe(Effect.map(([row]) => row?.n));
+          const through = Date.parse("2026-11-08T08:00:00Z");
+          const refusal = (throughMs: number) =>
+            service.closeThrough({ throughMs, dryRun: false }).pipe(
+              Effect.flip,
+              Effect.map((error) => error.reason),
+            );
+
+          assert.strictEqual(yield* refusal(Date.parse("2026-11-08T23:00:00Z")), "future");
+          const dryRun = yield* service.closeThrough({ throughMs: through, dryRun: true });
+          assert.deepStrictEqual(dryRun, {
+            dryRun: true,
+            closedThrough: null,
+            through: "2026-11-08T08:00:00.000Z",
+            records: 2,
+            sessionRows: 2,
+            promptRows: 0,
+            born: null,
+            backupPath: null,
+          });
+          assert.isNull(yield* origins.closedSpan);
+          assert.strictEqual(yield* closedRows, 0);
+
+          const closed = yield* service.closeThrough({ throughMs: through, dryRun: false });
+          assert.deepStrictEqual({ ...closed, backupPath: null }, { ...dryRun, dryRun: false });
+          const backup = yield* Effect.promise(() => NodeFSP.readFile(closed.backupPath!, "utf8"));
+          assert.deepStrictEqual(
+            (JSON.parse(backup) as { tables: Record<string, unknown[]> }).tables[
+              "usage_closed_session_labels"
+            ],
+            [],
+          );
+          const span = { fromMs: Date.parse(USAGE_ORIGINS_RECORDED_SINCE), throughMs: through };
+          assert.deepStrictEqual(yield* origins.closedSpan, span);
+          assert.strictEqual(yield* closedRows, 2);
+          assert.strictEqual(yield* refusal(through), "alreadyClosed");
+          assert.strictEqual(yield* refusal(through - HOUR_MS), "alreadyClosed");
+          assert.deepStrictEqual(yield* origins.closedSpan, span);
+
+          // Over two days past the chosen time, a read closes the rest, through a day ago.
+          yield* TestClock.setTime(Date.parse("2026-11-10T09:00:00Z"));
+          yield* service.readSummary({
+            timeZone: "UTC",
+            sinceDay: UsageDay.make("2026-11-07"),
+            untilDay: UsageDay.make("2026-11-10"),
+          });
+          yield* service.awaitPersisted;
+          assert.deepStrictEqual(yield* origins.closedSpan, {
+            ...span,
+            throughMs: Date.parse("2026-11-09T09:00:00Z"),
+          });
+          assert.strictEqual(yield* closedRows, 3);
+        }).pipe(
+          Effect.scoped,
+          Effect.provide(layerService({ prefix: "usage-service-close-through", home, settings })),
+        );
+      }),
+  );
+
   it.effect("reads the Cursor account of an API key or T3 sign-in instead of a CLI login", () =>
     Effect.gen(function* () {
       const { settings, home } = yield* setup;

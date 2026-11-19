@@ -388,7 +388,17 @@ and what agents claim.
   settling plus the `device` it counts to. The close reads every record back
   through the new rows in the same transaction and rolls back, with a warning
   in the log, if any differs. Records of one session at one millisecond share
-  a row, so they take the first one's label and are not compared. From then on a record at or before "closed
+  a row, so they take the first one's label and are not compared.
+  `t3 usage close --through <instant with offset> [--dry-run]` runs the same
+  close now through a chosen time instead of waiting (`closeThrough` in
+  `UsageService.ts`). It asks the running server, through
+  `POST /api/usage/close` with the maintain scope, since only the server holds
+  the transcript readers the close labels records from. It is refused for a
+  time in the future or at or before "closed through", backs up the closed
+  tables to `usage-closes/` in the state folder before writing, and prints the
+  span, the record, session-row and prompt counts and how the born labels
+  compare; a dry run writes nothing. The daily close then continues from the
+  new "closed through". From then on a record at or before "closed
   through" takes its session's latest row (then settles as below), and a
   prompt its row; only the open tail runs the rules above, so a later claim or
   code change never re-labels a closed day. Only an audited correction does:

@@ -10,10 +10,10 @@ import {
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
-import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
+
+import { backupClosedTables } from "./UsageClose.ts";
 
 /**
  * An audited correction of labels the daily close wrote down: a manifest names each stored row,
@@ -61,7 +61,6 @@ export type RelabelManifest = typeof RelabelManifest.Type;
 
 export const decodeManifest = Schema.decodeUnknownEffect(Schema.fromJsonString(RelabelManifest));
 const encodeRows = Schema.encodeSync(Schema.fromJsonString(Schema.Array(RelabelRow)));
-const encodeBackup = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const decodeRows = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Array(RelabelRow)));
 
 export class RelabelRefused extends Schema.TaggedError<RelabelRefused>()("RelabelRefused", {
@@ -236,12 +235,6 @@ const writeLabel = Effect.fn("UsageRelabel.writeLabel")(function* (
     return yield* new RelabelRefused({ detail: `${rowName(row)} changed while relabelling.` });
 });
 
-const BACKUP_TABLES = [
-  "usage_close",
-  "usage_closed_session_labels",
-  "usage_closed_prompt_labels",
-] as const;
-
 /**
  * Backs up the closed tables to `backupDir`, then in one transaction changes every row from its old
  * label to its new one and records the change set. Refused unless every row holds its old label.
@@ -251,8 +244,6 @@ export const applyRelabel = Effect.fn("UsageRelabel.apply")(function* (input: {
   readonly backupDir: string;
 }) {
   const sql = yield* SqlClient.SqlClient;
-  const fs = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
   const plan = yield* planRelabel(input.manifest);
   if (plan.appliedAs !== null)
     return yield* new RelabelRefused({
@@ -271,13 +262,7 @@ export const applyRelabel = Effect.fn("UsageRelabel.apply")(function* (input: {
   const earlier = counted?.earlier ?? 0;
   const stamp = appliedAt.replace(/[-:.]/g, "").slice(0, 15);
   const id = `relabel-${stamp}-${plan.manifestSha256.slice(0, 8)}-${earlier + 1}`;
-  const backupPath = path.join(input.backupDir, `${id}.backup.json`);
-  const tables: Record<string, unknown> = {};
-  for (const table of BACKUP_TABLES) {
-    tables[table] = yield* sql`SELECT * FROM ${sql(table)} ORDER BY rowid`;
-  }
-  yield* fs.makeDirectory(input.backupDir, { recursive: true });
-  yield* fs.writeFileString(backupPath, yield* encodeBackup({ id, takenAt: appliedAt, tables }));
+  const backupPath = yield* backupClosedTables({ dir: input.backupDir, id, takenAt: appliedAt });
   yield* sql.withTransaction(
     Effect.gen(function* () {
       for (const row of input.manifest.rows) yield* writeLabel(sql, row, row.old, row.new);

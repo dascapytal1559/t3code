@@ -190,6 +190,33 @@ export type UsageOriginReasons = typeof UsageOriginReasons.Type;
 /** Streams `UsageExportRecord` JSON lines for `since`, `until` and `timeZone` query parameters. */
 export const USAGE_EXPORT_PATH = "/api/usage/export";
 
+/** POST with `through` (epoch ms) and `dryRun=1` to close Usage's labels now; answers `UsageCloseResult`. */
+export const USAGE_CLOSE_PATH = "/api/usage/close";
+
+/** What a close through a chosen time wrote down, or would: everything after `closedThrough`. */
+export const UsageCloseResult = Schema.Struct({
+  dryRun: Schema.Boolean,
+  /** Where the closed span ended before; null before the first close. */
+  closedThrough: Schema.NullOr(Schema.String),
+  through: Schema.String,
+  records: NonNegativeInt,
+  sessionRows: NonNegativeInt,
+  promptRows: NonNegativeInt,
+  /** How the labels written at birth compare with these; null before they were written. */
+  born: Schema.NullOr(
+    Schema.Struct({
+      records: NonNegativeInt,
+      differingRecords: NonNegativeInt,
+      prompts: NonNegativeInt,
+      differingPrompts: NonNegativeInt,
+      byReason: Schema.Record(Schema.String, Schema.Number),
+    }),
+  ),
+  /** The closed tables as they stood before the close; null for a dry run. */
+  backupPath: Schema.NullOr(Schema.String),
+});
+export type UsageCloseResult = typeof UsageCloseResult.Type;
+
 /** One model call as Usage counted it: deduplicated, aliased, priced and labelled. */
 export const UsageExportRecord = Schema.Struct({
   at: Schema.String,
