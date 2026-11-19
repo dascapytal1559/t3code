@@ -1223,7 +1223,8 @@ export const make = Effect.gen(function* () {
     for (const [index, files] of filesByDir.entries()) {
       const sourceDir = scannedDirs[index]!.dir;
       for (const file of files) {
-        for (const record of file.records) {
+        for (const raw of file.records) {
+          const record = correctedRecord(raw);
           if (placesWork) {
             if (record.cwd !== undefined) workCwds.add(record.cwd);
             else if (!workFiles.has(file.path)) {
@@ -1695,7 +1696,7 @@ export const make = Effect.gen(function* () {
         const takenAt = DateTime.formatIso(yield* DateTime.now);
         backupPath = yield* UsageClose.backupClosedTables({
           dir: closeBackupDir,
-          id: `close-${takenAt.replace(/[-:.]/g, "").slice(0, 15)}`,
+          id: `close-${takenAt.replace(/[-:.]/g, "").slice(0, 18)}`,
           takenAt,
         }).pipe(
           Effect.provideService(SqlClient.SqlClient, sql),

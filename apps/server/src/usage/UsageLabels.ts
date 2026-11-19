@@ -64,7 +64,7 @@ const make = Effect.gen(function* () {
     readonly registrations: readonly UsageOrigins.OriginRegistration[];
   }) {
     const labels = yield* origins.labelThread(input);
-    if (labels === null) return;
+    if (labels === null) return false;
     yield* sql.withTransaction(
       Effect.gen(function* () {
         for (const session of labels.sessions) {
@@ -91,6 +91,7 @@ const make = Effect.gen(function* () {
         yield* store.writeWork(input.threadId, labels.work, input.afterMs);
       }),
     );
+    return true;
   });
 
   /** A registration naming no thread T3 knows counts as it was registered, from its start. */
@@ -98,7 +99,7 @@ const make = Effect.gen(function* () {
     sessionId: registration.sessionId,
     fromMs: registration.startedAtMs,
     key:
-      registration.unmatched === true
+      registration.unmatched === true || registration.threadId !== undefined
         ? UsageOrigins.UNMATCHED_REGISTRATION
         : UsageOrigins.TERMINAL_ORIGIN,
     runId: null,
@@ -145,7 +146,26 @@ const make = Effect.gen(function* () {
     const pending = yield* store.unlabelled(registrations);
     for (const registration of pending)
       if (registration.threadId !== undefined) include(registration.threadId, afterMs);
-    const alone = pending.filter((entry) => entry.threadId === undefined);
+    const unknownThreads = new Set<string>();
+    const registrationsOf = registrationsByThread(registrations);
+    for (const [threadId, sinceMs] of threads) {
+      const known = yield* labelThread({
+        threadId,
+        afterMs: sinceMs,
+        throughMs: nowMs,
+        registrations: registrationsOf(threadId),
+      }).pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning("Usage could not write a thread's labels", { threadId, cause }).pipe(
+            Effect.as(true),
+          ),
+        ),
+      );
+      if (!known) unknownThreads.add(threadId);
+    }
+    const alone = pending.filter(
+      (entry) => entry.threadId === undefined || unknownThreads.has(entry.threadId),
+    );
     if (alone.length > 0)
       yield* sql.withTransaction(
         Effect.forEach(
@@ -157,14 +177,6 @@ const make = Effect.gen(function* () {
           { discard: true },
         ),
       );
-    const registrationsOf = registrationsByThread(registrations);
-    for (const [threadId, sinceMs] of threads)
-      yield* labelThread({
-        threadId,
-        afterMs: sinceMs,
-        throughMs: nowMs,
-        registrations: registrationsOf(threadId),
-      });
     yield* store.setCursor(
       { fromMs, throughMs: nowMs },
       DateTime.formatIso(DateTime.makeUnsafe(nowMs)),

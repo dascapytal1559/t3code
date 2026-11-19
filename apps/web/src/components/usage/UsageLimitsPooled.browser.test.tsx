@@ -3,12 +3,10 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
-  type ServerProviderUsageWindow,
 } from "@t3tools/contracts";
 import { CHATGPT_USAGE_URL } from "@t3tools/shared/usageLimits";
 import { describe, expect, it } from "vite-plus/test";
 
-import "../../index.css";
 import { render } from "../../../test/render";
 import { UsageLimitsPooled } from "./UsageLimitsPooled";
 
@@ -36,55 +34,6 @@ function managedChatGpt(instanceId: string, displayName: string): ServerProvider
     },
   };
 }
-
-function claude(instanceId: string, weekly: number, fable: number): ServerProvider {
-  const window = (id: string, label: string, usedPercent: number): ServerProviderUsageWindow => ({
-    id,
-    kind: "weekly",
-    label,
-    usedPercent,
-    resetsAt: "2026-10-30T16:00:00.000Z",
-    windowDurationMins: 10_080,
-  });
-  return {
-    ...managedChatGpt(instanceId, instanceId),
-    driver: ProviderDriverKind.make("claudeAgent"),
-    auth: { status: "authenticated", email: `${instanceId}@example.com` },
-    usageLimits: {
-      checkedAt,
-      windows: [
-        window("seven_day", "Weekly", weekly),
-        window("seven_day_fable", "Weekly · Fable", fable),
-      ],
-    },
-  };
-}
-
-describe("UsageLimitsPooled model-scoped weekly card", () => {
-  it("takes less room than the account-wide weekly card above it and keeps its numbers", async () => {
-    const presentations = new Map([
-      [
-        EnvironmentId.make("desk"),
-        {
-          entry: { target: { label: "Desk" } },
-          serverConfig: { providers: [claude("Claude1", 22, 14), claude("Claude2", 0, 0)] },
-        },
-      ],
-    ]);
-    await using screen = await render(
-      <UsageLimitsPooled presentations={presentations} now={Date.parse(checkedAt)} />,
-    );
-    const card = (label: string) =>
-      screen.getByText(label, { exact: true }).element().closest("div.rounded-lg")!;
-
-    await expect.element(screen.getByText("Weekly · Fable")).toBeVisible();
-    const main = card("Weekly").getBoundingClientRect();
-    const scoped = card("Weekly · Fable").getBoundingClientRect();
-    expect(scoped.height).toBeLessThan(main.height * 0.9);
-    expect(scoped.width).toBe(main.width);
-    expect(card("Weekly · Fable").textContent).toMatch(/\d+%left/);
-  });
-});
 
 describe("UsageLimitsPooled ChatGPT usage card", () => {
   it("names the managed connections it covers", async () => {

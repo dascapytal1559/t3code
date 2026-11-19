@@ -50,11 +50,9 @@ const SLIVER = 0.002;
 function ShareBar({
   bands,
   metric,
-  barRef,
 }: {
   readonly bands: readonly BoxBand[];
   readonly metric: "cost" | "tokens";
-  readonly barRef?: React.Ref<HTMLDivElement>;
 }) {
   const total = bands.reduce((sum, band) => sum + valueOf(band, metric), 0);
   const shown = bands.filter((band) => total > 0 && valueOf(band, metric) > total * SLIVER);
@@ -67,14 +65,13 @@ function ShareBar({
     setPrevious({ signature, shown });
   }
   const ghostRef = useRef<HTMLDivElement | null>(null);
-  const freshRef = useRef<HTMLDivElement | null>(null);
+  const barRef = useRef<HTMLDivElement | null>(null);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- fades a one-shot copy of the old segments out over the new ones
   useLayoutEffect(() => {
     if (ghost === null) return;
-    freshRef.current?.animate([{ opacity: 0 }, { opacity: 1 }], {
-      duration: 320,
-      easing: "ease-out",
-    });
+    for (const segment of barRef.current?.querySelectorAll(":scope > [data-segment]") ?? []) {
+      segment.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 320, easing: "ease-out" });
+    }
     const fade = ghostRef.current?.animate([{ opacity: 1 }, { opacity: 0 }], {
       duration: 320,
       easing: "ease-out",
@@ -99,10 +96,8 @@ function ShareBar({
       />
     ));
   return (
-    <div ref={barRef} aria-hidden className="relative flex h-2">
-      <div ref={freshRef} className="contents">
-        {segments(shown)}
-      </div>
+    <div ref={barRef} data-share-bar aria-hidden className="relative flex h-2">
+      {segments(shown)}
       {ghost === null ? null : (
         <div ref={ghostRef} className="pointer-events-none absolute inset-0 flex">
           {segments(ghost.filter((band) => valueOf(band, metric) > 0))}
@@ -156,20 +151,19 @@ export function UsageBreakdownBox({
   const gt = useGT();
   const locale = useLocale();
   const cardRef = useRef<HTMLElement | null>(null);
-  const barRef = useRef<HTMLDivElement | null>(null);
   const rowsRef = useRef<HTMLDivElement | null>(null);
   const pending = useRef<PendingTree | null>(null);
   const label = (band: BoxBand) => (band.named ? band.label : m(band.label));
   const isOpen = (group: BoxGroup) => openParents.has(group.key) && group.children.length > 0;
-  const barBands = open
-    ? model.groups.flatMap((group) => (isOpen(group) ? group.children : [group]))
-    : model.groups;
+  const barBands = model.groups
+    .filter((group) => extras?.[group.key]?.excluded !== true)
+    .flatMap((group) => (open && isOpen(group) ? group.children : [group]));
 
   // Only a new opening plays; the model changing under an open card does not.
   const playOpening = useEffectEvent((at: BoxOpening) => {
     const card = cardRef.current;
-    const bar = barRef.current;
     if (card === null || reducedMotion()) return;
+    const bar = card.querySelector<HTMLElement>("[data-share-bar]");
     pop(card);
     if (bar !== null) ripple(bar, at.clickAt);
     burst(
@@ -378,7 +372,7 @@ export function UsageBreakdownBox({
       className="relative flex flex-col gap-2.5 rounded-xl border border-border bg-card p-3.5"
     >
       <h3 className="text-sm font-medium text-foreground">{title}</h3>
-      <ShareBar bands={barBands} metric={metric} barRef={barRef} />
+      <ShareBar bands={barBands} metric={metric} />
       <div
         ref={rowsRef}
         className="grid grid-cols-[0.5rem_minmax(0,1fr)_auto_2.75rem] content-start items-center gap-x-2 gap-y-1 text-xs tabular-nums"

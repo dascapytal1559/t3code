@@ -229,6 +229,10 @@ describe("UsageLabels", () => {
         "03:01:00.000 computer upkeep",
         "03:20:00.001 computer upkeep",
       ]);
+      // A session registered from a thread this server does not have is labelled all the same.
+      assert.deepStrictEqual(yield* rowsOf("elsewhere-session"), [
+        "01:40:00.000 unknown unmatchedRegistration",
+      ]);
 
       // Every record counts where Usage's own reader says.
       const records = [
@@ -236,6 +240,7 @@ describe("UsageLabels", () => {
         ["worker-session", ["01:10", "01:45", "02:30"]],
         ["review-session", ["01:21", "01:59", "02:01"]],
         ["routine-session", ["03:10", "03:30"]],
+        ["elsewhere-session", ["01:41", "03:00"]],
       ].flatMap(([sessionId, clocks]) =>
         (clocks as string[]).map((clock) => ({
           sessionId: sessionId as string,
@@ -261,6 +266,12 @@ describe("UsageLabels", () => {
             startedAtMs: time("01:20"),
             provider: "codex",
             threadId: "worker",
+          },
+          {
+            sessionId: "elsewhere-session",
+            startedAtMs: time("01:40"),
+            provider: "codex",
+            threadId: "another-environments-thread",
           },
         ]),
       ),

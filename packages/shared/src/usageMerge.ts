@@ -843,6 +843,11 @@ export function mergeUsage(
   const hourly: HourlyTotals[] = [...hourlyAccumulator.values()].sort((a, b) =>
     a.hourStart.localeCompare(b.hourStart),
   );
+  const memberInfo = new Map<string, UsageWorkMember>();
+  for (const member of current.flatMap((environment) => environment.summary.workMembers ?? [])) {
+    if (!memberInfo.has(member.key)) memberInfo.set(member.key, member);
+  }
+  const workMemberInfo = [...memberInfo.values()];
 
   return {
     costUsd,
@@ -895,13 +900,7 @@ export function mergeUsage(
       ...new Set(current.flatMap((environment) => environment.summary.sharedWork ?? [])),
     ],
     workMembers,
-    workMemberInfo: [
-      ...new Map(
-        current
-          .flatMap((environment) => environment.summary.workMembers ?? [])
-          .map((member) => [member.key, member] as const),
-      ).values(),
-    ],
+    workMemberInfo,
     types,
   };
 }

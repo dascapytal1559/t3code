@@ -200,6 +200,7 @@ function UsageModelDialogHost({
 
 export function UsagePage() {
   const [preferences, setPreferences] = useState(readUsagePagePreferences);
+  const latestPreferences = useRef(preferences);
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const hour12 = usePrimarySettings((settings) => resolveHour12(settings.timestampFormat));
   const gt = useGT();
@@ -264,8 +265,17 @@ export function UsagePage() {
   );
   const showAnnotations = preferences.showAnnotations !== false;
 
-  const updatePreferences = (patch: Partial<UsagePagePreferences>) => {
-    const nextPreferences = { ...preferences, ...patch };
+  const updatePreferences = (
+    patch:
+      | Partial<UsagePagePreferences>
+      | ((current: UsagePagePreferences) => Partial<UsagePagePreferences>),
+  ) => {
+    const current = latestPreferences.current;
+    const nextPreferences = {
+      ...current,
+      ...(typeof patch === "function" ? patch(current) : patch),
+    };
+    latestPreferences.current = nextPreferences;
     setPreferences(nextPreferences);
     saveUsagePagePreferences(nextPreferences);
   };
@@ -593,7 +603,15 @@ export function UsagePage() {
                 breakdown={breakdown}
                 onBreakdownChange={(next) => updatePreferences({ breakdown: next })}
                 openParents={preferences.openParents ?? {}}
-                onOpenParentsChange={(next) => updatePreferences({ openParents: next })}
+                onToggleOpenParent={(kind, group) =>
+                  updatePreferences((current) => {
+                    const openParents = current.openParents ?? {};
+                    const open = new Set(openParents[kind] ?? []);
+                    if (open.has(group)) open.delete(group);
+                    else open.add(group);
+                    return { openParents: { ...openParents, [kind]: [...open] } };
+                  })
+                }
                 selectedEnvironments={selectedEnvironments}
                 hiddenProviders={hiddenProviders}
                 onProviderShownChange={(provider, shown) =>
@@ -653,7 +671,7 @@ function UsageOverview({
   breakdown: split,
   onBreakdownChange,
   openParents,
-  onOpenParentsChange,
+  onToggleOpenParent,
   selectedEnvironments,
   hiddenProviders,
   onProviderShownChange,
@@ -675,7 +693,7 @@ function UsageOverview({
   readonly onBreakdownChange: (breakdown: UsageBreakdown) => void;
   /** Parent rows left open, by box. */
   readonly openParents: Readonly<Record<string, readonly string[]>>;
-  readonly onOpenParentsChange: (openParents: Readonly<Record<string, readonly string[]>>) => void;
+  readonly onToggleOpenParent: (kind: UsageBreakdown, group: string) => void;
   readonly selectedEnvironments: readonly EnvironmentUsageStatus[];
   readonly hiddenProviders: ReadonlySet<UsageProviderKind>;
   readonly onProviderShownChange: (provider: UsageProviderKind, shown: boolean) => void;
@@ -835,10 +853,7 @@ function UsageOverview({
   };
   const toggleParent = (kind: UsageBreakdown, group: string) => {
     if (kind === split) setTransition(leaving("split"));
-    const open = new Set(openParents[kind] ?? []);
-    if (open.has(group)) open.delete(group);
-    else open.add(group);
-    onOpenParentsChange({ ...openParents, [kind]: [...open] });
+    onToggleOpenParent(kind, group);
   };
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- slides the boxes from where they stood before a card opened to where layout puts them now
   useLayoutEffect(() => {

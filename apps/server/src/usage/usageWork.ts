@@ -7,6 +7,7 @@ import type {
   UsageWorkMember,
   UsageWorkMemberLabel,
 } from "@t3tools/contracts";
+import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
@@ -244,7 +245,7 @@ export function makeUsageWork(options: UsageWorkOptions) {
   };
   const saveCodexFolders = async (folders: ReadonlyMap<string, string | null>) => {
     await NodeFSP.mkdir(NodePath.dirname(options.foldersCachePath), { recursive: true });
-    const temp = `${options.foldersCachePath}.${process.pid}.tmp`;
+    const temp = `${options.foldersCachePath}.${process.pid}.${NodeCrypto.randomUUID()}.tmp`;
     await NodeFSP.writeFile(
       temp,
       JSON.stringify({ version: 1, folders: Object.fromEntries(folders) }),

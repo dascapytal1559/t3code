@@ -508,7 +508,8 @@ made-up values:
     "cause": true,
     "promptThreadId": "thread-7"
   },
-  "final": true
+  "final": true,
+  "group": "Coding"
 }
 ```
 
@@ -519,12 +520,12 @@ made-up values:
 - `callId` names the model call the same way in every export, whichever
   transcript T3 read it from: a forked conversation, a deleted old file or a
   reader change can move a call to another `sessionId` or `at`, but not to
-  another `callId`. It is the key T3 already drops duplicate copies by: for
-  Claude the message and request ids; for other providers their own ids, some
-  together with the session id; for an older Codex session that spans files,
-  the session, time, model and tokens. It is null when the provider names no
-  id. Key a kept record by `(provider, callId)` when it has one, else
-  by `(provider, sessionId, at)`.
+  another `callId`. It is the provider's own id for the call: for Claude the
+  message and request ids; for other providers their own ids, some together
+  with the session id. It is null when the provider names no id. Key a kept
+  record by `(provider, callId)` when it has one, else by
+  `(provider, sessionId, at)`.
+- `group` is the kind of work the call counts to, null when it counts to none.
 - `final` is true once the record's label is written down and will not change:
   a close writes down every record older than 24 hours (not a whole day), and a
   transcript found after its time was closed stays not final, since its label

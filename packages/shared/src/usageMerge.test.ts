@@ -590,10 +590,14 @@ describe("mergeUsage", () => {
               [mac],
             ),
             workGroups: ["Trading", "Tooling", "Projects"],
+            workMembers: [{ key: "folder:~/notes", group: "Trading", name: "notes" }],
           }),
         ),
         // The same directory read again counts once; an older server's buckets carry no split.
-        environment("mac-again", summary([bucket({ sourcePath: mac.homePath })], [mac])),
+        environment("mac-again", {
+          ...summary([bucket({ sourcePath: mac.homePath })], [mac]),
+          workMembers: [{ key: "folder:~/notes", group: "Tooling", name: "notes" }],
+        }),
         environment(
           "old",
           summary(
@@ -623,6 +627,10 @@ describe("mergeUsage", () => {
       "": { totalTokens: 1160, costUsd: 10 },
     });
     expect(merged.workGroups).toEqual(["Trading", "Tooling", "Projects"]);
+    // A folder entry two servers place differently keeps the first server's group.
+    expect(merged.workMemberInfo).toEqual([
+      { key: "folder:~/notes", group: "Trading", name: "notes" },
+    ]);
 
     const bands = usageSplitBands(merged, "work", "cost", false);
     // Largest first, Other last; a group keeps its place in the servers' order for its colour.
