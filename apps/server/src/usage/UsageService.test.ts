@@ -20,6 +20,7 @@ import {
   ProviderInstanceId,
   USAGE_ORIGINS_RECORDED_SINCE,
   UsageDay,
+  type UsageExportRecord,
   type UsageSource,
   type UsageSummary,
   type UsageSummaryInput,
@@ -3862,6 +3863,36 @@ describe("UsageService", () => {
         assert.deepStrictEqual(restored.buckets, live.buckets);
       }).pipe(
         Effect.provide(layerService({ prefix: "usage-service-copy-order-test", home, settings })),
+      );
+    }),
+  );
+
+  it.effect("exports a call under the same callId after the copy it was read from is deleted", () =>
+    Effect.gen(function* () {
+      const { transcript, settings, home } = yield* setup;
+      const dir = NodePath.dirname(transcript);
+      const [first = "", second = ""] = yield* Effect.promise(async () => {
+        await NodeFSP.writeFile(NodePath.join(dir, "a.jsonl"), "");
+        await NodeFSP.writeFile(NodePath.join(dir, "b.jsonl"), "");
+        return (await NodeFSP.readdir(dir)).map((name) => NodePath.join(dir, name));
+      });
+      yield* Effect.promise(async () => {
+        await NodeFSP.writeFile(first, claudeLine(1, 5));
+        await NodeFSP.writeFile(second, claudeLine(1, 5, "claude-fable-5", "session-2"));
+      });
+      yield* Effect.gen(function* () {
+        const service = yield* UsageService.make;
+        const ids = (records: readonly UsageExportRecord[]) =>
+          records.map(({ sessionId, callId }) => ({ sessionId, callId }));
+        assert.deepStrictEqual(ids(yield* service.readRecords(WINDOW)), [
+          { sessionId: "session-1", callId: "msg_1:req_1" },
+        ]);
+        yield* Effect.promise(() => NodeFSP.rm(first));
+        assert.deepStrictEqual(ids(yield* service.readRecords(WINDOW)), [
+          { sessionId: "session-2", callId: "msg_1:req_1" },
+        ]);
+      }).pipe(
+        Effect.provide(layerService({ prefix: "usage-service-call-id-test", home, settings })),
       );
     }),
   );

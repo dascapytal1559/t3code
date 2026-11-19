@@ -197,6 +197,8 @@ export const UsageExportRecord = Schema.Struct({
   model: Schema.String,
   /** The provider's own session id. */
   sessionId: Schema.String,
+  /** The same for a model call in every export, whichever transcript copy was read; null when the provider names none. */
+  callId: Schema.NullOr(Schema.String),
   tokens: Schema.Struct({
     input: NonNegativeInt,
     cacheRead: NonNegativeInt,

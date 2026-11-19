@@ -113,6 +113,7 @@ export function toUsageExportRecord(
     provider: record.provider,
     model: record.model,
     sessionId: record.sessionId,
+    callId: record.dedupeKey,
     tokens: {
       input: record.totals.uncachedInputTokens,
       cacheRead: record.totals.cachedInputTokens,

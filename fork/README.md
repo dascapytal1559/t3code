@@ -450,6 +450,7 @@ made-up values:
   "provider": "claude",
   "model": "claude-opus-5-5",
   "sessionId": "5f0c…",
+  "callId": "msg_01…:req_01…",
   "tokens": { "input": 12, "cacheRead": 184220, "cacheWrite": 3105, "output": 890 },
   "costUsd": 0.1342,
   "origin": {
@@ -469,6 +470,15 @@ made-up values:
   cannot read its T3 prompts. `started` is `direct` when the device's own
   prompt started the work, `orchestrated` (with `via`) when an agent sent it.
   `basis` and `reason` are as in [Phone vs computer split](#phone-vs-computer-split).
+- `callId` names the model call the same way in every export, whichever
+  transcript T3 read it from: a forked conversation, a deleted old file or a
+  reader change can move a call to another `sessionId` or `at`, but not to
+  another `callId`. It is the key T3 already drops duplicate copies by: for
+  Claude the message and request ids; for other providers their own ids, some
+  together with the session id; for an older Codex session that spans files,
+  the session, time, model and tokens. It is null when the provider names no
+  id. Key a kept record by `(provider, callId)` when it has one, else
+  by `(provider, sessionId, at)`.
 - `final` is true once the record's label is written down and will not change:
   a close writes down every record older than 24 hours (not a whole day), and a
   transcript found after its time was closed stays not final, since its label

@@ -332,6 +332,7 @@ describe("UsageAggregator", () => {
         ...base,
         model: "unpriced-model",
         sessionId: "crew-session",
+        callId: null,
         tokens: { ...tokens, output: 50 },
         costUsd: null,
         origin: {
@@ -347,6 +348,7 @@ describe("UsageAggregator", () => {
         ...base,
         model: "claude-fable-5",
         sessionId: "terminal-session",
+        callId: null,
         tokens: { ...tokens, output: 50 },
         costUsd: expect.closeTo(0.004625, 9),
         origin: null,
@@ -355,6 +357,7 @@ describe("UsageAggregator", () => {
         ...base,
         model: "claude-fable-5",
         sessionId: "phone-session",
+        callId: "msg_1:",
         tokens: { ...tokens, output: 80 },
         costUsd: expect.closeTo(0.006125, 9),
         origin: {
@@ -370,6 +373,30 @@ describe("UsageAggregator", () => {
       result.buckets.reduce((sum, bucket) => sum + bucket.costUsd, 0),
       9,
     );
+  });
+
+  it.each([
+    ["session-a", "session-b"],
+    ["session-b", "session-a"],
+  ])("exports one call read first from %s under the same callId", (first, second) => {
+    const counted: CountedRecord[] = [];
+    const aggregator = new UsageAggregator({
+      timeZone: "UTC",
+      sinceDay: "2026-08-01",
+      untilDay: "2026-08-31",
+      rates,
+      onRecord: (entry) => counted.push(entry),
+    });
+    aggregator.add(record({ sessionId: first, dedupeKey: "msg_1:req_1" }), "/claude");
+    aggregator.add(record({ sessionId: second, dedupeKey: "msg_1:req_1" }), "/claude");
+    aggregator.finish();
+
+    expect(
+      counted.map((entry) => {
+        const { sessionId, callId } = toUsageExportRecord(entry, false);
+        return { sessionId, callId };
+      }),
+    ).toEqual([{ sessionId: first, callId: "msg_1:req_1" }]);
   });
 
   it("buckets by the day in the requested time zone", () => {
