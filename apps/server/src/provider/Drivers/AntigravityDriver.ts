@@ -58,7 +58,10 @@ import {
 } from "../acp/AntigravitySessionFiles.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
-import { makeAntigravityAdapterV2 } from "../../orchestration-v2/Adapters/AntigravityAdapterV2.ts";
+import {
+  makeAntigravityAdapterV2,
+  type AntigravityAdapterV2RuntimeInput,
+} from "../../orchestration-v2/Adapters/AntigravityAdapterV2.ts";
 import { makeAcpNativeLoggerFactory } from "@t3tools/provider-acp/server/nativeLogging";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeAntigravityProvider } from "../AntigravityProvider.ts";
@@ -197,12 +200,9 @@ export const AntigravityDriver: ProviderDriver<
         Effect.map((catalog) => stampIdentity(ModelCatalog.applyModelCatalog(draft, catalog))),
       );
 
-    const makeRuntime = Effect.fn("AntigravityDriver.makeRuntime")(function* ({
-      threadEnvironment,
-      ...input
-    }: Omit<AntigravityAcpRuntimeInput, "spawn" | "childProcessSpawner"> & {
-      readonly threadEnvironment?: Readonly<Record<string, string>>;
-    }): Effect.fn.Return<
+    const makeRuntime = Effect.fn("AntigravityDriver.makeRuntime")(function* (
+      input: AntigravityAdapterV2RuntimeInput,
+    ): Effect.fn.Return<
       AcpSessionRuntime.AcpSessionRuntime["Service"],
       AcpErrors.AcpError | ProviderSetupError,
       Scope.Scope
@@ -270,20 +270,24 @@ export const AntigravityDriver: ProviderDriver<
               ),
             ),
       );
+      // `buildAntigravityAcpSpawnInput` sets `extendEnv: false`, so thread variables only reach the
+      // agent's shell through `baseEnv`. Fork: the thread's own variables go under T3's.
+      const { processEnvironment: t3Environment, threadEnvironment, ...runtimeInput } = input;
+      const spawnEnvironment =
+        threadEnvironment === undefined && t3Environment === undefined
+          ? processEnvironment
+          : { ...processEnvironment, ...threadEnvironment, ...t3Environment };
       const runtime = yield* makeAntigravityAcpRuntime({
-        ...input,
+        ...runtimeInput,
         runtimeVersion: executable.version,
         authMethod: auth.authMethod,
         childProcessSpawner: spawner,
         spawn: buildAntigravityAcpSpawnInput({
           installation: executable,
           profile,
-          cwd: input.cwd,
+          cwd: runtimeInput.cwd,
           // Before Antigravity's filter, so its private home and credentials still win.
-          baseEnv:
-            threadEnvironment === undefined
-              ? processEnvironment
-              : { ...processEnvironment, ...threadEnvironment },
+          baseEnv: spawnEnvironment,
           auth,
           runtimeTempDirectory,
         }),
@@ -298,7 +302,8 @@ export const AntigravityDriver: ProviderDriver<
             .start()
             .pipe(
               Effect.tapError((cause): Effect.Effect<void> =>
-                input.onAuthorizationUrl === undefined && isAntigravitySignInRequiredError(cause)
+                runtimeInput.onAuthorizationUrl === undefined &&
+                isAntigravitySignInRequiredError(cause)
                   ? provider.onAuthRequired
                   : Effect.void,
               ),
@@ -477,12 +482,12 @@ export const AntigravityDriver: ProviderDriver<
       ),
       profileDirectory,
       onSessionStarted: provider.onSessionStarted,
-      onSessionEvent: (event) => {
+      onSessionEvent: (event, cwd) => {
         if (event._tag === "ConfigOptionsUpdated") {
           return provider.onConfigOptionsUpdated(event.configOptions);
         }
         return event._tag === "AvailableCommandsUpdated"
-          ? provider.onAvailableCommands(event.availableCommands)
+          ? provider.onAvailableCommands(event.availableCommands, cwd)
           : Effect.void;
       },
       continuationRequests,
@@ -562,7 +567,7 @@ export const AntigravityDriver: ProviderDriver<
       snapshotForCwd: (cwd) =>
         !enabled
           ? provider.snapshot.getSnapshot
-          : discoverAntigravitySkills({ cwd, userHome }).pipe(
+          : discoverAntigravitySkills({ cwd, userHome, profileDirectory }).pipe(
               Effect.provideService(FileSystem.FileSystem, fileSystem),
               Effect.provideService(Path.Path, path),
               Effect.flatMap((skills) => provider.snapshotForCwd(cwd, skills)),

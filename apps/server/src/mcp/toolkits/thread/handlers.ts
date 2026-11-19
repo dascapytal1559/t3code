@@ -25,7 +25,7 @@ import {
   unavailable,
 } from "../../threadAccess.ts";
 import * as ProviderRegistry from "../../../provider/ProviderRegistry.ts";
-import { effectiveRuntimeMode } from "../../../orchestration-v2/RuntimePolicy.ts";
+import { providerRuntimeMode } from "../../../orchestration-v2/RuntimePolicy.ts";
 import type * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as ThreadSearch from "../../../orchestration-v2/ThreadSearch.ts";
 import * as ScheduledTasks from "../../../scheduledTasks/ScheduledTaskService.ts";
@@ -252,7 +252,7 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
           threadId: thread.id,
           modelSelection: thread.modelSelection,
           runtimeMode: thread.runtimeMode,
-          effectiveRuntimeMode: effectiveRuntimeMode(
+          effectiveRuntimeMode: providerRuntimeMode(
             thread.runtimeMode,
             provider?.supportedRuntimeModes,
           ),

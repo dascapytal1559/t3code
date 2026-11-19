@@ -120,7 +120,7 @@ export const layer: Layer.Layer<RuntimePolicyV2> = Layer.succeed(RuntimePolicyV2
 });
 
 /** The mode an instance actually runs: one it does not list falls back to approval-required. */
-export function effectiveRuntimeMode(
+export function providerRuntimeMode(
   runtimeMode: RuntimeMode,
   supportedRuntimeModes: ReadonlyArray<RuntimeMode> | undefined,
 ): RuntimeMode {
@@ -233,7 +233,7 @@ export const layerFromProjectStore: Layer.Layer<
         if (cwd === undefined)
           return yield* resolveError(Result.isFailure(read) ? read.failure : "Project not found.");
         return ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-          runtimeMode: effectiveRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
+          runtimeMode: providerRuntimeMode(input.thread.runtimeMode, supportedRuntimeModes),
           interactionMode: input.thread.interactionMode,
           cwd,
           ...threadConfigOf(input.thread),
