@@ -1063,6 +1063,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     providerSettingsOnly: true,
   },
   {
+    id: "usage-work-groups",
+    title: msg("Kinds of work"),
+    to: "/settings/providers",
+    searchTerms: [msg("usage breakdown groups projects trading tooling other split cost tokens")],
+    providerSettingsOnly: true,
+  },
+  {
     id: "text-generators",
     title: msg("Text generators"),
     to: "/settings/providers",

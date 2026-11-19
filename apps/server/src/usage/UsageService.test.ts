@@ -16,8 +16,10 @@ import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 import { mergeUsage } from "@t3tools/shared/usageMerge";
 import {
   EnvironmentId,
+  ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  USAGE_CONTRACT_VERSION,
   USAGE_ORIGINS_RECORDED_SINCE,
   UsageDay,
   type UsageExportRecord,
@@ -2085,6 +2087,109 @@ describe("UsageService", () => {
         }).pipe(
           Effect.scoped,
           Effect.provide(layerService({ prefix: "usage-service-close", home, settings })),
+        );
+      }),
+  );
+
+  it.effect(
+    "places usage in its project's kind of work by its folder, or its transcript's, in buckets and the export",
+    () =>
+      Effect.gen(function* () {
+        const { transcript, settings, home } = yield* setup;
+        const app = NodePath.join(home, "app");
+        yield* Effect.promise(() => NodeFSP.mkdir(NodePath.join(app, ".git"), { recursive: true }));
+        const line = (id: number, sessionId: string, cwd?: string) =>
+          `${encodeUnknownJsonString({
+            type: "assistant",
+            timestamp: "2026-11-10T10:00:00Z",
+            requestId: `req_${id}`,
+            sessionId,
+            ...(cwd === undefined ? {} : { cwd }),
+            message: {
+              id: `msg_${id}`,
+              model: "claude-fable-5",
+              usage: { input_tokens: 0, output_tokens: id },
+            },
+          })}\n`;
+        // Its own folder, its transcript's encoded folder, and a folder in no project.
+        const encoded = NodePath.join(
+          home,
+          "claude",
+          "projects",
+          app.replace(/[^a-zA-Z0-9]/g, "-"),
+        );
+        yield* Effect.promise(async () => {
+          await NodeFSP.mkdir(encoded, { recursive: true });
+          await NodeFSP.writeFile(NodePath.join(encoded, "old.jsonl"), line(2, "session-old"));
+          await NodeFSP.writeFile(
+            transcript,
+            line(1, "session-app", NodePath.join(app, "src")) + line(4, "session-tmp"),
+          );
+        });
+        const window: UsageSummaryInput = {
+          timeZone: "UTC",
+          sinceDay: UsageDay.make("2026-11-10"),
+          untilDay: UsageDay.make("2026-11-10"),
+        };
+        yield* TestClock.setTime(Date.parse("2026-11-11T00:00:00Z"));
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`INSERT INTO projection_projects ${sql.insert({
+            project_id: "project-app",
+            title: "App",
+            workspace_root: app,
+            scripts_json: "[]",
+            created_at: "2026-11-01T00:00:00Z",
+            updated_at: "2026-11-01T00:00:00Z",
+          })}`;
+          const service = yield* UsageService.make;
+          const summary = yield* service.readSummary(window);
+          const records = yield* service.readRecords(window);
+
+          assert.deepStrictEqual(summary.workGroups, ["Tooling", "Trading"]);
+          // One bucket: both transcripts share a day, model and transcript directory.
+          const [bucket] = summary.buckets;
+          assert.deepStrictEqual(
+            Object.entries(bucket?.work ?? {}).map(([group, [tokens]]) => [group, tokens]),
+            [
+              ["Tooling", 3],
+              ["", 4],
+            ],
+          );
+          const merged = mergeUsage(
+            [{ environmentId: EnvironmentId.make("env"), label: "env", summary }],
+            USAGE_CONTRACT_VERSION,
+          );
+          assert.deepStrictEqual(
+            [...merged.work.totals].map(([group, amount]) => [group, amount.totalTokens]),
+            [
+              ["Tooling", 3],
+              ["", 4],
+            ],
+          );
+          assert.deepStrictEqual(
+            records.map((record) => [record.sessionId, record.group]).toSorted(),
+            [
+              ["session-app", "Tooling"],
+              ["session-old", "Tooling"],
+              ["session-tmp", null],
+            ],
+          );
+        }).pipe(
+          Effect.scoped,
+          Effect.provide(
+            layerService({
+              prefix: "usage-service-work",
+              home,
+              settings: {
+                ...settings,
+                usageWorkGroups: [
+                  { name: "Tooling", projectIds: [ProjectId.make("project-app")] },
+                  { name: "Trading", projectIds: [] },
+                ],
+              },
+            }),
+          ),
         );
       }),
   );

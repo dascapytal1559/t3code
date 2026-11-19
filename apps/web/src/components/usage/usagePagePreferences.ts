@@ -14,6 +14,8 @@ const UsagePagePreferencesSchema = Schema.Struct({
   hiddenProviders: Schema.optional(Schema.Array(UsageProviderKind)),
   /** Chart annotations show unless switched off. */
   showAnnotations: Schema.optional(Schema.Boolean),
+  /** What the chart and its list split usage by; by provider when absent. */
+  breakdown: Schema.optional(Schema.Literals(["provider", "device", "work"])),
 });
 export type UsagePagePreferences = typeof UsagePagePreferencesSchema.Type;
 

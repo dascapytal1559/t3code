@@ -10,7 +10,12 @@ import {
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
-import { isModelCostUnknown, mergeUsage, type EnvironmentUsage } from "./usageMerge.ts";
+import {
+  isModelCostUnknown,
+  mergeUsage,
+  usageSplitBands,
+  type EnvironmentUsage,
+} from "./usageMerge.ts";
 
 const decodeSummary = Schema.decodeUnknownSync(UsageSummary);
 
@@ -531,6 +536,110 @@ describe("mergeUsage", () => {
       ["claude-fable-5", 0],
       ["unknown-model", 1160],
       ["partly-reported", 928],
+    ]);
+  });
+
+  it("splits usage by device and kind of work so each day's bands add up to its total", () => {
+    const mac = { provider: "claude" as const, hostId: "mac", homePath: "/a/.claude" };
+    const day8 = "2026-08-08" as UsageDay;
+    const withOrigins = (usageSummary: UsageSummary): UsageSummary => ({
+      ...usageSummary,
+      origins: { usage: [], prompts: [] },
+    });
+    const merged = mergeUsage(
+      [
+        environment(
+          "mac",
+          withOrigins({
+            ...summary(
+              [
+                bucket({
+                  sourcePath: mac.homePath,
+                  devices: { phone: [800, 6], upkeep: [360, 4] },
+                  work: { Tooling: [1000, 7], "": [160, 3] },
+                }),
+                // Parts rounded to a micro-dollar, and a part the server did not split.
+                bucket({
+                  sourcePath: mac.homePath,
+                  model: "claude-opus-5-5",
+                  costUsd: 3,
+                  devices: { computer: [1000, 2.0000004] },
+                  work: "Trading",
+                }),
+                bucket({
+                  day: day8,
+                  sourcePath: mac.homePath,
+                  devices: "computer",
+                  work: "Trading",
+                }),
+              ],
+              [mac],
+            ),
+            workGroups: ["Trading", "Tooling", "Projects"],
+          }),
+        ),
+        // The same directory read again counts once; an older server's buckets carry no split.
+        environment("mac-again", summary([bucket({ sourcePath: mac.homePath })], [mac])),
+        environment(
+          "old",
+          summary(
+            [bucket({ day: day8, provider: "codex" })],
+            [{ provider: "codex", hostId: "old", homePath: "/o/.codex" }],
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    for (const day of merged.daily) {
+      for (const split of [merged.devices!, merged.work]) {
+        const bands = [...(split.daily.get(day.day)?.values() ?? [])];
+        expect(bands.reduce((sum, band) => sum + band.totalTokens, 0)).toBe(day.totalTokens);
+        expect(bands.reduce((sum, band) => sum + band.costUsd, 0)).toBeCloseTo(day.costUsd, 9);
+      }
+    }
+    expect(Object.fromEntries(merged.devices!.daily.get("2026-08-07")!)).toEqual({
+      phone: { totalTokens: 800, costUsd: 6 },
+      upkeep: { totalTokens: 360, costUsd: 4 },
+      computer: { totalTokens: 1000, costUsd: expect.closeTo(2, 5) },
+      unlabelled: { totalTokens: 160, costUsd: expect.closeTo(1, 5) },
+    });
+    expect(Object.fromEntries(merged.work.daily.get(day8)!)).toEqual({
+      Trading: { totalTokens: 1160, costUsd: 10 },
+      "": { totalTokens: 1160, costUsd: 10 },
+    });
+    expect(merged.workGroups).toEqual(["Trading", "Tooling", "Projects"]);
+
+    const bands = usageSplitBands(merged, "work", "cost", false);
+    // Largest first, Other last; a group keeps its place in the servers' order for its colour.
+    expect(bands.bands.map(({ key, groupIndex }) => [key, groupIndex])).toEqual([
+      ["Trading", 0],
+      ["Tooling", 1],
+      ["", null],
+    ]);
+    expect(bands.valueAt("2026-08-07", "Tooling", "tokens")).toBe(1000);
+    expect(usageSplitBands(merged, "device", "tokens", false).bands.map(({ key }) => key)).toEqual([
+      "computer",
+      "phone",
+      "upkeep",
+      "unlabelled",
+    ]);
+  });
+
+  it("counts all usage as unlabelled when no server reports origins", () => {
+    const merged = mergeUsage(
+      [
+        environment(
+          "old",
+          summary([bucket()], [{ provider: "claude", hostId: "old", homePath: "/o/.claude" }]),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    expect(merged.devices).toBeNull();
+    expect(usageSplitBands(merged, "device", "cost", false).bands).toEqual([
+      { key: "unlabelled", groupIndex: null, costUsd: 10, totalTokens: 1160 },
     ]);
   });
 

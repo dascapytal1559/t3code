@@ -104,6 +104,7 @@ import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { useSecretSources } from "./SecretSourceInput";
 import { TextGeneratorsSettings } from "./TextGeneratorsSettings";
 import { UsageProviderSettings } from "./UsageProviderSettings";
+import { UsageWorkGroupsSettings } from "./UsageWorkGroupsSettings";
 import { ProviderSetupSection, readAntigravityAuthMethod } from "./ProviderSetupSection";
 import { ProviderAuthenticationSection } from "./ProviderAuthenticationSection";
 import { CodexSetupSection, CodexManagedRuntimeFields } from "./CodexSetupSection";
@@ -1150,6 +1151,13 @@ export function EnvironmentProviderSettings({
         environmentId={environmentId}
         environmentLabel={environmentLabel}
         sources={settings.usageLimitSources}
+        readOnly={readOnly}
+      />
+
+      <UsageWorkGroupsSettings
+        key={`usage-work-groups:${environmentId}`}
+        environmentId={environmentId}
+        groups={settings.usageWorkGroups}
         readOnly={readOnly}
       />
 

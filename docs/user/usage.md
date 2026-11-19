@@ -83,6 +83,26 @@ down within a day or two and reads it back from then on, so nothing done later c
 write it down sooner, run `t3 usage close --through <time>` with the time's offset, such as
 `2026-11-19T15:00:00+11:00`; add `--dry-run` first to see what it would write.
 
+## Split the chart by device or kind of work
+
+The switch above the total on **Usage** chooses what the chart and the list beside it split by:
+**By provider**, **By device** or **By kind of work**. Cost and Tokens work in every split, and
+hovering a bar names each band. On mobile, choose **Provider**, **Device** or **Kind of work** under
+the period.
+
+**By device** shows **Phone**, **Computer** and **Computer · upkeep** (a coordinator's own turns,
+as described above). Usage from before T3 recorded the sending device (7 Nov 2026) shows as
+**Unlabelled**, as does usage from a server too old to label it.
+
+**By kind of work** groups usage by project. Name the groups and put projects in them in
+**Settings → Providers → Kinds of work**; they start as Trading, Tooling and Projects with no
+projects. Groups are saved on the environment, so every client sees the same ones. Usage counts to
+the deepest project that holds the folder it ran in. Work in a worktree counts to the repository's
+project, and a no-mistakes review counts to the repository it reviewed. Older Claude and Codex
+history with no folder of its own is placed by its session's folder. Usage in a project with no
+group, in no project, or with no folder at all counts as **Other**. Exported records name their
+group in `group`.
+
 ## Count agent sessions T3 does not run
 
 A session-start hook makes every Claude, Codex, and Grok session on the server's machine register

@@ -1,4 +1,5 @@
 import {
+  type ProjectId,
   type ProviderInstanceConfig,
   ProviderInstanceId,
   USAGE_CONTRACT_VERSION,
@@ -54,6 +55,12 @@ import {
 } from "./usageAggregation.ts";
 import * as UsageClose from "./UsageClose.ts";
 import * as UsageOrigins from "./UsageOrigins.ts";
+import {
+  makeUsageWork,
+  USAGE_SESSION_FOLDERS_FILE_NAME,
+  type WorkFolders,
+  type WorkWorktree,
+} from "./usageWork.ts";
 import { readUsageAnnotations, USAGE_ANNOTATIONS_FILE_NAME } from "./usageAnnotations.ts";
 import {
   discoverUsageArchive,
@@ -965,6 +972,41 @@ export const make = Effect.gen(function* () {
     return scanned;
   });
 
+  const usageWork = makeUsageWork({
+    homeDir: yield* HostProcess.HomeDirectory,
+    foldersCachePath: path.join(config.stateDir, USAGE_SESSION_FOLDERS_FILE_NAME),
+  });
+  const activeProjects = sql<{ readonly id: ProjectId; readonly root: string }>`
+    SELECT project_id AS id, workspace_root AS root
+    FROM projection_projects
+    WHERE deleted_at IS NULL
+  `;
+  const threadWorktrees = sql<WorkWorktree>`
+    SELECT DISTINCT
+      json_extract(payload_json, '$.worktreePath') AS path,
+      project_id AS "projectId"
+    FROM orchestration_v2_projection_threads
+    WHERE CASE WHEN json_valid(payload_json) THEN json_extract(payload_json, '$.worktreePath') END
+      IS NOT NULL
+  `;
+  // Projects' usage counts to their groups; without projects, every group is empty.
+  const placeWork = Effect.fn("UsageService.placeWork")(function* (
+    settings: ServerSettingsValue,
+    seen: WorkFolders,
+  ) {
+    const groups = settings.usageWorkGroups;
+    const [projects, worktrees] = groups.some((group) => group.projectIds.length > 0)
+      ? yield* Effect.all([activeProjects, threadWorktrees]).pipe(
+          Effect.tapError((error) => Effect.logWarning("Usage could not read projects", error)),
+          Effect.orElseSucceed(() => [[], []] as const),
+        )
+      : [[], []];
+    const nowMs = yield* Clock.currentTimeMillis;
+    return yield* Effect.promise(() =>
+      usageWork.attribution(groups, projects, worktrees, seen, nowMs),
+    );
+  });
+
   const scanSummary = Effect.fn("UsageService.scanSummary")(function* (
     input: UsageSummaryInput,
     settings: ServerSettingsValue,
@@ -1158,9 +1200,23 @@ export const make = Effect.gen(function* () {
 
     // The models priced below, as UsageAggregator resolves them: an alias replaces rateModel.
     const rateModels = new Set<string>();
-    for (const files of filesByDir) {
+    // The folders the kind-of-work split places records by, gathered on the same walk.
+    const placesWork = settings.usageWorkGroups.some((group) => group.projectIds.length > 0);
+    const workCwds = new Set<string>();
+    const workFiles = new Map<
+      string,
+      { readonly provider: UsageProviderKind; readonly sourceDir: string }
+    >();
+    for (const [index, files] of filesByDir.entries()) {
+      const sourceDir = scannedDirs[index]!.dir;
       for (const file of files) {
         for (const record of file.records) {
+          if (placesWork) {
+            if (record.cwd !== undefined) workCwds.add(record.cwd);
+            else if (!workFiles.has(file.path)) {
+              workFiles.set(file.path, { provider: record.provider, sourceDir });
+            }
+          }
           const alias = modelAliases.get(record.model);
           const model = alias ?? record.model;
           if (priceOverrides.has(model.trim())) continue;
@@ -1170,6 +1226,7 @@ export const make = Effect.gen(function* () {
     }
     // A saved answer prices with saved rates and the full scan after it refetches.
     if (!fromMemory) yield* refreshForUnlistedModels(rateModels);
+    const work = yield* placeWork(settings, { cwds: workCwds, files: workFiles });
 
     const closedRecords: UsageRecord[] = [];
     if (liveOrigins !== null && closedSpan !== null) {
@@ -1247,6 +1304,13 @@ export const make = Effect.gen(function* () {
       rateModel: (provider, model) => providerRateModels.get(provider)?.(model),
       ...(input.modelFilter === undefined ? {} : { modelFilter: input.modelFilter }),
       ...(counted === null ? {} : { onRecord: (entry: CountedRecord) => counted.push(entry) }),
+      // With no project in a group, every bucket is Other and needs no split on the wire.
+      ...(placesWork
+        ? {
+            attributeWork: (record: UsageRecord, filePath: string | undefined) =>
+              work.groupOf(record.cwd, filePath),
+          }
+        : {}),
       ...(labelOf === null
         ? {}
         : {
@@ -1367,7 +1431,7 @@ export const make = Effect.gen(function* () {
             eventOccurrences.set(key, occurrence);
             usageRecord = { ...record, dedupeKey: key + ":" + occurrence };
           }
-          if (aggregator.add(usageRecord, dir)) {
+          if (aggregator.add(usageRecord, dir, file.path)) {
             counted = true;
             if (record.sessionId.length > 0) sessionIds.add(record.sessionId);
           }
@@ -1443,6 +1507,7 @@ export const make = Effect.gen(function* () {
       untilDay: input.untilDay,
       buckets: aggregated.buckets,
       ...(aggregated.origins === undefined ? {} : { origins: aggregated.origins }),
+      workGroups: work.groups,
       sources,
       pricing: summaryPricing,
       scanDurationMs: Math.max(0, finishedAtMs - startedAtMs),

@@ -61,6 +61,7 @@ import {
   makeWindow,
 } from "@t3tools/shared/usageFormat";
 import { formatUsageContractMismatch, usageSourceMessages } from "@t3tools/shared/usageFormatCopy";
+import { usageSplitBands } from "@t3tools/shared/usageMerge";
 import { Button, InlineButton } from "../ui/button";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import {
@@ -87,7 +88,9 @@ import {
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { UsageLimitsSection } from "./UsageLimits";
 import { UsagePriceOverrides } from "./UsagePriceOverrides";
-import { UsageProviderChart } from "./UsageProviderChart";
+import { UsageProviderChart, UsageStackedChart, usageChartCaption } from "./UsageProviderChart";
+import { BREAKDOWN_OPTIONS, presentBand, type UsageBreakdown } from "./usageSplits";
+import { UsageBandList } from "./UsageBandList";
 import { collectUsageAnnotations, placeUsageAnnotations } from "./usageAnnotations";
 import { splitSkippedRecords } from "./usageSkippedRecords";
 import { SpeedPremium, UsageModelDialog } from "./UsageModelDialog";
@@ -215,6 +218,7 @@ export function UsagePage() {
   }));
   const metric = preferences.metric;
   const showingLimits = metric === "limits";
+  const breakdown: UsageBreakdown = preferences.breakdown ?? "provider";
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [limitsNow, setLimitsNow] = useState(() => Date.now());
   const refreshingRef = useRef(false);
@@ -579,6 +583,8 @@ export function UsagePage() {
                 hours={hours}
                 showingKept={showingKept}
                 metric={metric === "tokens" ? "tokens" : "cost"}
+                breakdown={breakdown}
+                onBreakdownChange={(next) => updatePreferences({ breakdown: next })}
                 selectedEnvironments={selectedEnvironments}
                 hiddenProviders={hiddenProviders}
                 onProviderShownChange={(provider, shown) =>
@@ -635,6 +641,8 @@ function UsageOverview({
   hours,
   showingKept,
   metric,
+  breakdown: split,
+  onBreakdownChange,
   selectedEnvironments,
   hiddenProviders,
   onProviderShownChange,
@@ -652,6 +660,8 @@ function UsageOverview({
   readonly hours: readonly string[];
   readonly showingKept: boolean;
   readonly metric: "tokens" | "cost";
+  readonly breakdown: UsageBreakdown;
+  readonly onBreakdownChange: (breakdown: UsageBreakdown) => void;
   readonly selectedEnvironments: readonly EnvironmentUsageStatus[];
   readonly hiddenProviders: ReadonlySet<UsageProviderKind>;
   readonly onProviderShownChange: (provider: UsageProviderKind, shown: boolean) => void;
@@ -724,6 +734,18 @@ function UsageOverview({
       (entry) => entry.provider === provider,
     ),
   );
+  const splitBands =
+    split === "provider" ? null : usageSplitBands(merged, split, metric, shownHourly);
+  const bandSplit =
+    splitBands === null
+      ? null
+      : { bands: splitBands.bands.map(presentBand), valueAt: splitBands.valueAt };
+  const chartAnnotations = placeUsageAnnotations(
+    showAnnotations ? annotations : [],
+    shownHourly ? hours : days,
+    shownHourly ? "hour" : "day",
+    shownWindow.timeZone,
+  );
   const providerEmphasis = emphasisPositions(
     providerTotals.map((totals) =>
       metric === "cost" ? (totals?.costUsd ?? 0) : (totals?.totalTokens ?? 0),
@@ -739,6 +761,34 @@ function UsageOverview({
       ))}
       <section className="grid gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
         <div className="flex min-w-0 flex-col gap-5">
+          {/* Splits the chart and this list; the Breakdown table below has its own switch. */}
+          <div className="-ms-2 -mb-3 flex">
+            <Select
+              value={split}
+              onValueChange={(value) => {
+                const option = BREAKDOWN_OPTIONS.find((entry) => entry.value === value);
+                if (option) onBreakdownChange(option.value);
+              }}
+            >
+              <SelectTrigger
+                aria-label={gt("Split usage")}
+                size="compact"
+                variant="ghost"
+                className="w-auto min-w-0"
+              >
+                <SelectValue>
+                  {m(BREAKDOWN_OPTIONS.find((option) => option.value === split)!.label)}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="start" alignItemWithTrigger={false}>
+                {BREAKDOWN_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {m(option.label)}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          </div>
           <div className="flex flex-col gap-1">
             <p
               className={cn(
@@ -802,7 +852,16 @@ function UsageOverview({
             </div>
           ) : null}
 
-          {rankedProviders.map((provider, index) => {
+          {split !== "provider" ? (
+            <UsageBandList
+              bands={bandSplit?.bands ?? []}
+              metric={metric}
+              totalCostUsd={merged.costUsd}
+              totalTokens={merged.totalTokens}
+              loading={loadingPartial}
+            />
+          ) : null}
+          {(split === "provider" ? rankedProviders : []).map((provider, index) => {
             const excluded = excludedProviders.has(provider);
             const totals = providerTotals[index];
             const emphasis = providerEmphasis[index] ?? 1;
@@ -910,6 +969,25 @@ function UsageOverview({
             <p className="flex h-56 items-center justify-center text-sm text-muted-foreground">
               <T>No activity in this window.</T>
             </p>
+          ) : bandSplit !== null ? (
+            <UsageStackedChart
+              series={bandSplit.bands.map((band) => ({
+                key: band.key,
+                label: band.named ? band.label : m(band.label),
+                color: band.color,
+                loading: loadingPartial,
+              }))}
+              valueAt={(period, key) => bandSplit.valueAt(period, key, metric)}
+              caption={usageChartCaption(metric, shownHourly ? "hour" : "day", split)}
+              days={days}
+              hours={hours}
+              metric={metric}
+              referenceTime={shownWindow.untilTime}
+              resolution={shownHourly ? "hour" : "day"}
+              timeZone={shownWindow.timeZone}
+              hour12={hour12}
+              annotations={chartAnnotations}
+            />
           ) : (
             <UsageProviderChart
               providers={activeProviders}
@@ -923,12 +1001,7 @@ function UsageOverview({
               resolution={shownHourly ? "hour" : "day"}
               timeZone={shownWindow.timeZone}
               hour12={hour12}
-              annotations={placeUsageAnnotations(
-                showAnnotations ? annotations : [],
-                shownHourly ? hours : days,
-                shownHourly ? "hour" : "day",
-                shownWindow.timeZone,
-              )}
+              annotations={chartAnnotations}
             />
           )}
         </div>

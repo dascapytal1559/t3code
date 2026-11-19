@@ -23,7 +23,7 @@ import {
   TrimmedString,
 } from "./baseSchemas.ts";
 import { UsageLimitSourceId } from "./usageLimitSourceId.ts";
-import { UsageModelFilter } from "./usage.ts";
+import { UsageModelFilter, UsageWorkGroup } from "./usage.ts";
 import { SecretProviderId, SecretProviderSlug } from "./secretReference.ts";
 import { containsSecretReference, SettingsSecretValue } from "./settingsSecretValue.ts";
 import { EnvironmentMachineKind, ThreadEnvMode, WorktreeSubmodules } from "./environment.ts";
@@ -1632,6 +1632,13 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(["~/.t3-usage-archive"])),
   ),
 
+  /** The Usage page's kinds of work; a project in none, or usage in no project, counts as Other. */
+  usageWorkGroups: Schema.Array(UsageWorkGroup).pipe(
+    Schema.withDecodingDefault(
+      Effect.succeed(["Trading", "Tooling", "Projects"].map((name) => ({ name, projectIds: [] }))),
+    ),
+  ),
+
   // Fork feature: set over MCP by `t3_objectives_set`. Kept here so they persist and reach every
   // client on the settings stream.
   objectives: Schema.NullOr(Objectives).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
@@ -2026,6 +2033,8 @@ export const ServerSettingsPatch = Schema.Struct({
     Schema.Record(TrimmedNonEmptyString, Schema.NullOr(TrimmedNonEmptyString)),
   ),
   usageArchiveDirs: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
+  /** Replaced whole. */
+  usageWorkGroups: Schema.optionalKey(Schema.Array(UsageWorkGroup)),
   /** Replaced whole; null clears them. */
   objectives: Schema.optionalKey(Schema.NullOr(Objectives)),
   /** Replaced whole; null clears it. */

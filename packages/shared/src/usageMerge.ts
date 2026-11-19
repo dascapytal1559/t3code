@@ -2,6 +2,8 @@ import {
   USAGE_MERGE_COMPATIBLE_SINCE,
   type EnvironmentId,
   type UsageBucket,
+  type UsageDeviceBand,
+  type UsageSplit,
   type UsageOrigin,
   type UsageOriginBasis,
   type UsageOriginPrompts,
@@ -113,6 +115,108 @@ export interface MergedUsage {
   readonly contractMismatches: readonly UsageContractMismatch[];
   /** Null when no selected server reports origins. */
   readonly origins: MergedOrigins | null;
+  /** Usage by device band; null when no selected server reports origins. */
+  readonly devices: MergedSplit<UsageDeviceBand> | null;
+  /** Usage by kind-of-work group; `OTHER_WORK` holds usage in no group. */
+  readonly work: MergedSplit<string>;
+  /** The servers' group names in their settings order, first server first. */
+  readonly workGroups: readonly string[];
+}
+
+export interface SplitAmount {
+  readonly costUsd: number;
+  readonly totalTokens: number;
+}
+
+/** A partition of the merged usage: each period's bands add up to the period's totals. */
+export interface MergedSplit<Key extends string> {
+  readonly totals: ReadonlyMap<Key, SplitAmount>;
+  readonly daily: ReadonlyMap<string, ReadonlyMap<Key, SplitAmount>>;
+  readonly hourly: ReadonlyMap<string, ReadonlyMap<Key, SplitAmount>>;
+}
+
+/** The kind-of-work key for usage in no group. */
+export const OTHER_WORK = "";
+
+const USAGE_DEVICE_BANDS: readonly UsageDeviceBand[] = [
+  "phone",
+  "computer",
+  "upkeep",
+  "unlabelled",
+];
+const isDeviceBand = (key: string): key is UsageDeviceBand =>
+  (USAGE_DEVICE_BANDS as readonly string[]).includes(key);
+
+class SplitAccumulator<Key extends string> {
+  readonly totals = new Map<Key, { costUsd: number; totalTokens: number }>();
+  readonly daily = new Map<string, Map<Key, { costUsd: number; totalTokens: number }>>();
+  readonly hourly = new Map<string, Map<Key, { costUsd: number; totalTokens: number }>>();
+
+  readonly #fallback: Key;
+  readonly #keyOf: (key: string) => Key;
+
+  constructor(fallback: Key, keyOf: (key: string) => Key) {
+    this.#fallback = fallback;
+    this.#keyOf = keyOf;
+  }
+
+  /** Usage the split does not name, or an older server's unsplit bucket, counts to the fallback. */
+  add(bucket: UsageBucket, split: UsageSplit | undefined, tokens: number): void {
+    if (typeof split === "string" || split === undefined) {
+      this.#add(
+        bucket,
+        split === undefined ? this.#fallback : this.#keyOf(split),
+        tokens,
+        bucket.costUsd,
+      );
+      return;
+    }
+    let restTokens = tokens;
+    let restCost = bucket.costUsd;
+    for (const [key, [partTokens, partCost]] of Object.entries(split)) {
+      this.#add(bucket, this.#keyOf(key), partTokens, partCost);
+      restTokens -= partTokens;
+      restCost -= partCost;
+    }
+    // The server rounds parts to a micro-dollar; only a real remainder is unsplit usage.
+    if (restTokens > 0 || restCost > 1e-4) {
+      this.#add(bucket, this.#fallback, Math.max(0, restTokens), Math.max(0, restCost));
+    }
+  }
+
+  #add(bucket: UsageBucket, key: Key, totalTokens: number, costUsd: number): void {
+    addAmount(this.totals, key, totalTokens, costUsd);
+    addAmount(mapFor(this.daily, bucket.day), key, totalTokens, costUsd);
+    if (bucket.hourStart !== undefined) {
+      addAmount(mapFor(this.hourly, bucket.hourStart), key, totalTokens, costUsd);
+    }
+  }
+}
+
+function mapFor<Key>(
+  periods: Map<string, Map<Key, { costUsd: number; totalTokens: number }>>,
+  period: string,
+) {
+  let amounts = periods.get(period);
+  if (amounts === undefined) {
+    amounts = new Map();
+    periods.set(period, amounts);
+  }
+  return amounts;
+}
+
+function addAmount<Key>(
+  amounts: Map<Key, { costUsd: number; totalTokens: number }>,
+  key: Key,
+  totalTokens: number,
+  costUsd: number,
+): void {
+  const amount = amounts.get(key);
+  if (amount === undefined) amounts.set(key, { costUsd, totalTokens });
+  else {
+    amount.costUsd += costUsd;
+    amount.totalTokens += totalTokens;
+  }
 }
 
 export interface OriginBasisTotals {
@@ -438,6 +542,9 @@ const EMPTY_MERGED: MergedUsage = {
   contributingEnvironments: [],
   contractMismatches: [],
   origins: null,
+  devices: null,
+  work: { totals: new Map(), daily: new Map(), hourly: new Map() },
+  workGroups: [],
 };
 
 export function mergeUsage(
@@ -523,6 +630,10 @@ export function mergeUsage(
   >();
   const contributingEnvironments: EnvironmentId[] = [];
   const originUsage: UsageOriginUsage[] = [];
+  const devices = new SplitAccumulator<UsageDeviceBand>("unlabelled", (key) =>
+    isDeviceBand(key) ? key : "unlabelled",
+  );
+  const work = new SplitAccumulator<string>(OTHER_WORK, (key) => key);
 
   for (const environment of current) {
     const {
@@ -554,6 +665,8 @@ export function mergeUsage(
 
     for (const bucket of buckets) {
       const tokens = bucketTokens(bucket);
+      devices.add(bucket, bucket.devices, tokens);
+      work.add(bucket, bucket.work, tokens);
 
       costUsd += bucket.costUsd;
       cacheSavingsUsd += bucket.cacheSavingsUsd;
@@ -737,5 +850,87 @@ export function mergeUsage(
     contributingEnvironments,
     contractMismatches,
     origins: mergeOrigins(current, originUsage, costUsd, totalTokens),
+    devices: current.some((environment) => environment.summary.origins !== undefined)
+      ? devices
+      : null,
+    work,
+    workGroups: [
+      ...new Set(current.flatMap((environment) => environment.summary.workGroups ?? [])),
+    ],
+  };
+}
+
+/** One band of a device or kind-of-work split, with what clients need to label and colour it. */
+export interface UsageSplitBand extends SplitAmount {
+  readonly key: string;
+  /** A group's place in the servers' group order, for its colour; null for devices and Other. */
+  readonly groupIndex: number | null;
+}
+
+export interface UsageSplitBands {
+  /** Bands with usage, largest first by the metric; unlabelled or Other always last. */
+  readonly bands: readonly UsageSplitBand[];
+  /** A band's tokens or cost in one day (or hour, for an hourly split). */
+  readonly valueAt: (period: string, key: string, metric: "cost" | "tokens") => number;
+}
+
+const NO_AMOUNT: SplitAmount = { costUsd: 0, totalTokens: 0 };
+
+/** A server that reports no origins has all of its usage unlabelled. */
+function deviceSplitOf(usage: MergedUsage): MergedSplit<UsageDeviceBand> {
+  if (usage.devices !== null) return usage.devices;
+  const whole = (period: SplitAmount) =>
+    new Map([
+      ["unlabelled" as const, { costUsd: period.costUsd, totalTokens: period.totalTokens }],
+    ]);
+  return {
+    totals: whole(usage),
+    daily: new Map(usage.daily.map((day) => [day.day, whole(day)])),
+    hourly: new Map(usage.hourly.map((hour) => [hour.hourStart, whole(hour)])),
+  };
+}
+
+export function usageSplitBands(
+  usage: MergedUsage,
+  split: "device" | "work",
+  metric: "cost" | "tokens",
+  hourly: boolean,
+): UsageSplitBands {
+  const merged: MergedSplit<string> = split === "device" ? deviceSplitOf(usage) : usage.work;
+  const periods = hourly ? merged.hourly : merged.daily;
+  const catchAll = split === "device" ? "unlabelled" : OTHER_WORK;
+  const keys =
+    split === "device"
+      ? USAGE_DEVICE_BANDS
+      : [
+          ...usage.workGroups,
+          // Groups only another server names, then the usage in no group.
+          ...[...merged.totals.keys()].filter(
+            (key) => key !== OTHER_WORK && !usage.workGroups.includes(key),
+          ),
+          OTHER_WORK,
+        ];
+  const value = (amount: SplitAmount) => (metric === "cost" ? amount.costUsd : amount.totalTokens);
+  const bands = keys
+    .map((key, index) => ({
+      key,
+      groupIndex: split === "work" && key !== OTHER_WORK ? index : null,
+      ...(merged.totals.get(key) ?? NO_AMOUNT),
+    }))
+    .filter((band) => band.totalTokens > 0 || band.costUsd > 0)
+    // Copied first: Hermes lacks toSorted.
+    .slice()
+    .sort(
+      (a, b) =>
+        Number(a.key === catchAll) - Number(b.key === catchAll) ||
+        value(b) - value(a) ||
+        b.totalTokens - a.totalTokens,
+    );
+  return {
+    bands,
+    valueAt: (period, key, by) => {
+      const amount = periods.get(period)?.get(key) ?? NO_AMOUNT;
+      return by === "cost" ? amount.costUsd : amount.totalTokens;
+    },
   };
 }

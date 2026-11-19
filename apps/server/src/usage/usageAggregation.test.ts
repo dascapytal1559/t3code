@@ -309,18 +309,24 @@ describe("UsageAggregator", () => {
           : item.sessionId === "crew-session"
             ? { origin: "computer", basis: "default", via: "crew", reason: "noCause", cause: true }
             : null,
+      attributeWork: (item, filePath) =>
+        item.cwd === "/repos/app"
+          ? "Tooling"
+          : filePath === "/claude/trader/s.jsonl"
+            ? "Trading"
+            : null,
       onRecord: (entry) => counted.push(entry),
     });
     const outputCopy = { ...record().totals, outputTokens: 80 };
     for (const item of [
-      record({ sessionId: "phone-session", dedupeKey: "msg_1:" }),
+      record({ sessionId: "phone-session", dedupeKey: "msg_1:", cwd: "/repos/app" }),
       record({ sessionId: "phone-session", dedupeKey: "msg_1:", totals: outputCopy }),
       record({ sessionId: "phone-session", timestampMs: Date.parse("2026-07-30T00:00:00Z") }),
       record({ sessionId: "crew-session", model: "unpriced-model" }),
-      record({ sessionId: "terminal-session" }),
     ]) {
       aggregator.add(item, "/claude");
     }
+    aggregator.add(record({ sessionId: "terminal-session" }), "/claude", "/claude/trader/s.jsonl");
     const result = aggregator.finish();
 
     const exported = counted.map((entry) => toUsageExportRecord(entry, false));
@@ -343,6 +349,7 @@ describe("UsageAggregator", () => {
           reason: "noCause",
           cause: true,
         },
+        group: null,
       },
       {
         ...base,
@@ -352,6 +359,7 @@ describe("UsageAggregator", () => {
         tokens: { ...tokens, output: 50 },
         costUsd: expect.closeTo(0.004625, 9),
         origin: null,
+        group: "Trading",
       },
       {
         ...base,
@@ -367,12 +375,68 @@ describe("UsageAggregator", () => {
           reason: "typed",
           promptThreadId: "thread-1",
         },
+        group: "Tooling",
       },
     ]);
     expect(exported.reduce((sum, item) => sum + (item.costUsd ?? 0), 0)).toBeCloseTo(
       result.buckets.reduce((sum, bucket) => sum + bucket.costUsd, 0),
       9,
     );
+  });
+
+  it("splits each bucket by device band and by group, so the parts add up to the bucket", () => {
+    const at = (iso: string) => Date.parse(iso);
+    const aggregator = new UsageAggregator({
+      timeZone: "UTC",
+      sinceDay: "2026-08-01",
+      untilDay: "2026-08-31",
+      rates,
+      attributeOrigin: (item) =>
+        item.sessionId === "phone"
+          ? { origin: "phone", basis: "stamp", reason: "typed" }
+          : item.sessionId === "upkeep"
+            ? { origin: "computer", basis: "default", reason: "upkeep" }
+            : item.sessionId === "early"
+              ? { origin: "computer", basis: "beforeOrigins", reason: "beforeStamps" }
+              : { origin: "computer", basis: "default", reason: "noCause" },
+      attributeWork: (item, filePath) =>
+        item.cwd === "/repos/app"
+          ? "Tooling"
+          : filePath === "/claude/trader/s.jsonl"
+            ? "Trading"
+            : null,
+    });
+    const day7 = at("2026-08-07T04:00:00Z");
+    for (const [item, filePath] of [
+      [record({ sessionId: "phone", cwd: "/repos/app", timestampMs: day7 }), undefined],
+      // A copy counts where its first copy was read, in that copy's transcript.
+      [
+        record({ sessionId: "upkeep", dedupeKey: "k1", timestampMs: day7 }),
+        "/claude/trader/s.jsonl",
+      ],
+      [record({ sessionId: "upkeep", dedupeKey: "k1", timestampMs: day7 }), "/claude/other.jsonl"],
+      [record({ sessionId: "laptop", timestampMs: day7 }), "/claude/other.jsonl"],
+      [
+        record({ sessionId: "early", cwd: "/repos/app", timestampMs: at("2026-08-02T00:00:00Z") }),
+        undefined,
+      ],
+    ] as const) {
+      aggregator.add(item, "/claude", filePath);
+    }
+    const [early, day] = aggregator.finish().buckets;
+
+    const part = record().totals;
+    const tokens =
+      part.uncachedInputTokens +
+      part.cachedInputTokens +
+      part.cacheCreationTokens +
+      part.outputTokens;
+    const cost = day!.costUsd / 3;
+    const amount = [tokens, expect.closeTo(cost, 6)];
+    // A bucket all in one band names it alone.
+    expect(early).toMatchObject({ devices: "unlabelled", work: "Tooling" });
+    expect(day?.devices).toEqual({ phone: amount, upkeep: amount, computer: amount });
+    expect(day?.work).toEqual({ Tooling: amount, Trading: amount, "": amount });
   });
 
   it.each([

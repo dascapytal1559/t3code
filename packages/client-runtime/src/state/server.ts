@@ -1368,6 +1368,8 @@ export function createServerEnvironmentAtoms<R, E>(
         Object.keys(aliases)
           .sort()
           .map((model) => [model, aliases[model]]),
+        // Groups place usage on the server, so a changed group reads Usage again.
+        settings?.usageWorkGroups ?? [],
       ]);
     }).pipe(Atom.withLabel(`environment-data:server:usage-scan-settings:${environmentId}`)),
   );

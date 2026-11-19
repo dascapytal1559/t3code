@@ -1,6 +1,11 @@
 import * as Schema from "effect/Schema";
 
-import { ForwardCompatibleArray, NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import {
+  ForwardCompatibleArray,
+  NonNegativeInt,
+  ProjectId,
+  TrimmedNonEmptyString,
+} from "./baseSchemas.ts";
 
 /** Bump for incompatible UsageSummary changes; skipped unknown array variants need no bump. */
 export const USAGE_CONTRACT_VERSION = 6 as const;
@@ -50,6 +55,24 @@ export const UsageCategoryCost = Schema.Struct({
 });
 export type UsageCategoryCost = typeof UsageCategoryCost.Type;
 
+/** Tokens and cost of part of a bucket. */
+export const UsageSplitAmount = Schema.Tuple([NonNegativeInt, Schema.Number]);
+export type UsageSplitAmount = typeof UsageSplitAmount.Type;
+
+/** A bucket split by key: the one key holding all of it, or each key's part. */
+export const UsageSplit = Schema.Union([
+  Schema.String,
+  Schema.Record(Schema.String, UsageSplitAmount),
+]);
+export type UsageSplit = typeof UsageSplit.Type;
+
+/**
+ * The device band of usage: `upkeep` is the computer's upkeep, and `unlabelled` usage predates
+ * origins (`USAGE_ORIGINS_RECORDED_SINCE`).
+ */
+export const UsageDeviceBand = Schema.Literals(["phone", "computer", "upkeep", "unlabelled"]);
+export type UsageDeviceBand = typeof UsageDeviceBand.Type;
+
 export const UsageBucket = Schema.Struct({
   day: UsageDay,
   hourStart: Schema.optional(TrimmedNonEmptyString),
@@ -69,6 +92,13 @@ export const UsageBucket = Schema.Struct({
   /** Absent from older servers; merges then estimate it from the unpriced record share. */
   unpricedTokens: Schema.optional(NonNegativeInt),
   sessions: NonNegativeInt,
+  /**
+   * The bucket by `UsageDeviceBand`; absent when the server cannot read its T3 prompts. Usage in
+   * no band, or in a band a client does not know, counts as unlabelled.
+   */
+  devices: Schema.optional(UsageSplit),
+  /** The bucket by `usageWorkGroups` name, `""` for usage in no group (Other). */
+  work: Schema.optional(UsageSplit),
 });
 export type UsageBucket = typeof UsageBucket.Type;
 
@@ -252,6 +282,8 @@ export const UsageExportRecord = Schema.Struct({
   ),
   /** Its label is read from a written-down row; until then a later export may relabel it. */
   final: Schema.Boolean,
+  /** The kind-of-work group of the project it ran in; null when it has none. */
+  group: Schema.NullOr(Schema.String),
 });
 export type UsageExportRecord = typeof UsageExportRecord.Type;
 
@@ -336,6 +368,13 @@ export const UsageModelSelector = Schema.Struct({
 });
 export type UsageModelSelector = typeof UsageModelSelector.Type;
 
+/** A kind of work the Usage page splits by: a name and the projects it counts. */
+export const UsageWorkGroup = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  projectIds: Schema.Array(ProjectId),
+});
+export type UsageWorkGroup = typeof UsageWorkGroup.Type;
+
 /** Keeps records matching `include` (all when omitted) and not matching `exclude`. */
 export const UsageModelFilter = Schema.Struct({
   include: Schema.optional(Schema.Array(UsageModelSelector)),
@@ -381,6 +420,8 @@ export const UsageSummary = Schema.Struct({
   modelFilter: Schema.optional(UsageModelFilter),
   /** Absent when the server cannot read its T3 prompts, including servers that predate origins. */
   origins: Schema.optional(UsageOrigins),
+  /** The `usageWorkGroups` names in settings order; absent from servers that predate them. */
+  workGroups: Schema.optional(Schema.Array(Schema.String)),
   /** Absent when the server has no annotations file. */
   annotations: Schema.optional(ForwardCompatibleArray(UsageAnnotation)),
 });

@@ -4,6 +4,7 @@ import {
   type UsageBucket,
   type UsageCategoryCost,
   type UsageDay,
+  type UsageDeviceBand,
   type UsageExportRecord,
   type UsageModelFilter,
   type UsageModelSelector,
@@ -12,6 +13,8 @@ import {
   type UsageOrigins,
   type UsageProviderKind,
   type UsageResolution,
+  type UsageSplit,
+  type UsageSplitAmount,
   type UsageTokenTotals,
 } from "@t3tools/contracts";
 
@@ -74,6 +77,14 @@ interface MutableBucket {
   unpricedTokens: number;
   providerReportedRecords: number;
   sessions: Set<string>;
+  devices: Map<UsageDeviceBand, SplitCell> | null;
+  /** Keyed by group name, `""` for no group. */
+  work: Map<string, SplitCell> | null;
+}
+
+interface SplitCell {
+  tokens: number;
+  costUsd: number;
 }
 
 export interface AggregateOptions {
@@ -93,6 +104,8 @@ export interface AggregateOptions {
     record: UsageRecord,
     sourcePath: string | undefined,
   ) => UsageOriginKey | null;
+  /** Places kept records in a kind-of-work group by their folder, or else their transcript's. */
+  readonly attributeWork?: (record: UsageRecord, filePath: string | undefined) => string | null;
   /** Sees each counted record once, after its copies merge, with its price and origin. */
   readonly onRecord?: (counted: CountedRecord) => void;
 }
@@ -101,11 +114,12 @@ export interface CountedRecord {
   readonly record: UsageRecord;
   readonly priced: PricedUsage;
   readonly origin: UsageOriginKey | null;
+  readonly group: string | null;
 }
 
 /** A counted record in the export's shape; `final` says its origin label is written down. */
 export function toUsageExportRecord(
-  { record, priced, origin }: CountedRecord,
+  { record, priced, origin, group }: CountedRecord,
   final: boolean,
 ): UsageExportRecord {
   return {
@@ -137,7 +151,15 @@ export function toUsageExportRecord(
             ...(origin.root === undefined ? {} : { promptThreadId: origin.root.threadId }),
           },
     final,
+    group,
   };
+}
+
+/** The band a settled origin draws in: upkeep apart from the computer, pre-origins usage unlabelled. */
+function deviceBand(key: UsageOriginKey): UsageDeviceBand {
+  if (key.origin === "phone") return "phone";
+  if (key.basis === "beforeOrigins") return "unlabelled";
+  return key.reason === "upkeep" ? "upkeep" : "computer";
 }
 
 type MutableOriginReasonUsage = {
@@ -298,6 +320,7 @@ interface Contribution {
   /** Null when the first copy fell outside the window. */
   readonly bucket: MutableBucket | null;
   readonly sourcePath: string | undefined;
+  readonly filePath: string | undefined;
 }
 
 /** Deduplicates across the whole scan; Claude copies records into resumed/forked transcripts. */
@@ -339,7 +362,7 @@ export class UsageAggregator {
     }
   }
 
-  add(input: UsageRecord, sourcePath?: string): boolean {
+  add(input: UsageRecord, sourcePath?: string, filePath?: string): boolean {
     if (!keepsUsageRecord(this.#options.modelFilter, input)) return false;
     const record = this.#mapModel(input);
     if (record.dedupeKey !== null) {
@@ -358,14 +381,14 @@ export class UsageAggregator {
 
     const bucket = this.#placeInWindow(record, sourcePath ?? "");
     if (record.dedupeKey !== null) {
-      this.#seen.set(record.dedupeKey, { record, bucket, sourcePath });
+      this.#seen.set(record.dedupeKey, { record, bucket, sourcePath, filePath });
     }
     if (bucket === null) {
       this.#outOfWindow += 1;
       return false;
     }
     // Keyed usage is counted in finish(), once all its copies are merged.
-    if (record.dedupeKey === null) this.#accumulate(bucket, record, sourcePath);
+    if (record.dedupeKey === null) this.#accumulate(bucket, record, sourcePath, filePath);
     if (record.sessionId.length > 0) bucket.sessions.add(record.sessionId);
     return true;
   }
@@ -381,7 +404,12 @@ export class UsageAggregator {
     return this.#bucketFor(day, hourIndex, record.provider, record.model, source);
   }
 
-  #accumulate(bucket: MutableBucket, record: UsageRecord, sourcePath: string | undefined): void {
+  #accumulate(
+    bucket: MutableBucket,
+    record: UsageRecord,
+    sourcePath: string | undefined,
+    filePath: string | undefined,
+  ): void {
     const priced = priceUsage(this.#options.rates, record, this.#options.priceOverrides);
 
     const totals = bucket.totals;
@@ -423,7 +451,17 @@ export class UsageAggregator {
     }
     if (priced.costSource === "providerReported") bucket.providerReportedRecords += 1;
     const key = this.#options.attributeOrigin?.(record, sourcePath) ?? null;
-    this.#options.onRecord?.({ record, priced, origin: key });
+    const group = this.#options.attributeWork?.(record, filePath) ?? null;
+    this.#options.onRecord?.({ record, priced, origin: key, group });
+    const tokens =
+      record.totals.uncachedInputTokens +
+      record.totals.cachedInputTokens +
+      record.totals.cacheCreationTokens +
+      record.totals.outputTokens;
+    if (bucket.devices !== null && key !== null) {
+      addToCell(bucket.devices, deviceBand(key), tokens, priced.costUsd);
+    }
+    if (bucket.work !== null) addToCell(bucket.work, group ?? "", tokens, priced.costUsd);
     if (this.#originUsage !== null && key !== null) {
       const originKey = `${originKeyString(key)}\u0000${record.provider}\u0000${sourcePath ?? ""}`;
       let origin = this.#originUsage.get(originKey);
@@ -548,6 +586,8 @@ export class UsageAggregator {
         unpricedTokens: 0,
         providerReportedRecords: 0,
         sessions: new Set<string>(),
+        devices: this.#options.attributeOrigin === undefined ? null : new Map(),
+        work: this.#options.attributeWork === undefined ? null : new Map(),
       };
       this.#buckets.set(key, bucket);
     }
@@ -556,8 +596,8 @@ export class UsageAggregator {
   }
 
   finish(): AggregateResult {
-    for (const { record, bucket, sourcePath } of this.#seen.values()) {
-      if (bucket !== null) this.#accumulate(bucket, record, sourcePath);
+    for (const { record, bucket, sourcePath, filePath } of this.#seen.values()) {
+      if (bucket !== null) this.#accumulate(bucket, record, sourcePath, filePath);
     }
     this.#seen.clear();
     const buckets: UsageBucket[] = [];
@@ -595,6 +635,8 @@ export class UsageAggregator {
         unpricedRecords: bucket.unpricedRecords,
         unpricedTokens: bucket.unpricedTokens,
         sessions: bucket.sessions.size,
+        ...(bucket.devices === null ? {} : { devices: splitAmounts(bucket.devices) }),
+        ...(bucket.work === null ? {} : { work: splitAmounts(bucket.work) }),
       });
     }
     buckets.sort(
@@ -633,6 +675,23 @@ function finishOrigins(
     })),
     prompts: [...prompts.values()],
   };
+}
+
+function addToCell<K>(cells: Map<K, SplitCell>, key: K, tokens: number, costUsd: number): void {
+  const cell = cells.get(key);
+  if (cell === undefined) cells.set(key, { tokens, costUsd });
+  else {
+    cell.tokens += tokens;
+    cell.costUsd += costUsd;
+  }
+}
+
+function splitAmounts(cells: ReadonlyMap<string, SplitCell>): UsageSplit {
+  if (cells.size === 1) return cells.keys().next().value!;
+  const amounts: Record<string, UsageSplitAmount> = {};
+  // A micro-dollar keeps a year of buckets' splits small on the wire.
+  for (const [key, cell] of cells) amounts[key] = [cell.tokens, roundUsd(cell.costUsd)];
+  return amounts;
 }
 
 function roundUsd(value: number): number {

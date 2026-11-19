@@ -1,25 +1,22 @@
 import { View } from "react-native";
 
-import type { DailyTotals } from "@t3tools/shared/usageMerge";
-
-import { buildChartDays, type UsageChartMetric } from "./usageChartData";
-import { useProviderColors } from "./usageProviders";
+import { buildChartDays, type UsageChartSeries } from "./usageChartData";
 
 export interface UsageDailyChartProps {
   readonly days: readonly string[];
-  readonly daily: readonly DailyTotals[];
-  readonly metric: UsageChartMetric;
+  /** Bottom first. */
+  readonly series: readonly UsageChartSeries[];
+  readonly valueAt: (period: string, key: string) => number;
   readonly height: number;
 }
 
-export function UsageDailyChart({ days, daily, metric, height }: UsageDailyChartProps) {
-  const colors = useProviderColors();
-  const chartDays = buildChartDays(days, daily, metric);
+export function UsageDailyChart({ days, series, valueAt, height }: UsageDailyChartProps) {
+  const chartDays = buildChartDays(days, series, valueAt);
   const max = chartDays.reduce((peak, day) => Math.max(peak, day.total), 0);
 
   return (
     <View style={{ height }} className="flex-row items-end gap-px">
-      {/* Use column-reverse: provider values are bottom-first and Hermes lacks toReversed. */}
+      {/* Use column-reverse: series are bottom-first and Hermes lacks toReversed. */}
       {chartDays.map((day) => (
         <View
           key={day.day}
@@ -28,10 +25,10 @@ export function UsageDailyChart({ days, daily, metric, height }: UsageDailyChart
         >
           {day.values.map((entry) => (
             <View
-              key={entry.provider}
+              key={entry.key}
               style={{
                 height: max === 0 ? 0 : (entry.value / max) * height,
-                backgroundColor: colors[entry.provider],
+                backgroundColor: entry.color,
               }}
             />
           ))}

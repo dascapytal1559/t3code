@@ -11,6 +11,7 @@ import {
 import {
   isCompatibleUsageContractVersion,
   isModelCostUnknown,
+  usageSplitBands,
   type DailyTotals,
   type MergedUsage,
 } from "@t3tools/shared/usageMerge";
@@ -46,8 +47,15 @@ import { UsageDailyChart } from "./UsageDailyChart";
 import { toggleUsageEnvironment } from "./usageEnvironmentSelection";
 import { useRefreshLimits } from "./UsageLimitsSection";
 import { UsageLimitsSection } from "./UsageLimitsPooled";
-import type { UsageChartMetric } from "./usageChartData";
-import { PROVIDER_LABEL, useProviderColors, useUsageMixColors } from "./usageProviders";
+import type { UsageChartMetric, UsageChartSeries } from "./usageChartData";
+import {
+  PROVIDER_LABEL,
+  PROVIDER_ORDER,
+  useProviderColors,
+  useUsageMixColors,
+} from "./usageProviders";
+import { BREAKDOWN_OPTIONS, presentBand, type UsageBreakdown } from "./usageSplitBands";
+import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 
 type UsageView = UsageChartMetric | "limits";
 const VIEW_OPTIONS = [
@@ -116,6 +124,11 @@ function UsageScreen(props: {
     });
   }
   const { view } = selection;
+  const [breakdown, setBreakdown] = useState<UsageBreakdown>("provider");
+  const breakdownOptions = BREAKDOWN_OPTIONS.map((option) => ({
+    ...option,
+    label: m(option.label),
+  }));
   const setView = (view: UsageView) => setSelection({ params: props.tabParam, view });
   const [measuredWidth, setWidth] = useState(0);
   // A workspace pane knows its width in the render that resizes it; measuring lags a frame.
@@ -198,17 +211,60 @@ function UsageScreen(props: {
     });
   };
 
+  const providerColors = useProviderColors();
+  const dark = useAppearancePreferences().themeAppearance === "dark";
+  const splitBands =
+    breakdown === "provider" ? null : usageSplitBands(merged, breakdown, metric, isPast24Hours);
+  const bands = (splitBands?.bands ?? []).map((band) => {
+    const shown = presentBand(band, dark);
+    return { ...band, color: shown.color, label: shown.named ? shown.label : m(shown.label) };
+  });
+  const totalsByPeriod = new Map(chartTotals.map((totals) => [totals.day, totals]));
+  const series: readonly UsageChartSeries[] =
+    splitBands === null
+      ? PROVIDER_ORDER.map((provider) => ({
+          key: provider,
+          label: PROVIDER_LABEL[provider],
+          color: providerColors[provider],
+        }))
+      : bands;
+  const valueAt = (period: string, key: string) => {
+    if (splitBands !== null) return splitBands.valueAt(period, key, metric);
+    const entry = totalsByPeriod.get(period)?.byProvider.get(key as UsageProviderKind);
+    return entry === undefined ? 0 : metric === "cost" ? entry.costUsd : entry.totalTokens;
+  };
   const chart = {
     merged,
     days: chartDays,
-    daily: chartTotals,
+    series,
+    valueAt,
+    hasActivity: chartTotals.some((period) => period.totalTokens > 0),
+    legend:
+      splitBands === null
+        ? merged.providers.map((provider) => ({
+            key: provider.provider,
+            label: PROVIDER_LABEL[provider.provider],
+            color: providerColors[provider.provider],
+          }))
+        : bands,
     metric,
     sinceDay: window.sinceDay,
     untilDay: window.untilDay,
     isPast24Hours,
     timeZone: window.timeZone,
   };
-  const providers = <ProviderSection merged={merged} metric={metric} compact={wide} />;
+  const providers =
+    splitBands === null ? (
+      <ProviderSection merged={merged} metric={metric} compact={wide} />
+    ) : (
+      <BandSection
+        title={m(BREAKDOWN_OPTIONS.find((option) => option.value === breakdown)!.label)}
+        bands={bands}
+        merged={merged}
+        metric={metric}
+        compact={wide}
+      />
+    );
 
   const showEnvironmentFilter = environments.length > 0 || selectedEnvironmentIds !== null;
   const selectEnvironment = (value: string) => {
@@ -319,6 +375,12 @@ function UsageScreen(props: {
                       size="compact"
                     />
                   )}
+                  <SegmentedControl
+                    options={breakdownOptions}
+                    selected={breakdown}
+                    onSelect={setBreakdown}
+                    size="compact"
+                  />
                   <ChatGptUsageSummary selectedEnvironmentIds={selectedEnvironmentIds} />
                   {merged.duplicateSources.length > 0 ? (
                     <Text className="text-sm text-foreground-muted">
@@ -452,7 +514,10 @@ function UsageUpdating({
 function ChartCard(props: {
   readonly merged: MergedUsage;
   readonly days: readonly string[];
-  readonly daily: readonly DailyTotals[];
+  readonly series: readonly UsageChartSeries[];
+  readonly valueAt: (period: string, key: string) => number;
+  readonly hasActivity: boolean;
+  readonly legend: readonly UsageChartSeries[];
   readonly metric: UsageChartMetric;
   readonly sinceDay: string;
   readonly untilDay: string;
@@ -465,13 +530,16 @@ function ChartCard(props: {
   readonly fill?: boolean;
 }) {
   const { merged, metric } = props;
-  const colors = useProviderColors();
   const locale = useLocale();
-  const hasActivity = props.daily.some((period) => period.totalTokens > 0);
   const [fillHeight, setFillHeight] = useState(0);
   const height = props.fill ? Math.max(fillHeight, props.height) : props.height;
-  const chart = hasActivity ? (
-    <UsageDailyChart days={props.days} daily={props.daily} metric={metric} height={height} />
+  const chart = props.hasActivity ? (
+    <UsageDailyChart
+      days={props.days}
+      series={props.series}
+      valueAt={props.valueAt}
+      height={height}
+    />
   ) : (
     <View style={{ height }} className="items-center justify-center">
       <Text className="text-base text-foreground-muted">
@@ -517,15 +585,10 @@ function ChartCard(props: {
           </Text>
         </View>
         <View className="flex-row flex-wrap items-center gap-x-4 gap-y-1">
-          {merged.providers.map((provider) => (
-            <View key={provider.provider} className="flex-row items-center gap-1.5">
-              <View
-                className="size-2 rounded-full"
-                style={{ backgroundColor: colors[provider.provider] }}
-              />
-              <Text className="text-xs text-foreground-muted">
-                {PROVIDER_LABEL[provider.provider]}
-              </Text>
+          {props.legend.map((entry) => (
+            <View key={entry.key} className="flex-row items-center gap-1.5">
+              <View className="size-2 rounded-full" style={{ backgroundColor: entry.color }} />
+              <Text className="text-xs text-foreground-muted">{entry.label}</Text>
             </View>
           ))}
         </View>
@@ -554,6 +617,85 @@ function UsageSummary(props: { readonly merged: MergedUsage; readonly metric: Us
             })}
       </Text>
     </View>
+  );
+}
+
+/** Device or kind-of-work bands, in the shape of the provider list. */
+function BandSection(props: {
+  readonly title: string;
+  readonly bands: readonly {
+    readonly key: string;
+    readonly label: string;
+    readonly color: string;
+    readonly costUsd: number;
+    readonly totalTokens: number;
+  }[];
+  readonly merged: MergedUsage;
+  readonly metric: UsageChartMetric;
+  readonly compact: boolean;
+}) {
+  const { merged, metric } = props;
+  const gt = useGT();
+  if (props.bands.length === 0) return null;
+  return (
+    <SettingsSection title={props.title}>
+      {props.bands.map((band, index) => {
+        const whole = metric === "cost" ? merged.costUsd : merged.totalTokens;
+        const share =
+          whole === 0 ? 0 : (metric === "cost" ? band.costUsd : band.totalTokens) / whole;
+        return (
+          <View
+            key={band.key}
+            className={cn(
+              props.compact ? "gap-0.5 px-4 py-3" : "gap-2 p-4",
+              index > 0 && "border-t border-border-subtle",
+            )}
+          >
+            <View className="flex-row items-baseline justify-between gap-3">
+              <View className="flex-row items-center gap-2">
+                <View className="size-2.5 rounded-full" style={{ backgroundColor: band.color }} />
+                <Text
+                  className={
+                    props.compact ? "text-base text-foreground" : "text-lg text-foreground"
+                  }
+                >
+                  {band.label}
+                </Text>
+              </View>
+              <Text
+                className={
+                  props.compact
+                    ? "text-base tabular-nums text-foreground"
+                    : "text-lg tabular-nums text-foreground"
+                }
+              >
+                {metric === "cost" ? formatUsd(band.costUsd) : formatTokens(band.totalTokens)}
+              </Text>
+            </View>
+            {props.compact ? null : (
+              <View className="h-1 flex-row overflow-hidden rounded-full bg-subtle">
+                <View
+                  className="h-full rounded-full"
+                  style={{ flex: share, backgroundColor: band.color }}
+                />
+                <View style={{ flex: 1 - share }} />
+              </View>
+            )}
+            <Text className="text-sm text-foreground-muted">
+              {metric === "cost"
+                ? gt("{share} of cost · {tokens} tokens", {
+                    share: formatPercent(share),
+                    tokens: formatTokens(band.totalTokens),
+                  })
+                : gt("{share} of tokens · {cost}", {
+                    share: formatPercent(share),
+                    cost: formatUsd(band.costUsd),
+                  })}
+            </Text>
+          </View>
+        );
+      })}
+    </SettingsSection>
   );
 }
 
