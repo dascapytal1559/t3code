@@ -21,6 +21,7 @@ import * as TestClock from "effect/testing/TestClock";
 
 import * as ProviderHost from "./ProviderHost.ts";
 import { makeManagedServerProvider } from "./managedProvider.ts";
+import type { ProviderUsageLimitsReading } from "./snapshot.ts";
 
 const emptyCapabilities = createModelCapabilities({ optionDescriptors: [] });
 const fastModeCapabilities = createModelCapabilities({
@@ -1042,6 +1043,102 @@ describe("makeManagedServerProvider", () => {
         const refreshed = yield* provider.refresh;
         assert.strictEqual(refreshed.auth.label, undefined);
         assert.deepStrictEqual(refreshed.usageLimits, usageLimits);
+      }),
+    ).pipe(Effect.provide(layerAlwaysRunTest)),
+  );
+
+  const signedInSnapshot: ServerProvider = {
+    ...refreshedSnapshot,
+    auth: { status: "authenticated", email: "dev@example.com" },
+    usageLimits: {
+      checkedAt: "2026-04-10T00:00:01.000Z",
+      windows: [{ id: "five_hour", kind: "session", label: "Session", usedPercent: 10 }],
+    },
+  };
+  const limitsOnlyHarness = Effect.fnUntraced(function* (input: {
+    readonly probed: ServerProvider;
+    readonly reading: ProviderUsageLimitsReading | undefined;
+  }) {
+    const checks = yield* Ref.make(0);
+    const reads = yield* Ref.make(0);
+    const reading = yield* Ref.make(input.reading);
+    const provider = yield* makeManagedServerProvider<TestSettings>({
+      resolveMaintenance: () => Effect.succeed(maintenanceCapabilities),
+      getSettings: Effect.succeed({ enabled: true }),
+      streamSettings: Stream.empty,
+      haveSettingsChanged: (previous, next) => previous.enabled !== next.enabled,
+      initialSnapshot: () => Effect.succeed(initialSnapshot),
+      checkProvider: Ref.update(checks, (count) => count + 1).pipe(Effect.as(input.probed)),
+      readUsageLimits: () =>
+        Ref.update(reads, (count) => count + 1).pipe(Effect.andThen(Ref.get(reading))),
+      refreshOnInterval: false,
+    });
+    yield* Stream.take(provider.streamChanges, 1).pipe(Stream.runDrain);
+    const counts = Effect.all({ checks: Ref.get(checks), reads: Ref.get(reads) });
+    return { provider, reading, counts };
+  });
+
+  it.effect("refreshes limits alone without the full check, which stays whole", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const readLimits = {
+          checkedAt: "2026-04-10T00:00:05.000Z",
+          windows: [{ id: "five_hour", kind: "session", label: "Session", usedPercent: 40 }],
+        } as const;
+        const { provider, reading, counts } = yield* limitsOnlyHarness({
+          probed: signedInSnapshot,
+          reading: { usageLimits: readLimits, email: "DEV@example.com" },
+        });
+
+        yield* provider.refreshUsageLimitsOnly!;
+        assert.deepStrictEqual(yield* counts, { checks: 1, reads: 1 });
+        assert.deepStrictEqual(yield* provider.getSnapshot, {
+          ...signedInSnapshot,
+          usageLimits: readLimits,
+        });
+
+        // A failed read keeps the published windows, as a failed full check does.
+        yield* Ref.set(reading, {
+          usageLimits: {
+            checkedAt: "2026-04-10T00:00:06.000Z",
+            windows: [],
+            unavailable: { reason: "probeFailed" },
+          },
+        });
+        yield* provider.refreshUsageLimitsOnly!;
+        assert.deepStrictEqual((yield* provider.getSnapshot).usageLimits, readLimits);
+
+        yield* provider.refresh;
+        assert.deepStrictEqual(yield* counts, { checks: 2, reads: 2 });
+      }),
+    ).pipe(Effect.provide(layerAlwaysRunTest)),
+  );
+
+  it.effect.each([
+    {
+      name: "a provider that is not ready",
+      probed: { ...signedInSnapshot, status: "warning" },
+      reading: { usageLimits: signedInSnapshot.usageLimits! },
+      reads: 0,
+    },
+    {
+      name: "a read that could not reach the provider",
+      probed: signedInSnapshot,
+      reading: undefined,
+      reads: 1,
+    },
+    {
+      name: "a read from another account",
+      probed: signedInSnapshot,
+      reading: { usageLimits: signedInSnapshot.usageLimits!, email: "other@example.com" },
+      reads: 1,
+    },
+  ] as const)("runs the full check for $name", ({ probed, reading, reads }) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const harness = yield* limitsOnlyHarness({ probed, reading });
+        yield* harness.provider.refreshUsageLimitsOnly!;
+        assert.deepStrictEqual(yield* harness.counts, { checks: 2, reads });
       }),
     ).pipe(Effect.provide(layerAlwaysRunTest)),
   );

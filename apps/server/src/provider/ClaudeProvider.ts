@@ -58,6 +58,7 @@ import {
   readClaudeSettingsEnv,
 } from "./Drivers/ClaudeSkills.ts";
 import type { ProviderWorkspaceSnapshot } from "@t3tools/provider-core/server/driver";
+import type { ProviderUsageLimitsReading } from "@t3tools/provider-core/server/snapshot";
 import { makeUnavailableUsageLimits } from "@t3tools/provider-core/server/usageLimits";
 import type { readClaudeOauthUsage } from "./claudeResetCredits.ts";
 import {
@@ -664,6 +665,76 @@ export const probeClaudeWorkspaceSnapshot = Effect.fn("probeClaudeWorkspaceSnaps
   };
 });
 
+type ResolveClaudeOauthUsage = (
+  version: string,
+) => Effect.Effect<Effect.Success<ReturnType<typeof readClaudeOauthUsage>>>;
+
+const claudeUsageLimits = Effect.fn("claudeUsageLimits")(function* (input: {
+  readonly capabilities: ClaudeCapabilitiesProbe;
+  readonly version: string | null;
+  readonly checkedAt: string;
+  readonly scopedLimitNames: Ref.Ref<ClaudeScopedLimitNames> | undefined;
+  readonly resolveOauthUsage: ResolveClaudeOauthUsage | undefined;
+}) {
+  const { capabilities, version, checkedAt, scopedLimitNames, resolveOauthUsage } = input;
+  const probedUsage = capabilities.usage;
+  // Fork: the probe's usage is cached for minutes; this read runs on every check, as the reset read did.
+  const oauthUsage =
+    resolveOauthUsage &&
+    capabilities.subscriptionType &&
+    probedUsage?.rate_limits_available &&
+    probedUsage.rate_limits &&
+    version
+      ? yield* resolveOauthUsage(version)
+      : undefined;
+  const usage =
+    oauthUsage?.rateLimits && probedUsage?.rate_limits
+      ? {
+          // The direct read skips spend, so the probe's spend stays.
+          response: {
+            rate_limits_available: true,
+            rate_limits: { ...probedUsage.rate_limits, ...oauthUsage.rateLimits },
+          },
+          checkedAt: oauthUsage.checkedAt,
+        }
+      : probedUsage
+        ? { response: probedUsage, checkedAt: capabilities.usageCheckedAt ?? checkedAt }
+        : undefined;
+  const usageLimits = !usage
+    ? makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" })
+    : scopedLimitNames
+      ? yield* recordClaudeUsageResponse(scopedLimitNames, usage)
+      : claudeUsageResponseToLimits(usage).limits;
+  const resetCredits = oauthUsage?.resetCredits;
+  return resetCredits ? { ...usageLimits, resetCredits } : usageLimits;
+});
+
+/**
+ * The limits a full check would report, from the cached account probe and the OAuth usage read,
+ * without the version and skills checks. A failed probe or a signed-out account is the full
+ * check's to report, so those read as undefined.
+ */
+export const readClaudeUsageLimitsOnly = Effect.fn("readClaudeUsageLimitsOnly")(function* (input: {
+  readonly capabilities: Effect.Effect<
+    ClaudeCapabilitiesProbe | undefined,
+    ClaudeCapabilitiesProbeError
+  >;
+  readonly version: string | null;
+  readonly scopedLimitNames?: Ref.Ref<ClaudeScopedLimitNames> | undefined;
+  readonly resolveOauthUsage?: ResolveClaudeOauthUsage | undefined;
+}): Effect.fn.Return<ProviderUsageLimitsReading | undefined> {
+  const capabilities = yield* input.capabilities.pipe(Effect.orElseSucceed(() => undefined));
+  if (!capabilities || claudeAuthStatus(capabilities) === "unauthenticated") return undefined;
+  const usageLimits = yield* claudeUsageLimits({
+    capabilities,
+    version: input.version,
+    checkedAt: DateTime.formatIso(yield* DateTime.now),
+    scopedLimitNames: input.scopedLimitNames,
+    resolveOauthUsage: input.resolveOauthUsage,
+  });
+  return { usageLimits, email: capabilities.email, workspaceId: capabilities.workspaceId };
+});
+
 export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(function* (
   claudeSettings: ClaudeSettings,
   resolveCapabilities?: (
@@ -674,9 +745,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   modelCatalog: ClaudeModelCatalog = BUNDLED_CLAUDE_MODEL_CATALOG,
   /** Shared with the adapter so turn events reuse the scoped-bucket names this probe saw. */
   scopedLimitNames?: Ref.Ref<ClaudeScopedLimitNames>,
-  resolveOauthUsage?: (
-    version: string,
-  ) => Effect.Effect<Effect.Success<ReturnType<typeof readClaudeOauthUsage>>>,
+  resolveOauthUsage?: ResolveClaudeOauthUsage,
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
@@ -869,35 +938,13 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       authMethod: capabilities.tokenSource,
       apiKeySource: capabilities.apiKeySource,
     });
-  const probedUsage = capabilities.usage;
-  // Fork: the probe's usage is cached for minutes; this read runs on every check, as the reset read did.
-  const oauthUsage =
-    resolveOauthUsage &&
-    capabilities.subscriptionType &&
-    probedUsage?.rate_limits_available &&
-    probedUsage.rate_limits &&
-    parsedVersion
-      ? yield* resolveOauthUsage(parsedVersion)
-      : undefined;
-  const usage =
-    oauthUsage?.rateLimits && probedUsage?.rate_limits
-      ? {
-          // The direct read skips spend, so the probe's spend stays.
-          response: {
-            rate_limits_available: true,
-            rate_limits: { ...probedUsage.rate_limits, ...oauthUsage.rateLimits },
-          },
-          checkedAt: oauthUsage.checkedAt,
-        }
-      : probedUsage
-        ? { response: probedUsage, checkedAt: capabilities.usageCheckedAt ?? checkedAt }
-        : undefined;
-  const usageLimits = !usage
-    ? makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" })
-    : scopedLimitNames
-      ? yield* recordClaudeUsageResponse(scopedLimitNames, usage)
-      : claudeUsageResponseToLimits(usage).limits;
-  const resetCredits = oauthUsage?.resetCredits;
+  const usageLimits = yield* claudeUsageLimits({
+    capabilities,
+    version: parsedVersion,
+    checkedAt,
+    scopedLimitNames,
+    resolveOauthUsage,
+  });
   return buildServerProvider({
     presentation: CLAUDE_PRESENTATION,
     enabled: claudeSettings.enabled,
@@ -917,7 +964,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         ...(authMetadata ? authMetadata : {}),
       },
       ...(versionUpgradeMessage ? { message: versionUpgradeMessage } : {}),
-      usageLimits: resetCredits ? { ...usageLimits, resetCredits } : usageLimits,
+      usageLimits,
     },
   });
 });

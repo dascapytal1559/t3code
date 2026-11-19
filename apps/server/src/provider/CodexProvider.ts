@@ -30,6 +30,7 @@ import type {
   ProviderOptionDescriptor,
   ServerProviderModel,
   ServerProviderSkill,
+  ServerProviderUsageLimits,
 } from "@t3tools/contracts";
 import { PREFERRED_DEFAULT_CODEX_MODELS, ServerSettingsError } from "@t3tools/contracts";
 
@@ -51,6 +52,7 @@ import {
 } from "@t3tools/provider-core/server/snapshotProbe";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import { makeUnavailableUsageLimits } from "@t3tools/provider-core/server/usageLimits";
+import type { ProviderUsageLimitsReading } from "@t3tools/provider-core/server/snapshot";
 import {
   codexRateLimitsFailureMessage,
   codexRateLimitsToLimits,
@@ -726,7 +728,7 @@ const readCodexRateLimits = (
     ),
   );
 
-const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(function* (input: {
+interface CodexProbeInput {
   readonly probeTimeoutMs: number;
   readonly binaryPath: string;
   readonly homePath?: string;
@@ -734,7 +736,9 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
   readonly cwd: string;
   readonly environment?: NodeJS.ProcessEnv;
   readonly skipNativeUsage?: boolean;
-}) {
+}
+
+const openCodexProbeClient = Effect.fn("openCodexProbeClient")(function* (input: CodexProbeInput) {
   const spawnedAtMs = DateTime.toEpochMillis(yield* DateTime.now);
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const processScope = yield* Scope.make();
@@ -751,7 +755,65 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
   );
   const opened = yield* withCodexAppServerClient(input).pipe(Scope.provide(processScope));
   pid = opened.pid;
-  const { client, initialize } = opened;
+  return { client: opened.client, initialize: opened.initialize, spawnedAtMs };
+});
+
+// Only a confirmed native route may probe or publish the login's quota.
+const readCodexConfigAndUsage = (
+  client: CodexClient.CodexAppServerClient["Service"],
+  account: CodexSchema.V2GetAccountResponse,
+  deadlineMs: number,
+  skipNativeUsage: boolean | undefined,
+) =>
+  withCodexDiscoveryDeadline(
+    client.request("config/read", { includeLayers: false }),
+    deadlineMs,
+    CODEX_CONFIG_PROBE_TIMEOUT_MS,
+  ).pipe(
+    Effect.catch(() => Effect.logDebug("Codex config read failed.").pipe(Effect.as(undefined))),
+    Effect.flatMap((config) => {
+      const nativeUsage =
+        !skipNativeUsage &&
+        config !== undefined &&
+        codexRoutesSpendNativeQuota(account, config.config);
+      const readUsage: Effect.Effect<CodexRateLimitsProbe | undefined> = nativeUsage
+        ? readCodexRateLimits(client, deadlineMs)
+        : Effect.undefined;
+      return readUsage.pipe(
+        Effect.map((rateLimits) => ({ config: config?.config, nativeUsage, rateLimits })),
+      );
+    }),
+  );
+
+function codexUsageLimitsFromProbe(input: {
+  readonly nativeUsage: boolean;
+  readonly rateLimits: CodexRateLimitsProbe | undefined;
+  readonly accountMessage: string | undefined;
+  readonly checkedAt: string;
+}): ServerProviderUsageLimits {
+  const { nativeUsage, rateLimits, accountMessage, checkedAt } = input;
+  // Sign-in guidance still applies when Codex itself says it needs an OpenAI login.
+  return !nativeUsage && !accountMessage
+    ? makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" })
+    : rateLimits === undefined || "failure" in rateLimits
+      ? makeUnavailableUsageLimits({
+          checkedAt,
+          reason: "probeFailed",
+          ...(accountMessage ? { message: accountMessage } : {}),
+          ...(rateLimits ? { message: rateLimits.failure } : {}),
+        })
+      : codexRateLimitsToLimits({
+          snapshot: rateLimits.snapshot,
+          rateLimitsByLimitId: rateLimits.rateLimitsByLimitId,
+          resetCredits: rateLimits.resetCredits,
+          checkedAt,
+        });
+}
+
+const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(function* (
+  input: CodexProbeInput,
+) {
+  const { client, initialize, spawnedAtMs } = yield* openCodexProbeClient(input);
 
   const versionMatch = initialize.userAgent.match(/\/([^\s]+)/);
   const version = versionMatch ? versionMatch[1] : undefined;
@@ -780,30 +842,7 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
           })
         : withCodexDiscoveryDeadline(requestAllCodexModels(client), deadlineMs),
       // The shared catalog must exclude config from the server's launch project.
-      withCodexDiscoveryDeadline(
-        client.request("config/read", { includeLayers: false }),
-        deadlineMs,
-        CODEX_CONFIG_PROBE_TIMEOUT_MS,
-      ).pipe(
-        Effect.catch(() => Effect.logDebug("Codex config read failed.").pipe(Effect.as(undefined))),
-        Effect.flatMap((config) => {
-          // Only a confirmed native route may probe or publish the login's quota.
-          const nativeUsage =
-            !input.skipNativeUsage &&
-            config !== undefined &&
-            codexRoutesSpendNativeQuota(accountResponse, config.config);
-          const readUsage: Effect.Effect<CodexRateLimitsProbe | undefined> = nativeUsage
-            ? readCodexRateLimits(client, deadlineMs)
-            : Effect.undefined;
-          return readUsage.pipe(
-            Effect.map((rateLimits) => ({
-              config: config?.config,
-              nativeUsage,
-              rateLimits,
-            })),
-          );
-        }),
-      ),
+      readCodexConfigAndUsage(client, accountResponse, deadlineMs, input.skipNativeUsage),
     ],
     { concurrency: "unbounded" },
   );
@@ -1130,23 +1169,12 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
           ? expandHomePath(codexSettings.homePath, yield* HostProcess.HomeDirectory)
           : undefined,
       );
-  // Sign-in guidance still applies when Codex itself says it needs an OpenAI login.
-  const usageLimits =
-    !snapshot.nativeUsage && !accountStatus.message
-      ? makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" })
-      : snapshot.rateLimits === undefined || "failure" in snapshot.rateLimits
-        ? makeUnavailableUsageLimits({
-            checkedAt,
-            reason: "probeFailed",
-            ...(accountStatus.message ? { message: accountStatus.message } : {}),
-            ...(snapshot.rateLimits ? { message: snapshot.rateLimits.failure } : {}),
-          })
-        : codexRateLimitsToLimits({
-            snapshot: snapshot.rateLimits.snapshot,
-            rateLimitsByLimitId: snapshot.rateLimits.rateLimitsByLimitId,
-            resetCredits: snapshot.rateLimits.resetCredits,
-            checkedAt,
-          });
+  const usageLimits = codexUsageLimitsFromProbe({
+    nativeUsage: snapshot.nativeUsage === true,
+    rateLimits: snapshot.rateLimits,
+    accountMessage: accountStatus.message,
+    checkedAt,
+  });
 
   return buildServerProvider({
     presentation: CODEX_PRESENTATION,
@@ -1187,6 +1215,66 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
       ...(managedAuth ? {} : { usageLimits }),
     },
   });
+});
+
+/**
+ * The limits a full check would report, from the app-server's account, config and usage reads,
+ * without skills and model discovery. Undefined when Codex could not answer or wants a sign-in,
+ * which only the full check reports.
+ */
+export const readCodexUsageLimitsOnly = Effect.fn("readCodexUsageLimitsOnly")(function* (
+  codexSettings: CodexSettings,
+  environment?: NodeJS.ProcessEnv,
+): Effect.fn.Return<
+  ProviderUsageLimitsReading | undefined,
+  never,
+  ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+> {
+  if (!codexSettings.enabled) return undefined;
+  const resolvedEnvironment = providerProbeEnvironment(environment ?? process.env);
+  const probeTimeoutMs = resolveProviderProbeTimeoutMs(
+    "codex",
+    CODEX_AUTH_PROBE_TIMEOUT_MS,
+    resolvedEnvironment,
+  );
+  const read = Effect.gen(function* () {
+    const { client, spawnedAtMs } = yield* openCodexProbeClient({
+      probeTimeoutMs,
+      binaryPath: codexSettings.binaryPath,
+      homePath: codexSettings.homePath,
+      launchArgs: resolveCodexLaunchArgs(codexSettings.launchArgs, resolvedEnvironment),
+      cwd: process.cwd(),
+      environment: resolvedEnvironment,
+    });
+    const account = yield* client.request("account/read", {});
+    if (!account.account) return undefined;
+    const deadlineMs = spawnedAtMs + probeTimeoutMs - CODEX_DISCOVERY_MARGIN_MS;
+    const { nativeUsage, rateLimits } = yield* readCodexConfigAndUsage(
+      client,
+      account,
+      deadlineMs,
+      false,
+    );
+    const email = codexAccountEmail(account.account);
+    return {
+      usageLimits: codexUsageLimitsFromProbe({
+        nativeUsage,
+        rateLimits,
+        accountMessage: undefined,
+        checkedAt: DateTime.formatIso(yield* DateTime.now),
+      }),
+      ...(email ? { email } : {}),
+      ...(rateLimits && "accountId" in rateLimits && rateLimits.accountId?.trim()
+        ? { workspaceId: rateLimits.accountId.trim() }
+        : {}),
+    };
+  });
+  const result = yield* read.pipe(
+    Effect.timeoutOption(Duration.millis(probeTimeoutMs)),
+    Effect.scoped,
+    Effect.option,
+  );
+  return Option.flatten(result).pipe(Option.getOrUndefined);
 });
 
 export { makePendingCodexProvider };

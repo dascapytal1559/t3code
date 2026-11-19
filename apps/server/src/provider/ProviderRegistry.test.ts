@@ -51,11 +51,16 @@ import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 import {
   checkCodexProviderStatus,
   mapCodexModelCapabilities,
+  readCodexUsageLimitsOnly,
   type CodexAppServerProviderSnapshot,
 } from "./CodexProvider.ts";
 import { BUNDLED_CLAUDE_MODEL_CATALOG } from "./ClaudeModelCatalog.ts";
 import { claudeOauthUsageRateLimits } from "./claudeUsageLimits.ts";
-import { type ClaudeCapabilitiesProbe, checkClaudeProviderStatus } from "./ClaudeProvider.ts";
+import {
+  type ClaudeCapabilitiesProbe,
+  checkClaudeProviderStatus,
+  readClaudeUsageLimitsOnly,
+} from "./ClaudeProvider.ts";
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as AntigravityInstallation from "./AntigravityInstallation.ts";
 import * as ModelManifest from "./ModelManifest.ts";
@@ -999,6 +1004,88 @@ it.layer(
         assert.strictEqual(status.auth.status, "authenticated");
         assert.isUndefined(status.usageLimits?.unavailable);
         assert.strictEqual(status.usageLimits?.windows[0]?.usedPercent, 42);
+      }),
+    );
+
+    it.effect("reads Codex limits alone, without skills, models or --version", () =>
+      Effect.gen(function* () {
+        const spawned: Array<ReadonlyArray<string>> = [];
+        const requested: Array<string> = [];
+        const spawner = ChildProcessSpawner.make((command) =>
+          Effect.gen(function* () {
+            const { command: executable, args } = command as unknown as {
+              readonly command: string;
+              readonly args: ReadonlyArray<string>;
+            };
+            spawned.push([executable, ...args]);
+            const output = yield* Queue.unbounded<Uint8Array>();
+            const results: Record<string, unknown> = {
+              initialize: {
+                userAgent: "codex_cli_rs/0.167.0",
+                codexHome: "/nonexistent-codex-home",
+                platformFamily: "unix",
+                platformOs: "linux",
+              },
+              "account/read": {
+                account: { type: "chatgpt", email: "test@example.com", planType: "pro" },
+                requiresOpenaiAuth: true,
+              },
+              "config/read": { config: {}, origins: {} },
+              "account/rateLimits/read": {
+                rateLimits: {
+                  limitId: "codex",
+                  planType: "pro",
+                  primary: { usedPercent: 42, windowDurationMins: 300, resetsAt: 2e9 },
+                },
+                rateLimitsByLimitId: null,
+                rateLimitResetCredits: null,
+                accountId: null,
+              },
+            };
+            const decoder = new TextDecoder();
+            let buffered = "";
+            return ChildProcessSpawner.makeHandle({
+              ...mockHandle({ stdout: "", stderr: "", code: 0 }),
+              exitCode: Effect.never,
+              isRunning: Effect.succeed(true),
+              stdin: Sink.forEach((chunk: Uint8Array) => {
+                buffered += decoder.decode(chunk, { stream: true });
+                const lines = buffered.split("\n");
+                buffered = lines.pop() ?? "";
+                return Effect.forEach(
+                  lines.filter(Boolean),
+                  (line) => {
+                    const { id, method } = JSON.parse(line) as { id?: number; method?: string };
+                    if (id === undefined || method === undefined) return Effect.void;
+                    requested.push(method);
+                    return Queue.offer(
+                      output,
+                      encoder.encode(`${JSON.stringify({ id, result: results[method] ?? {} })}\n`),
+                    );
+                  },
+                  { discard: true },
+                );
+              }),
+              stdout: Stream.fromQueue(output),
+            });
+          }),
+        );
+
+        const reading = yield* readCodexUsageLimitsOnly(defaultCodexSettings).pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+        );
+
+        assert.deepStrictEqual(requested, [
+          "initialize",
+          "account/read",
+          "config/read",
+          "account/rateLimits/read",
+        ]);
+        assert.strictEqual(spawned.filter((args) => args.includes("app-server")).length, 1);
+        assert.isFalse(spawned.some((args) => args.includes("--version")));
+        assert.strictEqual(reading?.email, "test@example.com");
+        assert.strictEqual(reading?.usageLimits.windows[0]?.usedPercent, 42);
+        assert.isUndefined(reading?.usageLimits.unavailable);
       }),
     );
 
@@ -3088,6 +3175,107 @@ it.layer(
       }),
     );
 
+    it.effect("refreshes limits only where a driver can read them, with no full check", () =>
+      Effect.gen(function* () {
+        const fullChecks = yield* Ref.make(0);
+        const limitsReads = yield* Ref.make(0);
+        const makeInstance = Effect.fnUntraced(function* (name: string, readsLimits: boolean) {
+          const driver = ProviderDriverKind.make(name);
+          const instanceId = ProviderInstanceId.make(name);
+          const current = yield* Ref.make<ServerProvider>({
+            instanceId,
+            driver,
+            status: "ready",
+            enabled: true,
+            installed: true,
+            auth: { status: "authenticated" },
+            checkedAt: "2026-06-10T00:00:00.000Z",
+            version: "1.0.0",
+            models: [],
+            slashCommands: [],
+            skills: [],
+          });
+          return {
+            instanceId,
+            driverKind: driver,
+            continuationIdentity: { driverKind: driver, continuationKey: `${name}:instance` },
+            displayName: undefined,
+            enabled: true,
+            snapshot: {
+              resolveMaintenance: () =>
+                Effect.succeed(
+                  makeManualOnlyProviderMaintenanceCapabilities({
+                    provider: driver,
+                    packageName: null,
+                  }),
+                ),
+              getSnapshot: Ref.get(current),
+              refresh: Ref.update(fullChecks, (count) => count + 1).pipe(
+                Effect.andThen(Ref.get(current)),
+              ),
+              ...(readsLimits
+                ? {
+                    refreshUsageLimitsOnly: Ref.update(limitsReads, (count) => count + 1).pipe(
+                      Effect.andThen(
+                        Ref.update(current, (provider) => ({
+                          ...provider,
+                          usageLimits: { checkedAt: "2026-06-10T00:05:00.000Z", windows: [] },
+                        })),
+                      ),
+                    ),
+                  }
+                : {}),
+              streamChanges: Stream.empty,
+              applyUsageLimits: () => Effect.void,
+            },
+            orchestrationAdapter: {} as ProviderInstance["orchestrationAdapter"],
+            textGeneration: {} as ProviderInstance["textGeneration"],
+          } satisfies ProviderInstance;
+        });
+        const instances = [yield* makeInstance("claude", true), yield* makeInstance("pi", false)];
+        const instanceRegistryLayer = Layer.succeed(
+          ProviderInstanceRegistry.ProviderInstanceRegistry,
+          {
+            getInstance: (requestedId) =>
+              Effect.succeed(instances.find((instance) => instance.instanceId === requestedId)),
+            listInstances: Effect.succeed(instances),
+            listUnavailable: Effect.succeed([]),
+            streamChanges: Stream.empty,
+            subscribeChanges: Effect.flatMap(PubSub.unbounded<void>(), PubSub.subscribe),
+          },
+        );
+        const scope = yield* Scope.make();
+        yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
+        const runtimeServices = yield* Layer.build(
+          ProviderRegistry.layer.pipe(
+            Layer.provide(layerUnusedMutator),
+            Layer.provideMerge(instanceRegistryLayer),
+            Layer.provideMerge(
+              ServerConfig.layerTest(process.cwd(), {
+                prefix: "t3-provider-registry-limits-only-",
+              }),
+            ),
+            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+          ),
+        ).pipe(Scope.provide(scope));
+
+        yield* Effect.gen(function* () {
+          const registry = yield* ProviderRegistry.ProviderRegistry;
+          yield* registry.refreshUsageLimitsOnly;
+          assert.strictEqual(yield* Ref.get(limitsReads), 1);
+          assert.strictEqual(yield* Ref.get(fullChecks), 0);
+          const providers = yield* registry.getProviders;
+          assert.deepStrictEqual(
+            providers.map((provider) => [provider.instanceId, provider.usageLimits?.checkedAt]),
+            [
+              ["claude", "2026-06-10T00:05:00.000Z"],
+              ["pi", undefined],
+            ],
+          );
+        }).pipe(Effect.provide(runtimeServices));
+      }),
+    );
+
     it.effect("ignores a probe from an instance that settings replaced mid-refresh", () =>
       Effect.gen(function* () {
         const scenario = Effect.fn(function* (
@@ -4756,6 +4944,20 @@ it.layer(
               },
             },
           });
+          const oauthRead = (read: { readonly windows: boolean } | undefined) =>
+            Effect.succeed(
+              read && {
+                checkedAt: "2026-11-16T02:04:00.000Z",
+                rateLimits: read.windows
+                  ? claudeOauthUsageRateLimits({
+                      five_hour: window(15),
+                      seven_day: window(25),
+                      extra_usage: null,
+                    })
+                  : undefined,
+                resetCredits: undefined,
+              },
+            );
           const check = (read: { readonly windows: boolean } | undefined) =>
             checkClaudeProviderStatus(
               defaultClaudeSettings,
@@ -4764,20 +4966,7 @@ it.layer(
               undefined,
               BUNDLED_CLAUDE_MODEL_CATALOG,
               undefined,
-              () =>
-                Effect.succeed(
-                  read && {
-                    checkedAt: "2026-11-16T02:04:00.000Z",
-                    rateLimits: read.windows
-                      ? claudeOauthUsageRateLimits({
-                          five_hour: window(15),
-                          seven_day: window(25),
-                          extra_usage: null,
-                        })
-                      : undefined,
-                    resetCredits: undefined,
-                  },
-                ),
+              () => oauthRead(read),
             );
           const rows = (status: Effect.Success<ReturnType<typeof check>>) => [
             status.usageLimits?.checkedAt,
@@ -4804,6 +4993,25 @@ it.layer(
               ],
             ]);
           }
+
+          // The limits-only refresh reads the same, at the published version, with no --version.
+          const readVersions: Array<string> = [];
+          const alone = yield* readClaudeUsageLimitsOnly({
+            capabilities: capabilities(),
+            version: "1.0.0",
+            resolveOauthUsage: (version) => {
+              readVersions.push(version);
+              return oauthRead({ windows: true });
+            },
+          });
+          assert.deepStrictEqual(alone?.usageLimits, (yield* check({ windows: true })).usageLimits);
+          assert.deepStrictEqual(readVersions, ["1.0.0"]);
+          const signedOut = yield* readClaudeUsageLimitsOnly({
+            capabilities: claudeCapabilities({ tokenSource: "none" })(),
+            version: "1.0.0",
+            resolveOauthUsage: () => oauthRead({ windows: true }),
+          });
+          assert.isUndefined(signedOut);
         }).pipe(
           Effect.provide(
             layerMockSpawner((args) => {

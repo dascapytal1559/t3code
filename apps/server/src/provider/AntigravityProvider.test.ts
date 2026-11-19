@@ -772,6 +772,33 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
     }),
   );
 
+  it.effect("a limits-only refresh starts the quota read without a health check first", () =>
+    Effect.gen(function* () {
+      const reads = yield* Ref.make(0);
+      const harness = yield* makeHarness({
+        probeUsage: Ref.updateAndGet(reads, (count) => count + 1).pipe(
+          Effect.map((count) => ({
+            checkedAt: `2026-10-09T12:0${count}:00.000Z`,
+            windows: [
+              { id: "gemini-5h", kind: "session", label: "Gemini · 5-hour", usedPercent: count },
+            ],
+          })),
+        ),
+      });
+      const first = yield* harness.nextPublish((snapshot) => !!snapshot.usageLimits);
+      yield* harness.initialize;
+      yield* first;
+      yield* Ref.set(harness.probe, Effect.succeed(initializeResult));
+      const probesBefore = yield* Ref.get(harness.probeCalls);
+      const second = yield* harness.nextPublish(
+        (snapshot) => snapshot.usageLimits?.windows[0]?.usedPercent === 2,
+      );
+      yield* harness.provider.snapshot.refreshUsageLimitsOnly!;
+      expect(yield* Ref.get(harness.probeCalls)).toBe(probesBefore);
+      expect((yield* second)?.usageLimits?.checkedAt).toBe("2026-10-09T12:02:00.000Z");
+    }),
+  );
+
   it.effect("a quota read for the previous account is dropped after a new sign-in", () =>
     Effect.gen(function* () {
       const oldReadStarted = yield* Deferred.make<void>();

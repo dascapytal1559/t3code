@@ -111,6 +111,9 @@ export class ProviderRegistry extends Context.Service<
      */
     readonly refreshModelCatalog: Effect.Effect<void>;
 
+    /** Re-read usage limits alone where a driver can; drivers without limits are left alone. */
+    readonly refreshUsageLimitsOnly: Effect.Effect<void>;
+
     readonly getProviderMaintenanceCapabilitiesForInstance: (
       instanceId: ProviderInstanceId,
       provider: ProviderDriverKind,
@@ -683,10 +686,13 @@ export const layer = Layer.effect(
         .getInstance(instance.instanceId)
         .pipe(Effect.map((current) => current === instance));
 
-    const refreshOneSource = Effect.fn("refreshOneSource")(function* (instance: ProviderInstance) {
+    const refreshOneSource = Effect.fn("refreshOneSource")(function* (
+      instance: ProviderInstance,
+      refreshSource: Effect.Effect<unknown> = instance.snapshot.refresh,
+    ) {
       const providerSource = buildSnapshotSource(instance);
       // Enrichment can publish a newer snapshot before refresh returns its pre-enrichment probe.
-      const probe = yield* providerSource.refresh.pipe(
+      const probe = yield* refreshSource.pipe(
         Effect.andThen(providerSource.getSnapshot),
         Effect.exit,
       );
@@ -790,6 +796,20 @@ export const layer = Layer.effect(
       }
       return yield* refreshOneSource(instance);
     });
+
+    const refreshUsageLimitsOnly = Effect.fn("ProviderRegistry.refreshUsageLimitsOnly")(
+      function* () {
+        yield* syncLiveSourcesAndContinue;
+        yield* Effect.forEach(
+          (yield* Ref.get(liveSubsRef)).values(),
+          (instance) =>
+            instance.snapshot.refreshUsageLimitsOnly
+              ? refreshOneSource(instance, instance.snapshot.refreshUsageLimitsOnly)
+              : Effect.void,
+          { concurrency: "unbounded", discard: true },
+        );
+      },
+    );
 
     const reloadSecretsAndRefresh = Effect.fn("reloadSecretsAndRefresh")(function* (
       instanceId?: ProviderInstanceId,
@@ -1295,6 +1315,10 @@ export const layer = Layer.effect(
       refreshAfterUpdate,
       invalidateModelCaches,
       refreshModelCatalog: refreshModelCatalog().pipe(
+        Effect.catchCause(recoverRefreshFailure),
+        Effect.asVoid,
+      ),
+      refreshUsageLimitsOnly: refreshUsageLimitsOnly().pipe(
         Effect.catchCause(recoverRefreshFailure),
         Effect.asVoid,
       ),

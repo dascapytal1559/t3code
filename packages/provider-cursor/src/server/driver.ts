@@ -263,6 +263,15 @@ export const CursorDriver: ProviderDriver<
       initialSnapshot: (settings) =>
         buildInitialCursorProviderSnapshot(settings.provider).pipe(Effect.map(stampSnapshot)),
       checkProvider,
+      readUsageLimits: () =>
+        auth.readApiKey.pipe(
+          Effect.orElseSucceed(() => undefined),
+          Effect.flatMap((apiKey) =>
+            readCursorUsageLimits(effectiveConfig, { ...processEnv, CURSOR_API_KEY: apiKey }),
+          ),
+          Effect.map((usageLimits) => ({ usageLimits })),
+          Effect.provideService(HttpClient.HttpClient, httpClient),
+        ),
     }).pipe(
       Effect.mapError(
         (cause) =>

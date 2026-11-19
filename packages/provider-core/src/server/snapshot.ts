@@ -1,6 +1,7 @@
 import type {
   ProviderUsageLimitsUpdate,
   ServerProvider,
+  ServerProviderUsageLimits,
   ServerSettingsError,
 } from "@t3tools/contracts";
 import type * as Effect from "effect/Effect";
@@ -15,6 +16,13 @@ export type ProviderUsageLimitsReport = ProviderUsageLimitsUpdate & {
   readonly complete?: boolean;
 };
 
+/** A limits read on its own; the account fields let a changed sign-in fall back to the full check. */
+export interface ProviderUsageLimitsReading {
+  readonly usageLimits: ServerProviderUsageLimits;
+  readonly email?: string | undefined;
+  readonly workspaceId?: string | undefined;
+}
+
 export interface ManagedServerProvider {
   /** Cached; pass { fresh: true } before executing updates. */
   readonly resolveMaintenance: (options?: {
@@ -25,6 +33,11 @@ export interface ManagedServerProvider {
   readonly isAwaitingFirstCheck?: Effect.Effect<boolean>;
   readonly refresh: Effect.Effect<ServerProvider>;
   readonly refreshUsage?: Effect.Effect<void, ServerSettingsError>;
+  /**
+   * The Usage page's refresh: only the limits read, without install, version or model checks.
+   * Absent when the driver cannot read limits on its own.
+   */
+  readonly refreshUsageLimitsOnly?: Effect.Effect<void>;
   readonly streamChanges: Stream.Stream<ServerProvider>;
   /** Merge windows by ID and set any authLabel; an update with no window leaves the snapshot untouched. */
   readonly applyUsageLimits: (update: ProviderUsageLimitsReport) => Effect.Effect<void>;

@@ -23,7 +23,7 @@ import {
   makeUsageLimits,
   resolveUsageLimitsAfterProbe,
 } from "./usageLimits.ts";
-import type { ManagedServerProvider } from "./snapshot.ts";
+import type { ManagedServerProvider, ProviderUsageLimitsReading } from "./snapshot.ts";
 
 interface ProviderSnapshotState {
   readonly snapshot: ServerProvider;
@@ -46,6 +46,22 @@ function withUsageLimits(
 
 const FAILED_CHECK_RECHECK_DELAY = "30 seconds";
 
+function isAnotherAccount(
+  previous: ServerProvider["auth"],
+  next: { readonly email?: string | undefined; readonly workspaceId?: string | undefined },
+): boolean {
+  const differs = (a: string | undefined, b: string | undefined) =>
+    a !== undefined && b !== undefined && a !== b;
+  return (
+    differs(next.email?.toLowerCase(), previous.email?.toLowerCase()) ||
+    (next.workspaceId !== undefined && next.workspaceId !== previous.workspaceId)
+  );
+}
+
+// Limits are only worth reading alone from a provider that is installed, ready and signed in.
+const canReadUsageAlone = (snapshot: ServerProvider) =>
+  snapshot.installed && snapshot.status === "ready" && snapshot.auth.status === "authenticated";
+
 export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(function* <
   Settings,
 >(input: {
@@ -56,6 +72,13 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
   readonly initialSnapshot: (settings: Settings) => Effect.Effect<ServerProvider>;
   readonly checkProvider: Effect.Effect<ServerProvider, ServerSettingsError>;
   readonly checkUsageLimits?: Effect.Effect<ServerProvider["usageLimits"]>;
+  /**
+   * The limits read alone, for a limits-only refresh. Undefined when it could not reach the
+   * provider, so the full check runs and a failure shows as it always has.
+   */
+  readonly readUsageLimits?: (
+    snapshot: ServerProvider,
+  ) => Effect.Effect<ProviderUsageLimitsReading | undefined>;
   readonly invalidateUsageCache?: Effect.Effect<void>;
   readonly enrichSnapshot?: (input: {
     readonly settings: Settings;
@@ -205,13 +228,7 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
           ? state.enrichmentGeneration + 1
           : state.enrichmentGeneration;
         // Failed reads retain limits only for the same account and original workspace.
-        const previous = state.snapshot.auth;
-        const differs = (a: string | undefined, b: string | undefined) =>
-          a !== undefined && b !== undefined && a !== b;
-        const switchedAccount =
-          differs(probedSnapshot.auth.email?.toLowerCase(), previous.email?.toLowerCase()) ||
-          (probedSnapshot.auth.workspaceId !== undefined &&
-            probedSnapshot.auth.workspaceId !== previous.workspaceId);
+        const switchedAccount = isAnotherAccount(state.snapshot.auth, probedSnapshot.auth);
         const usageLimits = switchedAccount
           ? probedSnapshot.usageLimits
           : probedSnapshot.usageLimits === undefined &&
@@ -330,11 +347,34 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
     );
   });
 
+  const refreshUsageLimitsOnly = Effect.fn("ManagedServerProvider.refreshUsageLimitsOnly")(
+    function* (read: NonNullable<typeof input.readUsageLimits>) {
+      const { snapshot } = yield* Ref.get(snapshotStateRef);
+      if (!snapshot.enabled || snapshot.usageLimits?.unavailable?.reason === "unsupported") return;
+      const reading = canReadUsageAlone(snapshot) ? yield* read(snapshot) : undefined;
+      if (reading === undefined || isAnotherAccount(snapshot.auth, reading)) {
+        // The same full check a manual refresh runs.
+        yield* input.resolveMaintenance({ fresh: true });
+        yield* applySnapshotBase(yield* input.getSettings, { forceRefresh: true });
+        return;
+      }
+      // Not recorded as a check: periodic status checks keep their own cadence.
+      const next = yield* Ref.modify(snapshotStateRef, (state) => {
+        const usageLimits = resolveUsageLimitsAfterProbe({
+          published: state.snapshot.usageLimits,
+          probed: reading.usageLimits,
+        });
+        if (usageLimits === state.snapshot.usageLimits) return [null, state] as const;
+        const next = withUsageLimits(state.snapshot, usageLimits);
+        return [next, { ...state, snapshot: next }] as const;
+      });
+      if (next !== null) yield* PubSub.publish(changesPubSub, next);
+    },
+  );
+
   const needsUsageRecovery = (snapshot: ServerProvider) =>
     input.checkUsageLimits !== undefined &&
-    snapshot.installed &&
-    snapshot.status === "ready" &&
-    snapshot.auth.status === "authenticated" &&
+    canReadUsageAlone(snapshot) &&
     snapshot.usageLimits?.unavailable?.reason === "probeFailed";
 
   const needsProviderRefresh = (snapshot: ServerProvider) =>
@@ -512,6 +552,13 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
       .pipe(Effect.andThen(refreshSnapshot), Effect.tapError(Effect.logError), Effect.orDie),
     applyUsageLimits,
     refreshUsage: refreshUsage(),
+    ...(input.readUsageLimits
+      ? {
+          refreshUsageLimitsOnly: refreshSemaphore
+            .withPermits(1)(refreshUsageLimitsOnly(input.readUsageLimits))
+            .pipe(Effect.tapError(Effect.logError), Effect.orDie),
+        }
+      : {}),
     get streamChanges() {
       return Stream.fromPubSub(changesPubSub);
     },

@@ -363,6 +363,15 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
   });
   yield* Deferred.succeed(republish, managed.refresh);
 
+  // Starts the quota read as a passing health check does, without that check first. The read
+  // still publishes through a health check of its own; a failing provider gets the full check.
+  const refreshUsageLimitsOnly = Effect.gen(function* () {
+    const { draft } = yield* SubscriptionRef.get(metadata);
+    if (!settings.enabled || draft.usageLimits?.unavailable?.reason === "unsupported") return;
+    if (draft.installed && draft.status !== "error") return yield* refreshUsage();
+    yield* managed.refresh;
+  }).pipe(Effect.withSpan("AntigravityProvider.refreshUsageLimitsOnly"));
+
   const onSessionStarted = Effect.fn("AntigravityProvider.onSessionStarted")(function* (
     started: AcpSessionRuntime.AcpSessionRuntimeStartResult,
     cwd?: string,
@@ -522,7 +531,11 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
   });
 
   return {
-    snapshot: { ...managed, getSnapshot },
+    snapshot: {
+      ...managed,
+      getSnapshot,
+      ...(options.probeUsage ? { refreshUsageLimitsOnly } : {}),
+    },
     onSessionStarted,
     onConfigOptionsUpdated,
     onAvailableCommands,

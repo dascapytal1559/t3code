@@ -660,6 +660,10 @@ export const OpenCodeDriver: ProviderDriver<
         makePendingOpenCodeProvider(settings.provider).pipe(Effect.map(stampIdentity)),
       checkProvider,
       checkUsageLimits,
+      readUsageLimits: () =>
+        checkUsageLimits.pipe(
+          Effect.map((usageLimits) => (usageLimits === undefined ? undefined : { usageLimits })),
+        ),
       enrichSnapshot: ({ settings, snapshot, publishSnapshot }) =>
         resolveMaintenance().pipe(
           Effect.flatMap((maintenanceCapabilities) =>
