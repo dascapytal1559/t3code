@@ -505,7 +505,6 @@ export function usageChartCaption(
   }
 }
 
-/** Stacked bars of usage per period, one band per series, largest at the bottom. */
 /**
  * The bars a chart is leaving while it moves to new ones: the breakdown it showed, and how to move.
  * `switch` drops the old bars and raises the new ones from `from`; `split` cross-fades them.

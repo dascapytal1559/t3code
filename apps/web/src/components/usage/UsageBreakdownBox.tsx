@@ -85,7 +85,7 @@ function ShareBar({
       fill: "forwards",
     });
     void fade?.finished.then(
-      () => setGhost(null),
+      () => setGhost((current) => (current === ghost ? null : current)),
       () => undefined,
     );
   }, [ghost]);
