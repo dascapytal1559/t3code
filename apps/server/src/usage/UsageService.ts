@@ -1427,7 +1427,7 @@ export const make = Effect.gen(function* () {
         const eventOccurrences = new Map<string, number>();
         for (const rawRecord of file.records) {
           const record = correctedRecord(rawRecord);
-          let usageRecord = record;
+          let dedupeKey = record.dedupeKey;
           if (
             sharedSessionProviders.has(record.provider) &&
             crossFileSessions.has(record.sessionId)
@@ -1442,9 +1442,9 @@ export const make = Effect.gen(function* () {
             ]);
             const occurrence = (eventOccurrences.get(key) ?? 0) + 1;
             eventOccurrences.set(key, occurrence);
-            usageRecord = { ...record, dedupeKey: key + ":" + occurrence };
+            dedupeKey = key + ":" + occurrence;
           }
-          if (aggregator.add(usageRecord, dir, file.path)) {
+          if (aggregator.add(record, dir, file.path, dedupeKey)) {
             counted = true;
             if (record.sessionId.length > 0) sessionIds.add(record.sessionId);
           }

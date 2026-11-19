@@ -4094,6 +4094,48 @@ describe("UsageService", () => {
     }),
   );
 
+  it.effect("exports a Codex call under its own callId while its rollout sits in two files", () =>
+    Effect.gen(function* () {
+      const { home, settings } = yield* setup;
+      const sessions = NodePath.join(home, "codex", "sessions");
+      const usage = (input: number, output: number) => ({
+        input_tokens: input,
+        output_tokens: output,
+        total_tokens: input + output,
+      });
+      const rollout = [
+        { type: "session_meta", payload: { id: "moved" } },
+        { type: "turn_context", payload: { turn_id: "turn-1", model: "gpt-6-astra" } },
+        {
+          type: "token_usage_record",
+          timestamp: "2026-08-01T10:00:01Z",
+          payload: { usage: usage(100, 20), response_id: "resp-1" },
+        },
+      ]
+        .map((value) => `${encodeUnknownJsonString(value)}\n`)
+        .join("");
+      const original = NodePath.join(sessions, "rollout.jsonl");
+      yield* Effect.promise(async () => {
+        await NodeFSP.mkdir(sessions, { recursive: true });
+        await NodeFSP.writeFile(original, rollout);
+        await NodeFSP.writeFile(NodePath.join(sessions, "moved.jsonl"), rollout);
+      });
+      yield* Effect.gen(function* () {
+        const service = yield* UsageService.make;
+        const ids = (records: readonly UsageExportRecord[]) =>
+          records.map(({ callId, tokens }) => ({ callId, output: tokens.output }));
+        const expected = [{ callId: '["codex","moved","resp-1"]', output: 20 }];
+        assert.deepStrictEqual(ids(yield* service.readRecords(WINDOW)), expected);
+        yield* Effect.promise(() => NodeFSP.rm(original));
+        assert.deepStrictEqual(ids(yield* service.readRecords(WINDOW)), expected);
+      }).pipe(
+        Effect.provide(
+          layerService({ prefix: "usage-service-codex-call-id-test", home, settings }),
+        ),
+      );
+    }),
+  );
+
   it.effect("credits the same copy of a duplicate from the last scan as an exact read does", () =>
     Effect.gen(function* () {
       yield* TestClock.setTime(Date.parse("2026-08-15T00:00:00Z"));

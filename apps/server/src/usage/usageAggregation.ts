@@ -372,11 +372,16 @@ export class UsageAggregator {
     }
   }
 
-  add(input: UsageRecord, sourcePath?: string, filePath?: string): boolean {
+  add(
+    input: UsageRecord,
+    sourcePath?: string,
+    filePath?: string,
+    dedupeKey: string | null = input.dedupeKey,
+  ): boolean {
     if (!keepsUsageRecord(this.#options.modelFilter, input)) return false;
     const record = this.#mapModel(input);
-    if (record.dedupeKey !== null) {
-      const held = this.#seen.get(record.dedupeKey);
+    if (dedupeKey !== null) {
+      const held = this.#seen.get(dedupeKey);
       if (held !== undefined) {
         this.#duplicatesDropped += 1;
         if (held.bucket !== null) {
@@ -390,15 +395,15 @@ export class UsageAggregator {
     }
 
     const bucket = this.#placeInWindow(record, sourcePath ?? "");
-    if (record.dedupeKey !== null) {
-      this.#seen.set(record.dedupeKey, { record, bucket, sourcePath, filePath });
+    if (dedupeKey !== null) {
+      this.#seen.set(dedupeKey, { record, bucket, sourcePath, filePath });
     }
     if (bucket === null) {
       this.#outOfWindow += 1;
       return false;
     }
     // Keyed usage is counted in finish(), once all its copies are merged.
-    if (record.dedupeKey === null) this.#accumulate(bucket, record, sourcePath, filePath);
+    if (dedupeKey === null) this.#accumulate(bucket, record, sourcePath, filePath);
     if (record.sessionId.length > 0) bucket.sessions.add(record.sessionId);
     return true;
   }
