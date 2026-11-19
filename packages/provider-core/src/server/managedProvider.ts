@@ -350,8 +350,11 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
   const refreshUsageLimitsOnly = Effect.fn("ManagedServerProvider.refreshUsageLimitsOnly")(
     function* (read: NonNullable<typeof input.readUsageLimits>) {
       const { snapshot } = yield* Ref.get(snapshotStateRef);
-      if (!snapshot.enabled || snapshot.usageLimits?.unavailable?.reason === "unsupported") return;
-      const reading = canReadUsageAlone(snapshot) ? yield* read(snapshot) : undefined;
+      if (!snapshot.enabled) return;
+      const reading =
+        canReadUsageAlone(snapshot) && snapshot.usageLimits?.unavailable?.reason !== "unsupported"
+          ? yield* read(snapshot)
+          : undefined;
       if (reading === undefined || isAnotherAccount(snapshot.auth, reading)) {
         // The same full check a manual refresh runs.
         yield* input.resolveMaintenance({ fresh: true });

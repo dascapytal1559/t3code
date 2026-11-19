@@ -35,7 +35,7 @@ const OTHER = "";
 /** Names the kinds of work the Usage page splits by, and puts this environment's projects in them. */
 export function UsageWorkGroupsSettings({
   environmentId,
-  groups,
+  groups: savedGroups,
   shareOther,
   memberLabel,
   readOnly,
@@ -52,7 +52,15 @@ export function UsageWorkGroupsSettings({
   const projects = useAtomValue(environmentProjects.environmentProjectsAtom(environmentId))
     .filter((project) => project.archivedAt == null)
     .toSorted((a, b) => a.title.localeCompare(b.title));
-  const save = (next: readonly UsageWorkGroup[]) => updateSettings({ usageWorkGroups: next });
+  const [edited, setEdited] = useState<{
+    readonly from: readonly UsageWorkGroup[];
+    readonly groups: readonly UsageWorkGroup[];
+  } | null>(null);
+  const groups = edited !== null && edited.from === savedGroups ? edited.groups : savedGroups;
+  const save = (next: readonly UsageWorkGroup[]) => {
+    setEdited({ from: savedGroups, groups: next });
+    updateSettings({ usageWorkGroups: next });
+  };
   // A member gets a Shown switch when its group opens into members on the Usage page.
   const opensFor = (groupName: string | null) => {
     const group = groups.find((entry) => entry.name === groupName);

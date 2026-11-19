@@ -347,6 +347,30 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       provider: ProviderDriverKind.make("antigravity"),
       packageName: null,
     });
+  const probeUsage = options.probeUsage;
+  const readUsageLimits = Effect.fn("AntigravityProvider.readUsageLimits")(function* (
+    probe: Effect.Effect<ServerProviderUsageLimits>,
+  ) {
+    const before = yield* SubscriptionRef.get(metadata);
+    const probed = yield* probe;
+    return yield* SubscriptionRef.modify(metadata, (state) =>
+      state.authRevision === before.authRevision
+        ? ([
+            { usageLimits: probed },
+            {
+              ...state,
+              draft: {
+                ...state.draft,
+                usageLimits: resolveUsageLimitsAfterProbe({
+                  published: state.draft.usageLimits,
+                  probed,
+                }),
+              },
+            },
+          ] as const)
+        : ([undefined, state] as const),
+    );
+  });
   const managed = yield* makeManagedServerProvider({
     resolveMaintenance: () => Effect.succeed(maintenanceCapabilities),
     getSettings: Effect.succeed(settings),
@@ -354,6 +378,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
     haveSettingsChanged: () => false,
     initialSnapshot: () => getSnapshot,
     checkProvider: checkProvider(),
+    ...(probeUsage ? { readUsageLimits: () => readUsageLimits(probeUsage) } : {}),
     enrichSnapshot: ({ publishSnapshot }) =>
       SubscriptionRef.changes(metadata).pipe(
         Stream.runForEach((state) =>
@@ -362,15 +387,6 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
       ),
   });
   yield* Deferred.succeed(republish, managed.refresh);
-
-  // Starts the quota read as a passing health check does, without that check first. The read
-  // still publishes through a health check of its own; a failing provider gets the full check.
-  const refreshUsageLimitsOnly = Effect.gen(function* () {
-    const { draft } = yield* SubscriptionRef.get(metadata);
-    if (!settings.enabled || draft.usageLimits?.unavailable?.reason === "unsupported") return;
-    if (draft.installed && draft.status !== "error") return yield* refreshUsage();
-    yield* managed.refresh;
-  }).pipe(Effect.withSpan("AntigravityProvider.refreshUsageLimitsOnly"));
 
   const onSessionStarted = Effect.fn("AntigravityProvider.onSessionStarted")(function* (
     started: AcpSessionRuntime.AcpSessionRuntimeStartResult,
@@ -531,11 +547,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
   });
 
   return {
-    snapshot: {
-      ...managed,
-      getSnapshot,
-      ...(options.probeUsage ? { refreshUsageLimitsOnly } : {}),
-    },
+    snapshot: { ...managed, getSnapshot },
     onSessionStarted,
     onConfigOptionsUpdated,
     onAvailableCommands,

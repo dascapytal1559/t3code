@@ -772,7 +772,7 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
     }),
   );
 
-  it.effect("a limits-only refresh starts the quota read without a health check first", () =>
+  it.effect("a limits-only refresh reads and publishes the quota without a health check", () =>
     Effect.gen(function* () {
       const reads = yield* Ref.make(0);
       const harness = yield* makeHarness({
@@ -789,13 +789,19 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
       yield* harness.initialize;
       yield* first;
       yield* Ref.set(harness.probe, Effect.succeed(initializeResult));
+      const ready = yield* harness.nextPublish((snapshot) => snapshot.status === "ready");
+      yield* harness.provider.onSessionStarted(started, "/workspace");
+      yield* ready;
       const probesBefore = yield* Ref.get(harness.probeCalls);
-      const second = yield* harness.nextPublish(
-        (snapshot) => snapshot.usageLimits?.windows[0]?.usedPercent === 2,
-      );
+      const second = yield* harness
+        .nextPublish((snapshot) => snapshot.usageLimits?.windows[0]?.usedPercent === 2)
+        .pipe(Effect.flatten, Effect.forkChild({ startImmediately: true }));
       yield* harness.provider.snapshot.refreshUsageLimitsOnly!;
       expect(yield* Ref.get(harness.probeCalls)).toBe(probesBefore);
-      expect((yield* second)?.usageLimits?.checkedAt).toBe("2026-10-09T12:02:00.000Z");
+      expect((yield* Fiber.join(second))?.usageLimits?.checkedAt).toBe("2026-10-09T12:02:00.000Z");
+      expect((yield* harness.provider.snapshot.getSnapshot).usageLimits?.checkedAt).toBe(
+        "2026-10-09T12:02:00.000Z",
+      );
     }),
   );
 

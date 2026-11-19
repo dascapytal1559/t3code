@@ -1122,6 +1122,19 @@ describe("makeManagedServerProvider", () => {
       reads: 0,
     },
     {
+      name: "a provider whose limits read unsupported",
+      probed: {
+        ...signedInSnapshot,
+        usageLimits: {
+          checkedAt: "2026-04-10T00:00:01.000Z",
+          windows: [],
+          unavailable: { reason: "unsupported" },
+        },
+      },
+      reading: { usageLimits: signedInSnapshot.usageLimits! },
+      reads: 0,
+    },
+    {
       name: "a read that could not reach the provider",
       probed: signedInSnapshot,
       reading: undefined,
