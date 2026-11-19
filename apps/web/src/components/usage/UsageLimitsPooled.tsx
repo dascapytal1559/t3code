@@ -3,6 +3,7 @@ import {
   collectLimitAccounts,
   collectLimitPools,
   displayLimitWindows,
+  isModelScopedWindow,
   type LimitAccount,
   type LimitPool,
   type LimitPoolMember,
@@ -317,6 +318,7 @@ function PoolSegment({
   readonly now: number;
   readonly index: number;
   readonly showAccountName: boolean;
+  readonly scoped: boolean;
 }) {
   return account.redeem ? (
     <RedeemableSegment account={account} redeemAt={account.redeem} {...props} />
@@ -364,12 +366,14 @@ function SegmentTriggers({
   now,
   index,
   showAccountName,
+  scoped,
 }: SegmentPayload & {
   readonly refillPercent: number;
   readonly color: string;
   readonly now: number;
   readonly index: number;
   readonly showAccountName: boolean;
+  readonly scoped: boolean;
 }) {
   const popover = use(SegmentPopoverContext) ?? undefined;
   const payload: SegmentPayload = { account, window, reset, redeem };
@@ -410,7 +414,10 @@ function SegmentTriggers({
             type="button"
             style={{ gridColumn: index, gridRow: 1, ...paceMark?.gappedTrack }}
             aria-label={segmentLabel}
-            className="relative h-5 min-w-0 cursor-pointer rounded-md bg-muted text-start outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[popup-open]:ring-1 data-[popup-open]:ring-inset data-[popup-open]:ring-border @2xl/pool:h-8"
+            className={cn(
+              "relative min-w-0 cursor-pointer rounded-md bg-muted text-start outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background data-[popup-open]:ring-1 data-[popup-open]:ring-inset data-[popup-open]:ring-border",
+              scoped ? "h-4 @2xl/pool:h-5" : "h-5 @2xl/pool:h-8",
+            )}
           />
         }
       >
@@ -419,7 +426,10 @@ function SegmentTriggers({
           <div className="absolute inset-0" style={paceMark?.gap}>
             <div
               aria-hidden
-              className="absolute inset-y-0 left-0 rounded-md opacity-35"
+              className={cn(
+                "absolute inset-y-0 left-0 rounded-md",
+                scoped ? "opacity-20" : "opacity-35",
+              )}
               style={{ width: `${remaining}%`, backgroundColor: color }}
             />
             {remaining < 100 && reset && refillPercent > 0 ? (
@@ -451,17 +461,30 @@ function SegmentTriggers({
           {showAccountName ? (
             <AccountName
               account={account}
-              className="min-w-0 truncate font-medium text-foreground"
+              className={cn(
+                "min-w-0 truncate font-medium",
+                scoped ? "text-muted-foreground" : "text-foreground",
+              )}
             />
           ) : null}
           {/* A single-account bar repeats the headline percentage. */}
           {showAccountName ? (
-            <span className="shrink-0 font-semibold text-foreground tabular-nums">
+            <span
+              className={cn(
+                "shrink-0 tabular-nums",
+                scoped ? "font-medium text-muted-foreground" : "font-semibold text-foreground",
+              )}
+            >
               {remaining}%
             </span>
           ) : null}
           {resetsIn || credits ? (
-            <span className="ms-auto flex min-w-0 items-center gap-1.5 overflow-hidden rounded-sm bg-background/85 px-1.5 py-0.5 text-2xs whitespace-nowrap text-foreground tabular-nums">
+            <span
+              className={cn(
+                "ms-auto flex min-w-0 items-center gap-1.5 overflow-hidden rounded-sm bg-background/85 px-1.5 py-0.5 text-2xs whitespace-nowrap tabular-nums",
+                scoped ? "text-muted-foreground" : "text-foreground",
+              )}
+            >
               {refillIn ?? ""}
               {credits ? (
                 <>
@@ -551,10 +574,12 @@ function PoolBar({
   pool,
   color,
   now,
+  scoped,
 }: {
   readonly pool: LimitPoolWindow;
   readonly color: string;
   readonly now: number;
+  readonly scoped: boolean;
 }) {
   const restores = new Map(pool.resets.map((reset) => [reset.member.account.key, reset]));
   const gt = useGT();
@@ -576,6 +601,7 @@ function PoolBar({
               now={now}
               index={position + 1}
               showAccountName={pool.columns.length > 1}
+              scoped={scoped}
             />
           ) : pool.kind === "monthly" && member.account.limits.zeroSpendCap ? (
             <div
@@ -610,17 +636,44 @@ function PoolWindowCard({
   readonly description?: string | undefined;
 }) {
   const nextRefill = pool.resets.find((reset) => reset.restoresPercent > 0);
+  // A model's share of the weekly is a footnote to the account-wide card above it.
+  const scoped = isModelScopedWindow(pool);
   return (
-    <div className="grid items-center gap-x-6 gap-y-3 rounded-lg border border-border/60 p-4 md:grid-cols-[11rem_minmax(0,1fr)]">
-      <div className="flex flex-col gap-1">
+    <div
+      className={cn(
+        "grid items-center gap-x-6 rounded-lg border border-border/60 md:grid-cols-[11rem_minmax(0,1fr)]",
+        scoped ? "gap-y-2 px-4 py-2.5" : "gap-y-3 p-4",
+      )}
+    >
+      <div className={cn("flex flex-col", scoped ? "gap-0.5" : "gap-1")}>
         {label !== null ? (
-          <span className="text-sm font-medium text-foreground">{label ?? pool.label}</span>
+          <span
+            className={cn(
+              scoped
+                ? "text-xs font-normal text-muted-foreground"
+                : "text-sm font-medium text-foreground",
+            )}
+          >
+            {label ?? pool.label}
+          </span>
         ) : null}
         <span className="flex items-baseline gap-2">
-          <span className="text-3xl font-semibold text-foreground tabular-nums">
+          <span
+            className={cn(
+              "tabular-nums",
+              scoped
+                ? "text-lg font-medium text-muted-foreground"
+                : "text-3xl font-semibold text-foreground",
+            )}
+          >
             {pool.remainingPercent}%
           </span>
-          <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+          <span
+            className={cn(
+              "inline-flex items-center gap-2 text-muted-foreground",
+              scoped ? "text-xs" : "text-sm",
+            )}
+          >
             <span>
               <T context="remaining usage percentage">left</T>
             </span>
@@ -628,12 +681,17 @@ function PoolWindowCard({
           </span>
         </span>
         {nextRefill && pool.columns.length > 1 ? (
-          <span className="text-xs font-medium text-foreground tabular-nums">
+          <span
+            className={cn(
+              "text-xs font-medium tabular-nums",
+              scoped ? "text-muted-foreground" : "text-foreground",
+            )}
+          >
             ↻ +{nextRefill.restoresPercent}%
           </span>
         ) : null}
       </div>
-      <PoolBar pool={pool} color={color} now={now} />
+      <PoolBar pool={pool} color={color} now={now} scoped={scoped} />
       {description ? (
         <p className="text-xs text-muted-foreground md:col-span-2">{description}</p>
       ) : null}

@@ -820,13 +820,16 @@ const RESET_KIND_REFILLS: Record<
   fable: ["fableWeekly"],
 };
 
-// Only Claude names reset kinds; its model-scoped weekly rows are `seven_day_<model>`,
-// and no reset kind refills a scoped row other than Fable's.
+/** Claude's model-scoped weekly rows (`seven_day_<model>`, such as Fable's), a part of the account-wide weekly. */
+export const isModelScopedWindow = (window: Pick<ServerProviderUsageWindow, "id" | "kind">) =>
+  window.kind === "weekly" && window.id.startsWith("seven_day_");
+
+// Only Claude names reset kinds, and no reset kind refills a scoped row other than Fable's.
 const windowRefillTarget = (window: ServerProviderUsageWindow) => {
   if (window.kind === "session") return "session";
   if (window.kind !== "weekly") return null;
   if (window.id === "seven_day_fable") return "fableWeekly";
-  return window.id.startsWith("seven_day_") ? null : "weekly";
+  return isModelScopedWindow(window) ? null : "weekly";
 };
 
 /** The banked resets that refill `window`; resets of no stated kind count on every window. */
