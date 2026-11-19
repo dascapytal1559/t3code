@@ -196,6 +196,76 @@ describe("makeUsageWork", () => {
     expect(restarted.codexReads).toEqual([]);
   });
 
+  it("counts a folder entry's own folder and subfolders, not its repository's worktrees; the closest entry wins", async () => {
+    await linkWorktree("app", "pool/7/app", "app1");
+    await NodeFSP.mkdir(at("pool/7/app/src"), { recursive: true });
+    const { work } = make({ repos: { abc123: at("app") } });
+    const withFolders: readonly UsageWorkGroup[] = [
+      ...groups({ Bones: ["app"], Docs: ["app-docs"] }),
+      { name: "Coordination", projectIds: [], folders: [at("app")], shared: true },
+      { name: "Drafts", projectIds: [], folders: [at("app/docs/guide/drafts/")] },
+      { name: "Notes", projectIds: [], folders: ["~/notes"] },
+    ];
+    const review = at("home", ".no-mistakes", "worktrees", "abc123", "run-1");
+    const folders = [
+      // A folder entry and a project on the same folder: the folder entry.
+      at("app"),
+      at("app/src"),
+      // The repository's worktrees, live, removed or under review, stay with its project.
+      at("pool/7/app"),
+      at("pool/7/app/src"),
+      at("pool/9/gone/src"),
+      review,
+      // A deeper project beats a folder entry above it, and a deeper folder entry beats a project.
+      at("app/docs/guide"),
+      at("app/docs/guide/drafts/x"),
+      // `~` is the server's home; the home project is in no group but the folder entry is closer.
+      at("home/notes/today"),
+    ];
+    const removed = [{ path: at("pool/9/gone"), projectId: ProjectId.make("app") }];
+    const claudeDir = at("home", ".claude", "projects");
+    const transcript = (folder: string) =>
+      NodePath.join(claudeDir, encodeClaudeFolder(folder), "session.jsonl");
+    const files = {
+      [transcript(at("app"))]: { provider: "claude" as const, sourceDir: claudeDir },
+      [transcript(review)]: { provider: "claude" as const, sourceDir: claudeDir },
+    };
+
+    const placed = await work.attribution(
+      withFolders,
+      projects(),
+      removed,
+      seen(folders, files),
+      0,
+    );
+
+    expect(folders.map((cwd) => placed.groupOf(cwd, undefined))).toEqual([
+      "Coordination",
+      "Coordination",
+      "Bones",
+      "Bones",
+      "Bones",
+      "Bones",
+      "Docs",
+      "Drafts",
+      "Notes",
+    ]);
+    expect(Object.keys(files).map((filePath) => placed.groupOf(undefined, filePath))).toEqual([
+      "Coordination",
+      "Bones",
+    ]);
+
+    // Folder entries alone are enough to place usage.
+    const foldersOnly = await work.attribution(
+      withFolders.filter((group) => group.name === "Notes"),
+      projects(),
+      [],
+      seen([at("home/notes")]),
+      0,
+    );
+    expect(foldersOnly.groupOf(at("home/notes"), undefined)).toBe("Notes");
+  });
+
   it("prefers a record's own folder over its transcript's", async () => {
     const session = at("home", ".codex", "sessions", "rollout-2.jsonl");
     const { work } = make({ codex: { [session]: at("trader") } });

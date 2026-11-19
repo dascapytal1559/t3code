@@ -85,23 +85,73 @@ write it down sooner, run `t3 usage close --through <time>` with the time's offs
 
 ## Split the chart by device or kind of work
 
-The switch above the total on **Usage** chooses what the chart and the list beside it split by:
+The switch above the chart on **Usage** chooses what the chart and the list beside it split by:
 **By provider**, **By device** or **By kind of work**. Cost and Tokens work in every split, and
 hovering a bar names each band. On mobile, choose **Provider**, **Device** or **Kind of work** under
 the period.
 
-**By device** shows **Phone**, **Computer** and **Computer · upkeep** (a coordinator's own turns,
-as described above). Usage from before T3 recorded the sending device (7 Nov 2026) shows as
-**Unlabelled**, as does usage from a server too old to label it.
+**By device** shows **Phone · direct**, **Phone · orchestrated**, **Computer · direct** and
+**Computer · orchestrated**, by the origin described above. A coordinator's upkeep counts to the
+computer, direct or orchestrated by how its turn started. Usage from before T3 recorded the sending
+device (7 Nov 2026) shows as **Unlabelled**, as does usage from a server too old to label it.
 
-**By kind of work** groups usage by project. Name the groups and put projects in them in
-**Settings → Providers → Kinds of work**; they start as Trading, Tooling and Projects with no
-projects. Groups are saved on the environment, so every client sees the same ones. Usage counts to
-the deepest project that holds the folder it ran in. Work in a worktree counts to the repository's
-project, and a no-mistakes review counts to the repository it reviewed. Older Claude and Codex
-history with no folder of its own is placed by its session's folder. Usage in a project with no
-group, in no project, or with no folder at all counts as **Other**. Exported records name their
-group in `group`.
+**By kind of work** splits usage into groups you name in **Settings → Providers → Kinds of work**.
+They start as Trading, Tooling and Projects with nothing in them. Groups are saved on the
+environment, so every client sees the same ones. A group holds projects, folders, or both.
+
+### How usage finds its group
+
+Each model call is placed by the folder its session ran in:
+
+1. A **project** covers its folder and subfolders, and the same places in the repository's
+   worktrees, wherever they live. A worktree T3 ran a thread in still counts after it is removed,
+   and a no-mistakes review counts to the repository it reviewed.
+2. A **folder** entry covers that folder and its subfolders only, not worktrees elsewhere. Type an
+   absolute path on the environment's machine, or start it with `~/` for the server's home.
+3. When several entries cover a call's folder, the **closest** wins: the one with the fewest
+   folder levels between it and where the call ran. A folder entry wins a tie with a project. A
+   project in no group still takes its own folder, so its usage is **Other**.
+4. Older Claude and Codex history with no folder of its own is placed by its session's folder.
+5. Usage no entry covers, or with no folder at all, is **Other**.
+
+### Shared groups and sharing Other
+
+Turn on **Shared** for a group whose work serves all the others, such as a coordinator. A shared
+group gets no band. In each bar, its usage is split across the groups that are not shared, in
+proportion to their own usage in that bar, so every bar and the total still add up and the ratio
+between the other groups does not change. Tokens and cost are each split by their own measure. When
+a bar has no usage in those groups, the window's proportions are used instead; when the window has
+none either, the usage stays **Other**.
+
+**Share Other** spreads usage in no group across the groups the same way, so the chart has no Other
+band. It is off by default. The list beside the chart names what was spread. Exported records keep
+each call's own group in `group`.
+
+### Example: a coordinator and its workers
+
+A coordinator agent runs in its repository's main folder, `~/work/coordinator`, and plans work
+for other projects. Its workers change the coordinator's own repository in worktrees under
+`~/worktrees/`. To count the workers' changes as tooling, and spread the coordinator's own
+planning across everything it plans, set:
+
+- **Tooling**: the `coordinator` project, so worker worktrees count here.
+- **Product**: the projects the coordinator plans for.
+- **Coordination**: the folder `~/work/coordinator`, **Shared** on. Its folder entry and the
+  project are equally close to the main folder, so the folder entry takes the coordinator's own
+  sessions, while worktrees outside that folder stay with the project.
+
+The same groups in `<T3 home>/userdata/settings.json`, with each project's id:
+
+```json
+{
+  "usageWorkGroups": [
+    { "name": "Tooling", "projectIds": ["<coordinator project id>"] },
+    { "name": "Product", "projectIds": ["<app project id>", "<site project id>"] },
+    { "name": "Coordination", "projectIds": [], "folders": ["~/work/coordinator"], "shared": true }
+  ],
+  "usageWorkShareOther": true
+}
+```
 
 ## Count agent sessions T3 does not run
 

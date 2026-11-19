@@ -121,6 +121,8 @@ export interface MergedUsage {
   readonly work: MergedSplit<string>;
   /** The servers' group names in their settings order, first server first. */
   readonly workGroups: readonly string[];
+  /** Kinds of work any server spreads over the other groups; `OTHER_WORK` for Other. */
+  readonly sharedWork: readonly string[];
 }
 
 export interface SplitAmount {
@@ -139,9 +141,10 @@ export interface MergedSplit<Key extends string> {
 export const OTHER_WORK = "";
 
 const USAGE_DEVICE_BANDS: readonly UsageDeviceBand[] = [
-  "phone",
-  "computer",
-  "upkeep",
+  "phoneDirect",
+  "phoneOrchestrated",
+  "computerDirect",
+  "computerOrchestrated",
   "unlabelled",
 ];
 const isDeviceBand = (key: string): key is UsageDeviceBand =>
@@ -545,6 +548,7 @@ const EMPTY_MERGED: MergedUsage = {
   devices: null,
   work: { totals: new Map(), daily: new Map(), hourly: new Map() },
   workGroups: [],
+  sharedWork: [],
 };
 
 export function mergeUsage(
@@ -857,6 +861,9 @@ export function mergeUsage(
     workGroups: [
       ...new Set(current.flatMap((environment) => environment.summary.workGroups ?? [])),
     ],
+    sharedWork: [
+      ...new Set(current.flatMap((environment) => environment.summary.sharedWork ?? [])),
+    ],
   };
 }
 
@@ -870,6 +877,8 @@ export interface UsageSplitBand extends SplitAmount {
 export interface UsageSplitBands {
   /** Bands with usage, largest first by the metric; unlabelled or Other always last. */
   readonly bands: readonly UsageSplitBand[];
+  /** Shared kinds of work whose usage the bands carry; `OTHER_WORK` for Other. */
+  readonly spread: readonly string[];
   /** A band's tokens or cost in one day (or hour, for an hourly split). */
   readonly valueAt: (period: string, key: string, metric: "cost" | "tokens") => number;
 }
@@ -897,7 +906,12 @@ export function usageSplitBands(
   hourly: boolean,
 ): UsageSplitBands {
   const merged: MergedSplit<string> = split === "device" ? deviceSplitOf(usage) : usage.work;
-  const periods = hourly ? merged.hourly : merged.daily;
+  const spread =
+    split === "work" && usage.sharedWork.length > 0
+      ? spreadSharedWork(hourly ? merged.hourly : merged.daily, new Set(usage.sharedWork))
+      : null;
+  const periods = spread?.periods ?? (hourly ? merged.hourly : merged.daily);
+  const totals = spread?.totals ?? merged.totals;
   const catchAll = split === "device" ? "unlabelled" : OTHER_WORK;
   const keys =
     split === "device"
@@ -915,7 +929,7 @@ export function usageSplitBands(
     .map((key, index) => ({
       key,
       groupIndex: split === "work" && key !== OTHER_WORK ? index : null,
-      ...(merged.totals.get(key) ?? NO_AMOUNT),
+      ...(totals.get(key) ?? NO_AMOUNT),
     }))
     .filter((band) => band.totalTokens > 0 || band.costUsd > 0)
     // Copied first: Hermes lacks toSorted.
@@ -928,9 +942,85 @@ export function usageSplitBands(
     );
   return {
     bands,
+    spread: spread?.spread ?? [],
     valueAt: (period, key, by) => {
       const amount = periods.get(period)?.get(key) ?? NO_AMOUNT;
       return by === "cost" ? amount.costUsd : amount.totalTokens;
     },
   };
+}
+
+type Periods = ReadonlyMap<string, ReadonlyMap<string, SplitAmount>>;
+
+/**
+ * Spreads each period's shared usage over the groups that are not shared, in proportion to their
+ * usage in that period, else in the whole window; with no such usage anywhere it stays Other.
+ * Tokens and cost spread each by their own measure, so every period still adds up.
+ */
+function spreadSharedWork(
+  periods: Periods,
+  shared: ReadonlySet<string>,
+): {
+  readonly periods: Periods;
+  readonly totals: ReadonlyMap<string, SplitAmount>;
+  readonly spread: readonly string[];
+} {
+  const receives = (key: string) => key !== OTHER_WORK && !shared.has(key);
+  const window = new Map<string, { costUsd: number; totalTokens: number }>();
+  const sharedUsage = new Set<string>();
+  for (const amounts of periods.values()) {
+    for (const [key, amount] of amounts) {
+      if (receives(key)) addAmount(window, key, amount.totalTokens, amount.costUsd);
+      else if (shared.has(key) && (amount.totalTokens > 0 || amount.costUsd > 0)) {
+        sharedUsage.add(key);
+      }
+    }
+  }
+
+  const out = new Map<string, Map<string, { costUsd: number; totalTokens: number }>>();
+  const totals = new Map<string, { costUsd: number; totalTokens: number }>();
+  for (const [period, amounts] of periods) {
+    const next = new Map<string, { costUsd: number; totalTokens: number }>();
+    let sharedTokens = 0;
+    let sharedCost = 0;
+    for (const [key, amount] of amounts) {
+      if (shared.has(key)) {
+        sharedTokens += amount.totalTokens;
+        sharedCost += amount.costUsd;
+      } else addAmount(next, key, amount.totalTokens, amount.costUsd);
+    }
+    for (const measure of ["totalTokens", "costUsd"] as const) {
+      const amount = measure === "totalTokens" ? sharedTokens : sharedCost;
+      if (amount === 0) continue;
+      const own = [...amounts].filter(([key]) => receives(key));
+      const weights = sumOf(own, measure) > 0 ? own : [...window];
+      const sum = sumOf(weights, measure);
+      if (sum === 0) {
+        addMeasure(next, OTHER_WORK, measure, amount);
+        continue;
+      }
+      for (const [key, weight] of weights) {
+        addMeasure(next, key, measure, (amount * weight[measure]) / sum);
+      }
+    }
+    for (const [key, amount] of next) addAmount(totals, key, amount.totalTokens, amount.costUsd);
+    out.set(period, next);
+  }
+  const received = [...window.values()].some(
+    (amount) => amount.totalTokens > 0 || amount.costUsd > 0,
+  );
+  const spread = received ? [...shared].filter((key) => sharedUsage.has(key)) : [];
+  return { periods: out, totals, spread };
+}
+
+const sumOf = (amounts: readonly (readonly [string, SplitAmount])[], measure: keyof SplitAmount) =>
+  amounts.reduce((sum, [, amount]) => sum + amount[measure], 0);
+
+function addMeasure(
+  amounts: Map<string, { costUsd: number; totalTokens: number }>,
+  key: string,
+  measure: keyof SplitAmount,
+  value: number,
+): void {
+  addAmount(amounts, key, measure === "totalTokens" ? value : 0, measure === "costUsd" ? value : 0);
 }

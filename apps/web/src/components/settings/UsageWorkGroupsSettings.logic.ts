@@ -17,10 +17,53 @@ export function assignProject(
   return groups.map((group) => {
     const projectIds = group.projectIds.filter((id) => id !== projectId);
     return {
-      name: group.name,
+      ...group,
       projectIds: group.name === groupName ? [...projectIds, projectId] : projectIds,
     };
   });
+}
+
+/** Each folder entry with the group it counts to: the first that lists it, as the server reads them. */
+export function folderEntries(
+  groups: readonly UsageWorkGroup[],
+): readonly { readonly folder: string; readonly group: string }[] {
+  const seen = new Map<string, string>();
+  for (const group of groups) {
+    for (const folder of group.folders ?? []) {
+      if (!seen.has(folder)) seen.set(folder, group.name);
+    }
+  }
+  return [...seen].map(([folder, group]) => ({ folder, group }));
+}
+
+/** A folder as an entry takes it, or null when it is not an absolute or `~` path. */
+export function usableFolder(folder: string): string | null {
+  const trimmed = folder.trim().replace(/(.)\/+$/, "$1");
+  return trimmed.startsWith("/") || trimmed === "~" || trimmed.startsWith("~/") ? trimmed : null;
+}
+
+/** Moves a folder entry into one group, or removes it with null. */
+export function assignFolder(
+  groups: readonly UsageWorkGroup[],
+  folder: string,
+  groupName: string | null,
+): readonly UsageWorkGroup[] {
+  return groups.map((group) => {
+    const { folders: current = [], ...rest } = group;
+    const others = current.filter((entry) => entry !== folder);
+    const folders = group.name === groupName ? [...others, folder] : others;
+    return folders.length === 0 ? rest : { ...rest, folders };
+  });
+}
+
+export function setGroupShared(
+  groups: readonly UsageWorkGroup[],
+  name: string,
+  shared: boolean,
+): readonly UsageWorkGroup[] {
+  return groups.map(({ shared: wasShared, ...group }) =>
+    (group.name === name ? shared : wasShared === true) ? { ...group, shared: true } : group,
+  );
 }
 
 /** A trimmed name no other group has, or null when the name cannot be used. */
@@ -53,7 +96,7 @@ export function newGroupName(groups: readonly UsageWorkGroup[], base: string): s
   }
 }
 
-/** Removing a group sends its projects to Other. */
+/** Removing a group sends its projects to Other and drops its folders. */
 export function removeGroup(
   groups: readonly UsageWorkGroup[],
   name: string,

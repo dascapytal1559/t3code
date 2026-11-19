@@ -21,25 +21,35 @@ export interface UsageBand extends UsageSplitBand {
 
 const ink = (percent: number) =>
   `color-mix(in oklab, var(--foreground) ${percent}%, var(--background))`;
+const PHONE = "light-dark(oklch(0.72 0.16 65), oklch(0.78 0.15 70))";
 const COMPUTER = "light-dark(oklch(0.55 0.19 264), oklch(0.66 0.17 264))";
+const paler = (color: string) => `color-mix(in oklab, ${color} 55%, var(--background))`;
 
-// Amber and blue as on the origin bar; upkeep is the computer's own work, so a paler blue.
+// Amber phone and blue computer as on the origin bar; paler when an agent sent the prompt.
 const DEVICE: Record<UsageDeviceBand, { readonly label: string; readonly color: string }> = {
-  phone: {
-    label: msg("Phone", { $context: "device a usage origin traces to" }),
-    color: "light-dark(oklch(0.72 0.16 65), oklch(0.78 0.15 70))",
+  phoneDirect: {
+    label: msg("Phone · direct", { $context: "usage band: prompts typed on the phone" }),
+    color: PHONE,
   },
-  computer: {
-    label: msg("Computer", { $context: "device a usage origin traces to" }),
+  phoneOrchestrated: {
+    label: msg("Phone · orchestrated", {
+      $context: "usage band: work agents sent on behalf of a phone prompt",
+    }),
+    color: paler(PHONE),
+  },
+  computerDirect: {
+    label: msg("Computer · direct", { $context: "usage band: prompts typed on the computer" }),
     color: COMPUTER,
   },
-  upkeep: {
-    label: msg("Computer · upkeep", { $context: "usage band: the computer's own upkeep work" }),
-    color: `color-mix(in oklab, ${COMPUTER} 45%, var(--background))`,
+  computerOrchestrated: {
+    label: msg("Computer · orchestrated", {
+      $context: "usage band: work agents sent on behalf of a computer prompt",
+    }),
+    color: paler(COMPUTER),
   },
   unlabelled: {
     label: msg("Unlabelled", { $context: "usage band: usage from before devices were recorded" }),
-    color: ink(22),
+    color: ink(28),
   },
 };
 

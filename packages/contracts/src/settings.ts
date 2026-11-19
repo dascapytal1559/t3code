@@ -1639,6 +1639,9 @@ export const ServerSettings = Schema.Struct({
     ),
   ),
 
+  /** Spreads usage in no group (Other) over the groups, as a shared group is. */
+  usageWorkShareOther: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+
   // Fork feature: set over MCP by `t3_objectives_set`. Kept here so they persist and reach every
   // client on the settings stream.
   objectives: Schema.NullOr(Objectives).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
@@ -2035,6 +2038,7 @@ export const ServerSettingsPatch = Schema.Struct({
   usageArchiveDirs: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
   /** Replaced whole. */
   usageWorkGroups: Schema.optionalKey(Schema.Array(UsageWorkGroup)),
+  usageWorkShareOther: Schema.optionalKey(Schema.Boolean),
   /** Replaced whole; null clears them. */
   objectives: Schema.optionalKey(Schema.NullOr(Objectives)),
   /** Replaced whole; null clears it. */

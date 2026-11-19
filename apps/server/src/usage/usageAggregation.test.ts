@@ -391,11 +391,12 @@ describe("UsageAggregator", () => {
       sinceDay: "2026-08-01",
       untilDay: "2026-08-31",
       rates,
+      // Upkeep counts by how it started, like any other computer work.
       attributeOrigin: (item) =>
         item.sessionId === "phone"
           ? { origin: "phone", basis: "stamp", reason: "typed" }
           : item.sessionId === "upkeep"
-            ? { origin: "computer", basis: "default", reason: "upkeep" }
+            ? { origin: "computer", basis: "default", reason: "upkeep", via: "agent" }
             : item.sessionId === "early"
               ? { origin: "computer", basis: "beforeOrigins", reason: "beforeStamps" }
               : { origin: "computer", basis: "default", reason: "noCause" },
@@ -435,7 +436,11 @@ describe("UsageAggregator", () => {
     const amount = [tokens, expect.closeTo(cost, 6)];
     // A bucket all in one band names it alone.
     expect(early).toMatchObject({ devices: "unlabelled", work: "Tooling" });
-    expect(day?.devices).toEqual({ phone: amount, upkeep: amount, computer: amount });
+    expect(day?.devices).toEqual({
+      phoneDirect: amount,
+      computerOrchestrated: amount,
+      computerDirect: amount,
+    });
     expect(day?.work).toEqual({ Tooling: amount, Trading: amount, "": amount });
   });
 

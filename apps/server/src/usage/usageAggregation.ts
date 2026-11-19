@@ -140,7 +140,7 @@ export function toUsageExportRecord(
         ? null
         : {
             device: origin.origin,
-            started: origin.via === undefined ? "direct" : "orchestrated",
+            started: startedOf(origin),
             ...(origin.via === undefined ? {} : { via: origin.via }),
             basis: origin.basis,
             reason: origin.reason,
@@ -155,11 +155,16 @@ export function toUsageExportRecord(
   };
 }
 
-/** The band a settled origin draws in: upkeep apart from the computer, pre-origins usage unlabelled. */
+/** Orchestrated when an agent sent the prompt on behalf of the device's typed one. */
+const startedOf = (key: UsageOriginKey) => (key.via === undefined ? "direct" : "orchestrated");
+
+/** The band a settled origin draws in; history from before origins, or archived, is unlabelled. */
 function deviceBand(key: UsageOriginKey): UsageDeviceBand {
-  if (key.origin === "phone") return "phone";
-  if (key.basis === "beforeOrigins") return "unlabelled";
-  return key.reason === "upkeep" ? "upkeep" : "computer";
+  const started = startedOf(key) === "direct" ? "Direct" : "Orchestrated";
+  if (key.origin === "phone") return `phone${started}`;
+  return key.basis === "beforeOrigins" || key.basis === "archive"
+    ? "unlabelled"
+    : `computer${started}`;
 }
 
 type MutableOriginReasonUsage = {

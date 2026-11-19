@@ -28,6 +28,42 @@ export const encodeClaudeFolder = (folder: string) => folder.replace(/[^a-zA-Z0-
 const isWithin = (folder: string, root: string) =>
   folder === root || folder.startsWith(root.endsWith(NodePath.sep) ? root : root + NodePath.sep);
 
+/** Folder levels from `root` down to `folder`, which it holds. */
+const levelsBelow = (root: string, folder: string) => {
+  const rest = NodePath.relative(root, folder);
+  return rest === "" ? 0 : rest.split(NodePath.sep).length;
+};
+
+/** A group's folder entries, `~` expanded; a folder two groups list counts to the first. */
+function workFolderEntries(
+  groups: readonly UsageWorkGroup[],
+  homeDir: string,
+): readonly { readonly folder: string; readonly group: string }[] {
+  const entries = new Map<string, string>();
+  for (const group of groups) {
+    for (const folder of group.folders ?? []) {
+      const expanded =
+        folder === "~" || folder.startsWith("~/") ? homeDir + folder.slice(1) : folder;
+      if (!NodePath.isAbsolute(expanded)) continue;
+      const resolved = NodePath.resolve(expanded);
+      if (!entries.has(resolved)) entries.set(resolved, group.name);
+    }
+  }
+  return [...entries]
+    .map(([folder, group]) => ({ folder, group }))
+    .sort((a, b) => b.folder.length - a.folder.length);
+}
+
+/** What clients spread over the other groups: shared groups' names, `""` for Other. */
+export const sharedWorkOf = (groups: readonly UsageWorkGroup[], shareOther: boolean) => [
+  ...groups.flatMap((group) => (group.shared === true ? [group.name] : [])),
+  ...(shareOther ? [""] : []),
+];
+
+/** Whether any group counts usage: one with a project or a folder in it. */
+export const groupsPlaceWork = (groups: readonly UsageWorkGroup[]) =>
+  groups.some((group) => group.projectIds.length > 0 || (group.folders?.length ?? 0) > 0);
+
 /** Reads the `gitdir:` line of a linked worktree's `.git` file. */
 async function readGitFile(gitFile: string): Promise<string | null> {
   const text = await NodeFSP.readFile(gitFile, "utf8").catch(() => null);
@@ -218,6 +254,11 @@ export function makeUsageWork(options: UsageWorkOptions) {
   // A pipeline review runs in no-mistakes' own checkout of a repository: count it to that repository.
   const reviewedRepo = (match: RegExpExecArray | null) =>
     match === null ? undefined : noMistakesRepo(match[1] ?? match[2]!);
+  // Only the review's own folder, so a folder entry on the repository does not take reviews.
+  const reviewFolder = (match: RegExpExecArray) =>
+    match[1] === undefined
+      ? NodePath.join(noMistakesHome, "repos", `${match[2]!}.git`)
+      : NodePath.join(noMistakesHome, "worktrees", match[1]);
 
   // Claude names decode against the folders they could have come from: projects and their worktrees.
   let decoder: { readonly key: string; readonly candidates: readonly [string, string][] } | null =
@@ -226,16 +267,23 @@ export function makeUsageWork(options: UsageWorkOptions) {
   const decoderFor = async (
     projects: readonly WorkProject[],
     threadWorktrees: readonly WorkWorktree[],
+    folders: readonly string[],
   ) => {
     const key = [
       ...projects.map((project) => project.root),
       ...threadWorktrees.map((w) => w.path),
+      ...folders,
     ].join("\0");
     if (decoder?.key === key) return decoder;
     const roots = [...new Set(projects.map((project) => project.root))];
     const worktrees = (await Promise.all(roots.map(linkedWorktrees))).flat();
     const candidates = [
-      ...new Set([...roots, ...worktrees, ...threadWorktrees.map((worktree) => worktree.path)]),
+      ...new Set([
+        ...roots,
+        ...worktrees,
+        ...threadWorktrees.map((worktree) => worktree.path),
+        ...folders,
+      ]),
     ]
       .map((folder): [string, string] => [encodeClaudeFolder(folder), folder])
       .sort((a, b) => b[0].length - a[0].length);
@@ -245,11 +293,13 @@ export function makeUsageWork(options: UsageWorkOptions) {
   };
   const decode = (name: string, candidates: readonly [string, string][]) => {
     if (decoded.has(name)) return decoded.get(name)!;
-    const repo = reviewedRepo(noMistakesEncoded.exec(name));
+    const review = noMistakesEncoded.exec(name);
     const found =
-      repo ??
-      candidates.find(([encoded]) => name === encoded || name.startsWith(encoded + "-"))?.[1] ??
-      null;
+      review !== null
+        ? reviewFolder(review)
+        : (candidates.find(
+            ([encoded]) => name === encoded || name.startsWith(encoded + "-"),
+          )?.[1] ?? null);
     decoded.set(name, found);
     return found;
   };
@@ -281,7 +331,10 @@ export function makeUsageWork(options: UsageWorkOptions) {
       }
     }
     const names = [...new Set(groups.map((group) => group.name))];
-    if (groupByProject.size === 0) return { groups: names, groupOf: () => null };
+    const folderEntries = workFolderEntries(groups, homeDir);
+    if (groupByProject.size === 0 && folderEntries.length === 0) {
+      return { groups: names, groupOf: () => null };
+    }
 
     const roots = await Promise.all(
       projects.map(async (project) => ({ id: project.id, root: await canonicalOf(project.root) })),
@@ -301,10 +354,19 @@ export function makeUsageWork(options: UsageWorkOptions) {
         ? folder
         : NodePath.join(worktree.root, NodePath.relative(worktree.path, folder));
     };
+    // The closest entry wins: a folder entry by the folder itself, a project also by its worktrees.
     const groupOfFolder = async (folder: string) => {
+      const entry = folderEntries.find((candidate) => isWithin(folder, candidate.folder));
       const repo = reviewedRepo(noMistakesPath.exec(folder));
       const placed = await canonicalOf(repo ?? inProject(folder));
       const project = roots.find((candidate) => isWithin(placed, candidate.root));
+      if (
+        entry !== undefined &&
+        (project === undefined ||
+          levelsBelow(entry.folder, folder) <= levelsBelow(project.root, placed))
+      ) {
+        return entry.group;
+      }
       return project === undefined ? null : (groupByProject.get(project.id) ?? null);
     };
 
@@ -315,7 +377,13 @@ export function makeUsageWork(options: UsageWorkOptions) {
     );
     const codex = codexPaths.length === 0 ? null : await codexFoldersFor(codexPaths);
     const claudeNames = [...seen.files].some(([, file]) => file.provider === "claude")
-      ? (await decoderFor(projects, worktrees)).candidates
+      ? (
+          await decoderFor(
+            projects,
+            worktrees,
+            folderEntries.map((entry) => entry.folder),
+          )
+        ).candidates
       : [];
     const byFile = new Map<string, string | null>();
     await Promise.all(

@@ -11,12 +11,15 @@ export function UsageBandList({
   metric,
   totalCostUsd,
   totalTokens,
+  spread,
   loading,
 }: {
   readonly bands: readonly UsageBand[];
   readonly metric: "cost" | "tokens";
   readonly totalCostUsd: number;
   readonly totalTokens: number;
+  /** Shared kinds of work the bands carry, as shown. */
+  readonly spread: readonly string[];
   readonly loading: boolean;
 }) {
   const gt = useGT();
@@ -33,7 +36,7 @@ export function UsageBandList({
       </p>
     );
   }
-  return bands.map((band, index) => {
+  const rows = bands.map((band, index) => {
     const position = emphasis[index] ?? 1;
     const share =
       metric === "cost"
@@ -83,4 +86,15 @@ export function UsageBandList({
       </div>
     );
   });
+  if (spread.length === 0) return rows;
+  return (
+    <>
+      {rows}
+      <p className="text-xs text-muted-foreground">
+        {gt("Spread across these groups: {kinds}", {
+          kinds: new Intl.ListFormat(locale, { type: "conjunction" }).format(spread),
+        })}
+      </p>
+    </>
+  );
 }

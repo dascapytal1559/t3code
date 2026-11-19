@@ -2,10 +2,14 @@ import { ProjectId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  assignFolder,
   assignProject,
+  folderEntries,
   groupOfProject,
   newGroupName,
   removeGroup,
+  setGroupShared,
+  usableFolder,
   usableGroupName,
 } from "./UsageWorkGroupsSettings.logic";
 
@@ -34,6 +38,38 @@ describe("usage work groups", () => {
     expect(usableGroupName(groups, "trading", "Trading")).toBe("trading");
     expect(usableGroupName(groups, "   ", null)).toBeNull();
     expect(newGroupName([...groups, { name: "Group 3", projectIds: [] }], "Group")).toBe("Group 4");
+  });
+
+  it("keeps a folder in one group, keeps folders and sharing when projects move, and removes with null", () => {
+    const withFolder = setGroupShared(
+      assignFolder(groups, "/work/main", "Tooling"),
+      "Tooling",
+      true,
+    );
+    expect(withFolder[1]).toEqual({
+      name: "Tooling",
+      projectIds: [],
+      folders: ["/work/main"],
+      shared: true,
+    });
+    const moved = assignProject(assignFolder(withFolder, "/work/main", "Trading"), app, "Tooling");
+    expect(folderEntries(moved)).toEqual([{ folder: "/work/main", group: "Trading" }]);
+    expect(moved[1]).toEqual({ name: "Tooling", projectIds: [app], shared: true });
+    expect(assignFolder(moved, "/work/main", null)).toEqual([
+      { name: "Trading", projectIds: [trader] },
+      { name: "Tooling", projectIds: [app], shared: true },
+    ]);
+    expect(setGroupShared(moved, "Tooling", false)[1]).toEqual({
+      name: "Tooling",
+      projectIds: [app],
+    });
+  });
+
+  it("takes absolute and home folders, without a trailing slash", () => {
+    expect(usableFolder(" /work/main/ ")).toBe("/work/main");
+    expect(usableFolder("~/notes")).toBe("~/notes");
+    expect(usableFolder("/")).toBe("/");
+    expect(usableFolder("work/main")).toBeNull();
   });
 
   it("sends a removed group's projects to Other", () => {

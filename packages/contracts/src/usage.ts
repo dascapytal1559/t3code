@@ -67,10 +67,17 @@ export const UsageSplit = Schema.Union([
 export type UsageSplit = typeof UsageSplit.Type;
 
 /**
- * The device band of usage: `upkeep` is the computer's upkeep, and `unlabelled` usage predates
- * origins (`USAGE_ORIGINS_RECORDED_SINCE`).
+ * The device band of usage: the device the starting prompt came from, and whether a person typed
+ * it there (`Direct`) or an agent sent it on their behalf (`Orchestrated`). `unlabelled` usage
+ * predates origins (`USAGE_ORIGINS_RECORDED_SINCE`) or comes from archived history.
  */
-export const UsageDeviceBand = Schema.Literals(["phone", "computer", "upkeep", "unlabelled"]);
+export const UsageDeviceBand = Schema.Literals([
+  "phoneDirect",
+  "phoneOrchestrated",
+  "computerDirect",
+  "computerOrchestrated",
+  "unlabelled",
+]);
 export type UsageDeviceBand = typeof UsageDeviceBand.Type;
 
 export const UsageBucket = Schema.Struct({
@@ -368,10 +375,15 @@ export const UsageModelSelector = Schema.Struct({
 });
 export type UsageModelSelector = typeof UsageModelSelector.Type;
 
-/** A kind of work the Usage page splits by: a name and the projects it counts. */
+/**
+ * A kind of work the Usage page splits by: a name, the projects it counts with their worktrees,
+ * and folders it counts without them. A shared group's usage is spread over the other groups.
+ */
 export const UsageWorkGroup = Schema.Struct({
   name: TrimmedNonEmptyString,
   projectIds: Schema.Array(ProjectId),
+  folders: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
+  shared: Schema.optionalKey(Schema.Boolean),
 });
 export type UsageWorkGroup = typeof UsageWorkGroup.Type;
 
@@ -422,6 +434,8 @@ export const UsageSummary = Schema.Struct({
   origins: Schema.optional(UsageOrigins),
   /** The `usageWorkGroups` names in settings order; absent from servers that predate them. */
   workGroups: Schema.optional(Schema.Array(Schema.String)),
+  /** Kinds of work clients spread over the other groups: shared group names, `""` for Other. */
+  sharedWork: Schema.optional(Schema.Array(Schema.String)),
   /** Absent when the server has no annotations file. */
   annotations: Schema.optional(ForwardCompatibleArray(UsageAnnotation)),
 });

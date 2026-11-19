@@ -555,7 +555,7 @@ describe("mergeUsage", () => {
               [
                 bucket({
                   sourcePath: mac.homePath,
-                  devices: { phone: [800, 6], upkeep: [360, 4] },
+                  devices: { phoneDirect: [800, 6], computerOrchestrated: [360, 4] },
                   work: { Tooling: [1000, 7], "": [160, 3] },
                 }),
                 // Parts rounded to a micro-dollar, and a part the server did not split.
@@ -563,13 +563,13 @@ describe("mergeUsage", () => {
                   sourcePath: mac.homePath,
                   model: "claude-opus-5-5",
                   costUsd: 3,
-                  devices: { computer: [1000, 2.0000004] },
+                  devices: { computerDirect: [1000, 2.0000004] },
                   work: "Trading",
                 }),
                 bucket({
                   day: day8,
                   sourcePath: mac.homePath,
-                  devices: "computer",
+                  devices: "computerDirect",
                   work: "Trading",
                 }),
               ],
@@ -599,9 +599,9 @@ describe("mergeUsage", () => {
       }
     }
     expect(Object.fromEntries(merged.devices!.daily.get("2026-08-07")!)).toEqual({
-      phone: { totalTokens: 800, costUsd: 6 },
-      upkeep: { totalTokens: 360, costUsd: 4 },
-      computer: { totalTokens: 1000, costUsd: expect.closeTo(2, 5) },
+      phoneDirect: { totalTokens: 800, costUsd: 6 },
+      computerOrchestrated: { totalTokens: 360, costUsd: 4 },
+      computerDirect: { totalTokens: 1000, costUsd: expect.closeTo(2, 5) },
       unlabelled: { totalTokens: 160, costUsd: expect.closeTo(1, 5) },
     });
     expect(Object.fromEntries(merged.work.daily.get(day8)!)).toEqual({
@@ -618,12 +618,76 @@ describe("mergeUsage", () => {
       ["", null],
     ]);
     expect(bands.valueAt("2026-08-07", "Tooling", "tokens")).toBe(1000);
+    // Nothing is shared unless a server says so.
+    expect(bands.spread).toEqual([]);
     expect(usageSplitBands(merged, "device", "tokens", false).bands.map(({ key }) => key)).toEqual([
-      "computer",
-      "phone",
-      "upkeep",
+      "computerDirect",
+      "phoneDirect",
+      "computerOrchestrated",
       "unlabelled",
     ]);
+  });
+
+  describe("shared kinds of work", () => {
+    const mac = { provider: "claude" as const, hostId: "mac", homePath: "/a/.claude" };
+    const day8 = "2026-08-08" as UsageDay;
+    const shared = (buckets: readonly UsageBucket[]) =>
+      mergeUsage(
+        [
+          environment("mac", {
+            ...summary(buckets, [mac]),
+            workGroups: ["Bones", "Meat", "Coordination"],
+            sharedWork: ["Coordination", ""],
+          }),
+        ],
+        USAGE_CONTRACT_VERSION,
+      );
+
+    it("spreads shared groups and Other over the others by each day's own ratio, else the window's", () => {
+      const merged = shared([
+        bucket({
+          sourcePath: mac.homePath,
+          work: { Bones: [300, 2], Meat: [600, 6], Coordination: [200, 1], "": [60, 1] },
+        }),
+        // A day with only shared usage takes the window's ratio.
+        bucket({ day: day8, sourcePath: mac.homePath, work: "Coordination" }),
+      ]);
+      const split = usageSplitBands(merged, "work", "tokens", false);
+
+      expect(split.bands.map((band) => band.key)).toEqual(["Meat", "Bones"]);
+      expect(split.spread).toEqual(["Coordination", ""]);
+      for (const day of merged.daily) {
+        const bands = split.bands.map((band) => ({
+          tokens: split.valueAt(day.day, band.key, "tokens"),
+          cost: split.valueAt(day.day, band.key, "cost"),
+        }));
+        expect(bands.reduce((sum, band) => sum + band.tokens, 0)).toBeCloseTo(day.totalTokens, 6);
+        expect(bands.reduce((sum, band) => sum + band.cost, 0)).toBeCloseTo(day.costUsd, 9);
+        // Each measure keeps the ratio its own usage has: 300:600 tokens, $2:$6 cost.
+        const ratio = (by: "tokens" | "cost") =>
+          split.valueAt(day.day, "Bones", by) / split.valueAt(day.day, "Meat", by);
+        expect(ratio("tokens")).toBeCloseTo(1 / 2, 9);
+        expect(ratio("cost")).toBeCloseTo(1 / 3, 9);
+      }
+      expect(split.bands.reduce((sum, band) => sum + band.totalTokens, 0)).toBeCloseTo(
+        merged.totalTokens,
+        6,
+      );
+    });
+
+    it("leaves shared usage in Other when no group in the window has any", () => {
+      const split = usageSplitBands(
+        shared([
+          bucket({ sourcePath: mac.homePath, work: { Coordination: [1000, 9], "": [160, 1] } }),
+        ]),
+        "work",
+        "cost",
+        false,
+      );
+
+      expect(split.bands).toEqual([{ key: "", groupIndex: null, costUsd: 10, totalTokens: 1160 }]);
+      expect(split.spread).toEqual([]);
+    });
   });
 
   it("counts all usage as unlabelled when no server reports origins", () => {

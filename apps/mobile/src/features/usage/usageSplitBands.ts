@@ -11,25 +11,35 @@ export const BREAKDOWN_OPTIONS = [
 ] as const satisfies readonly { value: UsageBreakdown; label: string }[];
 
 const DEVICE_LABEL: Record<UsageDeviceBand, string> = {
-  phone: msg("Phone", { $context: "device a usage origin traces to" }),
-  computer: msg("Computer", { $context: "device a usage origin traces to" }),
-  upkeep: msg("Computer · upkeep", { $context: "usage band: the computer's own upkeep work" }),
+  phoneDirect: msg("Phone · direct", { $context: "usage band: prompts typed on the phone" }),
+  phoneOrchestrated: msg("Phone · orchestrated", {
+    $context: "usage band: work agents sent on behalf of a phone prompt",
+  }),
+  computerDirect: msg("Computer · direct", {
+    $context: "usage band: prompts typed on the computer",
+  }),
+  computerOrchestrated: msg("Computer · orchestrated", {
+    $context: "usage band: work agents sent on behalf of a computer prompt",
+  }),
   unlabelled: msg("Unlabelled", {
     $context: "usage band: usage from before devices were recorded",
   }),
 };
 const OTHER_LABEL = msg("Other", { $context: "usage kind of work: usage in no group" });
 
-// The web page's hues: amber phone, blue computer, purple, blue and amber for the first groups.
+// The web page's hues: purple, blue and amber for the first groups.
 const GROUP_COLORS = ["#8c7bd1", "#5b9bbd", "#d4a548", "#4d9f8a", "#d97757", "#c06c9b"];
 
+// Amber phone and blue computer as on web; paler when an agent sent the prompt.
 function deviceColor(band: UsageDeviceBand, dark: boolean): string {
   switch (band) {
-    case "phone":
+    case "phoneDirect":
       return dark ? "#e6a54a" : "#d98a2b";
-    case "computer":
+    case "phoneOrchestrated":
+      return dark ? "#74593a" : "#efc795";
+    case "computerDirect":
       return dark ? "#6f8cf0" : "#3f63d8";
-    case "upkeep":
+    case "computerOrchestrated":
       return dark ? "#3a4874" : "#a6b6ee";
     case "unlabelled":
       return dark ? "#4a4a4a" : "#c4c4c4";

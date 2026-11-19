@@ -1158,6 +1158,7 @@ export function EnvironmentProviderSettings({
         key={`usage-work-groups:${environmentId}`}
         environmentId={environmentId}
         groups={settings.usageWorkGroups}
+        shareOther={settings.usageWorkShareOther}
         readOnly={readOnly}
       />
 

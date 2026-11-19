@@ -56,7 +56,9 @@ import {
 import * as UsageClose from "./UsageClose.ts";
 import * as UsageOrigins from "./UsageOrigins.ts";
 import {
+  groupsPlaceWork,
   makeUsageWork,
+  sharedWorkOf,
   USAGE_SESSION_FOLDERS_FILE_NAME,
   type WorkFolders,
   type WorkWorktree,
@@ -989,13 +991,13 @@ export const make = Effect.gen(function* () {
     WHERE CASE WHEN json_valid(payload_json) THEN json_extract(payload_json, '$.worktreePath') END
       IS NOT NULL
   `;
-  // Projects' usage counts to their groups; without projects, every group is empty.
+  // Projects' and folders' usage counts to their groups; with neither, every group is empty.
   const placeWork = Effect.fn("UsageService.placeWork")(function* (
     settings: ServerSettingsValue,
     seen: WorkFolders,
   ) {
     const groups = settings.usageWorkGroups;
-    const [projects, worktrees] = groups.some((group) => group.projectIds.length > 0)
+    const [projects, worktrees] = groupsPlaceWork(groups)
       ? yield* Effect.all([activeProjects, threadWorktrees]).pipe(
           Effect.tapError((error) => Effect.logWarning("Usage could not read projects", error)),
           Effect.orElseSucceed(() => [[], []] as const),
@@ -1201,7 +1203,7 @@ export const make = Effect.gen(function* () {
     // The models priced below, as UsageAggregator resolves them: an alias replaces rateModel.
     const rateModels = new Set<string>();
     // The folders the kind-of-work split places records by, gathered on the same walk.
-    const placesWork = settings.usageWorkGroups.some((group) => group.projectIds.length > 0);
+    const placesWork = groupsPlaceWork(settings.usageWorkGroups);
     const workCwds = new Set<string>();
     const workFiles = new Map<
       string,
@@ -1498,6 +1500,7 @@ export const make = Effect.gen(function* () {
     const aggregated = aggregator.finish();
     const readAt = yield* DateTime.now;
     const finishedAtMs = yield* Clock.currentTimeMillis;
+    const sharedWork = sharedWorkOf(settings.usageWorkGroups, settings.usageWorkShareOther);
 
     const summary = {
       contractVersion: USAGE_CONTRACT_VERSION,
@@ -1508,6 +1511,7 @@ export const make = Effect.gen(function* () {
       buckets: aggregated.buckets,
       ...(aggregated.origins === undefined ? {} : { origins: aggregated.origins }),
       workGroups: work.groups,
+      ...(sharedWork.length === 0 ? {} : { sharedWork }),
       sources,
       pricing: summaryPricing,
       scanDurationMs: Math.max(0, finishedAtMs - startedAtMs),

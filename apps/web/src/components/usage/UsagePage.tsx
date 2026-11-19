@@ -61,7 +61,7 @@ import {
   makeWindow,
 } from "@t3tools/shared/usageFormat";
 import { formatUsageContractMismatch, usageSourceMessages } from "@t3tools/shared/usageFormatCopy";
-import { usageSplitBands } from "@t3tools/shared/usageMerge";
+import { OTHER_WORK, usageSplitBands } from "@t3tools/shared/usageMerge";
 import { Button, InlineButton } from "../ui/button";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import {
@@ -89,7 +89,12 @@ import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { UsageLimitsSection } from "./UsageLimits";
 import { UsagePriceOverrides } from "./UsagePriceOverrides";
 import { UsageProviderChart, UsageStackedChart, usageChartCaption } from "./UsageProviderChart";
-import { BREAKDOWN_OPTIONS, presentBand, type UsageBreakdown } from "./usageSplits";
+import {
+  BREAKDOWN_OPTIONS,
+  OTHER_WORK_LABEL,
+  presentBand,
+  type UsageBreakdown,
+} from "./usageSplits";
 import { UsageBandList } from "./UsageBandList";
 import { collectUsageAnnotations, placeUsageAnnotations } from "./usageAnnotations";
 import { splitSkippedRecords } from "./usageSkippedRecords";
@@ -739,7 +744,11 @@ function UsageOverview({
   const bandSplit =
     splitBands === null
       ? null
-      : { bands: splitBands.bands.map(presentBand), valueAt: splitBands.valueAt };
+      : {
+          bands: splitBands.bands.map(presentBand),
+          spread: splitBands.spread.map((key) => (key === OTHER_WORK ? m(OTHER_WORK_LABEL) : key)),
+          valueAt: splitBands.valueAt,
+        };
   const chartAnnotations = placeUsageAnnotations(
     showAnnotations ? annotations : [],
     shownHourly ? hours : days,
@@ -761,34 +770,6 @@ function UsageOverview({
       ))}
       <section className="grid gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
         <div className="flex min-w-0 flex-col gap-5">
-          {/* Splits the chart and this list; the Breakdown table below has its own switch. */}
-          <div className="-ms-2 -mb-3 flex">
-            <Select
-              value={split}
-              onValueChange={(value) => {
-                const option = BREAKDOWN_OPTIONS.find((entry) => entry.value === value);
-                if (option) onBreakdownChange(option.value);
-              }}
-            >
-              <SelectTrigger
-                aria-label={gt("Split usage")}
-                size="compact"
-                variant="ghost"
-                className="w-auto min-w-0"
-              >
-                <SelectValue>
-                  {m(BREAKDOWN_OPTIONS.find((option) => option.value === split)!.label)}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="start" alignItemWithTrigger={false}>
-                {BREAKDOWN_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {m(option.label)}
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-          </div>
           <div className="flex flex-col gap-1">
             <p
               className={cn(
@@ -858,6 +839,7 @@ function UsageOverview({
               metric={metric}
               totalCostUsd={merged.costUsd}
               totalTokens={merged.totalTokens}
+              spread={bandSplit?.spread ?? []}
               loading={loadingPartial}
             />
           ) : null}
@@ -942,14 +924,13 @@ function UsageOverview({
         </div>
 
         <div className="flex min-w-0 flex-col gap-3">
-          {/* pr-16 matches the chart's y-axis gutter, so the title centers over the bars; the
-              toggle's icon lines up with the axis labels below it. */}
-          <div className="relative">
-            <h2 className="pr-16 text-center text-sm font-medium text-foreground">
-              {usageChartTitle(metric, shownHourly, days.length, m)}
-            </h2>
-            {annotations.length === 0 ? null : (
-              <div className="absolute inset-y-0 end-0 flex w-16 items-center ps-1">
+          {/* The split drives the chart and the list beside it; Breakdown below has its own. */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <div className="flex min-w-0 items-center gap-1">
+              <h2 className="text-sm font-medium text-foreground">
+                {usageChartTitle(metric, shownHourly, days.length, m)}
+              </h2>
+              {annotations.length === 0 ? null : (
                 <ToggleButton
                   aria-label={gt("Chart annotations")}
                   title={
@@ -962,8 +943,24 @@ function UsageOverview({
                 >
                   <MilestoneIcon aria-hidden />
                 </ToggleButton>
-              </div>
-            )}
+              )}
+            </div>
+            <ToggleGroup
+              aria-label={gt("Split usage")}
+              variant="segmented"
+              className="ms-auto"
+              value={[split]}
+              onValueChange={(next) => {
+                const option = BREAKDOWN_OPTIONS.find((entry) => entry.value === next[0]);
+                if (option) onBreakdownChange(option.value);
+              }}
+            >
+              {BREAKDOWN_OPTIONS.map((option) => (
+                <Toggle key={option.value} value={option.value}>
+                  {m(option.label)}
+                </Toggle>
+              ))}
+            </ToggleGroup>
           </div>
           {activeProviders.length === 0 && excludedProviders.size > 0 ? (
             <p className="flex h-56 items-center justify-center text-sm text-muted-foreground">
