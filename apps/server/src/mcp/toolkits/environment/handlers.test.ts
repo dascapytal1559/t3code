@@ -403,7 +403,7 @@ it.effect(
           target: wakeRun,
           causeMessageId: null,
           device: "phone",
-          bound: { basis: "stamp", reason: "inherited" },
+          bound: { basis: "stamp", reason: "inherited", boundAt: "1970-01-01T00:00:00.000Z" },
         },
       ]);
       yield* claim({ threadId, runId: wakeRun, causedBy: null });
@@ -489,6 +489,7 @@ it.effect(
                       : { origin: "unknown", basis: "default", reason: "noCause" },
                   reroots: false,
                   runId: id === threadId ? wakeRun : null,
+                  atMs: 0,
                 }),
             }),
           ),

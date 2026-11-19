@@ -1263,6 +1263,7 @@ it.effect.each([
             key: { origin, basis: "stamp", reason } as UsageOrigins.UsageOriginKey,
             reroots: false,
             runId,
+            atMs: 0,
           },
     );
     const bound = command!.usageOrigin;

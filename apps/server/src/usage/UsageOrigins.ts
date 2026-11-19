@@ -17,6 +17,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import * as UsageClaims from "./UsageClaims.ts";
 import * as UsageClose from "./UsageClose.ts";
+import * as UsageLabelStore from "./UsageLabelStore.ts";
 import * as UsageSessionRegister from "./UsageSessionRegister.ts";
 
 const ORIGINS_RECORDED_SINCE_MS = Date.parse(USAGE_ORIGINS_RECORDED_SINCE);
@@ -535,7 +536,7 @@ export interface OriginRegistration {
 }
 
 /** A session started with no T3 thread or FirstMate task behind it: you, in a terminal. */
-const TERMINAL_ORIGIN: DeviceOriginKey = {
+export const TERMINAL_ORIGIN: DeviceOriginKey = {
   origin: "computer",
   basis: "terminal",
   reason: "terminal",
@@ -585,7 +586,7 @@ const missed = (reason: UsageOriginReason): UsageOriginKey => ({
   reason,
 });
 const UNREGISTERED_SESSION = missed("unregisteredSession");
-const UNMATCHED_REGISTRATION = missed("unmatchedRegistration");
+export const UNMATCHED_REGISTRATION = missed("unmatchedRegistration");
 
 /** The last item that started at or before the time; items are sorted by start. */
 function startedBy<T extends { readonly startedAtMs: number }>(
@@ -786,6 +787,30 @@ export interface BoundOrigin {
   readonly reroots: boolean;
   /** The run of the turn running then, if one was. */
   readonly runId: string | null;
+  /** The moment it was read at. */
+  readonly atMs: number;
+}
+
+/** A session whose label follows one thread's work: its own, or one registered from it. */
+export interface LabelledSession {
+  readonly sessionId: string;
+  readonly startedAtMs: number;
+  /** Where a registered session registers again, resumed from somewhere else. */
+  readonly untilMs: number;
+}
+
+/** What a thread's work decides as its evidence stands now: what the label writers write down. */
+export interface ThreadLabels {
+  readonly sessions: readonly LabelledSession[];
+  /** A session's label from just after `afterMs` (or its start), and each time it changes. */
+  readonly rowsAfter: (
+    session: LabelledSession,
+    afterMs: number,
+  ) => UsageClose.ClosedSessionLabel[];
+  /** The work thread's timeline, birth first; empty for a coordinator. */
+  readonly work: readonly OriginEntry[];
+  /** Its prompts after the time asked for. */
+  readonly prompts: readonly UsageClose.ClosedPromptLabel[];
 }
 
 export class UsageOrigins extends Context.Service<
@@ -800,6 +825,23 @@ export class UsageOrigins extends Context.Service<
       threadId: string,
       atMs: number,
     ) => Effect.Effect<BoundOrigin | null, UsageOriginsReadError>;
+    /** Sessions registered in `[fromMs, untilMs)`, with the thread each started from. */
+    readonly registrations: (
+      fromMs: number,
+      untilMs: number,
+    ) => Effect.Effect<readonly OriginRegistration[], UsageOriginsReadError>;
+    /**
+     * A thread's labels through `throughMs` by the rules Usage reads with, on the evidence there
+     * is: no claim on a session or folder, no folder guesses, and a run's claim only if it was
+     * made while the run ran. `registrations` are every registration of the sessions registered
+     * from it. Null when T3 has no such thread.
+     */
+    readonly labelThread: (input: {
+      readonly threadId: string;
+      readonly afterMs: number;
+      readonly throughMs: number;
+      readonly registrations: readonly OriginRegistration[];
+    }) => Effect.Effect<ThreadLabels | null, UsageOriginsReadError>;
     /** Every run of the scheduled task counts here from now on. */
     readonly bindScheduledTask: (
       taskId: string,
@@ -829,10 +871,11 @@ export class UsageOrigins extends Context.Service<
 >()("t3/usage/UsageOrigins") {}
 
 /**
- * The origin T3 stores by value for work it binds, stripped of how this read matched it. Only a
- * phone or computer is stored: other work keeps counting by its recorded causes and claims.
+ * The origin T3 stores by value for work it binds, stripped of how this read matched it, with the
+ * moment it was read at. Only a phone or computer is stored: other work keeps counting by its
+ * recorded causes and claims.
  */
-export const storedOrigin = (key: UsageOriginKey) =>
+export const storedOrigin = (key: UsageOriginKey, boundAtMs?: number) =>
   isDevice(key)
     ? {
         origin: key.origin,
@@ -841,6 +884,9 @@ export const storedOrigin = (key: UsageOriginKey) =>
         reason: key.reason === "typed" ? "inherited" : key.reason,
         ...(key.claim === undefined ? {} : { claim: key.claim }),
         ...rootOf(key),
+        ...(boundAtMs === undefined
+          ? {}
+          : { boundAt: DateTime.formatIso(DateTime.makeUnsafe(boundAtMs)) }),
       }
     : undefined;
 
@@ -851,6 +897,8 @@ export type CloseOutcome =
       readonly records: number;
       readonly sessionRows: number;
       readonly promptRows: number;
+      /** How the labels written at birth compared; null before they were written. */
+      readonly born: UsageLabelStore.BornCheck | null;
     }
   | { readonly closed: false; readonly why: "notDue" | "superseded" | "differs" };
 
@@ -870,8 +918,8 @@ function closedBound(
   const turn = rows[turnAt];
   // The first row after a turn's own starts when that turn ended.
   if (turn !== undefined && (turnAt === 0 || atMs < rows[turnAt - 1]!.fromMs + BIND_GRACE_MS))
-    return { key: turn.key, reroots: turn.typed, runId: turn.runId };
-  return coordinator ? { key: NO_PROMPT_UPKEEP, reroots: false, runId: null } : undefined;
+    return { key: turn.key, reroots: turn.typed, runId: turn.runId, atMs };
+  return coordinator ? { key: NO_PROMPT_UPKEEP, reroots: false, runId: null, atMs } : undefined;
 }
 
 const StoredRoot = Schema.Struct({ threadId: Schema.String, messageId: Schema.String });
@@ -883,6 +931,7 @@ const StoredOriginJson = Schema.fromJsonString(
     reason: UsageOriginReason,
     claim: Schema.optional(UsageOriginClaimKind),
     root: Schema.optional(StoredRoot),
+    boundAt: Schema.optional(Schema.String),
   }),
 );
 const decodeStoredOrigin = Schema.decodeUnknownOption(StoredOriginJson);
@@ -917,7 +966,7 @@ const storedOriginOf = (json: string | null): DeviceOriginKey | undefined => {
   if (json === null) return undefined;
   const decoded = decodeStoredOrigin(json);
   if (Option.isNone(decoded)) return undefined;
-  const { claim, root, ...key } = decoded.value;
+  const { claim, root, boundAt: _boundAt, ...key } = decoded.value;
   const stored = {
     ...key,
     ...(claim === undefined ? {} : { claim }),
@@ -998,6 +1047,7 @@ const make = Effect.gen(function* () {
   const claims = yield* UsageClaims.UsageClaims;
   const register = yield* UsageSessionRegister.UsageSessionRegister;
   const store = UsageClose.makeClosedStore(sql);
+  const labelStore = UsageLabelStore.makeLabelStore(sql);
 
   // T3's own sessions register too, and are dropped: T3 knows them turn by turn. A FirstMate task
   // resolves to the thread it runs in, named by that thread's bound environment.
@@ -1155,6 +1205,8 @@ const make = Effect.gen(function* () {
     readonly onlyThread?: string;
     /** Registered sessions, whose starting turns are loaded however long before they began. */
     readonly registrations?: ReadonlyArray<OriginRegistration>;
+    /** Only claims made while their run ran, as a label written then would have seen. */
+    readonly whileRunning?: boolean;
   }) {
     const until = iso(input.untilMs);
     const starters = (input.registrations ?? []).flatMap((registration) =>
@@ -1221,6 +1273,7 @@ const make = Effect.gen(function* () {
             SELECT ${messageColumns} ${fromMessages}
             WHERE message.role = 'user' AND message.created_at >= ${iso(input.promptsSinceMs)}
               AND message.created_at < ${until}
+              ${input.onlyThread === undefined ? sql`` : sql`AND message.thread_id = ${input.onlyThread}`}
           `.pipe(NodeSqliteClient.readOnly);
     const turnMessages = turnRows.map((row) =>
       row.message_id === null ? null : toMessage({ ...row, message_id: row.message_id }),
@@ -1361,7 +1414,10 @@ const make = Effect.gen(function* () {
       ]);
       while (runIds.length > 0) {
         for (const runId of runIds) runsRead.add(runId);
-        const found = yield* claims.readRuns(runIds);
+        const found = yield* claims.readRuns(
+          runIds,
+          input.whileRunning === true ? { whileRunning: true } : undefined,
+        );
         claimRows.push(...found);
         const claimCauses = yield* loadCauses(
           found.flatMap((claim) => claimMessage(claim) ?? []),
@@ -1589,22 +1645,146 @@ const make = Effect.gen(function* () {
             key: withVia(moved.key, segment?.key.via),
             reroots: false,
             runId: turn.runId,
+            atMs,
           } satisfies BoundOrigin;
         if (segment !== undefined)
           return {
             key: segment.key,
             reroots: segment.typed,
             runId: turn.runId,
+            atMs,
           } satisfies BoundOrigin;
       }
       // A coordinator acting between its turns does its own upkeep.
-      if (thread.coordinator === 1) return { key: NO_PROMPT_UPKEEP, reroots: false, runId: null };
+      if (thread.coordinator === 1)
+        return { key: NO_PROMPT_UPKEEP, reroots: false, runId: null, atMs } satisfies BoundOrigin;
       const entry = startedBy(facts.resolver.timelineOf(threadId), atMs);
       return {
         key: entry?.key ?? NO_ORIGIN_BOUND,
         reroots: false,
         runId: null,
+        atMs,
       } satisfies BoundOrigin;
+    },
+    Effect.mapError((cause) => new UsageOriginsReadError({ cause })),
+  );
+
+  const registrations = Effect.fn("UsageOrigins.registrations")(
+    function* (fromMs: number, untilMs: number) {
+      return yield* resolveRegistrations(yield* register.read(fromMs, untilMs));
+    },
+    Effect.mapError((cause) => new UsageOriginsReadError({ cause })),
+  );
+
+  const labelThread = Effect.fn("UsageOrigins.labelThread")(
+    function* (input: {
+      readonly threadId: string;
+      readonly afterMs: number;
+      readonly throughMs: number;
+      readonly registrations: readonly OriginRegistration[];
+    }) {
+      const { threadId, throughMs } = input;
+      const [thread] = yield* sql<{ readonly thread_id: string }>`
+        SELECT thread_id FROM orchestration_v2_projection_threads WHERE thread_id = ${threadId}
+      `.pipe(NodeSqliteClient.readOnly);
+      if (thread === undefined) return null;
+      const own = input.registrations.filter((entry) => entry.threadId === threadId);
+      const facts = yield* collect({
+        turnsSinceMs: input.afterMs - TURN_LOOKBACK_MS,
+        untilMs: throughMs + 1,
+        promptsSinceMs: input.afterMs + 1,
+        onlyThread: threadId,
+        registrations: own,
+        whileRunning: true,
+      });
+      const segments = facts.turns.flatMap((turn) => turnSegments(turn, facts.resolver));
+      const timeline = facts.resolver.timelineOf(threadId);
+      const index = new UsageOriginIndex({
+        turns: segments,
+        worktrees: [],
+        claims: [],
+        registrations: input.registrations,
+        timelines: [
+          {
+            threadId,
+            entries: timeline.map(({ startedAtMs, key }) => ({ startedAtMs, key })),
+          },
+        ],
+      });
+      const moves = timeline.map((entry) => entry.startedAtMs);
+      const changes = new Map<string, number[]>();
+      const sessions: LabelledSession[] = [];
+      for (const segment of segments.toSorted(byStart)) {
+        const points = changes.get(segment.sessionId);
+        const ends = segment.completedAtMs === null ? [] : [segment.completedAtMs + 1];
+        if (points !== undefined) {
+          points.push(segment.startedAtMs, ...ends);
+          continue;
+        }
+        changes.set(segment.sessionId, [segment.startedAtMs, ...ends, ...moves]);
+        sessions.push({
+          sessionId: segment.sessionId,
+          startedAtMs: segment.startedAtMs,
+          untilMs: Number.POSITIVE_INFINITY,
+        });
+      }
+      for (const registration of own.toSorted(byStart)) {
+        const next = input.registrations
+          .filter(
+            (other) =>
+              other.sessionId === registration.sessionId &&
+              other.startedAtMs > registration.startedAtMs,
+          )
+          .reduce((soonest, other) => Math.min(soonest, other.startedAtMs), Infinity);
+        if (!changes.has(registration.sessionId)) changes.set(registration.sessionId, moves);
+        sessions.push({
+          sessionId: registration.sessionId,
+          startedAtMs: registration.startedAtMs,
+          untilMs: next,
+        });
+      }
+      const rowsAfter = (session: LabelledSession, afterMs: number) => {
+        const fromMs = Math.max(afterMs + 1, session.startedAtMs);
+        const lastMs = Math.min(throughMs, session.untilMs - 1);
+        const points = [
+          ...new Set([
+            fromMs,
+            ...(changes.get(session.sessionId) ?? []).filter(
+              (atMs) => atMs > fromMs && atMs <= lastMs,
+            ),
+          ]),
+        ]
+          .filter((atMs) => atMs <= lastMs)
+          .toSorted((a, b) => a - b);
+        const rows: UsageClose.ClosedSessionLabel[] = [];
+        for (const timestampMs of points) {
+          const point = { sessionId: session.sessionId, timestampMs };
+          const turn = index.turnAt(point);
+          const row: UsageClose.ClosedSessionLabel = {
+            sessionId: session.sessionId,
+            fromMs: timestampMs,
+            key: index.lookup(point),
+            runId: turn?.runId ?? null,
+            typed: turn?.typed === true,
+          };
+          const last = rows.at(-1);
+          if (last === undefined || !UsageClose.sameRow(last, row)) rows.push(row);
+        }
+        return rows;
+      };
+      const prompts = facts.promptMessages.flatMap((message): UsageClose.ClosedPromptLabel[] =>
+        message.createdAtMs === undefined
+          ? []
+          : [
+              {
+                messageId: message.id,
+                createdAtMs: message.createdAtMs,
+                key: promptOrigin(message, facts.resolver),
+                ...(message.threadId === undefined ? {} : { threadId: message.threadId }),
+              },
+            ],
+      );
+      return { sessions, rowsAfter, work: timeline, prompts } satisfies ThreadLabels;
     },
     Effect.mapError((cause) => new UsageOriginsReadError({ cause })),
   );
@@ -1648,6 +1828,35 @@ const make = Effect.gen(function* () {
     Effect.mapError((cause) => new UsageOriginsReadError({ cause })),
   );
 
+  /**
+   * The born labels of a span just closed, against what the close worked out for it: records
+   * and prompts after born labels began. Every difference is logged by reason.
+   */
+  const checkBorn = Effect.fn("UsageOrigins.checkBorn")(function* (input: {
+    readonly throughMs: number;
+    readonly index: UsageOriginIndex;
+    readonly records: readonly OriginRecord[];
+    readonly prompts: readonly UsageClose.ClosedPromptLabel[];
+  }) {
+    const cursor = yield* labelStore.cursor;
+    if (cursor === null) return null;
+    const records = input.records.filter((record) => record.timestampMs > cursor.fromMs);
+    const sessionIds = [...new Set(records.map((record) => record.sessionId))];
+    const check = UsageLabelStore.checkBorn({
+      born: new UsageClose.ClosedLabels(
+        yield* labelStore.sessionLabels(sessionIds, input.throughMs),
+      ),
+      derived: (record) => input.index.lookup(record),
+      records,
+      bornPrompts: yield* labelStore.promptLabels(cursor.fromMs + 1, input.throughMs + 1),
+      derivedPrompts: input.prompts.filter((prompt) => prompt.createdAtMs > cursor.fromMs),
+    });
+    yield* check.differingRecords + check.differingPrompts === 0
+      ? Effect.logInfo("Usage labels written at birth match the close", check)
+      : Effect.logWarning("Usage labels written at birth differ from the close", check);
+    return check;
+  });
+
   const close = Effect.fn("UsageOrigins.close")(
     function* (throughMs: number, records: readonly OriginRecord[]) {
       const span = yield* store.span;
@@ -1671,7 +1880,7 @@ const make = Effect.gen(function* () {
       );
       const next = { fromMs: span?.fromMs ?? UsageClose.CLOSE_FROM_MS, throughMs };
       const closedAt = DateTime.formatIso(yield* DateTime.now);
-      return yield* sql
+      const outcome = yield* sql
         .withTransaction(
           Effect.gen(function* () {
             const current = yield* store.span;
@@ -1705,6 +1914,7 @@ const make = Effect.gen(function* () {
               records: closing.length,
               sessionRows: sessions.length,
               promptRows: prompts.length,
+              born: null,
             } satisfies CloseOutcome;
           }),
         )
@@ -1718,6 +1928,16 @@ const make = Effect.gen(function* () {
               ),
           }),
         );
+      if (!outcome.closed) return outcome;
+      // The check only reports: a close never waits on or fails for the labels it checks.
+      const born = yield* checkBorn({ throughMs, index, records: closing, prompts }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("Usage could not check born labels against the close", cause).pipe(
+            Effect.as(null),
+          ),
+        ),
+      );
+      return { ...outcome, born } satisfies CloseOutcome;
     },
     Effect.mapError((cause) => new UsageOriginsReadError({ cause })),
   );
@@ -1725,6 +1945,8 @@ const make = Effect.gen(function* () {
   return UsageOrigins.of({
     read,
     originAt,
+    registrations,
+    labelThread,
     bindScheduledTask,
     closedSpan,
     readClosed,

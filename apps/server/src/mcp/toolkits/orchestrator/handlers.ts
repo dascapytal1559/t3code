@@ -215,7 +215,7 @@ const handlers = {
           return yield* service.sendToThread(
             scope,
             input,
-            bound?.reroots === true ? UsageOrigins.storedOrigin(bound.key) : undefined,
+            bound?.reroots === true ? UsageOrigins.storedOrigin(bound.key, bound.atMs) : undefined,
           );
         }),
     ),

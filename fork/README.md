@@ -315,7 +315,9 @@ and what agents claim.
   turn and moves no work. Every stored origin keeps `root`, the typed prompt
   (`threadId`, `messageId`) that decided it, copied unchanged as work inherits;
   rules (a journal, upkeep, a terminal) have none, and Usage never adds tokens
-  up by it. The calling thread is the MCP caller's own thread; a caller
+  up by it. A value bound from a thread also keeps `boundAt`, the moment of
+  that thread's work it was read at (a `fromThread` claim keeps it in
+  `bound_json`); values stored before it have none. The calling thread is the MCP caller's own thread; a caller
   outside threads, such as FirstMate's scripts, names it as
   `fromThread: { threadId, at? }`, with `at` when a job that outlived its turn
   began. A thread's agent may name only itself, and never with `at`. Callers
@@ -401,6 +403,29 @@ and what agents claim.
   from the thread's sessions' rows within a turn and its grace, and as upkeep
   for a coordinator between turns; a work thread between turns still reads its
   timeline, since a run claim on its last turn names only that run.
+- Labels are also written at birth, alongside the close, which checks them
+  (`UsageLabels.ts`, stage 1 of replacing the close; nothing reads them yet,
+  so the page reads exactly as above). A reactor wakes on the events that
+  decide a label (a thread created, a prompt, a run or provider turn starting
+  or ending), at most every 5 seconds, and every 5 minutes for sessions that
+  registered since. Each pass relabels the threads where something happened
+  since the last, by the rules above on the evidence there is: no session or
+  folder claim, no folder guess, and a run claim only if it was made while the
+  run ran. It writes fork tables in the close's shape:
+  `usage_session_labels` (a row where each session's label starts and
+  changes), `usage_work_labels` (a work thread's birth and each move),
+  `usage_prompt_labels`, and `usage_label_cursor` (from when, and through
+  when). A pass writes again the last 5 minutes before the previous one,
+  since T3 can record a turn's start seconds after it began; older rows never
+  change. Naming a running turn with `t3_usage_claim` writes its thread's
+  labels again from the turn's start; a name given after the run ended is
+  refused there, so it changes no born label. Writing catches up from the
+  cursor on start, from projections rather than the event log (kept about a
+  day), and begins, the first time, where the close's rows end. A session that
+  registers again (resumed, or under another task) follows each registration
+  from its start. When the close seals a span, it compares each record's and
+  prompt's born label with its own and logs the differences counted by reason
+  ("Usage labels written at birth match the close", or "differ").
 - Every settled record also carries a `reason`, kept on the server: `typed`,
   `inherited`, `journal`, `upkeep` or `terminal` when there is device
   evidence, else what is missing (`unregisteredSession`,

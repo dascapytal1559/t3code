@@ -109,7 +109,9 @@ export const layer = McpToolAccess.toLayer(
             // Only a send from a turn typed then moves the work it reaches, as t3_thread_send.
             const bound = yield* bindUsageOrigin(threads, undefined, caller?.id);
             const usageOrigin =
-              bound?.reroots === true ? UsageOrigins.storedOrigin(bound.key) : undefined;
+              bound?.reroots === true
+                ? UsageOrigins.storedOrigin(bound.key, bound.atMs)
+                : undefined;
             const commandId = yield* newCommandId();
             const messageId = MessageId.make(commandId);
             const result = yield* ThreadMessageIntake.sendToThread({

@@ -360,7 +360,7 @@ export const bindUsageOrigin = Effect.fn("mcp.bindUsageOrigin")(function* (
 export const bornFromCaller = Effect.gen(function* () {
   const { caller, threads } = yield* loadCaller();
   const bound = yield* bindUsageOrigin(threads, undefined, caller?.id);
-  return bound === null ? undefined : UsageOrigins.storedOrigin(bound.key);
+  return bound === null ? undefined : UsageOrigins.storedOrigin(bound.key, bound.atMs);
 });
 
 export const newCommandId = Effect.fn("mcp.newCommandId")(function* () {

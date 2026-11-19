@@ -14,6 +14,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Environment from "../../../environment/ServerEnvironment.ts";
 import * as UsageClaims from "../../../usage/UsageClaims.ts";
+import * as UsageLabels from "../../../usage/UsageLabels.ts";
 import * as UsageOrigins from "../../../usage/UsageOrigins.ts";
 import * as UsageService from "../../../usage/UsageService.ts";
 import * as Orchestrator from "../../../orchestration-v2/Orchestrator.ts";
@@ -39,6 +40,17 @@ const runningTurn = Effect.fn("mcp.usageClaimRunningTurn")(function* (threadId: 
   return RunId.make(bound.runId);
 });
 
+/** A running turn's name is its born label; the label pass also finds it, a few seconds later. */
+const nameRunningTurn = (runId: string) =>
+  Effect.serviceOption(UsageLabels.UsageLabels).pipe(
+    Effect.flatMap((labels) =>
+      Option.isNone(labels) ? Effect.void : labels.value.named(runId).pipe(Effect.asVoid),
+    ),
+    Effect.catchCause((cause) =>
+      Effect.logWarning("Usage could not write a named turn's labels", { runId, cause }),
+    ),
+  );
+
 /** A claim on where a task's thread counts its work now (or at `at`), bound by value. */
 const boundClaim = Effect.fn("mcp.boundUsageClaim")(function* (
   threads: Parameters<typeof bindUsageOrigin>[0],
@@ -47,7 +59,7 @@ const boundClaim = Effect.fn("mcp.boundUsageClaim")(function* (
   // Any caller may name a task's thread: the claim is about the work, not the caller's turn.
   const bound = yield* bindUsageOrigin(threads, fromThread, undefined);
   if (bound === null) return yield* unavailable();
-  const stored = UsageOrigins.storedOrigin(bound.key);
+  const stored = UsageOrigins.storedOrigin(bound.key, bound.atMs);
   if (stored === undefined)
     return yield* invalidRequest(
       `fromThread: thread ${fromThread.threadId}'s work counts to no device then; nothing was claimed.`,
@@ -147,7 +159,7 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
         reason,
         requestedBy: caller?.title ?? scope.client?.label ?? "MCP",
         causedBy: causedBy === undefined ? undefined : yield* verifyCause(threads, causedBy),
-        usageOrigin: bound === null ? undefined : UsageOrigins.storedOrigin(bound.key),
+        usageOrigin: bound === null ? undefined : UsageOrigins.storedOrigin(bound.key, bound.atMs),
       });
       return yield* restartStatus;
     }),
@@ -268,6 +280,8 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
                   ifUnclaimed: ifUnclaimed === true,
                 })
                 .pipe(Effect.mapError(unavailable));
+        if (claimed.target.kind === "run" && !claimed.kept && claimed.value !== null)
+          yield* nameRunningTurn(claimed.target.runId);
         return {
           ...(claimed.target.kind === "session"
             ? {

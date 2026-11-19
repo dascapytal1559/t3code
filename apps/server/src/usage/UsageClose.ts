@@ -52,7 +52,7 @@ export interface ClosedPromptLabel extends OriginPrompt {
 }
 
 // A type, not an interface, so a row of it is a SQL insert record.
-type LabelColumns = {
+export type LabelColumns = {
   readonly device: "phone" | "computer";
   readonly origin: string;
   readonly basis: string;
@@ -66,7 +66,7 @@ type LabelColumns = {
   readonly root_message_id: string | null;
 };
 
-const columnsOf = (key: UsageOriginKey): LabelColumns => ({
+export const columnsOf = (key: UsageOriginKey): LabelColumns => ({
   device: key.origin === "phone" ? "phone" : "computer",
   origin: key.origin,
   basis: key.basis,
@@ -112,7 +112,8 @@ export const sameKey = (a: UsageOriginKey | undefined, b: UsageOriginKey | undef
     ? a === b
     : JSON.stringify(columnsOf(a)) === JSON.stringify(columnsOf(b));
 
-const sameRow = (a: ClosedSessionLabel, b: ClosedSessionLabel) =>
+/** Two rows say the same when their run, typed flag and label do. */
+export const sameRow = (a: ClosedSessionLabel, b: ClosedSessionLabel) =>
   a.runId === b.runId && a.typed === b.typed && sameKey(a.key, b.key);
 
 /** The last item from at or before the time; items are sorted by `fromMs`. */
@@ -235,7 +236,7 @@ export class CloseSuperseded extends Schema.TaggedError<CloseSuperseded>()("Clos
 const encodeIds = Schema.encodeSync(Schema.fromJsonString(Schema.Array(Schema.String)));
 
 // SQLite caps bound parameters per statement; a row binds at most 15.
-const INSERT_CHUNK = 500;
+export const INSERT_CHUNK = 500;
 
 const labelSelect = `device, origin, basis, reason, via, claim, folder, registered, cause,
   root_thread_id, root_message_id`;
@@ -262,25 +263,62 @@ const sessionLabelOf = (row: SessionRow): ClosedSessionLabel[] => {
       ];
 };
 
-/** The closed labels' tables, as the Usage origin reader uses them. */
-export const makeClosedStore = (sql: SqlClient.SqlClient) => {
-  const sessionColumns = sql.literal(`session_id, from_ms, ${labelSelect}, run_id, typed`);
+// A type, not an interface, so a row of it is a SQL insert record.
+type PromptRow = LabelColumns & {
+  readonly message_id: string;
+  readonly thread_id: string | null;
+  readonly created_at_ms: number;
+};
 
-  const span = sql<{ readonly closed_from_ms: number; readonly closed_through_ms: number }>`
-    SELECT closed_from_ms, closed_through_ms FROM usage_close WHERE id = 1
-  `.pipe(
-    NodeSqliteClient.readOnly,
-    Effect.map(([row]): ClosedSpan | null =>
-      row === undefined ? null : { fromMs: row.closed_from_ms, throughMs: row.closed_through_ms },
-    ),
-  );
+const promptLabelOf = (row: PromptRow): ClosedPromptLabel[] => {
+  const key = keyOf(row);
+  return key === undefined
+    ? []
+    : [
+        {
+          messageId: row.message_id,
+          createdAtMs: row.created_at_ms,
+          key,
+          ...(row.thread_id === null ? {} : { threadId: row.thread_id }),
+        },
+      ];
+};
+
+/** A session row as stored. */
+export const sessionRowOf = (row: ClosedSessionLabel) => ({
+  session_id: row.sessionId,
+  from_ms: row.fromMs,
+  ...columnsOf(row.key),
+  run_id: row.runId,
+  typed: row.typed ? 1 : 0,
+});
+
+/** A prompt row as stored. */
+export const promptRowOf = (prompt: ClosedPromptLabel): PromptRow => ({
+  message_id: prompt.messageId,
+  thread_id: prompt.threadId ?? null,
+  created_at_ms: prompt.createdAtMs,
+  ...columnsOf(prompt.key),
+});
+
+/**
+ * Readers of a pair of label tables in the close's shape: a session's label from each time it
+ * changes, and each prompt's. The daily close's tables and the born labels' share it.
+ */
+export const makeLabelTables = (
+  sql: SqlClient.SqlClient,
+  tables: { readonly sessions: string; readonly prompts: string },
+) => {
+  const sessionColumns = sql.literal(`session_id, from_ms, ${labelSelect}, run_id, typed`);
+  const sessionTable = sql.literal(tables.sessions);
+  const promptTable = sql.literal(tables.prompts);
 
   /** The labels of these sessions up to a time. */
   const sessionLabels = (sessionIds: readonly string[], untilMs: number) =>
     sessionIds.length === 0
       ? Effect.succeed([])
       : sql<SessionRow>`
-          SELECT ${sessionColumns} FROM usage_closed_session_labels
+          SELECT ${sessionColumns} FROM ${sessionTable}
           WHERE session_id IN (SELECT value FROM json_each(${encodeIds(sessionIds)}))
             AND from_ms <= ${untilMs}
         `.pipe(
@@ -288,10 +326,21 @@ export const makeClosedStore = (sql: SqlClient.SqlClient) => {
           Effect.map((rows) => rows.flatMap(sessionLabelOf)),
         );
 
+  /** A session's latest label at or before `atMs`, from `sinceMs` on. */
+  const latestLabel = (sessionId: string, atMs: number, sinceMs: number) =>
+    sql<SessionRow>`
+      SELECT ${sessionColumns} FROM ${sessionTable}
+      WHERE session_id = ${sessionId} AND from_ms <= ${atMs} AND from_ms >= ${sinceMs}
+      ORDER BY from_ms DESC LIMIT 1
+    `.pipe(
+      NodeSqliteClient.readOnly,
+      Effect.map((rows) => rows.flatMap(sessionLabelOf)[0]),
+    );
+
   /** A thread's own sessions' latest labels at or before a time, newest first. */
   const threadLabels = (threadId: string, atMs: number) =>
     sql<SessionRow>`
-      SELECT ${sessionColumns} FROM usage_closed_session_labels
+      SELECT ${sessionColumns} FROM ${sessionTable}
       WHERE from_ms <= ${atMs} AND session_id IN (
         SELECT json_extract(payload_json, '$.nativeThreadRef.nativeId')
         FROM orchestration_v2_projection_provider_threads WHERE thread_id = ${threadId}
@@ -304,34 +353,33 @@ export const makeClosedStore = (sql: SqlClient.SqlClient) => {
 
   /** Prompts labelled in [sinceMs, untilMs). */
   const promptLabels = (sinceMs: number, untilMs: number) =>
-    sql<
-      LabelColumns & {
-        readonly message_id: string;
-        readonly thread_id: string | null;
-        readonly created_at_ms: number;
-      }
-    >`
+    sql<PromptRow>`
       SELECT message_id, thread_id, created_at_ms, ${sql.literal(labelSelect)}
-      FROM usage_closed_prompt_labels
+      FROM ${promptTable}
       WHERE created_at_ms >= ${sinceMs} AND created_at_ms < ${untilMs}
     `.pipe(
       NodeSqliteClient.readOnly,
-      Effect.map((rows) =>
-        rows.flatMap((row): ClosedPromptLabel[] => {
-          const key = keyOf(row);
-          return key === undefined
-            ? []
-            : [
-                {
-                  messageId: row.message_id,
-                  createdAtMs: row.created_at_ms,
-                  key,
-                  ...(row.thread_id === null ? {} : { threadId: row.thread_id }),
-                },
-              ];
-        }),
-      ),
+      Effect.map((rows) => rows.flatMap(promptLabelOf)),
     );
+
+  return { sessionLabels, latestLabel, threadLabels, promptLabels };
+};
+
+/** The closed labels' tables, as the Usage origin reader uses them. */
+export const makeClosedStore = (sql: SqlClient.SqlClient) => {
+  const { sessionLabels, threadLabels, promptLabels } = makeLabelTables(sql, {
+    sessions: "usage_closed_session_labels",
+    prompts: "usage_closed_prompt_labels",
+  });
+
+  const span = sql<{ readonly closed_from_ms: number; readonly closed_through_ms: number }>`
+    SELECT closed_from_ms, closed_through_ms FROM usage_close WHERE id = 1
+  `.pipe(
+    NodeSqliteClient.readOnly,
+    Effect.map(([row]): ClosedSpan | null =>
+      row === undefined ? null : { fromMs: row.closed_from_ms, throughMs: row.closed_through_ms },
+    ),
+  );
 
   /** Writes a close's rows and moves "closed through"; the caller holds the transaction. */
   const write = Effect.fn("UsageClose.write")(function* (input: {
@@ -340,22 +388,11 @@ export const makeClosedStore = (sql: SqlClient.SqlClient) => {
     readonly sessions: readonly ClosedSessionLabel[];
     readonly prompts: readonly ClosedPromptLabel[];
   }) {
-    const sessionRows = input.sessions.map((row) => ({
-      session_id: row.sessionId,
-      from_ms: row.fromMs,
-      ...columnsOf(row.key),
-      run_id: row.runId,
-      typed: row.typed ? 1 : 0,
-    }));
+    const sessionRows = input.sessions.map(sessionRowOf);
     for (const chunk of Arr.chunksOf(sessionRows, INSERT_CHUNK)) {
       yield* sql`INSERT INTO usage_closed_session_labels ${sql.insert(chunk)}`;
     }
-    const promptRows = input.prompts.map((prompt) => ({
-      message_id: prompt.messageId,
-      thread_id: prompt.threadId ?? null,
-      created_at_ms: prompt.createdAtMs,
-      ...columnsOf(prompt.key),
-    }));
+    const promptRows = input.prompts.map(promptRowOf);
     for (const chunk of Arr.chunksOf(promptRows, INSERT_CHUNK)) {
       yield* sql`INSERT INTO usage_closed_prompt_labels ${sql.insert(chunk)}`;
     }

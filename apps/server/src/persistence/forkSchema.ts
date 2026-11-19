@@ -116,6 +116,59 @@ export const ensureForkSchema = Effect.fn("ensureForkSchema")(function* () {
       )
     `;
   }
+  // Labels written when the event that decides them happens (`UsageLabels`), in the close's shape:
+  // a session's label from each time it changes, a work thread's from its birth and each move, and
+  // each prompt's. The cursor row says how far they are written and from when.
+  if (!existing.has("usage_session_labels")) {
+    yield* sql`
+      CREATE TABLE IF NOT EXISTS usage_session_labels (
+        session_id TEXT NOT NULL,
+        from_ms INTEGER NOT NULL,
+        ${labelColumns},
+        run_id TEXT,
+        typed INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (session_id, from_ms)
+      )
+    `;
+  }
+  if (!existing.has("usage_work_labels")) {
+    yield* sql`
+      CREATE TABLE IF NOT EXISTS usage_work_labels (
+        thread_id TEXT NOT NULL,
+        from_ms INTEGER NOT NULL,
+        ${labelColumns},
+        run_id TEXT,
+        typed INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (thread_id, from_ms)
+      )
+    `;
+  }
+  if (!existing.has("usage_prompt_labels")) {
+    yield* sql`
+      CREATE TABLE IF NOT EXISTS usage_prompt_labels (
+        message_id TEXT PRIMARY KEY,
+        thread_id TEXT,
+        created_at_ms INTEGER NOT NULL,
+        ${labelColumns}
+      )
+    `;
+  }
+  if (!existing.has("usage_prompt_labels_created_idx")) {
+    yield* sql`
+      CREATE INDEX IF NOT EXISTS usage_prompt_labels_created_idx
+        ON usage_prompt_labels (created_at_ms)
+    `;
+  }
+  if (!existing.has("usage_label_cursor")) {
+    yield* sql`
+      CREATE TABLE IF NOT EXISTS usage_label_cursor (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        labelled_from_ms INTEGER NOT NULL,
+        labelled_through_ms INTEGER NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `;
+  }
   // Audited corrections of closed labels (`t3 usage relabel`): each change set with every old value.
   if (!existing.has("usage_relabels")) {
     yield* sql`

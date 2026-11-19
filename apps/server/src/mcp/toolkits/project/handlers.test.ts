@@ -345,6 +345,7 @@ it.effect("an upkeep launch counts to the computer whichever turn launches it", 
         key: { origin: "phone", basis: "stamp", reason: "typed" },
         reroots: true,
         runId: null,
+        atMs: 0,
       },
     });
     const toolkit = yield* ProjectToolkit.pipe(
@@ -364,6 +365,8 @@ it.effect("an upkeep launch counts to the computer whichever turn launches it", 
       origin: "phone",
       basis: "stamp",
       reason: "inherited",
+      // The moment of the launching thread's work it was bound from.
+      boundAt: "1970-01-01T00:00:00.000Z",
     });
 
     yield* launch({ upkeep: true });

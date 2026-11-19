@@ -1,7 +1,6 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import {
@@ -15,6 +14,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Sqlite from "../persistence/Sqlite.ts";
 import * as UsageClaims from "./UsageClaims.ts";
 import * as UsageSessionRegister from "./UsageSessionRegister.ts";
+import { encodeJson, seedMessage, seedRun, seedThread } from "./usageOriginsTestSeed.ts";
 import {
   classifyMessageOrigin,
   layer as usageOriginsLayer,
@@ -30,8 +30,6 @@ import {
   type OriginMessage,
   type UsageOriginKey,
 } from "./UsageOrigins.ts";
-
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 const message = (overrides: Partial<OriginMessage>): OriginMessage => ({
   createdBy: "user",
@@ -546,112 +544,6 @@ describe("settleOrigin", () => {
     });
   });
 });
-
-const seedThread = (input: {
-  id: string;
-  crewOf?: string;
-  causedBy?: Record<string, string>;
-  worktreePath?: string;
-  rootThreadId?: string;
-  environment?: Record<string, string>;
-  createdAt?: string;
-  coordinator?: true;
-  usageOrigin?: Record<string, unknown> | undefined;
-}) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    yield* sql`INSERT INTO orchestration_v2_projection_threads ${sql.insert({
-      thread_id: input.id,
-      project_id: "project",
-      title: input.id,
-      default_provider: "claudeAgent",
-      runtime_mode: "full-access",
-      interaction_mode: "default",
-      created_at: input.createdAt ?? "2026-08-07T00:00:00.000Z",
-      updated_at: input.createdAt ?? "2026-08-07T00:00:00.000Z",
-      payload_json: encodeJson({
-        id: input.id,
-        crewOf: input.crewOf ?? null,
-        worktreePath: input.worktreePath ?? null,
-        ...(input.environment === undefined ? {} : { environment: input.environment }),
-        ...(input.coordinator === undefined ? {} : { coordinator: input.coordinator }),
-        ...(input.causedBy === undefined ? {} : { causedBy: input.causedBy }),
-        ...(input.usageOrigin === undefined ? {} : { usageOrigin: input.usageOrigin }),
-        ...(input.rootThreadId === undefined
-          ? {}
-          : { lineage: { rootThreadId: input.rootThreadId } }),
-      }),
-    })}`;
-  });
-
-const seedRun = (input: {
-  id: string;
-  ordinal: number;
-  threadId: string;
-  sessionId: string;
-  startedAt: string;
-  completedAt?: string;
-  message?: Record<string, unknown>;
-}) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    const providerThreadId = `provider-thread-${input.sessionId}`;
-    yield* sql`INSERT OR IGNORE INTO orchestration_v2_projection_provider_threads ${sql.insert({
-      provider_thread_id: providerThreadId,
-      thread_id: input.threadId,
-      provider: "claudeAgent",
-      status: "active",
-      updated_at: input.startedAt,
-      payload_json: encodeJson({
-        nativeThreadRef: { driver: "claudeAgent", nativeId: input.sessionId, strength: "strong" },
-      }),
-    })}`;
-    if (input.message !== undefined) {
-      yield* sql`INSERT INTO orchestration_v2_projection_messages ${sql.insert({
-        message_id: `message-${input.id}`,
-        thread_id: input.threadId,
-        run_id: `run-${input.id}`,
-        role: "user",
-        streaming: 0,
-        created_at: input.startedAt,
-        updated_at: input.startedAt,
-        payload_json: encodeJson(input.message),
-      })}`;
-    }
-    yield* sql`INSERT INTO orchestration_v2_projection_runs ${sql.insert({
-      run_id: `run-${input.id}`,
-      thread_id: input.threadId,
-      ordinal: input.ordinal,
-      provider: "claudeAgent",
-      provider_thread_id: providerThreadId,
-      status: "completed",
-      requested_at: input.startedAt,
-      payload_json: encodeJson({ userMessageId: `message-${input.id}` }),
-    })}`;
-    yield* sql`INSERT INTO orchestration_v2_projection_run_attempts ${sql.insert({
-      attempt_id: `attempt-${input.id}`,
-      thread_id: input.threadId,
-      run_id: `run-${input.id}`,
-      attempt_ordinal: 1,
-      root_node_id: `node-${input.id}`,
-      provider: "claudeAgent",
-      provider_thread_id: providerThreadId,
-      status: "completed",
-      payload_json: "{}",
-    })}`;
-    yield* sql`INSERT INTO orchestration_v2_projection_provider_turns ${sql.insert({
-      provider_turn_id: `turn-${input.id}`,
-      thread_id: input.threadId,
-      provider_thread_id: providerThreadId,
-      node_id: `node-${input.id}`,
-      run_attempt_id: `attempt-${input.id}`,
-      ordinal: input.ordinal,
-      status: "completed",
-      started_at: input.startedAt,
-      completed_at: input.completedAt ?? null,
-      payload_json: "{}",
-    })}`;
-  });
 
 describe("UsageOrigins.read", () => {
   it.effect("joins each provider turn to its run's starting message and counts prompts", () =>
@@ -1228,27 +1120,6 @@ describe("UsageOrigins.read", () => {
   );
 });
 
-const seedMessage = (input: {
-  id: string;
-  threadId: string;
-  runId: string;
-  createdAt: string;
-  payload: Record<string, unknown>;
-}) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    yield* sql`INSERT INTO orchestration_v2_projection_messages ${sql.insert({
-      message_id: input.id,
-      thread_id: input.threadId,
-      run_id: input.runId,
-      role: "user",
-      streaming: 0,
-      created_at: input.createdAt,
-      updated_at: input.createdAt,
-      payload_json: encodeJson(input.payload),
-    })}`;
-  });
-
 describe("UsageOrigins born labelled", () => {
   const phone = {
     createdBy: "user",
@@ -1746,6 +1617,8 @@ describe("UsageOrigins daily close", () => {
           // A row where each turn's label starts and ends; records inside them add none.
           sessionRows: 6,
           promptRows: 3,
+          // Nothing was labelled at birth here, so there is nothing to check.
+          born: null,
         });
         // A second close of the same time writes nothing.
         assert.deepStrictEqual(yield* origins.close(time("12:00"), records), {

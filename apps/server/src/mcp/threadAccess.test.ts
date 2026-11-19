@@ -228,6 +228,7 @@ it.effect("binds work a thread sends only from that thread's own turn", () =>
                   },
                   reroots: true,
                   runId: null,
+                  atMs,
                 }),
               ),
           }),

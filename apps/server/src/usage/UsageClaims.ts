@@ -30,6 +30,8 @@ export interface UsageClaimBinding {
   readonly claim?: string;
   /** The typed prompt that decided it. */
   readonly root?: { readonly threadId: string; readonly messageId: string };
+  /** The moment of the thread's work it was bound from. */
+  readonly boundAt?: string;
 }
 
 /**
@@ -57,6 +59,7 @@ const BoundJson = Schema.fromJsonString(
     reason: Schema.String,
     claim: Schema.optional(Schema.String),
     root: Schema.optional(Schema.Struct({ threadId: Schema.String, messageId: Schema.String })),
+    boundAt: Schema.optional(Schema.String),
   }),
 );
 const encodeBound = Schema.encodeSync(BoundJson);
@@ -65,11 +68,12 @@ const decodeBoundOption = Schema.decodeOption(BoundJson);
 const decodeBound = (json: string | null): UsageClaimBinding | undefined => {
   const decoded = json === null ? Option.none() : decodeBoundOption(json);
   if (Option.isNone(decoded)) return undefined;
-  const { claim, root, ...binding } = decoded.value;
+  const { claim, root, boundAt, ...binding } = decoded.value;
   return {
     ...binding,
     ...(claim === undefined ? {} : { claim }),
     ...(root === undefined ? {} : { root }),
+    ...(boundAt === undefined ? {} : { boundAt }),
   };
 };
 
@@ -103,9 +107,10 @@ export class UsageClaims extends Context.Service<
       SqlError.SqlError
     >;
     readonly read: Effect.Effect<ReadonlyArray<StoredUsageClaim>, SqlError.SqlError>;
-    /** The claims on these runs. */
+    /** The claims on these runs; `whileRunning` leaves out claims made after their run ended. */
     readonly readRuns: (
       runIds: ReadonlyArray<string>,
+      options?: { readonly whileRunning?: boolean },
     ) => Effect.Effect<ReadonlyArray<StoredUsageClaim>, SqlError.SqlError>;
   }
 >()("t3/usage/UsageClaims") {}
@@ -264,12 +269,24 @@ const make = Effect.gen(function* () {
     FROM usage_claims
   `.pipe(NodeSqliteClient.readOnly, Effect.map(storedClaims), Effect.withSpan("UsageClaims.read"));
 
-  const readRuns = Effect.fn("UsageClaims.readRuns")(function* (runIds: ReadonlyArray<string>) {
+  const readRuns = Effect.fn("UsageClaims.readRuns")(function* (
+    runIds: ReadonlyArray<string>,
+    options?: { readonly whileRunning?: boolean },
+  ) {
     if (runIds.length === 0) return [];
     const rows = yield* sql<ClaimRow>`
       SELECT target_kind, target, claimed_from, cause_message_id, device, bound_json
       FROM usage_claims WHERE target_kind = 'run'
         AND target IN (SELECT value FROM json_each(${encodeRunIds(runIds)}))
+        ${
+          options?.whileRunning === true
+            ? sql`AND EXISTS (
+                SELECT 1 FROM orchestration_v2_projection_runs AS run
+                WHERE run.run_id = usage_claims.target
+                  AND (run.completed_at IS NULL OR usage_claims.claimed_at <= run.completed_at)
+              )`
+            : sql``
+        }
     `.pipe(NodeSqliteClient.readOnly);
     return storedClaims(rows);
   });

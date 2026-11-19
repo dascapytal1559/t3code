@@ -231,7 +231,7 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
             ? UsageOrigins.storedOrigin(UsageOrigins.LAUNCHED_UPKEEP)
             : bound === null
               ? undefined
-              : UsageOrigins.storedOrigin(bound.key);
+              : UsageOrigins.storedOrigin(bound.key, bound.atMs);
         const projectId =
           input.scratch === true
             ? (yield* ManagedProjectFolders.ManagedProjectFolders.pipe(

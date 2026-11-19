@@ -287,7 +287,7 @@ const continuationOrigin = Effect.fn("RestartContinuation.continuationOrigin")(f
           }).pipe(Effect.as(null)),
     ),
   );
-  const cut = bound === null ? undefined : UsageOrigins.storedOrigin(bound.key);
+  const cut = bound === null ? undefined : UsageOrigins.storedOrigin(bound.key, bound.atMs);
   if (cut !== undefined && cut.reason !== "upkeep") return cut;
   const ownless = thread.usageOrigin === undefined && thread.causedBy === undefined;
   return (ownless ? request?.usageOrigin : undefined) ?? cut;

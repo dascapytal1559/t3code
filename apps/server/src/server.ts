@@ -216,6 +216,7 @@ import * as UsageService from "./usage/UsageService.ts";
 import * as UsageExportHttp from "./usage/usageExportHttp.ts";
 import * as CodexUsageHistory from "./usage/CodexUsageHistory.ts";
 import * as UsageClaims from "./usage/UsageClaims.ts";
+import * as UsageLabels from "./usage/UsageLabels.ts";
 import * as UsageOrigins from "./usage/UsageOrigins.ts";
 import * as UsageSessionRegister from "./usage/UsageSessionRegister.ts";
 import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
@@ -322,6 +323,8 @@ const layerUsage = UsageService.layer.pipe(
       CursorUsageAccounts.layer.pipe(Layer.provide(CursorAccountReader.layer)),
     ).pipe(Layer.provide(ProviderHostLive.layer.pipe(Layer.provide(ServerSecretStore.layer)))),
   ),
+  // Merged so the claim tool can write a named turn's labels, and the reactor below runs.
+  Layer.provideMerge(UsageLabels.layer),
   // Merged so MCP tools bind work's origin by the same rules Usage reads it with.
   Layer.provideMerge(UsageOrigins.layer.pipe(Layer.provide(UsageSessionRegister.layer))),
   Layer.provide(layerServerSettings),
@@ -741,6 +744,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ).pipe(Layer.provide(DelegatedTaskQuestionReactor.layer), Layer.provide(ProjectionStoreV2.layer)),
   ProviderUsageLimitsIngestion.layer,
   UsageLimitsLog.layer,
+  UsageLabels.layerReactor,
   layerProviderInstallationRefresh,
   ProviderInstallation.layer,
   ReplayMarkers.layer,

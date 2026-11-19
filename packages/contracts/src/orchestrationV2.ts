@@ -125,6 +125,8 @@ export const OrchestrationV2UsageOrigin = Schema.Struct({
   claim: Schema.optional(Schema.String),
   /** The typed prompt that decided it; absent when a rule did (a journal, upkeep). */
   root: Schema.optional(Schema.Struct({ threadId: Schema.String, messageId: Schema.String })),
+  /** The moment of the binding thread's work it was read at; absent before T3 kept it. */
+  boundAt: Schema.optional(Schema.String),
 });
 export type OrchestrationV2UsageOrigin = typeof OrchestrationV2UsageOrigin.Type;
 
