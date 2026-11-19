@@ -1891,7 +1891,9 @@ takes instructions only, because it runs inside the server process. The other
 providers take both. `t3_thread_configure` reads them back with the effective
 runtime mode, and `orchestrator_capabilities` reports `threadEnvironment`,
 `threadInstructions` and an ACP registry instance's `agentId`. Code:
-`apps/server/src/orchestration-v2/RuntimePolicy.ts`.
+`apps/server/src/orchestration-v2/RuntimePolicy.ts`. Antigravity's driver
+also gets T3's own thread and MCP variables from upstream (#36495); the
+thread's variables go under them (`AntigravityDriver.ts`).
 
 OpenCode 2 shares one server per instance, so its adapter sets each session's
 own environment instead (`PUT /api/session/:id/environment`). That replaces the
