@@ -499,8 +499,8 @@ Upstream: none.
 ## Chart annotations
 
 Dated notes from a file of your own show on the Usage chart: a thin line rises
-from the date to a dark chip with your label. The button by the chart's
-controls switches them off and on.
+from the date to a dark chip with your label. The small signpost button at the
+top right of the chart, above its scale, switches them off and on.
 
 Put the file at `usage-annotations.json` in the server's data folder
 (`~/.t3-fork/userdata/` for the desktop app). It is a list; each note has a

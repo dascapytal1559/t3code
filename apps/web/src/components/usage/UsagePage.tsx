@@ -387,19 +387,6 @@ export function UsagePage() {
         });
   const windowOptionLabel = WINDOW_OPTIONS.find((option) => option.days === windowDays)?.label;
   const metricOptionLabel = METRIC_OPTIONS.find((option) => option.value === metric)?.label;
-  const annotationsToggle =
-    showingLimits || annotations.length === 0 ? null : (
-      <ToggleButton
-        aria-label={gt("Chart annotations")}
-        title={showAnnotations ? gt("Hide chart annotations") : gt("Show chart annotations")}
-        pressed={showAnnotations}
-        onPressedChange={(pressed) => updatePreferences({ showAnnotations: pressed })}
-        size="sm"
-        variant="ghost"
-      >
-        <MilestoneIcon aria-hidden />
-      </ToggleButton>
-    );
   const topbarContent = (
     <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 py-2 @4xl/usage-header:flex">
       <WorkspaceBreadcrumb ariaLabel={gt("Usage breadcrumb")} className="min-w-0">
@@ -471,7 +458,6 @@ export function UsagePage() {
             </Toggle>
           ))}
         </ToggleGroup>
-        {annotationsToggle}
         <Button
           onClick={refreshWindow}
           aria-label={showingLimits ? gt("Refresh limits") : gt("Refresh usage")}
@@ -529,7 +515,6 @@ export function UsagePage() {
             ))}
           </SelectPopup>
         </Select>
-        {annotationsToggle}
         <Button
           onClick={refreshWindow}
           aria-label={showingLimits ? gt("Refresh limits") : gt("Refresh usage")}
@@ -604,7 +589,9 @@ export function UsagePage() {
                 refreshingUsage={refreshingUsage}
                 showChatGptSharing={showChatGptSharing}
                 onSelectModel={selectUsageModel}
-                annotations={showAnnotations ? annotations : []}
+                annotations={annotations}
+                showAnnotations={showAnnotations}
+                onShowAnnotationsChange={(shown) => updatePreferences({ showAnnotations: shown })}
               />
             )}
           </WorkspacePageContainer>
@@ -655,6 +642,8 @@ function UsageOverview({
   showChatGptSharing,
   onSelectModel,
   annotations,
+  showAnnotations,
+  onShowAnnotationsChange,
 }: {
   readonly merged: SelectedUsage;
   readonly shownWindow: UsageSummaryInput;
@@ -670,6 +659,8 @@ function UsageOverview({
   readonly showChatGptSharing: boolean;
   readonly onSelectModel: (key: string) => void;
   readonly annotations: readonly UsageAnnotation[];
+  readonly showAnnotations: boolean;
+  readonly onShowAnnotationsChange: (shown: boolean) => void;
 }) {
   const gt = useGT();
   const locale = useLocale();
@@ -892,10 +883,29 @@ function UsageOverview({
         </div>
 
         <div className="flex min-w-0 flex-col gap-3">
-          {/* pr-16 matches the chart's y-axis gutter, so the title centers over the bars. */}
-          <h2 className="pr-16 text-center text-sm font-medium text-foreground">
-            {usageChartTitle(metric, shownHourly, days.length, m)}
-          </h2>
+          {/* pr-16 matches the chart's y-axis gutter, so the title centers over the bars; the
+              toggle's icon lines up with the axis labels below it. */}
+          <div className="relative">
+            <h2 className="pr-16 text-center text-sm font-medium text-foreground">
+              {usageChartTitle(metric, shownHourly, days.length, m)}
+            </h2>
+            {annotations.length === 0 ? null : (
+              <div className="absolute inset-y-0 end-0 flex w-16 items-center ps-1">
+                <ToggleButton
+                  aria-label={gt("Chart annotations")}
+                  title={
+                    showAnnotations ? gt("Hide chart annotations") : gt("Show chart annotations")
+                  }
+                  pressed={showAnnotations}
+                  onPressedChange={onShowAnnotationsChange}
+                  size="micro"
+                  variant="ghost"
+                >
+                  <MilestoneIcon aria-hidden />
+                </ToggleButton>
+              </div>
+            )}
+          </div>
           {activeProviders.length === 0 && excludedProviders.size > 0 ? (
             <p className="flex h-56 items-center justify-center text-sm text-muted-foreground">
               <T>No activity in this window.</T>
@@ -914,7 +924,7 @@ function UsageOverview({
               timeZone={shownWindow.timeZone}
               hour12={hour12}
               annotations={placeUsageAnnotations(
-                annotations,
+                showAnnotations ? annotations : [],
                 shownHourly ? hours : days,
                 shownHourly ? "hour" : "day",
                 shownWindow.timeZone,
