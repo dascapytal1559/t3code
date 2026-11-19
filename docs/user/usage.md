@@ -64,9 +64,9 @@ saved totals first, then updates them when Cursor's API responds.
 If recent work is missing or a new model shows no cost, refresh to rescan session history and
 update model pricing.
 
-On web and desktop, **Tokens by origin** (or **Cost by origin**) splits usage between **Phone**
-and **Computer**. Each device splits into **Direct** (prompts you typed, solid) and
-**Orchestrated** (prompts an agent sent on behalf of one you typed, hatched). A run counts toward
+On web and desktop, the **By device** breakdown splits usage between **Phone** and **Computer**.
+Each device splits into **Direct** (prompts you typed) and **Orchestrated** (prompts an agent sent
+on behalf of one you typed). A run counts toward
 the message that started it, until you type again while it runs. Work an agent launches, and a
 scheduled task it creates, counts where the agent's turn counted at that moment. That work then
 counts there until you type about it again: a message you type that reaches it, such as
@@ -76,8 +76,8 @@ tablets. Sessions an agent runs outside T3, such as a CLI run in its worktree, c
 agent's turn. A coordinator's own turns that nobody typed, such as FirstMate's wakes and
 background checks, count to the computer as upkeep unless FirstMate says what they were about.
 Usage with no sign of the phone counts to the computer, including agent work with
-no recorded cause, usage from before T3 recorded the sending device (7 Nov 2026) and archived
-history. To see how much of the computer's share is there only by default, and why, run
+no recorded cause. Usage from before T3 recorded the sending device (7 Nov 2026) and archived
+history show as **Unlabelled**. To see how much of the computer's share is there only by default, and why, run
 `t3 usage reasons`. Once usage is more than a day old, its origin is final: the server writes it
 down within a day or two and reads it back from then on, so nothing done later changes it. To
 write it down sooner, run `t3 usage close --through <time>` with the time's offset, such as
@@ -100,8 +100,8 @@ again to bring it back.
 open it into **Orchestrated** and **Direct**: work agents sent for a prompt typed there, and the
 prompts typed there themselves. Only the opened device's band splits in the chart. A coordinator's
 upkeep counts to the computer, direct or orchestrated by how its turn started. Usage from before T3
-recorded the sending device (7 Nov 2026) shows as **Unlabelled**, as does usage from a server too
-old to label it.
+recorded the sending device (7 Nov 2026) and archived history show as **Unlabelled**, as does usage
+from a server too old to label it.
 
 **By kind of work** splits usage into groups you name in **Settings → Providers → Kinds of work**.
 They start as Trading, Tooling and Projects with nothing in them. Groups are saved on the

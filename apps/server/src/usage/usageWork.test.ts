@@ -74,7 +74,7 @@ describe("canonicalFolder", () => {
 
 describe("makeUsageWork", () => {
   const make = (
-    options: { repos?: Record<string, string>; codex?: Record<string, string> } = {},
+    options: { repos?: Record<string, string>; codex?: Record<string, string | undefined> } = {},
   ) => {
     const codexReads: string[] = [];
     const work = makeUsageWork({
@@ -83,7 +83,9 @@ describe("makeUsageWork", () => {
       readNoMistakesRepos: () => new Map(Object.entries(options.repos ?? {})),
       readCodexSessionFolder: async (filePath) => {
         codexReads.push(filePath);
-        return options.codex?.[filePath] ?? null;
+        return options.codex !== undefined && filePath in options.codex
+          ? options.codex[filePath]
+          : null;
       },
     });
     return { work, codexReads };
@@ -199,8 +201,13 @@ describe("makeUsageWork", () => {
 
   it("reads each Codex session's first-line folder once, keeping it on disk for later servers", async () => {
     const session = at("home", ".codex", "sessions", "rollout-1.jsonl.zst");
-    const options = { codex: { [session]: at("trader") } };
-    const files = { [session]: { provider: "codex" as const, sourceDir: at("home/.codex") } };
+    // A session that could not be read this time is read again, not remembered as folderless.
+    const unreadable = at("home", ".codex", "sessions", "rollout-2.jsonl");
+    const options = { codex: { [session]: at("trader"), [unreadable]: undefined } };
+    const files = {
+      [session]: { provider: "codex" as const, sourceDir: at("home/.codex") },
+      [unreadable]: { provider: "codex" as const, sourceDir: at("home/.codex") },
+    };
     const first = make(options);
 
     const placed = await first.work.attribution(
@@ -224,8 +231,9 @@ describe("makeUsageWork", () => {
 
     expect(groupOf(placed, undefined, session)).toBe("Trading");
     expect(groupOf(again, undefined, session)).toBe("Trading");
-    expect(first.codexReads).toEqual([session]);
-    expect(restarted.codexReads).toEqual([]);
+    expect(groupOf(placed, undefined, unreadable)).toBeNull();
+    expect(first.codexReads.toSorted()).toEqual([session, unreadable, unreadable]);
+    expect(restarted.codexReads).toEqual([unreadable]);
   });
 
   it("counts a folder entry's own folder and subfolders, not its repository's worktrees; the closest entry wins", async () => {
@@ -377,7 +385,7 @@ describe("readCodexSessionFolder", () => {
     expect(await readCodexSessionFolder(at("plain.jsonl"))).toBe("/work/app");
     expect(await readCodexSessionFolder(at("packed.jsonl.zst"))).toBe("/work/app");
     expect(await readCodexSessionFolder(at("bare.jsonl"))).toBeNull();
-    expect(await readCodexSessionFolder(at("missing.jsonl"))).toBeNull();
-    expect(await readCodexSessionFolder(at("missing.jsonl.zst"))).toBeNull();
+    expect(await readCodexSessionFolder(at("missing.jsonl"))).toBeUndefined();
+    expect(await readCodexSessionFolder(at("missing.jsonl.zst"))).toBeUndefined();
   });
 });

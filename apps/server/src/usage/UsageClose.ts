@@ -6,10 +6,10 @@ import {
   UsageOriginReason,
   UsageOriginVia,
 } from "@t3tools/contracts";
+import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Arr from "effect/Array";
 import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -266,18 +266,25 @@ export const backupClosedTables = Effect.fn("UsageClose.backup")(function* (inpu
   readonly takenAt: string;
 }) {
   const sql = yield* SqlClient.SqlClient;
-  const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const tables: Record<string, unknown> = {};
-  for (const table of CLOSED_TABLES) {
-    tables[table] = yield* sql`SELECT * FROM ${sql(table)} ORDER BY rowid`;
-  }
-  const backupPath = path.join(input.dir, `${input.id}.backup.json`);
-  yield* fs.makeDirectory(input.dir, { recursive: true });
-  yield* fs.writeFileString(
-    backupPath,
-    yield* encodeBackup({ id: input.id, takenAt: input.takenAt, tables }),
+  yield* sql.withTransaction(
+    Effect.forEach(
+      CLOSED_TABLES,
+      (table) =>
+        sql`SELECT * FROM ${sql(table)} ORDER BY rowid`.pipe(
+          Effect.map((rows) => {
+            tables[table] = rows;
+          }),
+        ),
+      { discard: true },
+    ),
   );
+  const backupPath = path.join(input.dir, `${input.id}.backup.json`);
+  yield* writeFileStringAtomically({
+    filePath: backupPath,
+    contents: yield* encodeBackup({ id: input.id, takenAt: input.takenAt, tables }),
+  });
   return backupPath;
 });
 

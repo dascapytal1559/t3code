@@ -35,8 +35,14 @@ export const USAGE_SESSION_FOLDERS_FILE_NAME = "usage-session-folders.json";
 /** Claude's name for a working folder: each character but a letter or digit becomes `-`. */
 export const encodeClaudeFolder = (folder: string) => folder.replace(/[^a-zA-Z0-9]/g, "-");
 
-const isWithin = (folder: string, root: string) =>
-  folder === root || folder.startsWith(root.endsWith(NodePath.sep) ? root : root + NodePath.sep);
+/** The entry for `folder` or its closest parent folder that has one. */
+const nearest = <T>(index: ReadonlyMap<string, T>, folder: string) => {
+  for (let at = NodePath.resolve(folder); ; at = NodePath.dirname(at)) {
+    const found = index.get(at);
+    if (found !== undefined) return { folder: at, value: found };
+    if (NodePath.dirname(at) === at) return undefined;
+  }
+};
 
 /** Folder levels from `root` down to `folder`, which it holds. */
 const levelsBelow = (root: string, folder: string) => {
@@ -135,8 +141,11 @@ async function linkedWorktrees(root: string): Promise<readonly string[]> {
   return worktrees.filter((worktree): worktree is string => worktree !== null);
 }
 
-/** Reads `cwd` from the first line of a Codex session, compressed or not; null when it has none. */
-export async function readCodexSessionFolder(filePath: string): Promise<string | null> {
+/**
+ * Reads `cwd` from the first line of a Codex session, compressed or not; null when it has none,
+ * undefined when the session could not be read.
+ */
+export async function readCodexSessionFolder(filePath: string): Promise<string | null | undefined> {
   const file = NodeFS.createReadStream(filePath);
   const input = filePath.endsWith(".zst")
     ? NodeStream.pipeline(file, NodeZlib.createZstdDecompress(), () => undefined)
@@ -149,7 +158,7 @@ export async function readCodexSessionFolder(filePath: string): Promise<string |
     }
     return null;
   } catch {
-    return null;
+    return undefined;
   } finally {
     lines.close();
     file.destroy();
@@ -181,7 +190,7 @@ export interface UsageWorkOptions {
   /** Where the folders read from Codex sessions' first lines are kept. */
   readonly foldersCachePath: string;
   readonly readNoMistakesRepos?: (homeDir: string) => ReadonlyMap<string, string>;
-  readonly readCodexSessionFolder?: (filePath: string) => Promise<string | null>;
+  readonly readCodexSessionFolder?: (filePath: string) => Promise<string | null | undefined>;
 }
 
 /** What a read needs to place its records: the folders and transcripts it saw. */
@@ -273,7 +282,7 @@ export function makeUsageWork(options: UsageWorkOptions) {
   };
   const noMistakesHome = NodePath.join(homeDir, ".no-mistakes");
   const noMistakesPath = new RegExp(
-    `^${escapeRegExp(noMistakesHome)}/(?:worktrees/([0-9a-f]+)|repos/([0-9a-f]+)\\.git)(?:/|$)`,
+    `^${escapeRegExp(noMistakesHome)}[\\\\/](?:worktrees[\\\\/]([0-9a-f]+)|repos[\\\\/]([0-9a-f]+)\\.git)(?:[\\\\/]|$)`,
   );
   const noMistakesEncoded = new RegExp(
     `^${escapeRegExp(encodeClaudeFolder(noMistakesHome))}-(?:worktrees-([0-9a-f]+)|repos-([0-9a-f]+)-git)(?:-|$)`,
@@ -331,14 +340,20 @@ export function makeUsageWork(options: UsageWorkOptions) {
     return found;
   };
 
-  /** Folders from Codex sessions' first lines; each session is read once, ever. */
+  /** Folders from Codex sessions' first lines; each session is read once it can be read, ever. */
   const codexFoldersFor = async (paths: readonly string[]) => {
     const folders = await loadCodexFolders();
     const unread = paths.filter((filePath) => !folders.has(filePath));
     if (unread.length > 0) {
       const read = await mapLimit(unread, 8, readCodexFolder);
-      unread.forEach((filePath, index) => folders.set(filePath, read[index] ?? null));
-      await saveCodexFolders(folders).catch(() => undefined);
+      let added = false;
+      unread.forEach((filePath, index) => {
+        const folder = read[index];
+        if (folder === undefined) return;
+        folders.set(filePath, folder);
+        added = true;
+      });
+      if (added) await saveCodexFolders(folders).catch(() => undefined);
     }
     return folders;
   };
@@ -368,20 +383,25 @@ export function makeUsageWork(options: UsageWorkOptions) {
     const roots = await Promise.all(
       projects.map(async (project) => ({ id: project.id, root: await canonicalOf(project.root) })),
     );
-    roots.sort((a, b) => b.root.length - a.root.length);
+    const projectByRoot = new Map<string, ProjectId>();
+    for (const { id, root } of roots) {
+      const key = NodePath.resolve(root);
+      if (!projectByRoot.has(key)) projectByRoot.set(key, id);
+    }
     // A thread's worktree stands for its project's folder, so a removed worktree still places.
     const rootOf = new Map(projects.map((project) => [project.id, project.root]));
-    const threadWorktrees = worktrees
-      .flatMap((worktree) => {
-        const root = rootOf.get(worktree.projectId);
-        return root === undefined ? [] : [{ path: worktree.path, root }];
-      })
-      .sort((a, b) => b.path.length - a.path.length);
+    const worktreeRoots = new Map<string, string>();
+    for (const worktree of worktrees) {
+      const root = rootOf.get(worktree.projectId);
+      const key = NodePath.resolve(worktree.path);
+      if (root !== undefined && !worktreeRoots.has(key)) worktreeRoots.set(key, root);
+    }
+    const entryByFolder = new Map(folderEntries.map((entry) => [entry.folder, entry]));
     const inProject = (folder: string) => {
-      const worktree = threadWorktrees.find((candidate) => isWithin(folder, candidate.path));
+      const worktree = nearest(worktreeRoots, folder);
       return worktree === undefined
         ? folder
-        : NodePath.join(worktree.root, NodePath.relative(worktree.path, folder));
+        : NodePath.join(worktree.value, NodePath.relative(worktree.folder, folder));
     };
     const memberIn = (group: string, member: string): WorkPlace => ({
       group,
@@ -389,19 +409,19 @@ export function makeUsageWork(options: UsageWorkOptions) {
     });
     // The closest entry wins: a folder entry by the folder itself, a project also by its worktrees.
     const groupOfFolder = async (folder: string): Promise<WorkPlace | null> => {
-      const entry = folderEntries.find((candidate) => isWithin(folder, candidate.folder));
+      const entry = nearest(entryByFolder, folder)?.value;
       const repo = reviewedRepo(noMistakesPath.exec(folder));
       const placed = await canonicalOf(repo ?? inProject(folder));
-      const project = roots.find((candidate) => isWithin(placed, candidate.root));
+      const project = nearest(projectByRoot, placed);
       if (
         entry !== undefined &&
         (project === undefined ||
-          levelsBelow(entry.folder, folder) <= levelsBelow(project.root, placed))
+          levelsBelow(entry.folder, folder) <= levelsBelow(project.folder, placed))
       ) {
         return memberIn(entry.group, folderMemberKey(entry.entry));
       }
-      const group = project === undefined ? undefined : groupByProject.get(project.id);
-      return project === undefined || group === undefined ? null : memberIn(group, project.id);
+      const group = project === undefined ? undefined : groupByProject.get(project.value);
+      return project === undefined || group === undefined ? null : memberIn(group, project.value);
     };
 
     const byCwd = new Map<string, WorkPlace | null>();

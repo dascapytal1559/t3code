@@ -1878,6 +1878,7 @@ const make = Effect.gen(function* () {
    * after born labels began, each difference counted by reason.
    */
   const checkBorn = Effect.fn("UsageOrigins.checkBorn")(function* (input: {
+    readonly afterMs: number;
     readonly throughMs: number;
     readonly index: UsageOriginIndex;
     readonly records: readonly OriginRecord[];
@@ -1885,7 +1886,10 @@ const make = Effect.gen(function* () {
   }) {
     const cursor = yield* labelStore.cursor;
     if (cursor === null) return null;
-    const records = input.records.filter((record) => record.timestampMs > cursor.fromMs);
+    const fromMs = Math.max(cursor.fromMs, input.afterMs);
+    const throughMs = Math.min(cursor.throughMs, input.throughMs);
+    const covered = (atMs: number) => atMs > fromMs && atMs <= throughMs;
+    const records = input.records.filter((record) => covered(record.timestampMs));
     const sessionIds = [...new Set(records.map((record) => record.sessionId))];
     return UsageLabelStore.checkBorn({
       born: new UsageClose.ClosedLabels(
@@ -1893,8 +1897,8 @@ const make = Effect.gen(function* () {
       ),
       derived: (record) => input.index.lookup(record),
       records,
-      bornPrompts: yield* labelStore.promptLabels(cursor.fromMs + 1, input.throughMs + 1),
-      derivedPrompts: input.prompts.filter((prompt) => prompt.createdAtMs > cursor.fromMs),
+      bornPrompts: yield* labelStore.promptLabels(fromMs + 1, throughMs + 1),
+      derivedPrompts: input.prompts.filter((prompt) => covered(prompt.createdAtMs)),
     });
   });
 
@@ -1925,7 +1929,7 @@ const make = Effect.gen(function* () {
       );
       const next = { fromMs: span?.fromMs ?? UsageClose.CLOSE_FROM_MS, throughMs };
       // The check only reports: a close never waits on or fails for the labels it checks.
-      const bornCheck = checkBorn({ throughMs, index, records: closing, prompts }).pipe(
+      const bornCheck = checkBorn({ afterMs, throughMs, index, records: closing, prompts }).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("Usage could not check born labels against the close", cause).pipe(
             Effect.as(null),

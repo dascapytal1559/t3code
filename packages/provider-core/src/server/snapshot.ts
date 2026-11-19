@@ -21,6 +21,8 @@ export interface ProviderUsageLimitsReading {
   readonly usageLimits: ServerProviderUsageLimits;
   readonly email?: string | undefined;
   readonly workspaceId?: string | undefined;
+  /** The account's label as the full check shows it, such as its plan. */
+  readonly label?: string | undefined;
 }
 
 export interface ManagedServerProvider {

@@ -206,6 +206,7 @@ it.effect("a repeated or stale relabel is refused and changes nothing", () =>
 
     const again = yield* Effect.flip(applyRelabel({ manifest, backupDir }));
     assert.include(again.message, applied.id);
+    assert.deepStrictEqual(yield* dump, after);
     const plan = yield* planRelabel(manifest);
     assert.strictEqual(plan.states.alreadyNew, 4);
     assert.strictEqual(plan.appliedAs, applied.id);
@@ -213,21 +214,16 @@ it.effect("a repeated or stale relabel is refused and changes nothing", () =>
     // A manifest whose old label no longer matches, or that reaches past the close, is refused whole.
     yield* undoRelabel(applied.id);
     yield* sql`UPDATE usage_close SET closed_through_ms = ${T + 90_000}`;
+    const beforeLate = yield* dump;
     const late = yield* Effect.flip(applyRelabel({ manifest, backupDir }));
     assert.include(late.message, "2 of 4 rows");
+    assert.deepStrictEqual(yield* dump, beforeLate);
     yield* sql`UPDATE usage_close SET closed_through_ms = ${T + 86_400_000}`;
     yield* sql`UPDATE usage_closed_session_labels SET reason = 'typed' WHERE from_ms = ${T}`;
+    const beforeStale = yield* dump;
     const stale = yield* Effect.flip(applyRelabel({ manifest, backupDir }));
     assert.include(stale.message, "1 of 4 rows");
-    const restored = yield* dump;
-    assert.notDeepEqual(
-      restored["usage_closed_session_labels"],
-      after["usage_closed_session_labels"],
-    );
-    assert.strictEqual(restored["usage_relabels"]!.length, 1);
-    assert.strictEqual(
-      restored["usage_closed_session_labels"]!.filter((row) => row.includes("'upkeep'")).length,
-      0,
-    );
+    assert.deepStrictEqual(yield* dump, beforeStale);
+    assert.strictEqual(beforeStale["usage_relabels"]!.length, 1);
   }).pipe(Effect.scoped, Effect.provide(layer)),
 );

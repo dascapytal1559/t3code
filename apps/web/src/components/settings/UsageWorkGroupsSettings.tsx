@@ -59,7 +59,10 @@ export function UsageWorkGroupsSettings({
   const groups = unsaved ?? savedGroups;
   const save = (next: readonly UsageWorkGroup[]) => {
     setSent(next);
-    updateSettings({ usageWorkGroups: next }, { onFailed: () => setSent(null) });
+    updateSettings(
+      { usageWorkGroups: next },
+      { onFailed: () => setSent((current) => (current === next ? null : current)) },
+    );
   };
   // A member gets a Shown switch when its group opens into members on the Usage page.
   const opensFor = (groupName: string | null) => {

@@ -627,9 +627,10 @@ describe("mergeUsage", () => {
       "": { totalTokens: 1160, costUsd: 10 },
     });
     expect(merged.workGroups).toEqual(["Trading", "Tooling", "Projects"]);
-    // A folder entry two servers place differently keeps the first server's group.
+    // A folder entry two servers place differently is a member of each group.
     expect(merged.workMemberInfo).toEqual([
       { key: "folder:~/notes", group: "Trading", name: "notes" },
+      { key: "folder:~/notes", group: "Tooling", name: "notes" },
     ]);
 
     const bands = usageSplitBands(merged, "work", "cost", false);
@@ -648,6 +649,61 @@ describe("mergeUsage", () => {
       "computerOrchestrated",
       "unlabelled",
     ]);
+  });
+
+  it("keeps a member's usage apart in each group the servers put it in", () => {
+    const desk = { provider: "claude" as const, hostId: "desk", homePath: "/desk/.claude" };
+    const laptop = { provider: "claude" as const, hostId: "laptop", homePath: "/laptop/.claude" };
+    const notes = { key: "folder:~/notes", name: "notes" };
+    const merged = mergeUsage(
+      [
+        environment("desk", {
+          ...summary(
+            [
+              bucket({
+                sourcePath: desk.homePath,
+                work: "Trading",
+                workMembers: { [notes.key]: [580, 5], trader: [580, 5] },
+              }),
+            ],
+            [desk],
+          ),
+          workGroups: ["Trading"],
+          workMembers: [
+            { ...notes, group: "Trading" },
+            { key: "trader", group: "Trading", name: "trader" },
+          ],
+        }),
+        environment("laptop", {
+          ...summary(
+            [
+              bucket({
+                sourcePath: laptop.homePath,
+                work: "Tooling",
+                workMembers: { [notes.key]: [1044, 9], t3: [116, 1] },
+              }),
+            ],
+            [laptop],
+          ),
+          workGroups: ["Tooling"],
+          workMembers: [
+            { ...notes, group: "Tooling" },
+            { key: "t3", group: "Tooling", name: "t3" },
+          ],
+        }),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+    // Each group splits as its own server split it.
+    const split = (group: string) =>
+      Object.fromEntries(
+        usageMemberBands(merged, group, "tokens", false).members.map((member) => [
+          member.key,
+          Math.round(member.totalTokens),
+        ]),
+      );
+    expect(split("Trading")).toEqual({ [notes.key]: 580, trader: 580 });
+    expect(split("Tooling")).toEqual({ [notes.key]: 1044, t3: 116 });
   });
 
   describe("shared kinds of work", () => {

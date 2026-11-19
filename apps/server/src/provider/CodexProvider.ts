@@ -1256,6 +1256,10 @@ export const readCodexUsageLimitsOnly = Effect.fn("readCodexUsageLimitsOnly")(fu
       false,
     );
     const email = codexAccountEmail(account.account);
+    const label = codexAccountAuthLabel(
+      account.account,
+      rateLimits && "snapshot" in rateLimits ? rateLimits.snapshot.planType : undefined,
+    );
     return {
       usageLimits: codexUsageLimitsFromProbe({
         nativeUsage,
@@ -1264,6 +1268,7 @@ export const readCodexUsageLimitsOnly = Effect.fn("readCodexUsageLimitsOnly")(fu
         checkedAt: DateTime.formatIso(yield* DateTime.now),
       }),
       ...(email ? { email } : {}),
+      ...(label ? { label } : {}),
       ...(rateLimits && "accountId" in rateLimits && rateLimits.accountId?.trim()
         ? { workspaceId: rateLimits.accountId.trim() }
         : {}),

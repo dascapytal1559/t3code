@@ -124,7 +124,10 @@ export interface MergedUsage {
   readonly workGroups: readonly string[];
   /** Kinds of work any server spreads over the other groups; `OTHER_WORK` for Other. */
   readonly sharedWork: readonly string[];
-  /** Usage by kind-of-work member, before shared usage is spread; see `usageMemberBands`. */
+  /**
+   * Usage by kind-of-work member under `workMemberKey(group, member)`, before shared usage is
+   * spread; see `usageMemberBands`.
+   */
   readonly workMembers: MergedSplit<string>;
   /** The members the servers name, first server first. */
   readonly workMemberInfo: readonly UsageWorkMember[];
@@ -656,6 +659,9 @@ export function mergeUsage(
   const types = new SplitAccumulator<UsageTypeBand>("other", (key) => key as UsageTypeBand);
 
   for (const environment of current) {
+    const groupOfMember = new Map(
+      (environment.summary.workMembers ?? []).map((member) => [member.key, member.group]),
+    );
     const {
       buckets,
       originUsage: ownedOriginUsage,
@@ -688,7 +694,16 @@ export function mergeUsage(
       devices.add(bucket, bucket.devices, tokens);
       work.add(bucket, bucket.work, tokens);
       if (bucket.workMembers !== undefined && typeof bucket.workMembers !== "string") {
-        workMembers.add(bucket, bucket.workMembers, tokens);
+        workMembers.add(
+          bucket,
+          Object.fromEntries(
+            Object.entries(bucket.workMembers).flatMap(([key, amount]) => {
+              const group = groupOfMember.get(key);
+              return group === undefined ? [] : [[workMemberKey(group, key), amount]];
+            }),
+          ),
+          tokens,
+        );
       }
       const category = bucket.categoryCostUsd;
       types.add(
@@ -845,7 +860,8 @@ export function mergeUsage(
   );
   const memberInfo = new Map<string, UsageWorkMember>();
   for (const member of current.flatMap((environment) => environment.summary.workMembers ?? [])) {
-    if (!memberInfo.has(member.key)) memberInfo.set(member.key, member);
+    const key = workMemberKey(member.group, member.key);
+    if (!memberInfo.has(key)) memberInfo.set(key, member);
   }
   const workMemberInfo = [...memberInfo.values()];
 
@@ -1019,6 +1035,9 @@ export interface UsageMemberBands {
   readonly valueAt: (period: string, key: string, metric: "cost" | "tokens") => number;
 }
 
+/** Where `MergedUsage.workMembers` keeps a member's usage in one group. */
+const workMemberKey = (group: string, member: string) => `${group}\u0000${member}`;
+
 /**
  * A kind of work's members, scaled per period to add up to the group as shown, shared usage
  * included; a period with only shared usage splits by the members' window shares. Tokens and cost
@@ -1039,7 +1058,7 @@ export function usageMemberBands(
   }
   const rowOf = new Map(
     [...named.values()].flatMap((same) =>
-      same.map((member) => [member.key, same[0]!.key] as const),
+      same.map((member) => [workMemberKey(group, member.key), same[0]!.key] as const),
     ),
   );
   const keys = new Set(rowOf.keys());

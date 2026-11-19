@@ -254,7 +254,15 @@ const usageCloseCommand = Command.make("close", {
           });
         }
         const result = yield* HttpClientResponse.schemaBodyJson(UsageCloseResult)(response).pipe(
-          Effect.mapError(unreachable),
+          Effect.mapError(
+            () =>
+              new ThreadToolFailedError({
+                tool: "usage close",
+                detail: flags.dryRun
+                  ? "The server answered, but its reply could not be read."
+                  : "Closed, but the server's reply could not be read.",
+              }),
+          ),
         );
         if (flags.json) return yield* printJson(result);
         for (const line of formatClose(result)) yield* Console.log(line);

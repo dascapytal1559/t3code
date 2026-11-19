@@ -22,6 +22,7 @@ import {
   applyUsageLimitsUpdate,
   makeUsageLimits,
   resolveUsageLimitsAfterProbe,
+  usageLimitsReading,
 } from "./usageLimits.ts";
 import type { ManagedServerProvider, ProviderUsageLimitsReading } from "./snapshot.ts";
 
@@ -352,7 +353,12 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
       const { snapshot } = yield* Ref.get(snapshotStateRef);
       if (!snapshot.enabled) return;
       const reading = canReadUsageAlone(snapshot) ? yield* read(snapshot) : undefined;
-      if (reading === undefined || isAnotherAccount(snapshot.auth, reading)) {
+      if (
+        reading === undefined ||
+        usageLimitsReading(reading.usageLimits) === undefined ||
+        isAnotherAccount(snapshot.auth, reading) ||
+        (reading.label !== undefined && reading.label !== snapshot.auth.label)
+      ) {
         // The same full check a manual refresh runs.
         yield* input.resolveMaintenance({ fresh: true });
         yield* applySnapshotBase(yield* input.getSettings, { forceRefresh: true });

@@ -1085,7 +1085,7 @@ describe("makeManagedServerProvider", () => {
           checkedAt: "2026-04-10T00:00:05.000Z",
           windows: [{ id: "five_hour", kind: "session", label: "Session", usedPercent: 40 }],
         } as const;
-        const { provider, reading, counts } = yield* limitsOnlyHarness({
+        const { provider, counts } = yield* limitsOnlyHarness({
           probed: signedInSnapshot,
           reading: { usageLimits: readLimits, email: "DEV@example.com" },
         });
@@ -1097,19 +1097,8 @@ describe("makeManagedServerProvider", () => {
           usageLimits: readLimits,
         });
 
-        // A failed read keeps the published windows, as a failed full check does.
-        yield* Ref.set(reading, {
-          usageLimits: {
-            checkedAt: "2026-04-10T00:00:06.000Z",
-            windows: [],
-            unavailable: { reason: "probeFailed" },
-          },
-        });
-        yield* provider.refreshUsageLimitsOnly!;
-        assert.deepStrictEqual((yield* provider.getSnapshot).usageLimits, readLimits);
-
         yield* provider.refresh;
-        assert.deepStrictEqual(yield* counts, { checks: 2, reads: 2 });
+        assert.deepStrictEqual(yield* counts, { checks: 2, reads: 1 });
       }),
     ).pipe(Effect.provide(layerAlwaysRunTest)),
   );
@@ -1144,6 +1133,24 @@ describe("makeManagedServerProvider", () => {
       probed: { ...signedInSnapshot, status: "warning" },
       reading: { usageLimits: signedInSnapshot.usageLimits! },
       reads: 0,
+    },
+    {
+      name: "a read that failed",
+      probed: signedInSnapshot,
+      reading: {
+        usageLimits: {
+          checkedAt: "2026-04-10T00:00:06.000Z",
+          windows: [],
+          unavailable: { reason: "probeFailed" },
+        },
+      },
+      reads: 1,
+    },
+    {
+      name: "a read under another plan",
+      probed: { ...signedInSnapshot, auth: { ...signedInSnapshot.auth, label: "Plus" } },
+      reading: { usageLimits: signedInSnapshot.usageLimits!, label: "Pro" },
+      reads: 1,
     },
     {
       name: "a read that could not reach the provider",

@@ -248,9 +248,11 @@ describe("UsageLabels", () => {
         })),
       );
       assert.deepStrictEqual(yield* differing(records), []);
-      // And the close, sealing them, finds the born labels the same.
+      // And the close, sealing them, finds the born labels the same. A session that started after
+      // the last pass has no born label yet, so it is not counted as differing.
       yield* TestClock.setTime(time("23:59"));
-      const closed = yield* origins.close(time("12:00"), records);
+      const late = { sessionId: "late-session", timestampMs: time("06:30") };
+      const closed = yield* origins.close(time("12:00"), [...records, late]);
       assert.deepStrictEqual(closed.closed ? closed.born : closed, {
         records: records.length,
         differingRecords: 0,
@@ -273,6 +275,7 @@ describe("UsageLabels", () => {
             provider: "codex",
             threadId: "another-environments-thread",
           },
+          { sessionId: "late-session", startedAtMs: time("06:00"), provider: "codex" },
         ]),
       ),
     ),
