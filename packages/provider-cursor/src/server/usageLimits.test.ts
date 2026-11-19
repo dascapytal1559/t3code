@@ -2,7 +2,11 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
-import { cursorUsageResponseToLimits, readCursorUsageLimits } from "./usageLimits.ts";
+import {
+  cursorUsageResponseToLimits,
+  readCursorUsageLimits,
+  readCursorUsageLimitsAlone,
+} from "./usageLimits.ts";
 
 describe("Cursor usage limits", () => {
   const checkedAt = "2026-09-16T00:00:00.000Z";
@@ -207,5 +211,45 @@ describe("Cursor usage limits", () => {
         expect(limits.unavailable?.message).toContain("default Cursor endpoint");
       }
     }),
+  );
+
+  it.effect(
+    "hands a limits-only read to the full check when the key or the limits cannot be read",
+    () =>
+      Effect.gen(function* () {
+        const usage = (status: number) =>
+          HttpClient.make((request) =>
+            Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                Response.json({ planUsage: { totalPercentUsed: 10 } }, { status }),
+              ),
+            ),
+          );
+        const read = (readApiKey: Effect.Effect<string | undefined, string>, status = 200) =>
+          readCursorUsageLimitsAlone(
+            { apiEndpoint: "" },
+            { CURSOR_AUTH_TOKEN: "explicit-token" },
+            readApiKey,
+          ).pipe(Effect.provideService(HttpClient.HttpClient, usage(status)));
+
+        expect(yield* read(Effect.fail("keychain locked"))).toBeUndefined();
+        expect(yield* read(Effect.undefined, 500)).toBeUndefined();
+        expect((yield* read(Effect.undefined))?.usageLimits.windows).toEqual([
+          { id: "totalPercentUsed", kind: "monthly", label: "Overall", usedPercent: 10 },
+        ]);
+        // No credentials is an answer, not a failed read: the account has no limits to show.
+        const signedOut = yield* readCursorUsageLimitsAlone(
+          { apiEndpoint: "" },
+          {},
+          Effect.undefined,
+        ).pipe(
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make(() => Effect.die("must not request usage without credentials")),
+          ),
+        );
+        expect(signedOut?.usageLimits.unavailable?.reason).toBe("unsupported");
+      }),
   );
 });

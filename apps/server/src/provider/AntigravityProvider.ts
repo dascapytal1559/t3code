@@ -35,7 +35,10 @@ import {
   isCommandMissingCause,
   type ServerProviderDraft,
 } from "@t3tools/provider-core/server/snapshotProbe";
-import { resolveUsageLimitsAfterProbe } from "@t3tools/provider-core/server/usageLimits";
+import {
+  resolveUsageLimitsAfterProbe,
+  usageLimitsReading,
+} from "@t3tools/provider-core/server/usageLimits";
 
 import { antigravityThinkingConfig } from "./acp/AntigravityAcpSupport.ts";
 
@@ -353,11 +356,12 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
   ) {
     const before = yield* SubscriptionRef.get(metadata);
     const probed = yield* probe;
-    if (probed.unavailable?.reason === "probeFailed") return undefined;
+    const reading = usageLimitsReading(probed);
+    if (reading === undefined) return undefined;
     return yield* SubscriptionRef.modify(metadata, (state) =>
       state.authRevision === before.authRevision
         ? ([
-            { usageLimits: probed },
+            reading,
             {
               ...state,
               draft: {

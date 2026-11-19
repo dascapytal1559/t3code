@@ -12,6 +12,7 @@ import {
   clampPercent,
   makeUnavailableUsageLimits,
   makeUsageLimits,
+  usageLimitsReading,
 } from "@t3tools/provider-core/server/usageLimits";
 import { DEFAULT_CURSOR_API_ENDPOINT, exchangeCursorApiKey } from "./apiKey.ts";
 
@@ -112,3 +113,17 @@ export const readCursorUsageLimits = Effect.fn("readCursorUsageLimits")(function
     ),
   );
 });
+
+/** The limits read alone with the instance's key; none when the key or the limits cannot be read. */
+export const readCursorUsageLimitsAlone = <E, R>(
+  settings: Pick<CursorSettings, "apiEndpoint">,
+  environment: NodeJS.ProcessEnv,
+  readApiKey: Effect.Effect<string | undefined, E, R>,
+) =>
+  readApiKey.pipe(
+    Effect.flatMap((apiKey) =>
+      readCursorUsageLimits(settings, { ...environment, CURSOR_API_KEY: apiKey }),
+    ),
+    Effect.map(usageLimitsReading),
+    Effect.orElseSucceed(() => undefined),
+  );

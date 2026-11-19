@@ -49,6 +49,7 @@ import {
   readSettledOpenCode2Catalog,
 } from "./status.ts";
 import { makeManagedServerProvider } from "@t3tools/provider-core/server/managedProvider";
+import { usageLimitsReading } from "@t3tools/provider-core/server/usageLimits";
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
 import {
   makeOpenCodeRuntimeProbe,
@@ -660,14 +661,7 @@ export const OpenCodeDriver: ProviderDriver<
         makePendingOpenCodeProvider(settings.provider).pipe(Effect.map(stampIdentity)),
       checkProvider,
       checkUsageLimits,
-      readUsageLimits: () =>
-        checkUsageLimits.pipe(
-          Effect.map((usageLimits) =>
-            usageLimits === undefined || usageLimits.unavailable?.reason === "probeFailed"
-              ? undefined
-              : { usageLimits },
-          ),
-        ),
+      readUsageLimits: () => checkUsageLimits.pipe(Effect.map(usageLimitsReading)),
       enrichSnapshot: ({ settings, snapshot, publishSnapshot }) =>
         resolveMaintenance().pipe(
           Effect.flatMap((maintenanceCapabilities) =>

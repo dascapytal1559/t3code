@@ -4,6 +4,8 @@ import type {
   ServerProviderUsageWindow,
 } from "@t3tools/contracts";
 
+import type { ProviderUsageLimitsReading } from "./snapshot.ts";
+
 const WINDOW_KIND_ORDER: Record<ServerProviderUsageWindow["kind"], number> = {
   session: 0,
   weekly: 1,
@@ -108,6 +110,15 @@ function usageWindowEquals(a: ServerProviderUsageWindow, b: ServerProviderUsageW
     a.resetsAt === b.resetsAt &&
     a.windowDurationMins === b.windowDurationMins
   );
+}
+
+/** A limits-only reading, or none when the read could not reach the provider, so the full check runs. */
+export function usageLimitsReading(
+  usageLimits: ServerProviderUsageLimits | undefined,
+): ProviderUsageLimitsReading | undefined {
+  return usageLimits === undefined || usageLimits.unavailable?.reason === "probeFailed"
+    ? undefined
+    : { usageLimits };
 }
 
 export function resolveUsageLimitsAfterProbe(input: {

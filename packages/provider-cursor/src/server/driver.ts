@@ -11,7 +11,7 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as HttpClient from "effect/http/HttpClient";
 import { cursorRateModel } from "./accountUsage.ts";
-import { readCursorUsageLimits } from "./usageLimits.ts";
+import { readCursorUsageLimits, readCursorUsageLimitsAlone } from "./usageLimits.ts";
 
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import { makeCursorTextGeneration } from "./textGeneration.ts";
@@ -264,14 +264,7 @@ export const CursorDriver: ProviderDriver<
         buildInitialCursorProviderSnapshot(settings.provider).pipe(Effect.map(stampSnapshot)),
       checkProvider,
       readUsageLimits: () =>
-        auth.readApiKey.pipe(
-          Effect.flatMap((apiKey) =>
-            readCursorUsageLimits(effectiveConfig, { ...processEnv, CURSOR_API_KEY: apiKey }),
-          ),
-          Effect.map((usageLimits) =>
-            usageLimits.unavailable?.reason === "probeFailed" ? undefined : { usageLimits },
-          ),
-          Effect.orElseSucceed(() => undefined),
+        readCursorUsageLimitsAlone(effectiveConfig, processEnv, auth.readApiKey).pipe(
           Effect.provideService(HttpClient.HttpClient, httpClient),
         ),
     }).pipe(

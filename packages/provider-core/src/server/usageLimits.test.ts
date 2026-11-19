@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { applyUsageLimitsUpdate, resolveUsageLimitsAfterProbe } from "./usageLimits.ts";
+import {
+  applyUsageLimitsUpdate,
+  resolveUsageLimitsAfterProbe,
+  usageLimitsReading,
+} from "./usageLimits.ts";
 
 const checkedAt = "2026-09-03T12:00:00.000Z";
 const session = {
@@ -142,5 +146,18 @@ describe("resolveUsageLimitsAfterProbe", () => {
     expect(resolveUsageLimitsAfterProbe({ published, probed: failed })).toBe(published);
     expect(resolveUsageLimitsAfterProbe({ published, probed: unsupported })).toBe(unsupported);
     expect(resolveUsageLimitsAfterProbe({ published: undefined, probed: failed })).toBe(failed);
+  });
+});
+
+describe("usageLimitsReading", () => {
+  it("is none only when the read could not reach the provider", () => {
+    const checkedAt = "2026-09-03T12:00:00.000Z";
+    const failed = { checkedAt, windows: [], unavailable: { reason: "probeFailed" as const } };
+    const unsupported = { checkedAt, windows: [], unavailable: { reason: "unsupported" as const } };
+    const read = { checkedAt, windows: [session] };
+    expect(usageLimitsReading(undefined)).toBeUndefined();
+    expect(usageLimitsReading(failed)).toBeUndefined();
+    expect(usageLimitsReading(unsupported)).toEqual({ usageLimits: unsupported });
+    expect(usageLimitsReading(read)).toEqual({ usageLimits: read });
   });
 });
