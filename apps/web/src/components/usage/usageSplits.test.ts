@@ -1,7 +1,7 @@
 import type { MergedUsage, SplitAmount } from "@t3tools/shared/usageMerge";
 import { describe, expect, it } from "vite-plus/test";
 
-import { chartBands, deviceBox } from "./usageSplits";
+import { chartBands, deviceBox, type BoxModel } from "./usageSplits";
 
 const amount = (totalTokens: number, costUsd: number): SplitAmount => ({ totalTokens, costUsd });
 const day = "2026-11-19";
@@ -46,5 +46,27 @@ describe("breakdown boxes", () => {
       "computerDirect",
       "computerOrchestrated",
     ]);
+  });
+
+  it("keeps a parent whole when every child it holds is hidden", () => {
+    const band = (key: string) => ({
+      key,
+      label: key,
+      named: true,
+      color: "",
+      totalTokens: 1,
+      costUsd: 0,
+    });
+    const box: BoxModel = {
+      kind: "work",
+      groups: [
+        { ...band("Bones"), children: [band("t3"), band("fm")], hidden: new Set(["t3", "fm"]) },
+      ],
+      valueAt: () => 0,
+    };
+    expect(chartBands(box, new Set(["Bones"])).map((entry) => entry.key)).toEqual(["Bones"]);
+    // One shown member opens it, and the hidden one keeps its band beside it.
+    const shown = { ...box, groups: [{ ...box.groups[0]!, hidden: new Set(["fm"]) }] };
+    expect(chartBands(shown, new Set(["Bones"])).map((entry) => entry.key)).toEqual(["t3", "fm"]);
   });
 });

@@ -280,7 +280,7 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
                   ifUnclaimed: ifUnclaimed === true,
                 })
                 .pipe(Effect.mapError(unavailable));
-        if (claimed.target.kind === "run" && !claimed.kept && claimed.value !== null)
+        if (claimed.target.kind === "run" && !claimed.kept)
           yield* nameRunningTurn(claimed.target.runId);
         return {
           ...(claimed.target.kind === "session"

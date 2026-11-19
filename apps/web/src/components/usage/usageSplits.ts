@@ -283,12 +283,16 @@ export function providerBox(
   };
 }
 
+/** Whether a parent opens: it has a child with a row of its own. */
+export const opensIntoChildren = (group: BoxGroup) =>
+  group.children.some((child) => !group.hidden.has(child.key));
+
 /**
  * What the chart draws for a box, top band first as the card lists them: every row, with each
  * opened parent replaced by all of its children, hidden ones included.
  */
 export function chartBands(box: BoxModel, open: ReadonlySet<string>): readonly BoxBand[] {
   return box.groups.flatMap((group) =>
-    open.has(group.key) && group.children.length > 0 ? group.children : [group],
+    open.has(group.key) && opensIntoChildren(group) ? group.children : [group],
   );
 }

@@ -18,7 +18,13 @@ import {
   unfold,
   type TreeRow,
 } from "./usageMotion";
-import { OTHER_WORK_LABEL, type BoxBand, type BoxGroup, type BoxModel } from "./usageSplits";
+import {
+  OTHER_WORK_LABEL,
+  opensIntoChildren,
+  type BoxBand,
+  type BoxGroup,
+  type BoxModel,
+} from "./usageSplits";
 import { OTHER_WORK } from "@t3tools/shared/usageMerge";
 
 /** A provider row's extras: its mark, and the switch that leaves it out of the totals. */
@@ -156,7 +162,7 @@ export function UsageBreakdownBox({
   const pending = useRef<PendingTree | null>(null);
   const closing = useRef(new Set<string>());
   const label = (band: BoxBand) => (band.named ? band.label : m(band.label));
-  const isOpen = (group: BoxGroup) => openParents.has(group.key) && group.children.length > 0;
+  const isOpen = (group: BoxGroup) => openParents.has(group.key) && opensIntoChildren(group);
   const barBands = model.groups
     .filter((group) => extras?.[group.key]?.excluded !== true)
     .flatMap((group) => (open && isOpen(group) ? group.children : [group]));
@@ -187,7 +193,7 @@ export function UsageBreakdownBox({
     [...rows.querySelectorAll<HTMLElement>(`[data-tree="${CSS.escape(group)}"]`)].map((gutter) => ({
       trunk: gutter.querySelector<HTMLElement>("[data-trunk]"),
       elbow: gutter.querySelector<HTMLElement>("[data-elbow]"),
-      cells: rowCells(rows, gutter.dataset.row ?? ""),
+      cells: rowCells(rows, gutter.parentElement?.dataset.row ?? ""),
     }));
   const topsOf = (rows: HTMLElement) => {
     const origin = rows.getBoundingClientRect().top;
@@ -224,13 +230,13 @@ export function UsageBreakdownBox({
     const after = starts.findIndex(
       (cell, index) => index > first && !children.has(cell.dataset.row ?? ""),
     );
-    const childTop = first < 0 ? 0 : starts[first]!.getBoundingClientRect().top;
+    const last = (after < 0 ? starts.length : after) - 1;
     const delta =
       first < 0
         ? 0
-        : (after < 0
-            ? rows.getBoundingClientRect().bottom
-            : starts[after]!.getBoundingClientRect().top) - childTop;
+        : starts[last]!.getBoundingClientRect().bottom -
+          starts[first]!.getBoundingClientRect().top +
+          Number.parseFloat(getComputedStyle(rows).rowGap);
     closing.current.add(group.key);
     const timing = { ...SHUT, delay: SHUT_AFTER_MS, fill: "forwards" as const };
     const moving =
@@ -395,8 +401,8 @@ export function UsageBreakdownBox({
               style={{ backgroundColor: group.color }}
             />
           );
-          const opens = group.children.length > 0;
-          const expanded = openParents.has(group.key) && opens;
+          const opens = opensIntoChildren(group);
+          const expanded = isOpen(group);
           const name = opens ? (
             <button
               type="button"
@@ -441,7 +447,6 @@ export function UsageBreakdownBox({
                 <span
                   aria-hidden
                   data-tree={group.key}
-                  data-row={child.key}
                   onClick={() => toggle(group)}
                   className="relative block h-full w-full cursor-pointer [--usage-tree:color-mix(in_srgb,var(--muted-foreground)_40%,var(--card))] hover:[--usage-tree:color-mix(in_srgb,var(--muted-foreground)_80%,var(--card))]"
                 >

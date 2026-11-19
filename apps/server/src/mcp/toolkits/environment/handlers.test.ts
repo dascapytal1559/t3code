@@ -33,6 +33,7 @@ import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandE
 import * as ThreadManagement from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as Settings from "../../../serverSettings.ts";
 import * as UsageClaims from "../../../usage/UsageClaims.ts";
+import * as UsageLabels from "../../../usage/UsageLabels.ts";
 import * as UsageOrigins from "../../../usage/UsageOrigins.ts";
 import * as UsageService from "../../../usage/UsageService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -322,8 +323,9 @@ it.effect(
 
 it.effect(
   "t3_usage_claim takes exactly one target and one real cause or device, and removes a claim",
-  () =>
-    Effect.gen(function* () {
+  () => {
+    const renamedRuns: string[] = [];
+    return Effect.gen(function* () {
       const claims = yield* UsageClaims.UsageClaims;
       const toolkit = yield* EnvironmentToolkit;
       const claim = (params: {
@@ -407,6 +409,9 @@ it.effect(
         },
       ]);
       yield* claim({ threadId, runId: wakeRun, causedBy: null });
+      // Every change to the running turn's claim rewrites its born labels, removals too; a kept
+      // claim changes nothing.
+      expect(renamedRuns).toEqual([wakeRun, wakeRun, wakeRun, wakeRun]);
 
       const prompt = { threadId, messageId: MessageId.make("message:prompt") };
       yield* claims.claim({
@@ -468,6 +473,13 @@ it.effect(
                   } as never),
               }),
               Layer.mock(Settings.ServerSettingsService)({}),
+              Layer.mock(UsageLabels.UsageLabels)({
+                named: (runId) =>
+                  Effect.sync(() => {
+                    renamedRuns.push(runId);
+                    return "written" as const;
+                  }),
+              }),
               Layer.succeed(McpInvocationContext.McpInvocationContext, {
                 environmentId,
                 requestNamespace: "client:firstmate",
@@ -496,5 +508,6 @@ it.effect(
           Layer.provideMerge(Layer.merge(SqlitePersistence.layerMemory, NodeServices.layer)),
         ),
       ),
-    ),
+    );
+  },
 );

@@ -826,6 +826,7 @@ function UsageOverview({
   const format =
     metric === "tokens" ? formatTokens : (value: number) => formatUsdShort(value, locale);
 
+  const chartShown = activeProviders.length > 0 || excludedProviders.size === 0;
   const [transition, setTransition] = useState<ChartTransition | null>(null);
   const [opening, setOpening] = useState<{
     readonly kind: UsageBreakdown;
@@ -847,12 +848,12 @@ function UsageOverview({
       [...boxRefs.current].map(([box, element]) => [box, element.getBoundingClientRect().top]),
     );
     const next = leaving("switch");
-    setTransition(next);
+    if (chartShown) setTransition(next);
     setOpening({ kind, at: { ...at, id: next.id } });
     onBreakdownChange(kind);
   };
   const toggleParent = (kind: UsageBreakdown, group: string) => {
-    if (kind === split) setTransition(leaving("split"));
+    if (kind === split && chartShown) setTransition(leaving("split"));
     onToggleOpenParent(kind, group);
   };
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- slides the boxes from where they stood before a card opened to where layout puts them now
@@ -984,7 +985,7 @@ function UsageOverview({
               </ToggleButton>
             )}
           </div>
-          {activeProviders.length === 0 && excludedProviders.size > 0 ? (
+          {!chartShown ? (
             <p className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
               <T>No activity in this window.</T>
             </p>
