@@ -978,8 +978,12 @@ export const make = Effect.gen(function* () {
     homeDir: yield* HostProcess.HomeDirectory,
     foldersCachePath: path.join(config.stateDir, USAGE_SESSION_FOLDERS_FILE_NAME),
   });
-  const activeProjects = sql<{ readonly id: ProjectId; readonly root: string }>`
-    SELECT project_id AS id, workspace_root AS root
+  const activeProjects = sql<{
+    readonly id: ProjectId;
+    readonly root: string;
+    readonly title: string;
+  }>`
+    SELECT project_id AS id, workspace_root AS root, title
     FROM projection_projects
     WHERE deleted_at IS NULL
   `;
@@ -1005,7 +1009,14 @@ export const make = Effect.gen(function* () {
       : [[], []];
     const nowMs = yield* Clock.currentTimeMillis;
     return yield* Effect.promise(() =>
-      usageWork.attribution(groups, projects, worktrees, seen, nowMs),
+      usageWork.attribution(
+        groups,
+        settings.usageWorkMemberLabel,
+        projects,
+        worktrees,
+        seen,
+        nowMs,
+      ),
     );
   });
 
@@ -1310,7 +1321,7 @@ export const make = Effect.gen(function* () {
       ...(placesWork
         ? {
             attributeWork: (record: UsageRecord, filePath: string | undefined) =>
-              work.groupOf(record.cwd, filePath),
+              work.placeOf(record.cwd, filePath),
           }
         : {}),
       ...(labelOf === null
@@ -1512,6 +1523,7 @@ export const make = Effect.gen(function* () {
       ...(aggregated.origins === undefined ? {} : { origins: aggregated.origins }),
       workGroups: work.groups,
       ...(sharedWork.length === 0 ? {} : { sharedWork }),
+      ...(work.members.length === 0 ? {} : { workMembers: work.members }),
       sources,
       pricing: summaryPricing,
       scanDurationMs: Math.max(0, finishedAtMs - startedAtMs),

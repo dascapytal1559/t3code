@@ -1159,6 +1159,7 @@ export function EnvironmentProviderSettings({
         environmentId={environmentId}
         groups={settings.usageWorkGroups}
         shareOther={settings.usageWorkShareOther}
+        memberLabel={settings.usageWorkMemberLabel}
         readOnly={readOnly}
       />
 

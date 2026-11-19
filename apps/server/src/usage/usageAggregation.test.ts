@@ -311,9 +311,9 @@ describe("UsageAggregator", () => {
             : null,
       attributeWork: (item, filePath) =>
         item.cwd === "/repos/app"
-          ? "Tooling"
+          ? { group: "Tooling", member: null }
           : filePath === "/claude/trader/s.jsonl"
-            ? "Trading"
+            ? { group: "Trading", member: null }
             : null,
       onRecord: (entry) => counted.push(entry),
     });
@@ -400,11 +400,12 @@ describe("UsageAggregator", () => {
             : item.sessionId === "early"
               ? { origin: "computer", basis: "beforeOrigins", reason: "beforeStamps" }
               : { origin: "computer", basis: "default", reason: "noCause" },
+      // Tooling opens into its members; Trading does not.
       attributeWork: (item, filePath) =>
         item.cwd === "/repos/app"
-          ? "Tooling"
+          ? { group: "Tooling", member: "app" }
           : filePath === "/claude/trader/s.jsonl"
-            ? "Trading"
+            ? { group: "Trading", member: null }
             : null,
     });
     const day7 = at("2026-08-07T04:00:00Z");
@@ -442,6 +443,9 @@ describe("UsageAggregator", () => {
       computerDirect: amount,
     });
     expect(day?.work).toEqual({ Tooling: amount, Trading: amount, "": amount });
+    // Only usage in a group that opens into members is split by member, always with its amount.
+    expect(day?.workMembers).toEqual({ app: amount });
+    expect(Object.keys(early?.workMembers ?? {})).toEqual(["app"]);
   });
 
   it.each([

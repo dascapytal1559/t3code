@@ -13,6 +13,7 @@ import * as Schema from "effect/Schema";
 import {
   isModelCostUnknown,
   mergeUsage,
+  usageMemberBands,
   usageSplitBands,
   type EnvironmentUsage,
 } from "./usageMerge.ts";
@@ -532,6 +533,19 @@ describe("mergeUsage", () => {
       unsplit: 5,
     });
     expect(merged.speedCost).toEqual({ standard: 9, fast: 6, ultrafast: 0, premium: 3 });
+    // By type: tokens by token type, cost by category, cost no category accounts for as other.
+    const types = usageSplitBands(merged, "type", "cost", false);
+    expect(Object.fromEntries(types.bands.map((band) => [band.key, band.costUsd]))).toEqual({
+      output: 4,
+      cacheWrite: 3,
+      cacheRead: 2,
+      input: 1,
+      other: 5,
+    });
+    const day = merged.daily[0]!;
+    expect(
+      types.bands.reduce((sum, band) => sum + types.valueAt(day.day, band.key, "tokens"), 0),
+    ).toBe(day.totalTokens);
     expect(merged.models.map(({ model, unpricedTokens }) => [model, unpricedTokens])).toEqual([
       ["claude-fable-5", 0],
       ["unknown-model", 1160],
@@ -638,6 +652,12 @@ describe("mergeUsage", () => {
             ...summary(buckets, [mac]),
             workGroups: ["Bones", "Meat", "Coordination"],
             sharedWork: ["Coordination", ""],
+            workMembers: [
+              { key: "t3", group: "Bones", name: "t3code-fork" },
+              { key: "fm", group: "Bones", name: "firstmate", hidden: true },
+              // A second project of the same repository: one row with the first.
+              { key: "t3-mcp", group: "Bones", name: "t3code-fork", hidden: true },
+            ],
           }),
         ],
         USAGE_CONTRACT_VERSION,
@@ -648,6 +668,7 @@ describe("mergeUsage", () => {
         bucket({
           sourcePath: mac.homePath,
           work: { Bones: [300, 2], Meat: [600, 6], Coordination: [200, 1], "": [60, 1] },
+          workMembers: { t3: [150, 1], "t3-mcp": [50, 0.5], fm: [100, 0.5] },
         }),
         // A day with only shared usage takes the window's ratio.
         bucket({ day: day8, sourcePath: mac.homePath, work: "Coordination" }),
@@ -673,6 +694,23 @@ describe("mergeUsage", () => {
         merged.totalTokens,
         6,
       );
+
+      // Bones' members add up to Bones as shown, shared usage included, each keeping its share;
+      // the day with only shared usage splits by the members' window shares.
+      const members = usageMemberBands(merged, "Bones", "tokens", false);
+      expect(members.members.map((member) => [member.key, member.name, member.hidden])).toEqual([
+        ["t3", "t3code-fork", undefined],
+        ["fm", "firstmate", true],
+      ]);
+      for (const day of merged.daily) {
+        for (const by of ["tokens", "cost"] as const) {
+          const t3 = members.valueAt(day.day, "t3", by);
+          const fm = members.valueAt(day.day, "fm", by);
+          expect(t3 + fm).toBeCloseTo(split.valueAt(day.day, "Bones", by), 9);
+          expect(t3 / fm).toBeCloseTo(by === "tokens" ? 2 : 3, 9);
+        }
+      }
+      expect(usageMemberBands(merged, "Meat", "tokens", false).members).toEqual([]);
     });
 
     it("leaves shared usage in Other when no group in the window has any", () => {

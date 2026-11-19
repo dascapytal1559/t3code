@@ -14,6 +14,7 @@ import {
   type UsageSourceFingerprint,
   type UsageSummary,
   type UsageTokenTotals,
+  type UsageWorkMember,
 } from "@t3tools/contracts";
 
 export interface EnvironmentUsage {
@@ -123,7 +124,16 @@ export interface MergedUsage {
   readonly workGroups: readonly string[];
   /** Kinds of work any server spreads over the other groups; `OTHER_WORK` for Other. */
   readonly sharedWork: readonly string[];
+  /** Usage by kind-of-work member, before shared usage is spread; see `usageMemberBands`. */
+  readonly workMembers: MergedSplit<string>;
+  /** The members the servers name, first server first. */
+  readonly workMemberInfo: readonly UsageWorkMember[];
+  /** Usage by token type: tokens by type, cost by its priced category; unsplit cost is `other`. */
+  readonly types: MergedSplit<UsageTypeBand>;
 }
+
+/** A token type the Usage page splits by; `other` holds cost no category accounts for. */
+export type UsageTypeBand = "input" | "cacheRead" | "output" | "cacheWrite" | "other";
 
 export interface SplitAmount {
   readonly costUsd: number;
@@ -549,6 +559,9 @@ const EMPTY_MERGED: MergedUsage = {
   work: { totals: new Map(), daily: new Map(), hourly: new Map() },
   workGroups: [],
   sharedWork: [],
+  workMembers: { totals: new Map(), daily: new Map(), hourly: new Map() },
+  workMemberInfo: [],
+  types: { totals: new Map(), daily: new Map(), hourly: new Map() },
 };
 
 export function mergeUsage(
@@ -638,6 +651,9 @@ export function mergeUsage(
     isDeviceBand(key) ? key : "unlabelled",
   );
   const work = new SplitAccumulator<string>(OTHER_WORK, (key) => key);
+  // A member split covers only part of a bucket; the rest lands on "" and is never read.
+  const workMembers = new SplitAccumulator<string>("", (key) => key);
+  const types = new SplitAccumulator<UsageTypeBand>("other", (key) => key as UsageTypeBand);
 
   for (const environment of current) {
     const {
@@ -671,6 +687,20 @@ export function mergeUsage(
       const tokens = bucketTokens(bucket);
       devices.add(bucket, bucket.devices, tokens);
       work.add(bucket, bucket.work, tokens);
+      if (bucket.workMembers !== undefined && typeof bucket.workMembers !== "string") {
+        workMembers.add(bucket, bucket.workMembers, tokens);
+      }
+      const category = bucket.categoryCostUsd;
+      types.add(
+        bucket,
+        {
+          input: [bucket.totals.uncachedInputTokens, category?.input ?? 0],
+          cacheRead: [bucket.totals.cachedInputTokens, category?.cacheRead ?? 0],
+          output: [bucket.totals.outputTokens, category?.output ?? 0],
+          cacheWrite: [bucket.totals.cacheCreationTokens, category?.cacheWrite ?? 0],
+        },
+        tokens,
+      );
 
       costUsd += bucket.costUsd;
       cacheSavingsUsd += bucket.cacheSavingsUsd;
@@ -864,6 +894,15 @@ export function mergeUsage(
     sharedWork: [
       ...new Set(current.flatMap((environment) => environment.summary.sharedWork ?? [])),
     ],
+    workMembers,
+    workMemberInfo: [
+      ...new Map(
+        current
+          .flatMap((environment) => environment.summary.workMembers ?? [])
+          .map((member) => [member.key, member] as const),
+      ).values(),
+    ],
+    types,
   };
 }
 
@@ -899,31 +938,47 @@ function deviceSplitOf(usage: MergedUsage): MergedSplit<UsageDeviceBand> {
   };
 }
 
+const USAGE_TYPE_BANDS: readonly UsageTypeBand[] = [
+  "input",
+  "cacheRead",
+  "output",
+  "cacheWrite",
+  "other",
+];
+
+/** The kind-of-work split with shared usage spread over the other groups, as the page shows it. */
+function spreadWork(usage: MergedUsage, hourly: boolean) {
+  const periods = hourly ? usage.work.hourly : usage.work.daily;
+  return usage.sharedWork.length > 0
+    ? spreadSharedWork(periods, new Set(usage.sharedWork))
+    : { periods, totals: usage.work.totals, spread: [] as readonly string[] };
+}
+
 export function usageSplitBands(
   usage: MergedUsage,
-  split: "device" | "work",
+  split: "device" | "work" | "type",
   metric: "cost" | "tokens",
   hourly: boolean,
 ): UsageSplitBands {
-  const merged: MergedSplit<string> = split === "device" ? deviceSplitOf(usage) : usage.work;
-  const spread =
-    split === "work" && usage.sharedWork.length > 0
-      ? spreadSharedWork(hourly ? merged.hourly : merged.daily, new Set(usage.sharedWork))
-      : null;
+  const merged: MergedSplit<string> =
+    split === "device" ? deviceSplitOf(usage) : split === "type" ? usage.types : usage.work;
+  const spread = split === "work" ? spreadWork(usage, hourly) : null;
   const periods = spread?.periods ?? (hourly ? merged.hourly : merged.daily);
   const totals = spread?.totals ?? merged.totals;
-  const catchAll = split === "device" ? "unlabelled" : OTHER_WORK;
+  const catchAll = split === "device" ? "unlabelled" : split === "type" ? "other" : OTHER_WORK;
   const keys =
     split === "device"
       ? USAGE_DEVICE_BANDS
-      : [
-          ...usage.workGroups,
-          // Groups only another server names, then the usage in no group.
-          ...[...merged.totals.keys()].filter(
-            (key) => key !== OTHER_WORK && !usage.workGroups.includes(key),
-          ),
-          OTHER_WORK,
-        ];
+      : split === "type"
+        ? USAGE_TYPE_BANDS
+        : [
+            ...usage.workGroups,
+            // Groups only another server names, then the usage in no group.
+            ...[...merged.totals.keys()].filter(
+              (key) => key !== OTHER_WORK && !usage.workGroups.includes(key),
+            ),
+            OTHER_WORK,
+          ];
   const value = (amount: SplitAmount) => (metric === "cost" ? amount.costUsd : amount.totalTokens);
   const bands = keys
     .map((key, index) => ({
@@ -945,6 +1000,97 @@ export function usageSplitBands(
     spread: spread?.spread ?? [],
     valueAt: (period, key, by) => {
       const amount = periods.get(period)?.get(key) ?? NO_AMOUNT;
+      return by === "cost" ? amount.costUsd : amount.totalTokens;
+    },
+  };
+}
+
+/** A member of a kind of work, with its usage once shared usage is spread. */
+export interface UsageMemberBand extends SplitAmount {
+  readonly key: string;
+  readonly group: string;
+  readonly name: string;
+  /** Counts to its group and keeps its colour, but gets no row of its own. */
+  readonly hidden?: true | undefined;
+}
+
+export interface UsageMemberBands {
+  /** The group's members with usage, largest first by the metric. */
+  readonly members: readonly UsageMemberBand[];
+  readonly valueAt: (period: string, key: string, metric: "cost" | "tokens") => number;
+}
+
+/**
+ * A kind of work's members, scaled per period to add up to the group as shown, shared usage
+ * included; a period with only shared usage splits by the members' window shares. Tokens and cost
+ * scale by their own measure. Members of one name are one row under the first one's key.
+ */
+export function usageMemberBands(
+  usage: MergedUsage,
+  group: string,
+  metric: "cost" | "tokens",
+  hourly: boolean,
+): UsageMemberBands {
+  const named = new Map<string, UsageWorkMember[]>();
+  for (const member of usage.workMemberInfo) {
+    if (member.group !== group) continue;
+    const same = named.get(member.name);
+    if (same === undefined) named.set(member.name, [member]);
+    else same.push(member);
+  }
+  const rowOf = new Map(
+    [...named.values()].flatMap((same) =>
+      same.map((member) => [member.key, same[0]!.key] as const),
+    ),
+  );
+  const keys = new Set(rowOf.keys());
+  const groupPeriods = spreadWork(usage, hourly).periods;
+  const memberPeriods = hourly ? usage.workMembers.hourly : usage.workMembers.daily;
+  const window = new Map<string, { costUsd: number; totalTokens: number }>();
+  for (const amounts of memberPeriods.values()) {
+    for (const [key, amount] of amounts) {
+      if (keys.has(key)) addAmount(window, key, amount.totalTokens, amount.costUsd);
+    }
+  }
+  const out = new Map<string, Map<string, { costUsd: number; totalTokens: number }>>();
+  const totals = new Map<string, { costUsd: number; totalTokens: number }>();
+  for (const [period, amounts] of groupPeriods) {
+    const target = amounts.get(group);
+    if (target === undefined) continue;
+    const own = [...(memberPeriods.get(period) ?? new Map<string, SplitAmount>())].filter(([key]) =>
+      keys.has(key),
+    );
+    const next = new Map<string, { costUsd: number; totalTokens: number }>();
+    for (const measure of ["totalTokens", "costUsd"] as const) {
+      const weights = sumOf(own, measure) > 0 ? own : [...window];
+      const sum = sumOf(weights, measure);
+      if (sum === 0) continue;
+      for (const [key, weight] of weights) {
+        addMeasure(next, rowOf.get(key)!, measure, (target[measure] * weight[measure]) / sum);
+      }
+    }
+    for (const [key, amount] of next) addAmount(totals, key, amount.totalTokens, amount.costUsd);
+    out.set(period, next);
+  }
+  const value = (amount: SplitAmount) => (metric === "cost" ? amount.costUsd : amount.totalTokens);
+  const members = [...named.values()]
+    .map(([first, ...rest]) => ({
+      key: first!.key,
+      group,
+      name: first!.name,
+      // A row is hidden only when every member under it is.
+      ...([first!, ...rest].every((member) => member.hidden === true)
+        ? { hidden: true as const }
+        : {}),
+      ...(totals.get(first!.key) ?? NO_AMOUNT),
+    }))
+    .filter((member) => member.totalTokens > 0 || member.costUsd > 0)
+    .slice()
+    .sort((a, b) => value(b) - value(a) || b.totalTokens - a.totalTokens);
+  return {
+    members,
+    valueAt: (period, key, by) => {
+      const amount = out.get(period)?.get(key) ?? NO_AMOUNT;
       return by === "cost" ? amount.costUsd : amount.totalTokens;
     },
   };

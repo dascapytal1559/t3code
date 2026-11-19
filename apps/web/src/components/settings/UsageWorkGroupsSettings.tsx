@@ -1,4 +1,4 @@
-import type { EnvironmentId, UsageWorkGroup } from "@t3tools/contracts";
+import type { EnvironmentId, UsageWorkGroup, UsageWorkMemberLabel } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { T, useGT, useMessages } from "gt-react";
 import { PlusIcon } from "lucide-react";
@@ -17,11 +17,15 @@ import {
   assignFolder,
   assignProject,
   folderEntries,
+  folderMemberKey,
   groupOfProject,
+  memberShown,
   newGroupName,
   removeGroup,
   renameGroup,
+  setGroupOpens,
   setGroupShared,
+  setMemberShown,
   usableFolder,
   usableGroupName,
 } from "./UsageWorkGroupsSettings.logic";
@@ -33,11 +37,13 @@ export function UsageWorkGroupsSettings({
   environmentId,
   groups,
   shareOther,
+  memberLabel,
   readOnly,
 }: {
   readonly environmentId: EnvironmentId;
   readonly groups: readonly UsageWorkGroup[];
   readonly shareOther: boolean;
+  readonly memberLabel: UsageWorkMemberLabel;
   readonly readOnly: boolean;
 }) {
   const gt = useGT();
@@ -47,6 +53,23 @@ export function UsageWorkGroupsSettings({
     .filter((project) => project.archivedAt == null)
     .toSorted((a, b) => a.title.localeCompare(b.title));
   const save = (next: readonly UsageWorkGroup[]) => updateSettings({ usageWorkGroups: next });
+  // A member gets a Shown switch when its group opens into members on the Usage page.
+  const opensFor = (groupName: string | null) => {
+    const group = groups.find((entry) => entry.name === groupName);
+    return group !== undefined && group.shared !== true && group.opensIntoMembers !== false;
+  };
+  const shownSwitch = (member: string, name: string) => (
+    <label className="flex items-center gap-2 text-xs text-muted-foreground">
+      <T>Shown</T>
+      <Switch
+        size="sm"
+        checked={memberShown(groups, member)}
+        disabled={readOnly}
+        aria-label={gt("Show {member} in its kind of work", { member: name })}
+        onCheckedChange={(checked) => save(setMemberShown(groups, member, Boolean(checked)))}
+      />
+    </label>
+  );
 
   return (
     <SettingsSection
@@ -93,6 +116,23 @@ export function UsageWorkGroupsSettings({
           control={
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <T>Members</T>
+                <Switch
+                  size="sm"
+                  checked={group.shared !== true && group.opensIntoMembers !== false}
+                  disabled={readOnly || group.shared === true}
+                  aria-label={gt(
+                    "Let {group} open into its projects and folders on the Usage page",
+                    {
+                      group: group.name,
+                    },
+                  )}
+                  onCheckedChange={(checked) =>
+                    save(setGroupOpens(groups, group.name, Boolean(checked)))
+                  }
+                />
+              </label>
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
                 <T>Shared</T>
                 <Switch
                   size="sm"
@@ -132,6 +172,33 @@ export function UsageWorkGroupsSettings({
         }
       />
       <SettingsRow
+        title={gt("Name members by")}
+        description={gt(
+          "What a kind of work's projects are called when it opens on the Usage page: the project's name, or its repository's folder name. Two projects of one repository show as one.",
+        )}
+        control={
+          <Select
+            value={memberLabel}
+            disabled={readOnly}
+            onValueChange={(next) => {
+              if (next === "project" || next === "repository") {
+                updateSettings({ usageWorkMemberLabel: next });
+              }
+            }}
+          >
+            <SelectTrigger aria-label={gt("Name members by")} size="sm" className="w-full sm:w-40">
+              <SelectValue>
+                {memberLabel === "repository" ? gt("Repository") : gt("Project name")}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              <SelectItem value="project">{gt("Project name")}</SelectItem>
+              <SelectItem value="repository">{gt("Repository")}</SelectItem>
+            </SelectPopup>
+          </Select>
+        }
+      />
+      <SettingsRow
         title={gt("Folders")}
         description={gt(
           "A folder counts the usage in it and its subfolders, but not in worktrees elsewhere. Where a folder and a project both hold a session's folder, the closer one wins, and the folder on a tie.",
@@ -151,6 +218,9 @@ export function UsageWorkGroupsSettings({
           title={<span className="break-all">{entry.folder}</span>}
           control={
             <div className="flex items-center gap-2">
+              {opensFor(entry.group)
+                ? shownSwitch(folderMemberKey(entry.folder), entry.folder)
+                : null}
               <GroupSelect
                 groups={groups}
                 value={entry.group}
@@ -179,14 +249,17 @@ export function UsageWorkGroupsSettings({
             title={project.title}
             description={<span className="break-all">{project.workspaceRoot}</span>}
             control={
-              <GroupSelect
-                groups={groups}
-                value={current}
-                withOther
-                disabled={readOnly}
-                label={gt("Kind of work for {project}", { project: project.title })}
-                onChange={(group) => save(assignProject(groups, project.id, group))}
-              />
+              <div className="flex items-center gap-3">
+                {opensFor(current) ? shownSwitch(project.id, project.title) : null}
+                <GroupSelect
+                  groups={groups}
+                  value={current}
+                  withOther
+                  disabled={readOnly}
+                  label={gt("Kind of work for {project}", { project: project.title })}
+                  onChange={(group) => save(assignProject(groups, project.id, group))}
+                />
+              </div>
             }
           />
         );

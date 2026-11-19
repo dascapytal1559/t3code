@@ -18,7 +18,7 @@ import {
   SlidersHorizontalIcon,
 } from "lucide-react";
 import { T, useGT, useLocale, useMessages, Var } from "gt-react";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Cause from "effect/Cause";
@@ -61,7 +61,6 @@ import {
   makeWindow,
 } from "@t3tools/shared/usageFormat";
 import { formatUsageContractMismatch, usageSourceMessages } from "@t3tools/shared/usageFormatCopy";
-import { OTHER_WORK, usageSplitBands } from "@t3tools/shared/usageMerge";
 import { Button, InlineButton } from "../ui/button";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import {
@@ -88,27 +87,30 @@ import {
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { UsageLimitsSection } from "./UsageLimits";
 import { UsagePriceOverrides } from "./UsagePriceOverrides";
-import { UsageProviderChart, UsageStackedChart, usageChartCaption } from "./UsageProviderChart";
 import {
-  BREAKDOWN_OPTIONS,
-  OTHER_WORK_LABEL,
-  presentBand,
+  UsageStackedChart,
+  usageChartCaption,
+  type ChartSeries,
+  type ChartTransition,
+} from "./UsageProviderChart";
+import {
+  BREAKDOWN_ORDER,
+  BREAKDOWN_TITLES,
+  chartBands,
+  deviceBox,
+  providerBox,
+  typeBox,
+  workBox,
+  type BoxModel,
   type UsageBreakdown,
 } from "./usageSplits";
-import { UsageBandList } from "./UsageBandList";
+import { UsageBreakdownBox, type BoxOpening } from "./UsageBreakdownBox";
+import { reducedMotion } from "./usageMotion";
 import { collectUsageAnnotations, placeUsageAnnotations } from "./usageAnnotations";
 import { splitSkippedRecords } from "./usageSkippedRecords";
 import { SpeedPremium, UsageModelDialog } from "./UsageModelDialog";
 import { UsageShareBar } from "./UsageShareBar";
-import { UsageOriginBreakdown } from "./UsageOriginBreakdown";
-import { emphasisColor, emphasisPositions, isTopLeague } from "./usageEmphasis";
-import {
-  costTypeSegments,
-  modelShare,
-  sortModelsByTokens,
-  speedCostSegments,
-  tokenTypeSegments,
-} from "./usageBreakdown";
+import { modelShare, sortModelsByTokens, speedCostSegments } from "./usageBreakdown";
 import {
   METRIC_OPTIONS,
   WINDOW_OPTIONS,
@@ -590,6 +592,8 @@ export function UsagePage() {
                 metric={metric === "tokens" ? "tokens" : "cost"}
                 breakdown={breakdown}
                 onBreakdownChange={(next) => updatePreferences({ breakdown: next })}
+                openParents={preferences.openParents ?? {}}
+                onOpenParentsChange={(next) => updatePreferences({ openParents: next })}
                 selectedEnvironments={selectedEnvironments}
                 hiddenProviders={hiddenProviders}
                 onProviderShownChange={(provider, shown) =>
@@ -648,6 +652,8 @@ function UsageOverview({
   metric,
   breakdown: split,
   onBreakdownChange,
+  openParents,
+  onOpenParentsChange,
   selectedEnvironments,
   hiddenProviders,
   onProviderShownChange,
@@ -667,6 +673,9 @@ function UsageOverview({
   readonly metric: "tokens" | "cost";
   readonly breakdown: UsageBreakdown;
   readonly onBreakdownChange: (breakdown: UsageBreakdown) => void;
+  /** Parent rows left open, by box. */
+  readonly openParents: Readonly<Record<string, readonly string[]>>;
+  readonly onOpenParentsChange: (openParents: Readonly<Record<string, readonly string[]>>) => void;
   readonly selectedEnvironments: readonly EnvironmentUsageStatus[];
   readonly hiddenProviders: ReadonlySet<UsageProviderKind>;
   readonly onProviderShownChange: (provider: UsageProviderKind, shown: boolean) => void;
@@ -739,26 +748,139 @@ function UsageOverview({
       (entry) => entry.provider === provider,
     ),
   );
-  const splitBands =
-    split === "provider" ? null : usageSplitBands(merged, split, metric, shownHourly);
-  const bandSplit =
-    splitBands === null
-      ? null
-      : {
-          bands: splitBands.bands.map(presentBand),
-          spread: splitBands.spread.map((key) => (key === OTHER_WORK ? m(OTHER_WORK_LABEL) : key)),
-          valueAt: splitBands.valueAt,
+  const periodsOf = (hourly: boolean) =>
+    new Map(
+      (hourly ? merged.hourly : merged.daily).map((entry) => [
+        "hourStart" in entry ? entry.hourStart : entry.day,
+        entry,
+      ]),
+    );
+  const providerPeriods = periodsOf(shownHourly);
+  const models: Record<UsageBreakdown, BoxModel> = {
+    provider: providerBox(
+      rankedProviders.map((provider, index) => ({
+        provider,
+        label: PROVIDER_PRESENTATION[provider].label,
+        color: PROVIDER_PRESENTATION[provider].color,
+        totalTokens: providerTotals[index]?.totalTokens ?? 0,
+        costUsd: providerTotals[index]?.costUsd ?? 0,
+      })),
+      (period, key, by) => {
+        const entry = providerPeriods.get(period)?.byProvider.get(key as UsageProviderKind);
+        return entry === undefined ? 0 : by === "cost" ? entry.costUsd : entry.totalTokens;
+      },
+    ),
+    device: deviceBox(merged, metric, shownHourly),
+    work: workBox(merged, metric, shownHourly),
+    type: typeBox(merged, metric, shownHourly),
+  };
+  const openSetOf = (kind: UsageBreakdown): ReadonlySet<string> => new Set(openParents[kind] ?? []);
+  const seriesOf = (kind: UsageBreakdown): readonly ChartSeries[] => {
+    const model = models[kind];
+    return chartBands(model, openSetOf(kind))
+      .filter(
+        (band) => kind !== "provider" || !excludedProviders.has(band.key as UsageProviderKind),
+      )
+      .map((band) => {
+        const provider = kind === "provider" ? (band.key as UsageProviderKind) : null;
+        return {
+          key: band.key,
+          label: band.named ? band.label : m(band.label),
+          color: band.color,
+          ...(provider === null
+            ? { loading: loadingPartial }
+            : {
+                loading: chartLoadingProviders.has(provider),
+                icon: (
+                  <ProviderInstanceIcon
+                    driverKind={PROVIDER_PRESENTATION[provider].driverKind}
+                    displayName={PROVIDER_PRESENTATION[provider].label}
+                    iconClassName="size-3"
+                  />
+                ),
+              }),
         };
+      });
+  };
+  const chartSeries = seriesOf(split);
+  const chartValueAt = (period: string, key: string) => models[split].valueAt(period, key, metric);
+  const total = metric === "cost" ? merged.costUsd : merged.totalTokens;
+  const format =
+    metric === "tokens" ? formatTokens : (value: number) => formatUsdShort(value, locale);
+
+  const [transition, setTransition] = useState<ChartTransition | null>(null);
+  const [opening, setOpening] = useState<{
+    readonly kind: UsageBreakdown;
+    readonly at: BoxOpening;
+  } | null>(null);
+  const transitionCount = useRef(0);
+  const boxRefs = useRef(new Map<UsageBreakdown, HTMLElement>());
+  const boxTops = useRef<ReadonlyMap<UsageBreakdown, number> | null>(null);
+  const leaving = (kind: ChartTransition["kind"]): ChartTransition => ({
+    id: ++transitionCount.current,
+    kind,
+    // The boxes are on the chart's right, so a switch starts from that side.
+    from: "end",
+    series: chartSeries,
+    valueAt: chartValueAt,
+  });
+  const openBox = (kind: UsageBreakdown, at: Omit<BoxOpening, "id">) => {
+    boxTops.current = new Map(
+      [...boxRefs.current].map(([box, element]) => [box, element.getBoundingClientRect().top]),
+    );
+    const next = leaving("switch");
+    setTransition(next);
+    setOpening({ kind, at: { ...at, id: next.id } });
+    onBreakdownChange(kind);
+  };
+  const toggleParent = (kind: UsageBreakdown, group: string) => {
+    if (kind === split) setTransition(leaving("split"));
+    const open = new Set(openParents[kind] ?? []);
+    if (open.has(group)) open.delete(group);
+    else open.add(group);
+    onOpenParentsChange({ ...openParents, [kind]: [...open] });
+  };
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- slides the boxes from where they stood before a card opened to where layout puts them now
+  useLayoutEffect(() => {
+    const before = boxTops.current;
+    boxTops.current = null;
+    if (before === null || reducedMotion()) return;
+    for (const [kind, element] of boxRefs.current) {
+      const top = before.get(kind);
+      if (top === undefined) continue;
+      const delta = top - element.getBoundingClientRect().top;
+      if (Math.abs(delta) < 0.5) continue;
+      element.animate([{ transform: `translateY(${delta}px)` }, { transform: "none" }], {
+        duration: 260,
+        easing: "cubic-bezier(0.3, 0, 0.2, 1)",
+      });
+    }
+  });
   const chartAnnotations = placeUsageAnnotations(
     showAnnotations ? annotations : [],
     shownHourly ? hours : days,
     shownHourly ? "hour" : "day",
     shownWindow.timeZone,
   );
-  const providerEmphasis = emphasisPositions(
-    providerTotals.map((totals) =>
-      metric === "cost" ? (totals?.costUsd ?? 0) : (totals?.totalTokens ?? 0),
-    ),
+  // The provider box's rows: each provider's mark, and the switch that leaves it out of the totals.
+  const providerExtras = Object.fromEntries(
+    rankedProviders.map((provider) => {
+      const excluded = excludedProviders.has(provider);
+      return [
+        provider,
+        {
+          icon: <ProviderMark provider={provider} className="size-3.5" />,
+          excluded,
+          excludedLabel: gt("Excluded", { $context: "provider left out of usage totals" }),
+          toggleLabel: PROVIDER_PRESENTATION[provider].label,
+          onToggle: () => onProviderShownChange(provider, excluded),
+        },
+      ];
+    }),
+  );
+  const sessionsLabel = gt(
+    "{count, plural, one {{formatted} session} other {{formatted} sessions}}",
+    { count: merged.sessions, formatted: formatCount(merged.sessions, locale) },
   );
 
   return (
@@ -768,213 +890,92 @@ function UsageOverview({
           {message}
         </p>
       ))}
-      <section className="grid gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
-        <div className="flex min-w-0 flex-col gap-5">
-          <div className="flex flex-col gap-1">
-            <p
-              className={cn(
-                "text-4xl font-semibold text-foreground tabular-nums",
-                figureClass(loadingPartial),
-              )}
-            >
-              {metric === "cost"
-                ? formatUsdShort(merged.costUsd, locale)
-                : formatTokens(merged.totalTokens)}
-            </p>
-            <p className="inline-flex items-center gap-1 text-xs text-muted-foreground tabular-nums">
-              <span>
-                <span className={figureClass(loadingPartial)}>
-                  {metric === "cost"
-                    ? gt(
-                        "{count, plural, one {{sessions} session · {tokens} tokens} other {{sessions} sessions · {tokens} tokens}}",
-                        {
-                          count: merged.sessions,
-                          sessions: formatCount(merged.sessions, locale),
-                          tokens: formatTokens(merged.totalTokens),
-                        },
-                      )
-                    : gt(
-                        "{count, plural, one {{sessions} session · {cost}} other {{sessions} sessions · {cost}}}",
-                        {
-                          count: merged.sessions,
-                          sessions: formatCount(merged.sessions, locale),
-                          cost: formatUsdShort(merged.costUsd, locale),
-                        },
-                      )}
-                </span>
-                {metric === "cost" && ` · ${gt("API estimate")}`}
+      {/* Chart left over 8 of 12 columns, the total and the breakdown boxes right over 4, 40px
+          apart. Below lg it is one column: the total, the chart, then the boxes. */}
+      <section className="grid items-start gap-6 lg:grid-cols-12">
+        <div className="flex min-w-0 flex-col gap-1 lg:col-span-4 lg:col-start-9 lg:row-start-1">
+          <p
+            className={cn(
+              "text-4xl font-semibold text-foreground tabular-nums",
+              figureClass(loadingPartial),
+            )}
+          >
+            {metric === "cost"
+              ? formatUsdShort(merged.costUsd, locale)
+              : formatTokens(merged.totalTokens)}
+          </p>
+          <p className="inline-flex items-center gap-1 text-xs text-muted-foreground tabular-nums">
+            <span>
+              <span className={figureClass(loadingPartial)}>
+                {metric === "cost"
+                  ? gt(
+                      "{count, plural, one {{sessions} session · {tokens} tokens} other {{sessions} sessions · {tokens} tokens}}",
+                      {
+                        count: merged.sessions,
+                        sessions: formatCount(merged.sessions, locale),
+                        tokens: formatTokens(merged.totalTokens),
+                      },
+                    )
+                  : sessionsLabel}
               </span>
-              {metric === "cost" && merged.costQuality.unpricedShare > 0 && (
-                <Popover>
-                  <PopoverTrigger
-                    openOnHover
-                    render={<InlineButton tone="muted" />}
-                    aria-label={gt("Unpriced usage details")}
-                  >
-                    <InfoIcon className="size-3" aria-hidden />
-                  </PopoverTrigger>
-                  <PopoverPopup side="top" tooltipStyle>
-                    <T>
-                      API estimate excludes{" "}
-                      <Var>{formatPercent(merged.costQuality.unpricedShare)}</Var> unpriced records.
-                    </T>
-                  </PopoverPopup>
-                </Popover>
-              )}
-            </p>
-          </div>
-
+              {metric === "cost" && ` · ${gt("API estimate")}`}
+            </span>
+            {metric === "cost" && merged.costQuality.unpricedShare > 0 && (
+              <Popover>
+                <PopoverTrigger
+                  openOnHover
+                  render={<InlineButton tone="muted" />}
+                  aria-label={gt("Unpriced usage details")}
+                >
+                  <InfoIcon className="size-3" aria-hidden />
+                </PopoverTrigger>
+                <PopoverPopup side="top" tooltipStyle>
+                  <T>
+                    API estimate excludes{" "}
+                    <Var>{formatPercent(merged.costQuality.unpricedShare)}</Var> unpriced records.
+                  </T>
+                </PopoverPopup>
+              </Popover>
+            )}
+          </p>
           {showChatGptSharing ? (
-            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+            <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
               <span>
                 <T>ChatGPT shared usage</T>
               </span>
               <ChatGptUsageButton size="xs" />
             </div>
           ) : null}
-
-          {split !== "provider" ? (
-            <UsageBandList
-              bands={bandSplit?.bands ?? []}
-              metric={metric}
-              totalCostUsd={merged.costUsd}
-              totalTokens={merged.totalTokens}
-              spread={bandSplit?.spread ?? []}
-              loading={loadingPartial}
-            />
-          ) : null}
-          {(split === "provider" ? rankedProviders : []).map((provider, index) => {
-            const excluded = excludedProviders.has(provider);
-            const totals = providerTotals[index];
-            const emphasis = providerEmphasis[index] ?? 1;
-            const share = metric === "cost" ? (totals?.costShare ?? 0) : (totals?.tokenShare ?? 0);
-            const providerSessions = totals?.sessions ?? 0;
-            const sessionLabel = gt(
-              "{count, plural, one {{formatted} session} other {{formatted} sessions}}",
-              { count: providerSessions, formatted: formatCount(providerSessions, locale) },
-            );
-            const providerLoading = !excluded && loadingProviders.has(provider);
-            const awaitingData = providerLoading && !providersWithData.has(provider);
-            return (
-              <div
-                key={provider}
-                className={cn("flex min-w-0 flex-col gap-1", excluded && "opacity-50 grayscale")}
-              >
-                <dl className="flex items-baseline justify-between gap-4">
-                  <dt className="flex min-w-0 text-sm text-foreground">
-                    <button
-                      type="button"
-                      aria-pressed={!excluded}
-                      onClick={() => onProviderShownChange(provider, excluded)}
-                      className="-mx-1 flex min-w-0 cursor-pointer items-center gap-2 rounded-sm px-1 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-                    >
-                      <span
-                        aria-hidden
-                        className="size-2 shrink-0 rounded-full"
-                        style={{
-                          backgroundColor: PROVIDER_PRESENTATION[provider].color,
-                        }}
-                      />
-                      <ProviderMark provider={provider} className="size-4" />
-                      <span className="truncate">{PROVIDER_PRESENTATION[provider].label}</span>
-                    </button>
-                  </dt>
-                  <dd
-                    className={cn(
-                      "shrink-0 text-base tabular-nums",
-                      isTopLeague(emphasis) ? "font-semibold" : "font-medium",
-                      figureClass(providerLoading),
-                    )}
-                    style={{ color: emphasisColor(emphasis) }}
-                  >
-                    {awaitingData
-                      ? "-"
-                      : metric === "cost"
-                        ? formatUsdShort(totals?.costUsd ?? 0, locale)
-                        : formatTokens(totals?.totalTokens ?? 0)}
-                  </dd>
-                </dl>
-                <p
-                  className={cn(
-                    "flex justify-between gap-4 text-xs text-muted-foreground tabular-nums",
-                    figureClass(providerLoading),
-                    awaitingData && "invisible",
-                  )}
-                >
-                  <span className="min-w-0 truncate">
-                    {metric === "cost"
-                      ? gt("{sessions} · {tokens} tokens", {
-                          sessions: sessionLabel,
-                          tokens: formatTokens(totals?.totalTokens ?? 0),
-                        })
-                      : gt("{sessions} · {cost}", {
-                          sessions: sessionLabel,
-                          cost: formatUsdShort(totals?.costUsd ?? 0, locale),
-                        })}
-                  </span>
-                  <span className="shrink-0">
-                    {excluded
-                      ? gt("Excluded", { $context: "provider left out of usage totals" })
-                      : formatPercent(share)}
-                  </span>
-                </p>
-              </div>
-            );
-          })}
         </div>
 
-        <div className="flex min-w-0 flex-col gap-3">
-          {/* The split drives the chart and the list beside it; Breakdown below has its own. */}
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <div className="flex min-w-0 items-center gap-1">
-              <h2 className="text-sm font-medium text-foreground">
-                {usageChartTitle(metric, shownHourly, days.length, m)}
-              </h2>
-              {annotations.length === 0 ? null : (
-                <ToggleButton
-                  aria-label={gt("Chart annotations")}
-                  title={
-                    showAnnotations ? gt("Hide chart annotations") : gt("Show chart annotations")
-                  }
-                  pressed={showAnnotations}
-                  onPressedChange={onShowAnnotationsChange}
-                  size="micro"
-                  variant="ghost"
-                >
-                  <MilestoneIcon aria-hidden />
-                </ToggleButton>
-              )}
-            </div>
-            <ToggleGroup
-              aria-label={gt("Split usage")}
-              variant="segmented"
-              className="ms-auto"
-              value={[split]}
-              onValueChange={(next) => {
-                const option = BREAKDOWN_OPTIONS.find((entry) => entry.value === next[0]);
-                if (option) onBreakdownChange(option.value);
-              }}
-            >
-              {BREAKDOWN_OPTIONS.map((option) => (
-                <Toggle key={option.value} value={option.value}>
-                  {m(option.label)}
-                </Toggle>
-              ))}
-            </ToggleGroup>
+        <div className="flex h-88 min-w-0 flex-col gap-3 lg:col-span-8 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:me-4">
+          <div className="flex min-w-0 items-center gap-1">
+            <h2 className="truncate text-sm font-medium text-foreground">
+              {usageChartTitle(metric, shownHourly, days.length, m)}
+            </h2>
+            {annotations.length === 0 ? null : (
+              <ToggleButton
+                aria-label={gt("Chart annotations")}
+                title={
+                  showAnnotations ? gt("Hide chart annotations") : gt("Show chart annotations")
+                }
+                pressed={showAnnotations}
+                onPressedChange={onShowAnnotationsChange}
+                size="micro"
+                variant="ghost"
+              >
+                <MilestoneIcon aria-hidden />
+              </ToggleButton>
+            )}
           </div>
           {activeProviders.length === 0 && excludedProviders.size > 0 ? (
-            <p className="flex h-56 items-center justify-center text-sm text-muted-foreground">
+            <p className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
               <T>No activity in this window.</T>
             </p>
-          ) : bandSplit !== null ? (
+          ) : (
             <UsageStackedChart
-              series={bandSplit.bands.map((band) => ({
-                key: band.key,
-                label: band.named ? band.label : m(band.label),
-                color: band.color,
-                loading: loadingPartial,
-              }))}
-              valueAt={(period, key) => bandSplit.valueAt(period, key, metric)}
+              series={chartSeries}
+              valueAt={chartValueAt}
               caption={usageChartCaption(metric, shownHourly ? "hour" : "day", split)}
               days={days}
               hours={hours}
@@ -984,73 +985,60 @@ function UsageOverview({
               timeZone={shownWindow.timeZone}
               hour12={hour12}
               annotations={chartAnnotations}
-            />
-          ) : (
-            <UsageProviderChart
-              providers={activeProviders}
-              loadingProviders={chartLoadingProviders}
-              days={days}
-              daily={merged.daily}
-              hours={hours}
-              hourly={merged.hourly}
-              metric={metric}
-              referenceTime={shownWindow.untilTime}
-              resolution={shownHourly ? "hour" : "day"}
-              timeZone={shownWindow.timeZone}
-              hour12={hour12}
-              annotations={chartAnnotations}
+              transition={transition}
+              onTransitionEnd={(id) =>
+                setTransition((current) => (current?.id === id ? null : current))
+              }
             />
           )}
         </div>
+
+        <div className="flex min-w-0 flex-col gap-1 lg:col-span-4 lg:col-start-9 lg:row-start-2">
+          {BREAKDOWN_ORDER.map((kind) => (
+            <div
+              key={kind}
+              ref={(element) => {
+                if (element === null) boxRefs.current.delete(kind);
+                else boxRefs.current.set(kind, element);
+              }}
+            >
+              <UsageBreakdownBox
+                model={models[kind]}
+                title={m(BREAKDOWN_TITLES[metric][kind])}
+                open={kind === split}
+                metric={metric}
+                total={total}
+                format={format}
+                openParents={openSetOf(kind)}
+                onToggleParent={(group) => toggleParent(kind, group)}
+                onOpen={(at) => openBox(kind, at)}
+                opening={opening?.kind === kind ? opening.at : null}
+                loading={loadingPartial}
+                {...(kind === "provider" ? { extras: providerExtras } : {})}
+              />
+            </div>
+          ))}
+        </div>
       </section>
 
-      {merged.totalTokens > 0 ? (
+      {metric === "cost" && merged.totalTokens > 0 ? (
         <section
           className={cn("grid gap-x-12 gap-y-8 lg:grid-cols-2", figureClass(loadingPartial))}
         >
-          {metric === "tokens" ? (
+          <p className="text-xs text-muted-foreground">
+            <T>
+              Cache savings{" "}
+              <span className="text-foreground tabular-nums">
+                <Var>{formatUsdShort(merged.costQuality.cacheSavingsUsd, locale)}</Var>
+              </span>
+            </T>
+          </p>
+          {merged.speedCost.fast + merged.speedCost.ultrafast > 0 ? (
             <UsageShareBar
-              label={gt("Tokens by type")}
-              segments={tokenTypeSegments(merged)}
-              format={formatTokens}
-            />
-          ) : (
-            <>
-              <UsageShareBar
-                label={gt("Cost by type")}
-                segments={costTypeSegments(merged.categoryCost)}
-                format={(value: number) => formatUsdShort(value, locale)}
-                aside={
-                  <span className="text-xs text-muted-foreground">
-                    <T>
-                      Cache savings{" "}
-                      <span className="text-foreground tabular-nums">
-                        <Var>{formatUsdShort(merged.costQuality.cacheSavingsUsd, locale)}</Var>
-                      </span>
-                    </T>
-                  </span>
-                }
-              />
-              {merged.speedCost.fast + merged.speedCost.ultrafast > 0 ? (
-                <UsageShareBar
-                  label={gt("Cost by speed")}
-                  segments={speedCostSegments(merged.speedCost)}
-                  format={(value: number) => formatUsdShort(value, locale)}
-                  aside={<SpeedPremium premiumUsd={merged.speedCost.premium} />}
-                />
-              ) : null}
-            </>
-          )}
-          {merged.origins !== null ? (
-            <UsageOriginBreakdown
-              label={metric === "tokens" ? gt("Tokens by origin") : gt("Cost by origin")}
-              origins={merged.origins}
-              valueOf={(amount) => (metric === "tokens" ? amount.totalTokens : amount.costUsd)}
-              format={
-                metric === "tokens"
-                  ? formatTokens
-                  : (value: number) => formatUsdShort(value, locale)
-              }
+              label={gt("Cost by speed")}
+              segments={speedCostSegments(merged.speedCost)}
+              format={(value: number) => formatUsdShort(value, locale)}
+              aside={<SpeedPremium premiumUsd={merged.speedCost.premium} />}
             />
           ) : null}
         </section>

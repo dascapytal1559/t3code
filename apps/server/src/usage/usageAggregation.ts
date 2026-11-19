@@ -80,6 +80,8 @@ interface MutableBucket {
   devices: Map<UsageDeviceBand, SplitCell> | null;
   /** Keyed by group name, `""` for no group. */
   work: Map<string, SplitCell> | null;
+  /** Keyed by member, for usage in groups that open into members. */
+  workMembers: Map<string, SplitCell> | null;
 }
 
 interface SplitCell {
@@ -105,7 +107,10 @@ export interface AggregateOptions {
     sourcePath: string | undefined,
   ) => UsageOriginKey | null;
   /** Places kept records in a kind-of-work group by their folder, or else their transcript's. */
-  readonly attributeWork?: (record: UsageRecord, filePath: string | undefined) => string | null;
+  readonly attributeWork?: (
+    record: UsageRecord,
+    filePath: string | undefined,
+  ) => { readonly group: string; readonly member: string | null } | null;
   /** Sees each counted record once, after its copies merge, with its price and origin. */
   readonly onRecord?: (counted: CountedRecord) => void;
 }
@@ -456,7 +461,8 @@ export class UsageAggregator {
     }
     if (priced.costSource === "providerReported") bucket.providerReportedRecords += 1;
     const key = this.#options.attributeOrigin?.(record, sourcePath) ?? null;
-    const group = this.#options.attributeWork?.(record, filePath) ?? null;
+    const place = this.#options.attributeWork?.(record, filePath) ?? null;
+    const group = place?.group ?? null;
     this.#options.onRecord?.({ record, priced, origin: key, group });
     const tokens =
       record.totals.uncachedInputTokens +
@@ -467,6 +473,10 @@ export class UsageAggregator {
       addToCell(bucket.devices, deviceBand(key), tokens, priced.costUsd);
     }
     if (bucket.work !== null) addToCell(bucket.work, group ?? "", tokens, priced.costUsd);
+    if (place?.member != null) {
+      bucket.workMembers ??= new Map();
+      addToCell(bucket.workMembers, place.member, tokens, priced.costUsd);
+    }
     if (this.#originUsage !== null && key !== null) {
       const originKey = `${originKeyString(key)}\u0000${record.provider}\u0000${sourcePath ?? ""}`;
       let origin = this.#originUsage.get(originKey);
@@ -593,6 +603,7 @@ export class UsageAggregator {
         sessions: new Set<string>(),
         devices: this.#options.attributeOrigin === undefined ? null : new Map(),
         work: this.#options.attributeWork === undefined ? null : new Map(),
+        workMembers: null,
       };
       this.#buckets.set(key, bucket);
     }
@@ -642,6 +653,10 @@ export class UsageAggregator {
         sessions: bucket.sessions.size,
         ...(bucket.devices === null ? {} : { devices: splitAmounts(bucket.devices) }),
         ...(bucket.work === null ? {} : { work: splitAmounts(bucket.work) }),
+        // Members cover only part of a bucket, so even one member is sent with its amount.
+        ...(bucket.workMembers === null
+          ? {}
+          : { workMembers: splitAmounts(bucket.workMembers, false) }),
       });
     }
     buckets.sort(
@@ -691,8 +706,8 @@ function addToCell<K>(cells: Map<K, SplitCell>, key: K, tokens: number, costUsd:
   }
 }
 
-function splitAmounts(cells: ReadonlyMap<string, SplitCell>): UsageSplit {
-  if (cells.size === 1) return cells.keys().next().value!;
+function splitAmounts(cells: ReadonlyMap<string, SplitCell>, compact = true): UsageSplit {
+  if (compact && cells.size === 1) return cells.keys().next().value!;
   const amounts: Record<string, UsageSplitAmount> = {};
   // A micro-dollar keeps a year of buckets' splits small on the wire.
   for (const [key, cell] of cells) amounts[key] = [cell.tokens, roundUsd(cell.costUsd)];

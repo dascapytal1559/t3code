@@ -83,21 +83,45 @@ down within a day or two and reads it back from then on, so nothing done later c
 write it down sooner, run `t3 usage close --through <time>` with the time's offset, such as
 `2026-11-19T15:00:00+11:00`; add `--dry-run` first to see what it would write.
 
-## Split the chart by device or kind of work
+## Split the chart by provider, device, kind of work or type
 
-The switch above the chart on **Usage** chooses what the chart and the list beside it split by:
-**By provider**, **By device** or **By kind of work**. Cost and Tokens work in every split, and
-hovering a bar names each band. On mobile, choose **Provider**, **Device** or **Kind of work** under
-the period.
+Beside the chart on **Usage** are four breakdowns of the same window: **by provider**, **by
+device**, **by kind of work** and **by type**. One of them is open as a card, and the chart splits
+its bars the same way; the others fold down to their colour bar. Click a folded bar to open it in
+the chart. The card lists each part with its figure and share, and the chart's bands stack in the
+card's order, first row on top. Cost and Tokens work in every breakdown, and hovering a bar names
+each band. On a phone the breakdowns sit under the chart. On mobile, choose **Provider**,
+**Device** or **Kind of work** under the period.
 
-**By device** shows **Phone · direct**, **Phone · orchestrated**, **Computer · direct** and
-**Computer · orchestrated**, by the origin described above. A coordinator's upkeep counts to the
-computer, direct or orchestrated by how its turn started. Usage from before T3 recorded the sending
-device (7 Nov 2026) shows as **Unlabelled**, as does usage from a server too old to label it.
+**By provider** lists each provider; click a provider's name to leave it out of the totals, and
+again to bring it back.
+
+**By device** shows **Phone** and **Computer**, by the origin described above. Click either to
+open it into **Orchestrated** and **Direct**: work agents sent for a prompt typed there, and the
+prompts typed there themselves. Only the opened device's band splits in the chart. A coordinator's
+upkeep counts to the computer, direct or orchestrated by how its turn started. Usage from before T3
+recorded the sending device (7 Nov 2026) shows as **Unlabelled**, as does usage from a server too
+old to label it.
 
 **By kind of work** splits usage into groups you name in **Settings → Providers → Kinds of work**.
 They start as Trading, Tooling and Projects with nothing in them. Groups are saved on the
-environment, so every client sees the same ones. A group holds projects, folders, or both.
+environment, so every client sees the same ones. A group holds projects, folders, or both. Click a
+group to open it into its projects and folders; each opens and closes on its own, and the page
+remembers what you leave open.
+
+**By type** splits tokens into input, cache reads, output and cache writes, and cost into what each
+of those cost. Cost no category accounts for is **Other**.
+
+### Choose what a kind of work opens into
+
+In **Settings → Providers → Kinds of work**:
+
+- **Members**, per group, lets the group open into its projects and folders. It is on unless you
+  turn it off; a shared group never opens.
+- **Shown**, per project or folder, gives it a row of its own when its group opens. A project you
+  hide still counts to its group and keeps its colour in the bar and the chart.
+- **Name members by** names them by **Project name** or by **Repository**, the repository's folder
+  name. Two projects of one repository show as one.
 
 ### How usage finds its group
 
@@ -124,7 +148,7 @@ a bar has no usage in those groups, the window's proportions are used instead; w
 none either, the usage stays **Other**.
 
 **Share Other** spreads usage in no group across the groups the same way, so the chart has no Other
-band. It is off by default. The list beside the chart names what was spread. Exported records keep
+band. It is off by default. The kind-of-work card names what was spread. Exported records keep
 each call's own group in `group`.
 
 ### Example: a coordinator and its workers

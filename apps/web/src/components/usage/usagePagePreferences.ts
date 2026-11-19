@@ -14,8 +14,10 @@ const UsagePagePreferencesSchema = Schema.Struct({
   hiddenProviders: Schema.optional(Schema.Array(UsageProviderKind)),
   /** Chart annotations show unless switched off. */
   showAnnotations: Schema.optional(Schema.Boolean),
-  /** What the chart and its list split usage by; by provider when absent. */
-  breakdown: Schema.optional(Schema.Literals(["provider", "device", "work"])),
+  /** The open breakdown box, which the chart splits by; by provider when absent. */
+  breakdown: Schema.optional(Schema.Literals(["provider", "device", "work", "type"])),
+  /** Parent rows left open, by box: devices and kinds of work open into their children. */
+  openParents: Schema.optional(Schema.Record(Schema.String, Schema.Array(Schema.String))),
 });
 export type UsagePagePreferences = typeof UsagePagePreferencesSchema.Type;
 

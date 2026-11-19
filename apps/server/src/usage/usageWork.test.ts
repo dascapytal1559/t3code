@@ -12,6 +12,7 @@ import {
   encodeClaudeFolder,
   makeUsageWork,
   readCodexSessionFolder,
+  type WorkAttribution,
   type WorkFolders,
   type WorkProject,
 } from "./usageWork.ts";
@@ -41,6 +42,8 @@ const groups = (entries: Record<string, readonly string[]>): readonly UsageWorkG
     name,
     projectIds: ids.map((id) => ProjectId.make(id)),
   }));
+const groupOf = (placed: WorkAttribution, cwd: string | undefined, filePath: string | undefined) =>
+  placed.placeOf(cwd, filePath)?.group ?? null;
 const seen = (
   cwds: readonly string[],
   files: Record<string, { provider: "claude" | "codex"; sourceDir: string }> = {},
@@ -86,7 +89,7 @@ describe("makeUsageWork", () => {
     return { work, codexReads };
   };
   const projects = () => [
-    project("app", "app"),
+    { ...project("app", "app"), title: "App" },
     project("app-docs", "app/docs"),
     project("trader", "trader"),
     project("home", "home"),
@@ -110,9 +113,16 @@ describe("makeUsageWork", () => {
     ];
     const removed = [{ path: at("pool/9/gone"), projectId: ProjectId.make("trader") }];
 
-    const placed = await work.attribution(assigned, projects(), removed, seen(folders), 0);
+    const placed = await work.attribution(
+      assigned,
+      "project",
+      projects(),
+      removed,
+      seen(folders),
+      0,
+    );
 
-    expect(folders.map((cwd) => placed.groupOf(cwd, undefined))).toEqual([
+    expect(folders.map((cwd) => groupOf(placed, cwd, undefined))).toEqual([
       "Tooling",
       "Docs",
       "Tooling",
@@ -134,15 +144,16 @@ describe("makeUsageWork", () => {
 
     const placed = await work.attribution(
       assigned,
+      "project",
       projects(),
       [],
       seen([review, bare, unknown]),
       0,
     );
 
-    expect(placed.groupOf(review, undefined)).toBe("Trading");
-    expect(placed.groupOf(bare, undefined)).toBe("Trading");
-    expect(placed.groupOf(unknown, undefined)).toBeNull();
+    expect(groupOf(placed, review, undefined)).toBe("Trading");
+    expect(groupOf(placed, bare, undefined)).toBe("Trading");
+    expect(groupOf(placed, unknown, undefined)).toBeNull();
   });
 
   it("places a Claude transcript with no folder by its encoded folder name, worktrees included", async () => {
@@ -167,9 +178,16 @@ describe("makeUsageWork", () => {
     };
 
     const removed = [{ path: at("pool/9/gone"), projectId: ProjectId.make("app") }];
-    const placed = await work.attribution(assigned, projects(), removed, seen([], files), 0);
+    const placed = await work.attribution(
+      assigned,
+      "project",
+      projects(),
+      removed,
+      seen([], files),
+      0,
+    );
 
-    expect(Object.keys(files).map((filePath) => placed.groupOf(undefined, filePath))).toEqual([
+    expect(Object.keys(files).map((filePath) => groupOf(placed, undefined, filePath))).toEqual([
       "Docs",
       "Tooling",
       "Trading",
@@ -185,13 +203,27 @@ describe("makeUsageWork", () => {
     const files = { [session]: { provider: "codex" as const, sourceDir: at("home/.codex") } };
     const first = make(options);
 
-    const placed = await first.work.attribution(assigned, projects(), [], seen([], files), 0);
-    await first.work.attribution(assigned, projects(), [], seen([], files), 0);
+    const placed = await first.work.attribution(
+      assigned,
+      "project",
+      projects(),
+      [],
+      seen([], files),
+      0,
+    );
+    await first.work.attribution(assigned, "project", projects(), [], seen([], files), 0);
     const restarted = make(options);
-    const again = await restarted.work.attribution(assigned, projects(), [], seen([], files), 0);
+    const again = await restarted.work.attribution(
+      assigned,
+      "project",
+      projects(),
+      [],
+      seen([], files),
+      0,
+    );
 
-    expect(placed.groupOf(undefined, session)).toBe("Trading");
-    expect(again.groupOf(undefined, session)).toBe("Trading");
+    expect(groupOf(placed, undefined, session)).toBe("Trading");
+    expect(groupOf(again, undefined, session)).toBe("Trading");
     expect(first.codexReads).toEqual([session]);
     expect(restarted.codexReads).toEqual([]);
   });
@@ -233,13 +265,14 @@ describe("makeUsageWork", () => {
 
     const placed = await work.attribution(
       withFolders,
+      "project",
       projects(),
       removed,
       seen(folders, files),
       0,
     );
 
-    expect(folders.map((cwd) => placed.groupOf(cwd, undefined))).toEqual([
+    expect(folders.map((cwd) => groupOf(placed, cwd, undefined))).toEqual([
       "Coordination",
       "Coordination",
       "Bones",
@@ -250,20 +283,68 @@ describe("makeUsageWork", () => {
       "Drafts",
       "Notes",
     ]);
-    expect(Object.keys(files).map((filePath) => placed.groupOf(undefined, filePath))).toEqual([
+    expect(Object.keys(files).map((filePath) => groupOf(placed, undefined, filePath))).toEqual([
       "Coordination",
       "Bones",
+    ]);
+
+    // A group that opens into members names the project or folder entry; a shared one does not.
+    expect(placed.placeOf(at("pool/7/app/src"), undefined)).toEqual({
+      group: "Bones",
+      member: "app",
+    });
+    expect(placed.placeOf(at("app"), undefined)).toEqual({ group: "Coordination", member: null });
+    expect(placed.placeOf(at("app/docs/guide/drafts/x"), undefined)).toEqual({
+      group: "Drafts",
+      member: `folder:${at("app/docs/guide/drafts/")}`,
+    });
+    expect(placed.members).toEqual([
+      { key: "app", group: "Bones", name: "App" },
+      { key: "app-docs", group: "Docs", name: "docs" },
+      { key: `folder:${at("app/docs/guide/drafts/")}`, group: "Drafts", name: "drafts" },
+      { key: "folder:~/notes", group: "Notes", name: "notes" },
+    ]);
+    const closed = await work.attribution(
+      withFolders.map((group) =>
+        group.name === "Bones" ? { ...group, opensIntoMembers: false } : group,
+      ),
+      "project",
+      projects(),
+      removed,
+      seen(folders, files),
+      0,
+    );
+    expect(closed.placeOf(at("pool/7/app/src"), undefined)).toEqual({
+      group: "Bones",
+      member: null,
+    });
+    expect(closed.members.map((member) => member.key)).not.toContain("app");
+    // Named by repository folder instead, a hidden member keeps its place but says so.
+    const byRepository = await work.attribution(
+      withFolders.map((group) =>
+        group.name === "Docs" ? { ...group, hiddenMembers: ["app-docs"] } : group,
+      ),
+      "repository",
+      projects(),
+      removed,
+      seen(folders, files),
+      0,
+    );
+    expect(byRepository.members.slice(0, 2)).toEqual([
+      { key: "app", group: "Bones", name: "app" },
+      { key: "app-docs", group: "Docs", name: "docs", hidden: true },
     ]);
 
     // Folder entries alone are enough to place usage.
     const foldersOnly = await work.attribution(
       withFolders.filter((group) => group.name === "Notes"),
+      "project",
       projects(),
       [],
       seen([at("home/notes")]),
       0,
     );
-    expect(foldersOnly.groupOf(at("home/notes"), undefined)).toBe("Notes");
+    expect(groupOf(foldersOnly, at("home/notes"), undefined)).toBe("Notes");
   });
 
   it("prefers a record's own folder over its transcript's", async () => {
@@ -271,10 +352,17 @@ describe("makeUsageWork", () => {
     const { work } = make({ codex: { [session]: at("trader") } });
     const files = { [session]: { provider: "codex" as const, sourceDir: at("home/.codex") } };
 
-    const placed = await work.attribution(assigned, projects(), [], seen([at("app")], files), 0);
+    const placed = await work.attribution(
+      assigned,
+      "project",
+      projects(),
+      [],
+      seen([at("app")], files),
+      0,
+    );
 
-    expect(placed.groupOf(at("app"), session)).toBe("Tooling");
-    expect(placed.groupOf(undefined, session)).toBe("Trading");
+    expect(groupOf(placed, at("app"), session)).toBe("Tooling");
+    expect(groupOf(placed, undefined, session)).toBe("Trading");
   });
 });
 

@@ -1,76 +1,294 @@
-import type { UsageDeviceBand } from "@t3tools/contracts";
-import { OTHER_WORK, type UsageSplitBand } from "@t3tools/shared/usageMerge";
+import type { UsageDeviceBand, UsageProviderKind } from "@t3tools/contracts";
+import {
+  OTHER_WORK,
+  usageMemberBands,
+  usageSplitBands,
+  type MergedUsage,
+  type UsageTypeBand,
+} from "@t3tools/shared/usageMerge";
 import { msg } from "gt-react";
 
-/** What the Usage page's chart and the list beside it split usage by. */
-export type UsageBreakdown = "provider" | "device" | "work";
+/** The breakdown boxes beside the Usage chart, in page order; the open one is the chart's split. */
+export type UsageBreakdown = "provider" | "device" | "work" | "type";
+export const BREAKDOWN_ORDER: readonly UsageBreakdown[] = ["provider", "device", "work", "type"];
 
-export const BREAKDOWN_OPTIONS = [
-  { value: "provider", label: msg("By provider", { $context: "usage breakdown option" }) },
-  { value: "device", label: msg("By device", { $context: "usage breakdown option" }) },
-  { value: "work", label: msg("By kind of work", { $context: "usage breakdown option" }) },
-] as const satisfies readonly { value: UsageBreakdown; label: string }[];
+export const BREAKDOWN_TITLES = {
+  tokens: {
+    provider: msg("Tokens by provider"),
+    device: msg("Tokens by device"),
+    work: msg("Tokens by kind of work"),
+    type: msg("Tokens by type"),
+  },
+  cost: {
+    provider: msg("Cost by provider"),
+    device: msg("Cost by device"),
+    work: msg("Cost by kind of work"),
+    type: msg("Cost by type"),
+  },
+} as const satisfies Record<"tokens" | "cost", Record<UsageBreakdown, string>>;
 
-/** A band as the page draws it. `label` is a message unless `named`. */
-export interface UsageBand extends UsageSplitBand {
+/** One row of a box: a leaf band, or a parent's child. `label` is a message unless `named`. */
+export interface BoxBand {
+  readonly key: string;
   readonly label: string;
-  /** A user's own group name, shown as typed rather than translated. */
   readonly named: boolean;
   readonly color: string;
+  readonly totalTokens: number;
+  readonly costUsd: number;
+}
+
+/** A parent row: a band of its own, and the children it opens into. */
+export interface BoxGroup extends BoxBand {
+  /** Every child, hidden ones included: they keep their colour in the bar and the chart. */
+  readonly children: readonly BoxBand[];
+  /** Children that count to the parent but get no row. */
+  readonly hidden: ReadonlySet<string>;
+}
+
+export interface BoxModel {
+  readonly kind: UsageBreakdown;
+  /** Rows in card order. A box with no group that has children is flat. */
+  readonly groups: readonly BoxGroup[];
+  /** A group's or child's value in one day or hour; keys as the groups and children carry them. */
+  readonly valueAt: (period: string, key: string, metric: "cost" | "tokens") => number;
+  /** Shared kinds of work spread over the rows, `OTHER_WORK` for Other; empty for other boxes. */
+  readonly spread?: readonly string[];
 }
 
 const ink = (percent: number) =>
   `color-mix(in oklab, var(--foreground) ${percent}%, var(--background))`;
-const PHONE = "light-dark(oklch(0.72 0.16 65), oklch(0.78 0.15 70))";
-const COMPUTER = "light-dark(oklch(0.55 0.19 264), oklch(0.66 0.17 264))";
-const paler = (color: string) => `color-mix(in oklab, ${color} 55%, var(--background))`;
+const tone = (hue: number, light: readonly [number, number], dark: readonly [number, number]) =>
+  `light-dark(oklch(${light[0]} ${light[1]} ${hue}), oklch(${dark[0]} ${dark[1]} ${hue}))`;
+/** A colour that is a little lighter in dark mode, as every split colour on the page is. */
+const shade = (hue: number, lightness: number, chroma: number) =>
+  tone(hue, [lightness, chroma], [Math.min(0.9, lightness + 0.08), chroma]);
 
-// Amber phone and blue computer as on the origin bar; paler when an agent sent the prompt.
-const DEVICE: Record<UsageDeviceBand, { readonly label: string; readonly color: string }> = {
-  phoneDirect: {
-    label: msg("Phone · direct", { $context: "usage band: prompts typed on the phone" }),
-    color: PHONE,
+// A parent owns one colour; an opened parent's children take neighbouring hues, so they read as
+// relatives that are clearly different. Phone is amber and computer blue, as on the origin bar.
+const DEVICE_GROUPS = [
+  {
+    key: "phone",
+    label: msg("Phone", { $context: "device a usage origin traces to" }),
+    color: shade(66, 0.74, 0.145),
+    children: [
+      {
+        key: "phoneOrchestrated",
+        label: msg("Orchestrated", { $context: "usage sent by an agent for a person's prompt" }),
+        color: shade(42, 0.68, 0.17),
+      },
+      {
+        key: "phoneDirect",
+        label: msg("Direct", { $context: "usage from a prompt a person typed" }),
+        color: shade(92, 0.78, 0.15),
+      },
+    ],
   },
-  phoneOrchestrated: {
-    label: msg("Phone · orchestrated", {
-      $context: "usage band: work agents sent on behalf of a phone prompt",
-    }),
-    color: paler(PHONE),
+  {
+    key: "computer",
+    label: msg("Computer", { $context: "device a usage origin traces to" }),
+    color: shade(264, 0.58, 0.17),
+    children: [
+      {
+        key: "computerDirect",
+        label: msg("Direct", { $context: "usage from a prompt a person typed" }),
+        color: shade(236, 0.62, 0.14),
+      },
+      {
+        key: "computerOrchestrated",
+        label: msg("Orchestrated", { $context: "usage sent by an agent for a person's prompt" }),
+        color: shade(290, 0.52, 0.19),
+      },
+    ],
   },
-  computerDirect: {
-    label: msg("Computer · direct", { $context: "usage band: prompts typed on the computer" }),
-    color: COMPUTER,
-  },
-  computerOrchestrated: {
-    label: msg("Computer · orchestrated", {
-      $context: "usage band: work agents sent on behalf of a computer prompt",
-    }),
-    color: paler(COMPUTER),
-  },
-  unlabelled: {
+  {
+    key: "unlabelled",
     label: msg("Unlabelled", { $context: "usage band: usage from before devices were recorded" }),
     color: ink(28),
+    children: [],
   },
-};
+] as const satisfies readonly {
+  key: string;
+  label: string;
+  color: string;
+  children: readonly { key: UsageDeviceBand; label: string; color: string }[];
+}[];
 
-// Purple, blue and amber for the first three groups, as on the stacked-bar mock.
-const GROUP_COLORS = ["#8c7bd1", "#5b9bbd", "#d4a548", "#4d9f8a", "#d97757", "#c06c9b"];
+// Kinds of work take these in settings order, with their members in the neighbouring hues. The
+// first two are a warm stone and a crimson; none reuses the device box's orange and blue.
+const GROUP_PALETTE = [
+  {
+    color: shade(60, 0.6, 0.02),
+    members: [shade(70, 0.48, 0.035), shade(100, 0.68, 0.045), shade(60, 0.74, 0.02)],
+  },
+  {
+    color: shade(15, 0.52, 0.17),
+    members: [shade(358, 0.46, 0.16), shade(30, 0.62, 0.15), shade(10, 0.7, 0.1)],
+  },
+  {
+    color: shade(150, 0.62, 0.08),
+    members: [shade(138, 0.54, 0.11), shade(165, 0.68, 0.1), shade(150, 0.74, 0.06)],
+  },
+  {
+    color: shade(330, 0.5, 0.13),
+    members: [shade(318, 0.44, 0.14), shade(345, 0.6, 0.13), shade(330, 0.7, 0.08)],
+  },
+  {
+    color: shade(185, 0.6, 0.1),
+    members: [shade(170, 0.52, 0.12), shade(196, 0.7, 0.1), shade(185, 0.76, 0.07)],
+  },
+  {
+    color: shade(115, 0.6, 0.1),
+    members: [shade(108, 0.5, 0.12), shade(132, 0.68, 0.11), shade(118, 0.76, 0.07)],
+  },
+] as const;
+
 export const OTHER_WORK_LABEL = msg("Other", { $context: "usage kind of work: usage in no group" });
-const OTHER = {
-  label: OTHER_WORK_LABEL,
-  color: ink(36),
-};
 
-export function presentBand(band: UsageSplitBand): UsageBand {
-  if (band.groupIndex !== null) {
+// Greys from usageBreakdown.ts, in its token-type order; cost no category accounts for is Other.
+const TYPES: readonly { key: UsageTypeBand; label: string; color: string }[] = [
+  { key: "input", label: msg("Input"), color: ink(60) },
+  { key: "cacheRead", label: msg("Cache read"), color: ink(30) },
+  { key: "output", label: msg("Output"), color: ink(100) },
+  { key: "cacheWrite", label: msg("Cache write"), color: ink(72) },
+  { key: "other", label: msg("Other"), color: ink(44) },
+];
+
+const value = (band: { totalTokens: number; costUsd: number }, metric: "cost" | "tokens") =>
+  metric === "cost" ? band.costUsd : band.totalTokens;
+
+const leaf = (band: BoxBand): BoxGroup => ({ ...band, children: [], hidden: new Set() });
+
+/** The device box: phone and computer, each opening into prompts typed there and sent by agents. */
+export function deviceBox(
+  usage: MergedUsage,
+  metric: "cost" | "tokens",
+  hourly: boolean,
+): BoxModel {
+  const split = usageSplitBands(usage, "device", metric, hourly);
+  const amountOf = (key: string) =>
+    split.bands.find((band) => band.key === key) ?? { totalTokens: 0, costUsd: 0 };
+  const groups = DEVICE_GROUPS.map((group): BoxGroup => {
+    const children = group.children.map((child) => ({
+      ...child,
+      named: false,
+      ...amountOf(child.key),
+    }));
+    const own = group.children.length === 0 ? amountOf(group.key) : null;
     return {
-      ...band,
-      label: band.key,
-      named: true,
-      color: GROUP_COLORS[band.groupIndex % GROUP_COLORS.length]!,
+      key: group.key,
+      label: group.label,
+      named: false,
+      color: group.color,
+      totalTokens: own?.totalTokens ?? children.reduce((sum, child) => sum + child.totalTokens, 0),
+      costUsd: own?.costUsd ?? children.reduce((sum, child) => sum + child.costUsd, 0),
+      children: children.filter((child) => child.totalTokens > 0 || child.costUsd > 0),
+      hidden: new Set(),
     };
-  }
-  const known =
-    band.key === OTHER_WORK ? OTHER : (DEVICE[band.key as UsageDeviceBand] ?? DEVICE.unlabelled);
-  return { ...band, label: known.label, named: false, color: known.color };
+  }).filter((group) => group.totalTokens > 0 || group.costUsd > 0);
+  const childrenOf = new Map<string, readonly string[]>(
+    DEVICE_GROUPS.map((group) => [group.key, group.children.map((child) => child.key)]),
+  );
+  return {
+    kind: "device",
+    groups,
+    valueAt: (period, key, by) => {
+      const children = childrenOf.get(key);
+      return children === undefined || children.length === 0
+        ? split.valueAt(period, key, by)
+        : children.reduce((sum, child) => sum + split.valueAt(period, child, by), 0);
+    },
+  };
+}
+
+/**
+ * The kind-of-work box: groups largest first and Other last, each opening into its members, named
+ * and hidden as the server's settings say.
+ */
+export function workBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: boolean): BoxModel {
+  const split = usageSplitBands(usage, "work", metric, hourly);
+  const memberSplits = new Map<string, ReturnType<typeof usageMemberBands>>();
+  const groups = split.bands.map((band): BoxGroup => {
+    const palette =
+      band.groupIndex === null ? null : GROUP_PALETTE[band.groupIndex % GROUP_PALETTE.length]!;
+    const members =
+      band.key === OTHER_WORK ? null : usageMemberBands(usage, band.key, metric, hourly);
+    if (members !== null) memberSplits.set(band.key, members);
+    return {
+      key: band.key,
+      label: band.key === OTHER_WORK ? OTHER_WORK_LABEL : band.key,
+      named: band.key !== OTHER_WORK,
+      color: palette?.color ?? ink(36),
+      totalTokens: band.totalTokens,
+      costUsd: band.costUsd,
+      children: (members?.members ?? []).map((member, index) => ({
+        key: member.key,
+        label: member.name,
+        named: true,
+        // Members past the palette's three repeat its hues; the group's members are few.
+        color: palette?.members[index % palette.members.length] ?? ink(36),
+        totalTokens: member.totalTokens,
+        costUsd: member.costUsd,
+      })),
+      hidden: new Set(
+        (members?.members ?? []).flatMap((member) => (member.hidden === true ? [member.key] : [])),
+      ),
+    };
+  });
+  return {
+    kind: "work",
+    groups,
+    spread: split.spread,
+    valueAt: (period, key, by) => {
+      if (split.bands.some((band) => band.key === key)) return split.valueAt(period, key, by);
+      for (const members of memberSplits.values()) {
+        if (members.members.some((member) => member.key === key)) {
+          return members.valueAt(period, key, by);
+        }
+      }
+      return 0;
+    },
+  };
+}
+
+/** The type box: tokens by token type, or cost by priced category. */
+export function typeBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: boolean): BoxModel {
+  const split = usageSplitBands(usage, "type", metric, hourly);
+  const groups = TYPES.map((type) => {
+    const band = split.bands.find((entry) => entry.key === type.key);
+    return leaf({
+      ...type,
+      named: false,
+      totalTokens: band?.totalTokens ?? 0,
+      costUsd: band?.costUsd ?? 0,
+    });
+  }).filter((group) => value(group, metric) > 0);
+  return { kind: "type", groups, valueAt: split.valueAt };
+}
+
+/** The provider box: one row per provider, ranked as the page ranks them. */
+export function providerBox(
+  providers: readonly {
+    readonly provider: UsageProviderKind;
+    readonly label: string;
+    readonly color: string;
+    readonly totalTokens: number;
+    readonly costUsd: number;
+  }[],
+  valueAt: BoxModel["valueAt"],
+): BoxModel {
+  return {
+    kind: "provider",
+    groups: providers.map(({ provider, ...band }) => leaf({ key: provider, named: true, ...band })),
+    valueAt,
+  };
+}
+
+/**
+ * What the chart draws for a box, top band first as the card lists them: every row, with each
+ * opened parent replaced by all of its children, hidden ones included.
+ */
+export function chartBands(box: BoxModel, open: ReadonlySet<string>): readonly BoxBand[] {
+  return box.groups.flatMap((group) =>
+    open.has(group.key) && group.children.length > 0 ? group.children : [group],
+  );
 }

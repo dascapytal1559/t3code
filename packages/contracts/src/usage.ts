@@ -106,6 +106,11 @@ export const UsageBucket = Schema.Struct({
   devices: Schema.optional(UsageSplit),
   /** The bucket by `usageWorkGroups` name, `""` for usage in no group (Other). */
   work: Schema.optional(UsageSplit),
+  /**
+   * The bucket by kind-of-work member, keyed as the summary's `workMembers` name them; only usage
+   * in groups that open into their members. Absent from servers that predate members.
+   */
+  workMembers: Schema.optional(UsageSplit),
 });
 export type UsageBucket = typeof UsageBucket.Type;
 
@@ -384,8 +389,29 @@ export const UsageWorkGroup = Schema.Struct({
   projectIds: Schema.Array(ProjectId),
   folders: Schema.optionalKey(Schema.Array(TrimmedNonEmptyString)),
   shared: Schema.optionalKey(Schema.Boolean),
+  /** Whether the Usage page can open the group into its members; it can unless false. */
+  opensIntoMembers: Schema.optionalKey(Schema.Boolean),
+  /** Members (`UsageWorkMember` keys) that count to the group but get no row of their own. */
+  hiddenMembers: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 export type UsageWorkGroup = typeof UsageWorkGroup.Type;
+
+/**
+ * A project or folder entry a kind-of-work group counts, named as `usageWorkMemberLabel` says.
+ * A hidden member counts to its group and keeps its colour, but gets no row of its own.
+ */
+export const UsageWorkMember = Schema.Struct({
+  /** A project id, or `folder:` and the folder entry as written. */
+  key: Schema.String,
+  group: Schema.String,
+  name: Schema.String,
+  hidden: Schema.optional(Schema.Literal(true)),
+});
+export type UsageWorkMember = typeof UsageWorkMember.Type;
+
+/** How the Usage page names a kind of work's members. */
+export const UsageWorkMemberLabel = Schema.Literals(["project", "repository"]);
+export type UsageWorkMemberLabel = typeof UsageWorkMemberLabel.Type;
 
 /** Keeps records matching `include` (all when omitted) and not matching `exclude`. */
 export const UsageModelFilter = Schema.Struct({
@@ -436,6 +462,8 @@ export const UsageSummary = Schema.Struct({
   workGroups: Schema.optional(Schema.Array(Schema.String)),
   /** Kinds of work clients spread over the other groups: shared group names, `""` for Other. */
   sharedWork: Schema.optional(Schema.Array(Schema.String)),
+  /** The members the buckets' `workMembers` split by, with their names; absent with none. */
+  workMembers: Schema.optional(Schema.Array(UsageWorkMember)),
   /** Absent when the server has no annotations file. */
   annotations: Schema.optional(ForwardCompatibleArray(UsageAnnotation)),
 });

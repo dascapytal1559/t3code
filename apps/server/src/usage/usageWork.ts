@@ -1,6 +1,12 @@
 // @effect-diagnostics nodeBuiltinImport:off
 // Kind of work: which user-named group the project a usage record ran in belongs to.
-import type { ProjectId, UsageProviderKind, UsageWorkGroup } from "@t3tools/contracts";
+import type {
+  ProjectId,
+  UsageProviderKind,
+  UsageWorkGroup,
+  UsageWorkMember,
+  UsageWorkMemberLabel,
+} from "@t3tools/contracts";
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
@@ -12,6 +18,8 @@ import * as NodeZlib from "node:zlib";
 export interface WorkProject {
   readonly id: ProjectId;
   readonly root: string;
+  /** The project's name, for its member row; its folder name when absent. */
+  readonly title?: string;
 }
 
 /** A worktree a T3 thread ran in, as T3 recorded it: still known once the folder is gone. */
@@ -38,21 +46,28 @@ const levelsBelow = (root: string, folder: string) => {
 function workFolderEntries(
   groups: readonly UsageWorkGroup[],
   homeDir: string,
-): readonly { readonly folder: string; readonly group: string }[] {
-  const entries = new Map<string, string>();
+): readonly { readonly folder: string; readonly group: string; readonly entry: string }[] {
+  const entries = new Map<string, { readonly group: string; readonly entry: string }>();
   for (const group of groups) {
     for (const folder of group.folders ?? []) {
       const expanded =
         folder === "~" || folder.startsWith("~/") ? homeDir + folder.slice(1) : folder;
       if (!NodePath.isAbsolute(expanded)) continue;
       const resolved = NodePath.resolve(expanded);
-      if (!entries.has(resolved)) entries.set(resolved, group.name);
+      if (!entries.has(resolved)) entries.set(resolved, { group: group.name, entry: folder });
     }
   }
   return [...entries]
-    .map(([folder, group]) => ({ folder, group }))
+    .map(([folder, { group, entry }]) => ({ folder, group, entry }))
     .sort((a, b) => b.folder.length - a.folder.length);
 }
+
+/** The member key of a folder entry, as `UsageWorkGroup.hiddenMembers` lists it. */
+const folderMemberKey = (entry: string) => `folder:${entry}`;
+
+/** Groups the Usage page can open into members: not shared, and not switched off. */
+const opensIntoMembers = (group: UsageWorkGroup) =>
+  group.shared !== true && group.opensIntoMembers !== false;
 
 /** What clients spread over the other groups: shared groups' names, `""` for Other. */
 export const sharedWorkOf = (groups: readonly UsageWorkGroup[], shareOther: boolean) => [
@@ -175,10 +190,18 @@ export interface WorkFolders {
   >;
 }
 
+/** Where a record counts: its group, and the member in it when that group opens into members. */
+export interface WorkPlace {
+  readonly group: string;
+  readonly member: string | null;
+}
+
 /** A read's placement of records in groups, by the record's folder or else its transcript's. */
 export interface WorkAttribution {
   readonly groups: readonly string[];
-  readonly groupOf: (cwd: string | undefined, filePath: string | undefined) => string | null;
+  readonly placeOf: (cwd: string | undefined, filePath: string | undefined) => WorkPlace | null;
+  /** The members places name, labelled; only those of groups that open into members. */
+  readonly members: readonly UsageWorkMember[];
 }
 
 const NO_MISTAKES_RETRY_MS = 60_000;
@@ -318,6 +341,7 @@ export function makeUsageWork(options: UsageWorkOptions) {
 
   const attribution = async (
     groups: readonly UsageWorkGroup[],
+    memberLabel: UsageWorkMemberLabel,
     projects: readonly WorkProject[],
     worktrees: readonly WorkWorktree[],
     seen: WorkFolders,
@@ -331,9 +355,10 @@ export function makeUsageWork(options: UsageWorkOptions) {
       }
     }
     const names = [...new Set(groups.map((group) => group.name))];
+    const opening = new Set(groups.filter(opensIntoMembers).map((group) => group.name));
     const folderEntries = workFolderEntries(groups, homeDir);
     if (groupByProject.size === 0 && folderEntries.length === 0) {
-      return { groups: names, groupOf: () => null };
+      return { groups: names, placeOf: () => null, members: [] };
     }
 
     const roots = await Promise.all(
@@ -354,8 +379,12 @@ export function makeUsageWork(options: UsageWorkOptions) {
         ? folder
         : NodePath.join(worktree.root, NodePath.relative(worktree.path, folder));
     };
+    const memberIn = (group: string, member: string): WorkPlace => ({
+      group,
+      member: opening.has(group) ? member : null,
+    });
     // The closest entry wins: a folder entry by the folder itself, a project also by its worktrees.
-    const groupOfFolder = async (folder: string) => {
+    const groupOfFolder = async (folder: string): Promise<WorkPlace | null> => {
       const entry = folderEntries.find((candidate) => isWithin(folder, candidate.folder));
       const repo = reviewedRepo(noMistakesPath.exec(folder));
       const placed = await canonicalOf(repo ?? inProject(folder));
@@ -365,12 +394,13 @@ export function makeUsageWork(options: UsageWorkOptions) {
         (project === undefined ||
           levelsBelow(entry.folder, folder) <= levelsBelow(project.root, placed))
       ) {
-        return entry.group;
+        return memberIn(entry.group, folderMemberKey(entry.entry));
       }
-      return project === undefined ? null : (groupByProject.get(project.id) ?? null);
+      const group = project === undefined ? undefined : groupByProject.get(project.id);
+      return project === undefined || group === undefined ? null : memberIn(group, project.id);
     };
 
-    const byCwd = new Map<string, string | null>();
+    const byCwd = new Map<string, WorkPlace | null>();
     await Promise.all([...seen.cwds].map(async (cwd) => byCwd.set(cwd, await groupOfFolder(cwd))));
     const codexPaths = [...seen.files].flatMap(([filePath, file]) =>
       file.provider === "codex" ? [filePath] : [],
@@ -385,7 +415,7 @@ export function makeUsageWork(options: UsageWorkOptions) {
           )
         ).candidates
       : [];
-    const byFile = new Map<string, string | null>();
+    const byFile = new Map<string, WorkPlace | null>();
     await Promise.all(
       [...seen.files].map(async ([filePath, file]) => {
         const folder =
@@ -397,14 +427,38 @@ export function makeUsageWork(options: UsageWorkOptions) {
         byFile.set(filePath, folder === null ? null : await groupOfFolder(folder));
       }),
     );
+    // Every member a place can name: by project name, or by its repository's folder name.
+    const rootById = new Map(roots.map((project) => [project.id, project.root]));
+    const hidden = new Set(groups.flatMap((group) => group.hiddenMembers ?? []));
+    const member = (key: string, group: string, name: string): UsageWorkMember => ({
+      key,
+      group,
+      name,
+      ...(hidden.has(key) ? { hidden: true as const } : {}),
+    });
+    const members: UsageWorkMember[] = [];
+    for (const project of projects) {
+      const group = groupByProject.get(project.id);
+      if (group === undefined || !opening.has(group)) continue;
+      const repository = NodePath.basename(rootById.get(project.id) ?? project.root);
+      const name = memberLabel === "repository" ? repository : (project.title ?? repository);
+      members.push(member(project.id, group, name));
+    }
+    for (const entry of folderEntries) {
+      if (!opening.has(entry.group)) continue;
+      members.push(
+        member(folderMemberKey(entry.entry), entry.group, NodePath.basename(entry.folder)),
+      );
+    }
     return {
       groups: names,
-      groupOf: (cwd, filePath) =>
+      placeOf: (cwd, filePath) =>
         cwd !== undefined
           ? (byCwd.get(cwd) ?? null)
           : filePath === undefined
             ? null
             : (byFile.get(filePath) ?? null),
+      members,
     };
   };
 

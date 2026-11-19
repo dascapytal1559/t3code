@@ -16,6 +16,7 @@ import { PROVIDER_PRESENTATION } from "./usageProviders";
 import { observeResize } from "~/lib/observeResize";
 import { T3Wordmark } from "../T3Wordmark";
 import { layoutAnnotationChips, type PlacedUsageAnnotation } from "./usageAnnotations";
+import { crossFade, dropAndRise, reducedMotion, type ChartWaveOrigin } from "./usageMotion";
 
 const VIEW_WIDTH = 960;
 const VIEW_HEIGHT = 260;
@@ -113,42 +114,37 @@ export function axisLabelIndices(count: number): readonly number[] {
   return indices;
 }
 
-function buildChart(
-  periods: readonly string[],
+/** A bar as the page draws it: its height in the plot and its bands, top band first. */
+interface ChartBar {
+  readonly top: number;
+  readonly background: string;
+}
+
+/** One element per bar, painted with hard colour stops, so its bands meet with no seam. */
+function buildBars(
+  columns: readonly DayColumn[],
   series: readonly ChartSeries[],
-  valueAt: (period: string, key: string) => number,
-) {
-  const columns = buildPeriodColumns(periods, series, valueAt);
-  const scale = chartScale(columns, series);
-  const bar = barGeometry(periods.length);
-  const stacked = series
-    .map((entry, slot) => ({
-      entry,
-      slot,
-      total: columns.reduce((sum, column) => sum + (column.bands[slot]?.value ?? 0), 0),
-    }))
-    .toSorted((a, b) => b.total - a.total);
-
-  // The largest series sits at the bottom of every bar; each series is one path.
-  const paths = stacked.map(({ entry }) => ({ entry, d: "" }));
-  const barTops: number[] = [];
-  for (const [periodIndex, column] of columns.entries()) {
-    const x = (periodIndex * bar.step + bar.inset).toFixed(2);
-    let base = 0;
-    for (const [stackIndex, { slot }] of stacked.entries()) {
+  max: number,
+): readonly ChartBar[] {
+  return columns.map((column) => {
+    // The first series is the top band, as the breakdown box lists it; paint runs bottom up.
+    const stops: string[] = [];
+    let at = 0;
+    for (let slot = series.length - 1; slot >= 0; slot--) {
       const value = column.bands[slot]?.value ?? 0;
-      if (value <= 0) continue;
-      const bottom = valueToY(base, scale.max);
-      base += value;
-      const top = valueToY(base, scale.max);
-      const path = paths[stackIndex];
-      if (path === undefined) continue;
-      path.d += `M${x},${top.toFixed(2)}h${bar.width.toFixed(2)}V${bottom.toFixed(2)}h-${bar.width.toFixed(2)}Z`;
+      if (value <= 0 || column.total <= 0) continue;
+      const from = (at / column.total) * 100;
+      at += value;
+      stops.push(
+        `${series[slot]!.color} ${from.toFixed(3)}% ${((at / column.total) * 100).toFixed(3)}%`,
+      );
     }
-    barTops.push(valueToY(base, scale.max));
-  }
-
-  return { columns, scale, bar, paths, barTops };
+    return {
+      top: valueToY(column.total, max),
+      background:
+        stops.length === 0 ? "transparent" : `linear-gradient(to top, ${stops.join(", ")})`,
+    };
+  });
 }
 
 function UsageChartTooltip({
@@ -212,7 +208,6 @@ function UsageChartTooltip({
 function UsageChartPlot({
   periods,
   columns,
-  step,
   series,
   format,
   formatTooltipPeriod,
@@ -221,7 +216,6 @@ function UsageChartPlot({
 }: {
   readonly periods: readonly string[];
   readonly columns: readonly DayColumn[];
-  readonly step: number;
   readonly series: readonly ChartSeries[];
   readonly format: (value: number) => string;
   readonly formatTooltipPeriod: (period: string) => string;
@@ -288,32 +282,25 @@ function UsageChartPlot({
   return (
     <div
       ref={plotRef}
-      className="relative flex-1"
+      className="relative h-full"
       onMouseMove={handleMove}
       onMouseLeave={() => {
         hoverPositionRef.current = null;
         setHoverIndex(null);
       }}
     >
-      <svg
-        className="h-full w-full"
-        viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
-        preserveAspectRatio="none"
-        aria-hidden
-      >
+      <div aria-hidden className="absolute inset-0">
         {hoverIndex === null ? null : (
-          <rect
-            x={hoverIndex * step}
-            y={0}
-            width={step}
-            height={VIEW_HEIGHT}
-            fill="currentColor"
-            fillOpacity={0.08}
-            className="text-foreground"
+          <div
+            className="absolute inset-y-0 bg-foreground/8"
+            style={{
+              left: `${(hoverIndex / periods.length) * 100}%`,
+              width: `${100 / periods.length}%`,
+            }}
           />
         )}
         {children}
-      </svg>
+      </div>
       {overlay}
 
       {hoverIndex === null || hoveredPeriod === undefined ? null : (
@@ -472,7 +459,7 @@ export function UsageProviderChart({
   );
 }
 
-export type UsageChartSplit = "provider" | "device" | "work";
+export type UsageChartSplit = "provider" | "device" | "work" | "type";
 
 /** The screen-reader caption of a chart's table, as a message. */
 export function usageChartCaption(
@@ -507,10 +494,69 @@ export function usageChartCaption(
         : tokens
           ? msg("Daily processed tokens by kind of work")
           : msg("Daily cost by kind of work");
+    case "type":
+      return hourly
+        ? tokens
+          ? msg("Hourly processed tokens by type")
+          : msg("Hourly cost by type")
+        : tokens
+          ? msg("Daily processed tokens by type")
+          : msg("Daily cost by type");
   }
 }
 
 /** Stacked bars of usage per period, one band per series, largest at the bottom. */
+/**
+ * The bars a chart is leaving while it moves to new ones: the breakdown it showed, and how to move.
+ * `switch` drops the old bars and raises the new ones from `from`; `split` cross-fades them.
+ */
+export interface ChartTransition {
+  readonly id: number;
+  readonly kind: "switch" | "split";
+  readonly from: ChartWaveOrigin;
+  readonly series: readonly ChartSeries[];
+  readonly valueAt: (period: string, key: string) => number;
+}
+
+/** Bars this many or fewer keep their own layer, so they draw the same moving and at rest. */
+const LAYERED_BARS = 90;
+
+function ChartBars({
+  bars,
+  widthPercent,
+  dim,
+  layered,
+}: {
+  readonly bars: readonly ChartBar[];
+  readonly widthPercent: number;
+  readonly dim: boolean;
+  readonly layered: boolean;
+}) {
+  return (
+    <div className="absolute inset-0 flex">
+      {bars.map((bar, index) => (
+        // oxlint-disable-next-line react/no-array-index-key -- a bar is its period's slot
+        <div key={index} className="relative min-w-0 flex-1">
+          <span
+            data-chart-bar
+            className={cn(
+              "absolute bottom-0 left-1/2 block max-w-16 origin-bottom -translate-x-1/2 transition-opacity",
+              layered && "will-change-transform",
+              dim && "opacity-40 delay-150",
+            )}
+            style={{
+              top: `${(bar.top / VIEW_HEIGHT) * 100}%`,
+              width: `${widthPercent}%`,
+              background: bar.background,
+            }}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Stacked bars of usage per period, one band per series, the first series on top. */
 export function UsageStackedChart({
   series,
   valueAt,
@@ -523,21 +569,64 @@ export function UsageStackedChart({
   timeZone,
   hour12,
   annotations = NO_ANNOTATIONS,
+  transition = null,
+  onTransitionEnd,
 }: UsageChartWindowProps & {
   readonly series: readonly ChartSeries[];
   readonly valueAt: (period: string, key: string) => number;
   /** A message for the screen-reader table's caption. */
   readonly caption: string;
+  /** Set while the chart moves from another breakdown to this one. */
+  readonly transition?: ChartTransition | null;
+  readonly onTransitionEnd?: (id: number) => void;
 }) {
   const gt = useGT();
   const locale = useLocale();
   const m = useMessages();
   const periods = resolution === "hour" ? hours : days;
-  const { columns, scale, bar, paths, barTops } = buildChart(periods, series, valueAt);
+  const columns = buildPeriodColumns(periods, series, valueAt);
+  const scale = chartScale(columns, series);
+  const bars = buildBars(columns, series, scale.max);
+  const outgoing =
+    transition === null
+      ? null
+      : buildBars(
+          buildPeriodColumns(periods, transition.series, transition.valueAt),
+          transition.series,
+          scale.max,
+        );
+  const geometry = barGeometry(periods.length);
+  const widthPercent = (geometry.width / geometry.step) * 100;
+  const barTops = bars.map((bar) => bar.top);
+  const layered = periods.length <= LAYERED_BARS;
+  const dim = series.some((entry) => entry.loading === true);
+  const plotRef = useRef<HTMLDivElement | null>(null);
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- plays a one-shot Web Animation on the bars React just drew
+  useLayoutEffect(() => {
+    const plot = plotRef.current;
+    if (transition === null || plot === null) return;
+    const done = () => onTransitionEnd?.(transition.id);
+    const layers = [...plot.querySelectorAll<HTMLElement>("[data-chart-layer]")];
+    const barsOf = (layer: string) => [
+      ...(layers
+        .find((el) => el.dataset.chartLayer === layer)
+        ?.querySelectorAll<HTMLElement>("[data-chart-bar]") ?? []),
+    ];
+    if (reducedMotion()) {
+      done();
+      return;
+    }
+    const old = barsOf("outgoing");
+    const fresh = barsOf("current");
+    void (
+      transition.kind === "switch"
+        ? dropAndRise(old, fresh, transition.from)
+        : crossFade(old, fresh)
+    ).then(done);
+  }, [transition, onTransitionEnd]);
 
   const toY = (value: number) => valueToY(value, scale.max);
-  const seriesClassName = (loading: boolean | undefined) =>
-    cn("transition-opacity", loading === true && "opacity-40 delay-150");
   const format = metric === "tokens" ? formatTokens : (value: number) => formatUsd(value, locale);
   const formatPeriod = (period: string) =>
     resolution === "hour"
@@ -547,15 +636,16 @@ export function UsageStackedChart({
     resolution === "hour" && referenceTime !== undefined
       ? formatRelativeHourShort(period, referenceTime, timeZone, hour12, m, locale)
       : formatPeriod(period);
+  const tickLabel = (tick: number) => (tick === 0 ? "0" : format(tick));
 
   return (
-    // Fills a taller column, such as a long providers list beside it, and never shrinks below h-56.
-    <div className="flex flex-1 flex-col gap-1">
-      <div className="flex min-h-56 flex-1 gap-2">
+    // The y-axis column is as wide as its widest label, ending flush with the chart's right edge;
+    // the plot takes the rest. It fills a taller column and never shrinks below h-56.
+    <div className="grid flex-1 grid-cols-[minmax(0,1fr)_auto] grid-rows-[minmax(14rem,1fr)_auto] gap-x-2 gap-y-1">
+      <div ref={plotRef} className="relative min-h-56">
         <UsageChartPlot
           periods={periods}
           columns={columns}
-          step={bar.step}
           series={series}
           format={format}
           formatTooltipPeriod={formatTooltipPeriod}
@@ -569,50 +659,51 @@ export function UsageStackedChart({
             )
           }
         >
-          {scale.ticks.map((tick) => {
-            const y = toY(tick);
-            return (
-              <line
-                key={tick}
-                x1={0}
-                x2={VIEW_WIDTH}
-                y1={y}
-                y2={y}
-                stroke="currentColor"
-                strokeWidth={1}
-                className="text-border"
-                vectorEffect="non-scaling-stroke"
-              />
-            );
-          })}
-
-          {paths.map(({ entry, d }) => (
-            <path
-              key={entry.key}
-              d={d}
-              className={seriesClassName(entry.loading)}
-              fill={entry.color}
+          {scale.ticks.map((tick) => (
+            <div
+              key={tick}
+              className="absolute inset-x-0 h-px bg-border"
+              style={{ top: `${(toY(tick) / VIEW_HEIGHT) * 100}%` }}
             />
           ))}
+          {outgoing === null ? null : (
+            <div data-chart-layer="outgoing" className="absolute inset-0">
+              <ChartBars
+                bars={outgoing}
+                widthPercent={widthPercent}
+                dim={false}
+                layered={layered}
+              />
+            </div>
+          )}
+          <div data-chart-layer="current" className="absolute inset-0">
+            <ChartBars bars={bars} widthPercent={widthPercent} dim={dim} layered={layered} />
+          </div>
         </UsageChartPlot>
-        <div aria-hidden className="relative w-14 shrink-0">
+      </div>
+      <div aria-hidden className="relative text-3xs text-muted-foreground tabular-nums">
+        {/* Sizes the column to the widest label; the shown labels sit on their ticks. */}
+        <div className="invisible grid h-0 overflow-hidden">
           {scale.labeled
-            ? scale.ticks.map((tick) => (
-                <span
-                  key={tick}
-                  className="absolute left-0 -translate-y-1/2 text-3xs text-muted-foreground tabular-nums"
-                  style={{ top: `${(toY(tick) / VIEW_HEIGHT) * 100}%` }}
-                >
-                  {tick === 0 ? "0" : format(tick)}
-                </span>
-              ))
+            ? scale.ticks.map((tick) => <span key={tick}>{tickLabel(tick)}</span>)
             : null}
         </div>
+        {scale.labeled
+          ? scale.ticks.map((tick) => (
+              <span
+                key={tick}
+                className="absolute right-0 -translate-y-1/2 whitespace-nowrap"
+                style={{ top: `${(toY(tick) / VIEW_HEIGHT) * 100}%` }}
+              >
+                {tickLabel(tick)}
+              </span>
+            ))
+          : null}
       </div>
 
       <div
         aria-hidden
-        className="relative mr-16 h-4 text-3xs whitespace-nowrap text-muted-foreground uppercase"
+        className="relative h-4 text-3xs whitespace-nowrap text-muted-foreground uppercase"
       >
         {axisLabelIndices(periods.length).map((index) => {
           // Past a week the edge bars hug the plot's sides, so their labels align to the sides.
@@ -630,6 +721,7 @@ export function UsageStackedChart({
           );
         })}
       </div>
+      <div />
 
       {/* The plot and its axes are hover-only; this carries the same figures for screen readers.
           sr-only sits on a wrapper: Firefox does not clip a table's caption by the table's own box. */}

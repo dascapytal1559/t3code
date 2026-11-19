@@ -41,7 +41,7 @@ export const timeReversed = ([x1, y1, x2, y2]: Bezier): Bezier => [
 ];
 
 /** A damped spring from 0 to 1 as a CSS `linear()` easing, with the time it takes to settle. */
-function spring(stiffness: number, damping: number) {
+export function spring(stiffness: number, damping: number) {
   const w0 = Math.sqrt(stiffness);
   const zeta = damping / (2 * w0);
   const wd = w0 * Math.sqrt(Math.max(1 - zeta * zeta, 1e-6));

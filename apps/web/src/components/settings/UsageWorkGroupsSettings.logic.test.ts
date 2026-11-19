@@ -5,10 +5,14 @@ import {
   assignFolder,
   assignProject,
   folderEntries,
+  folderMemberKey,
   groupOfProject,
+  memberShown,
   newGroupName,
   removeGroup,
+  setGroupOpens,
   setGroupShared,
+  setMemberShown,
   usableFolder,
   usableGroupName,
 } from "./UsageWorkGroupsSettings.logic";
@@ -30,6 +34,27 @@ describe("usage work groups", () => {
     expect(groupOfProject(moved, trader)).toBe("Tooling");
     expect(groupOfProject(assignProject(moved, trader, null), trader)).toBeNull();
     expect(groupOfProject(assignProject(groups, app, "Trading"), app)).toBe("Trading");
+  });
+
+  it("hides a member in the group that holds it, shows it again when it moves, and closes a group", () => {
+    const withFolder = assignFolder(groups, "/work/main", "Tooling");
+    const hidden = setMemberShown(
+      setMemberShown(withFolder, trader, false),
+      folderMemberKey("/work/main"),
+      false,
+    );
+    expect(hidden.map((group) => group.hiddenMembers)).toEqual([[trader], ["folder:/work/main"]]);
+    expect(memberShown(hidden, trader)).toBe(false);
+    expect(memberShown(setMemberShown(hidden, trader, true), trader)).toBe(true);
+    // A member that moves starts shown, wherever it goes.
+    const moved = assignFolder(assignProject(hidden, trader, "Tooling"), "/work/main", "Trading");
+    expect(moved.map((group) => group.hiddenMembers)).toEqual([undefined, undefined]);
+    expect(setGroupOpens(groups, "Trading", false)[0]).toEqual({
+      name: "Trading",
+      projectIds: [trader],
+      opensIntoMembers: false,
+    });
+    expect(setGroupOpens(setGroupOpens(groups, "Trading", false), "Trading", true)).toEqual(groups);
   });
 
   it("refuses blank and duplicate names, ignoring case, but lets a group keep its own", () => {

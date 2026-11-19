@@ -1371,6 +1371,7 @@ export function createServerEnvironmentAtoms<R, E>(
         // Groups place usage on the server, so a changed group reads Usage again.
         settings?.usageWorkGroups ?? [],
         settings?.usageWorkShareOther ?? false,
+        settings?.usageWorkMemberLabel ?? "project",
       ]);
     }).pipe(Atom.withLabel(`environment-data:server:usage-scan-settings:${environmentId}`)),
   );

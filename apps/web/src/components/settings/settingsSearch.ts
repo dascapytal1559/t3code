@@ -1066,7 +1066,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "usage-work-groups",
     title: msg("Kinds of work"),
     to: "/settings/providers",
-    searchTerms: [msg("usage breakdown groups projects trading tooling other split cost tokens")],
+    searchTerms: [
+      msg(
+        "usage breakdown groups projects members repository folders shared other split cost tokens",
+      ),
+    ],
     providerSettingsOnly: true,
   },
   {
