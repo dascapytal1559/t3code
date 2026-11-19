@@ -63,6 +63,8 @@ const clientLaunchHarness = (input: {
   readonly hostedAppUrl?: string;
   /** The orchestrator refuses the new thread's mode, as under a managed ceiling. */
   readonly refusedByCeiling?: true;
+  /** Where every thread's work counts now; nothing binds by default. */
+  readonly boundOrigin?: UsageOrigins.BoundOrigin;
 }) => {
   const projectId = ProjectId.make("project:client-target");
   const modelSelection = {
@@ -77,7 +79,11 @@ const clientLaunchHarness = (input: {
     Layer.mock(ProviderRegistry.ProviderRegistry)({
       getProviders: Effect.succeed(input.providers ?? []),
     }),
-    UsageOrigins.layerTest,
+    input.boundOrigin === undefined
+      ? UsageOrigins.layerTest
+      : Layer.mock(UsageOrigins.UsageOrigins)({
+          originAt: () => Effect.succeed(input.boundOrigin ?? null),
+        }),
     ServerSettings.layerTest({
       fallbackModelSelection: input.fallbackModel ?? null,
       ...(input.defaultRuntimeMode === undefined
@@ -326,6 +332,58 @@ it.effect("a launch names a parent the caller can read and refuses an unknown on
     const unknown = yield* launch(ThreadId.make("thread:missing"));
     expect(unknown.at(-1)?.result).toMatchObject({ code: "thread_not_found" });
     expect(launched).toHaveLength(2);
+  }),
+);
+
+it.effect("an upkeep launch counts to the computer whichever turn launches it", () =>
+  Effect.gen(function* () {
+    const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
+    const { projectId, dependencies } = clientLaunchHarness({
+      runtimeModeCeiling: "full-access",
+      launched,
+      boundOrigin: {
+        key: { origin: "phone", basis: "stamp", reason: "typed" },
+        reroots: true,
+        runId: null,
+      },
+    });
+    const toolkit = yield* ProjectToolkit.pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(Layer.provide(dependencies)),
+      ),
+    );
+    const launch = (extra: Record<string, unknown>) =>
+      toolkit
+        .handle("t3_thread_launch", { title: "Fix", projectId, ...extra })
+        .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(dependencies));
+
+    yield* launch({});
+    const goodnight = launched[0]!.threadId;
+    yield* launch({ fromThread: { threadId: goodnight } });
+    expect(launched[1]?.usageOrigin).toEqual({
+      origin: "phone",
+      basis: "stamp",
+      reason: "inherited",
+    });
+
+    yield* launch({ upkeep: true });
+    expect(launched[2]?.usageOrigin).toEqual({
+      origin: "computer",
+      basis: "claim",
+      reason: "upkeep",
+    });
+
+    for (const named of [
+      { fromThread: { threadId: goodnight } },
+      { causedBy: { threadId: goodnight, messageId: "message:goodnight" } },
+    ]) {
+      const refused = yield* launch({ upkeep: true, ...named });
+      expect(refused.at(-1)?.result).toMatchObject({
+        code: "invalid_request",
+        message: expect.stringMatching(/^upkeep:/),
+      });
+    }
+    expect(launched).toHaveLength(3);
   }),
 );
 

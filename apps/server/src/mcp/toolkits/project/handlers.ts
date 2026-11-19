@@ -206,6 +206,15 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
             message:
               "scratch:true picks its own project and folder; omit projectId and workspaceStrategy.",
           });
+        if (
+          input.upkeep === true &&
+          (input.fromThread !== undefined || input.causedBy !== undefined)
+        )
+          return yield* new OrchestratorMcpFailure({
+            code: "invalid_request",
+            message:
+              "upkeep: a launch counted as upkeep names no origin; omit fromThread and causedBy.",
+          });
         // Reading the parent is enough: naming it grants nothing on it.
         if (input.parentThreadId !== undefined) yield* readThread(input.parentThreadId, []);
         const causedBy =
@@ -214,10 +223,15 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
             : yield* verifyCause(context.threads, input.causedBy);
         // Born where the launching thread's work counts now; a link's work has no thread here.
         const bound =
-          linkOrigin === undefined
+          linkOrigin === undefined && input.upkeep !== true
             ? yield* bindUsageOrigin(context.threads, input.fromThread, caller?.id)
             : null;
-        const usageOrigin = bound === null ? undefined : UsageOrigins.storedOrigin(bound.key);
+        const usageOrigin =
+          input.upkeep === true
+            ? UsageOrigins.storedOrigin(UsageOrigins.LAUNCHED_UPKEEP)
+            : bound === null
+              ? undefined
+              : UsageOrigins.storedOrigin(bound.key);
         const projectId =
           input.scratch === true
             ? (yield* ManagedProjectFolders.ManagedProjectFolders.pipe(

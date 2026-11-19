@@ -554,6 +554,14 @@ it.effect("launches in a linked environment with the caller's modes, retry-safe"
       expect(failureOf(withUpload)).toMatchObject({ code: "invalid_request" });
       expect(yield* Ref.get(b.bearers)).toEqual([]);
       expect((yield* Ref.get(seen)).launches).toHaveLength(2);
+
+      // Upkeep names no thread here, so it goes along and counts there too.
+      yield* launch("thread:laptop-full", { clientRequestId: "launch-upkeep", upkeep: true });
+      expect((yield* Ref.get(seen)).launches[2]?.usageOrigin).toEqual({
+        origin: "computer",
+        basis: "claim",
+        reason: "upkeep",
+      });
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

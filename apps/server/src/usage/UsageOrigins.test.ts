@@ -4,7 +4,12 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { MessageId, ThreadId, USAGE_ORIGINS_RECORDED_SINCE } from "@t3tools/contracts";
+import {
+  MessageId,
+  ThreadId,
+  USAGE_ORIGINS_RECORDED_SINCE,
+  usageOriginCountsByDefault,
+} from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 
 import * as Sqlite from "../persistence/Sqlite.ts";
@@ -13,6 +18,7 @@ import * as UsageSessionRegister from "./UsageSessionRegister.ts";
 import {
   classifyMessageOrigin,
   layer as usageOriginsLayer,
+  LAUNCHED_UPKEEP,
   MAX_CAUSE_DEPTH,
   resolveMessageOrigin,
   settleOrigin,
@@ -1552,6 +1558,24 @@ describe("UsageOrigins born labelled", () => {
         });
         yield* run("w4", 4, "worker", "06:00", "06:10", wake);
 
+        // The bedtime routine, launched as upkeep inside the phone turn.
+        yield* seedThread({
+          id: "nightly",
+          crewOf: "firstmate",
+          createdAt: iso("01:02"),
+          usageOrigin: storedOrigin(LAUNCHED_UPKEEP),
+        });
+        yield* run("nightly-1", 1, "nightly", "01:02", "01:20", fromMcp);
+        yield* run("nightly-2", 2, "nightly", "05:00", "05:10", wake);
+        // A wake about it, claimed with the worker's own thread.
+        yield* run("fm-nightly-wake", 7, "firstmate", "07:00", "07:05", wake);
+        const { origin: nightlyDevice, ...nightlyBinding } = yield* bornAt("nightly", "07:00");
+        assert.isTrue(nightlyDevice === "computer");
+        yield* claims.claim({
+          target: { kind: "run", runId: "run-fm-nightly-wake" },
+          value: { device: "computer", bound: nightlyBinding },
+        });
+
         const snapshot = yield* origins.read(time("00:00"), time("23:59"));
         // Sessions T3 does not run: reviews the worker and FirstMate started.
         const index = new UsageOriginIndex({
@@ -1596,6 +1620,16 @@ describe("UsageOrigins born labelled", () => {
             "worker-session 06:01 phone inherited message-fm-reply",
           ],
         );
+        const upkeep = [
+          index.lookup({ sessionId: "nightly-session", timestampMs: time("01:05") }),
+          index.lookup({ sessionId: "nightly-session", timestampMs: time("05:01") }),
+          index.lookup({ sessionId: "firstmate-session", timestampMs: time("07:01") }),
+        ];
+        assert.deepStrictEqual(
+          upkeep.map((key) => `${key.origin} ${key.basis} ${key.reason}`),
+          ["computer claim upkeep", "computer claim upkeep", "computer claim upkeep"],
+        );
+        assert.isFalse(upkeep.some((key) => usageOriginCountsByDefault(key.reason)));
         // Bound by value: nothing here followed a recorded cause.
         assert.isFalse(snapshot.turns.some((turn) => turn.key.cause === true));
       }).pipe(

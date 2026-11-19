@@ -298,7 +298,11 @@ and what agents claim.
   `create_threads` and `t3_thread_transfer`'s fork store it on each new thread
   as `usageOrigin` (reason `typed` stored as `inherited`), so a delegated child
   or a fork no longer copies its parent's birth; a provider's own subagent
-  child drops its parent's `usageOrigin` and `causedBy` too. `t3_thread_send`
+  child drops its parent's `usageOrigin` and `causedBy` too.
+  `t3_thread_launch` with `upkeep: true` (FirstMate's own upkeep, work a
+  process set up on the computer runs, such as the bedtime routine) binds
+  nothing and stores `computer`, basis `claim`, reason `upkeep`, also over a
+  link; it is refused beside `fromThread` or `causedBy`. `t3_thread_send`
   and `t3_thread_send_attachments` store it on the message only when the
   sender's segment was started by a prompt typed in that turn or is a
   voice-journal claim (`reroots`), so only typed input moves work. `schedule_task` stores the creating turn's origin in the fork

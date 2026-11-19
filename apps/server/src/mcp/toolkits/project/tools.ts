@@ -181,6 +181,12 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
     clientRequestId: Schema.optional(OrchestratorMcpClientRequestId),
     causedBy: Schema.optional(OrchestratorMcpCausedBy),
     fromThread: Schema.optional(OrchestratorMcpFromThread),
+    upkeep: Schema.optional(
+      Schema.Boolean.annotate({
+        description:
+          "FirstMate's spawn only, for its own upkeep: Usage counts this thread's work to the computer, whichever turn launches it. Not with fromThread or causedBy.",
+      }),
+    ),
     /** Set by a linked environment launching its agent's delegated task here; ignored otherwise. */
     delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
   }),

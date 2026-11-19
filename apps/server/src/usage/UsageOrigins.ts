@@ -234,6 +234,12 @@ const NO_PROMPT_UPKEEP: UsageOriginKey = {
   basis: "noPrompt",
   reason: "upkeep",
 };
+/** A launch FirstMate declares upkeep: a process set up on the computer runs it, whichever turn launched it. */
+export const LAUNCHED_UPKEEP: DeviceOriginKey = {
+  origin: "computer",
+  basis: "claim",
+  reason: "upkeep",
+};
 
 /** Where a usage record came from: this machine's transcripts, an archive, or a provider account. */
 export type UsageRecordSource = "live" | "archive" | "account";
