@@ -170,11 +170,16 @@ export const readGrokAccount = Effect.fn("readGrokAccount")(function* (
   const credential = yield* Effect.option(
     readGrokCredential(environment).pipe(Effect.timeout("10 seconds")),
   );
-  if (Option.isNone(credential)) return { email: undefined, usageLimits: probeFailed };
+  if (Option.isNone(credential))
+    return { email: undefined, signedIn: false, usageLimits: probeFailed };
   const email = credential.value?.email?.trim() || undefined;
   const token = credential.value?.key?.trim();
   if (!token) {
-    return { email, usageLimits: makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" }) };
+    return {
+      email,
+      signedIn: false,
+      usageLimits: makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" }),
+    };
   }
   const usageLimits = yield* Effect.gen(function* () {
     const client = yield* HttpClient.HttpClient;
@@ -200,5 +205,5 @@ export const readGrokAccount = Effect.fn("readGrokAccount")(function* (
     Effect.timeout("10 seconds"),
     Effect.orElseSucceed(() => probeFailed),
   );
-  return { email, usageLimits };
+  return { email, signedIn: true, usageLimits };
 });

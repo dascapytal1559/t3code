@@ -617,12 +617,14 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("readGrokAccount"
       const directory = yield* fs.makeTempDirectoryScoped();
       yield* fs.writeFileString(
         NodePath.join(directory, "auth.json"),
-        '{"https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828":{"key":"session-token","auth_mode":"oauth"},"https://accounts.x.ai/sign-in":{"key":"legacy-token"}}',
+        '{"https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828":{"key":"session-token","auth_mode":"oauth","email":"dev@example.com"},"https://accounts.x.ai/sign-in":{"key":"legacy-token"}}',
       );
-      const { usageLimits: limits } = yield* readGrokAccount({
-        GROK_HOME: directory,
-        HOME: "/unrelated-home",
-      }).pipe(
+      const read = readGrokAccount({ GROK_HOME: directory, HOME: "/unrelated-home" });
+      const {
+        usageLimits: limits,
+        email,
+        signedIn,
+      } = yield* read.pipe(
         Effect.provideService(
           HttpClient.HttpClient,
           HttpClient.make((request) => {
@@ -639,6 +641,18 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("readGrokAccount"
         ),
       );
       expect(limits.windows[0]?.usedPercent).toBe(37);
+      expect({ email, signedIn }).toEqual({ email: "dev@example.com", signedIn: true });
+
+      // Signed out: no stored login, so a limits-only read has nothing to read alone.
+      yield* fs.remove(NodePath.join(directory, "auth.json"));
+      expect(
+        (yield* read.pipe(
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make(() => Effect.die("must not request quota while signed out")),
+          ),
+        )).signedIn,
+      ).toBe(false);
     }),
   );
 

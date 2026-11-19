@@ -247,11 +247,9 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv, Path.Path> 
       initialSnapshot: (settings) =>
         buildInitialGrokProviderSnapshot(settings.provider).pipe(Effect.map(stampIdentity)),
       checkProvider,
-      readUsageLimits: (current) =>
+      readUsageLimits: () =>
         readGrokAccount(processEnv).pipe(
-          Effect.map((reading) =>
-            current.auth.email !== undefined && reading.email === undefined ? undefined : reading,
-          ),
+          Effect.map(({ signedIn, ...reading }) => (signedIn ? reading : undefined)),
           Effect.provideService(HttpClient.HttpClient, httpClient),
           Effect.provideService(FileSystem.FileSystem, fileSystem),
           Effect.provideService(Path.Path, path),
