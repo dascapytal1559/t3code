@@ -1045,6 +1045,8 @@ const encodeStarters = Schema.encodeSync(
 const TURN_LOOKBACK_MS = 2 * 24 * 60 * 60 * 1000;
 // A session outside T3 (a terminal left open) can run far longer than any turn.
 const REGISTER_LOOKBACK_MS = 31 * 24 * 60 * 60 * 1000;
+const LAST_READ_SPANS = 4;
+const encodeReadInputs = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
@@ -1211,6 +1213,11 @@ const make = Effect.gen(function* () {
     readonly registrations?: ReadonlyArray<OriginRegistration>;
     /** Only claims made while their run ran, as a label written then would have seen. */
     readonly whileRunning?: boolean;
+    /** Already read by the caller, so its snapshot is built from exactly these. */
+    readonly read?: {
+      readonly claims: ReadonlyArray<UsageClaims.StoredUsageClaim>;
+      readonly scheduledOrigins: ReadonlyMap<string, UsageOriginKey>;
+    };
   }) {
     const until = iso(input.untilMs);
     const starters = (input.registrations ?? []).flatMap((registration) =>
@@ -1223,7 +1230,7 @@ const make = Effect.gen(function* () {
             },
           ],
     );
-    const scheduledOrigins = yield* loadScheduledOrigins;
+    const scheduledOrigins = input.read?.scheduledOrigins ?? (yield* loadScheduledOrigins);
     const toMessage = (row: MessageColumns) => messageOf(row, scheduledOrigins);
     const turnRows = yield* sql<
       Omit<MessageColumns, "message_id"> & {
@@ -1398,7 +1405,7 @@ const make = Effect.gen(function* () {
       ...births,
     ];
     const claimRows: UsageClaims.StoredUsageClaim[] =
-      input.onlyThread === undefined ? [...(yield* claims.read)] : [];
+      input.onlyThread === undefined ? [...(input.read?.claims ?? (yield* claims.read))] : [];
     const causes = yield* loadCauses(
       [...reached, ...claimRows.flatMap((claim) => claimMessage(claim) ?? [])],
       toMessage,
@@ -1559,16 +1566,43 @@ const make = Effect.gen(function* () {
     return { turns, worktrees, promptMessages, claimRows, claimKey, resolver };
   });
 
+  // Streamed turn items and node progress are most events, and write nothing a label reads.
+  const lastLabelEvent = sql<{ readonly sequence: number }>`
+    SELECT sequence FROM orchestration_events
+    WHERE event_type NOT IN ('turn-item.updated', 'node.updated')
+    ORDER BY sequence DESC LIMIT 1
+  `.pipe(
+    NodeSqliteClient.readOnly,
+    Effect.map(([row]) => row?.sequence ?? 0),
+  );
+  // The Usage page reads a window twice in a row (its saved answer, then the full read), and a
+  // short window reads a second span for its closed days.
+  const lastReads = new Map<
+    string,
+    { readonly inputs: string; readonly snapshot: UsageOriginSnapshot }
+  >();
+
   const read = Effect.fn("UsageOrigins.read")(
     function* (sinceMs: number, untilMs: number) {
       const registrations = yield* resolveRegistrations(
         yield* register.read(sinceMs - REGISTER_LOOKBACK_MS, untilMs),
       );
+      const inputs = { claims: yield* claims.read, scheduledOrigins: yield* loadScheduledOrigins };
+      const span = `${sinceMs}:${untilMs}`;
+      const inputsKey = encodeReadInputs([
+        yield* lastLabelEvent,
+        registrations,
+        inputs.claims,
+        [...inputs.scheduledOrigins],
+      ]);
+      const last = lastReads.get(span);
+      if (last?.inputs === inputsKey) return last.snapshot;
       const facts = yield* collect({
         turnsSinceMs: sinceMs - TURN_LOOKBACK_MS,
         untilMs,
         promptsSinceMs: sinceMs,
         registrations,
+        read: inputs,
       });
       const turns = facts.turns.flatMap((turn) => turnSegments(turn, facts.resolver));
       const workThreads = new Set(
@@ -1592,7 +1626,7 @@ const make = Effect.gen(function* () {
               },
             ],
       );
-      return {
+      const snapshot = {
         turns,
         prompts,
         worktrees: [...facts.worktrees].map(([threadId, directory]) => ({ threadId, directory })),
@@ -1611,6 +1645,13 @@ const make = Effect.gen(function* () {
         registrations,
         timelines,
       } satisfies UsageOriginSnapshot;
+      lastReads.delete(span);
+      lastReads.set(span, { inputs: inputsKey, snapshot });
+      for (const oldest of lastReads.keys()) {
+        if (lastReads.size <= LAST_READ_SPANS) break;
+        lastReads.delete(oldest);
+      }
+      return snapshot;
     },
     Effect.mapError((cause) => new UsageOriginsReadError({ cause })),
   );

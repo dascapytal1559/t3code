@@ -1118,6 +1118,76 @@ describe("UsageOrigins.read", () => {
       ),
     ),
   );
+
+  it.effect("reads a span once until a label event, a claim or a registration changes", () => {
+    const registered: UsageSessionRegister.SessionRegistration[] = [];
+    let runs = 0;
+    return Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const origins = yield* UsageOrigins;
+      let sequence = 0;
+      const appendEvent = (eventType: string) =>
+        sql`INSERT INTO orchestration_events ${sql.insert({
+          event_id: `event-${++sequence}`,
+          aggregate_kind: "thread",
+          stream_id: "lead",
+          stream_version: sequence,
+          event_type: eventType,
+          occurred_at: "2026-08-07T03:00:00.000Z",
+          actor_kind: "server",
+          payload_json: "{}",
+          metadata_json: "{}",
+        })}`;
+      const sinceMs = Date.parse("2026-08-07T00:00:00.000Z");
+      const untilMs = Date.parse("2026-08-08T00:00:00.000Z");
+      const sessions = Effect.map(origins.read(sinceMs, untilMs), (snapshot) =>
+        snapshot.turns.map((turn) => turn.sessionId).toSorted(),
+      );
+      // Projection rows are seeded without their events, so only a fresh read sees them.
+      const seedTurn = (id: string, startedAt: string) =>
+        seedRun({ id, ordinal: ++runs, threadId: "lead", sessionId: id, startedAt });
+
+      yield* seedThread({ id: "lead" });
+      yield* seedTurn("first", "2026-08-07T01:00:00.000Z");
+      assert.deepStrictEqual(yield* sessions, ["first"]);
+
+      yield* seedTurn("second", "2026-08-07T02:00:00.000Z");
+      yield* appendEvent("turn-item.updated");
+      yield* appendEvent("node.updated");
+      assert.deepStrictEqual(yield* sessions, ["first"]);
+
+      yield* appendEvent("provider-turn.updated");
+      assert.deepStrictEqual(yield* sessions, ["first", "second"]);
+
+      yield* seedTurn("third", "2026-08-07T03:00:00.000Z");
+      const claims = yield* UsageClaims.UsageClaims;
+      yield* claims.claim({
+        target: { kind: "session", sessionId: "pipeline" },
+        value: { device: "phone" },
+      });
+      assert.deepStrictEqual(yield* sessions, ["first", "second", "third"]);
+
+      yield* seedTurn("fourth", "2026-08-07T04:00:00.000Z");
+      registered.push({ sessionId: "terminal", provider: "claude", startedAtMs: sinceMs });
+      assert.deepStrictEqual(yield* sessions, ["first", "fourth", "second", "third"]);
+
+      yield* seedTurn("fifth", "2026-08-07T05:00:00.000Z");
+      const otherSpan = yield* origins.read(sinceMs + 1, untilMs);
+      assert.strictEqual(otherSpan.turns.length, 5);
+    }).pipe(
+      Effect.provide(
+        usageOriginsLayer.pipe(
+          Layer.provide(
+            Layer.mock(UsageSessionRegister.UsageSessionRegister)({
+              read: () => Effect.sync(() => [...registered]),
+            }),
+          ),
+          Layer.provideMerge(UsageClaims.layer),
+          Layer.provideMerge(Layer.merge(Sqlite.layerMemory, NodeServices.layer)),
+        ),
+      ),
+    );
+  });
 });
 
 describe("UsageOrigins born labelled", () => {
