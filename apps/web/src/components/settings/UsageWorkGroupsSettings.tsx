@@ -26,6 +26,7 @@ import {
   setGroupOpens,
   setGroupShared,
   setMemberShown,
+  unsavedWorkGroups,
   usableFolder,
   usableGroupName,
 } from "./UsageWorkGroupsSettings.logic";
@@ -52,14 +53,13 @@ export function UsageWorkGroupsSettings({
   const projects = useAtomValue(environmentProjects.environmentProjectsAtom(environmentId))
     .filter((project) => project.archivedAt == null)
     .toSorted((a, b) => a.title.localeCompare(b.title));
-  const [edited, setEdited] = useState<{
-    readonly from: readonly UsageWorkGroup[];
-    readonly groups: readonly UsageWorkGroup[];
-  } | null>(null);
-  const groups = edited !== null && edited.from === savedGroups ? edited.groups : savedGroups;
+  const [sent, setSent] = useState<readonly UsageWorkGroup[] | null>(null);
+  const unsaved = unsavedWorkGroups(savedGroups, sent);
+  if (unsaved !== sent) setSent(unsaved);
+  const groups = unsaved ?? savedGroups;
   const save = (next: readonly UsageWorkGroup[]) => {
-    setEdited({ from: savedGroups, groups: next });
-    updateSettings({ usageWorkGroups: next });
+    setSent(next);
+    updateSettings({ usageWorkGroups: next }, { onFailed: () => setSent(null) });
   };
   // A member gets a Shown switch when its group opens into members on the Usage page.
   const opensFor = (groupName: string | null) => {

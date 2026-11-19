@@ -1114,23 +1114,34 @@ describe("makeManagedServerProvider", () => {
     ).pipe(Effect.provide(layerAlwaysRunTest)),
   );
 
+  it.effect("reads limits alone for a ready provider whose limits read unsupported", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { provider, counts } = yield* limitsOnlyHarness({
+          probed: {
+            ...signedInSnapshot,
+            usageLimits: {
+              checkedAt: "2026-04-10T00:00:01.000Z",
+              windows: [],
+              unavailable: { reason: "unsupported" },
+            },
+          },
+          reading: { usageLimits: signedInSnapshot.usageLimits! },
+        });
+        yield* provider.refreshUsageLimitsOnly!;
+        assert.deepStrictEqual(yield* counts, { checks: 1, reads: 1 });
+        assert.deepStrictEqual(
+          (yield* provider.getSnapshot).usageLimits,
+          signedInSnapshot.usageLimits,
+        );
+      }),
+    ).pipe(Effect.provide(layerAlwaysRunTest)),
+  );
+
   it.effect.each([
     {
       name: "a provider that is not ready",
       probed: { ...signedInSnapshot, status: "warning" },
-      reading: { usageLimits: signedInSnapshot.usageLimits! },
-      reads: 0,
-    },
-    {
-      name: "a provider whose limits read unsupported",
-      probed: {
-        ...signedInSnapshot,
-        usageLimits: {
-          checkedAt: "2026-04-10T00:00:01.000Z",
-          windows: [],
-          unavailable: { reason: "unsupported" },
-        },
-      },
       reading: { usageLimits: signedInSnapshot.usageLimits! },
       reads: 0,
     },

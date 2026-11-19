@@ -1,4 +1,15 @@
-import type { ProjectId, UsageWorkGroup } from "@t3tools/contracts";
+import { type ProjectId, UsageWorkGroup } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
+
+const sameWorkGroups = Schema.toEquivalence(Schema.Array(UsageWorkGroup));
+
+/** The groups last sent, until the server's settings hold them. */
+export function unsavedWorkGroups(
+  saved: readonly UsageWorkGroup[],
+  sent: readonly UsageWorkGroup[] | null,
+): readonly UsageWorkGroup[] | null {
+  return sent === null || sameWorkGroups(saved, sent) ? null : sent;
+}
 
 /** The group a project counts to: the first that lists it, as the server reads them. */
 export function groupOfProject(

@@ -13,6 +13,7 @@ import {
   setGroupOpens,
   setGroupShared,
   setMemberShown,
+  unsavedWorkGroups,
   usableFolder,
   usableGroupName,
 } from "./UsageWorkGroupsSettings.logic";
@@ -99,5 +100,20 @@ describe("usage work groups", () => {
 
   it("sends a removed group's projects to Other", () => {
     expect(groupOfProject(removeGroup(groups, "Trading"), trader)).toBeNull();
+  });
+
+  it("keeps the groups last sent until the server's settings hold them", () => {
+    const first = setGroupShared(groups, "Tooling", true);
+    const second = assignProject(first, app, "Tooling");
+    // The first save's echo arrives while the second is still on its way.
+    expect(unsavedWorkGroups(first, second)).toBe(second);
+    // The second's echo, its keys in the server's order, ends the local copy.
+    const echoed = second.map(({ shared, projectIds, name }) => ({
+      projectIds,
+      name,
+      ...(shared === undefined ? {} : { shared }),
+    }));
+    expect(unsavedWorkGroups(echoed, second)).toBeNull();
+    expect(unsavedWorkGroups(groups, null)).toBeNull();
   });
 });
