@@ -886,6 +886,7 @@ function UsageOverview({
         {
           icon: <ProviderMark provider={provider} className="size-3.5" />,
           excluded,
+          awaiting: !excluded && loadingProviders.has(provider) && !providersWithData.has(provider),
           excludedLabel: gt("Excluded", { $context: "provider left out of usage totals" }),
           toggleLabel: PROVIDER_PRESENTATION[provider].label,
           onToggle: () => onProviderShownChange(provider, excluded),

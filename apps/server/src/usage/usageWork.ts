@@ -12,6 +12,7 @@ import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeReadline from "node:readline";
+import * as NodeStream from "node:stream";
 import * as NodeSqlite from "node:sqlite";
 import * as NodeZlib from "node:zlib";
 
@@ -137,7 +138,9 @@ async function linkedWorktrees(root: string): Promise<readonly string[]> {
 /** Reads `cwd` from the first line of a Codex session, compressed or not; null when it has none. */
 export async function readCodexSessionFolder(filePath: string): Promise<string | null> {
   const file = NodeFS.createReadStream(filePath);
-  const input = filePath.endsWith(".zst") ? file.pipe(NodeZlib.createZstdDecompress()) : file;
+  const input = filePath.endsWith(".zst")
+    ? NodeStream.pipeline(file, NodeZlib.createZstdDecompress(), () => undefined)
+    : file;
   const lines = NodeReadline.createInterface({ input, crlfDelay: Infinity });
   try {
     for await (const line of lines) {

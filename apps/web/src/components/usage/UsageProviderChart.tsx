@@ -1,7 +1,7 @@
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import type { UsageAnnotation, UsageProviderKind } from "@t3tools/contracts";
 import { msg, T, useGT, useLocale, useMessages } from "gt-react";
-import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useEffectEvent, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import type { DailyTotals, HourlyTotals } from "@t3tools/shared/usageMerge";
 import {
@@ -602,11 +602,12 @@ export function UsageStackedChart({
   const dim = series.some((entry) => entry.loading === true);
   const plotRef = useRef<HTMLDivElement | null>(null);
 
+  const transitionEnded = useEffectEvent((id: number) => onTransitionEnd?.(id));
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- plays a one-shot Web Animation on the bars React just drew
   useLayoutEffect(() => {
     const plot = plotRef.current;
     if (transition === null || plot === null) return;
-    const done = () => onTransitionEnd?.(transition.id);
+    const done = () => transitionEnded(transition.id);
     const layers = [...plot.querySelectorAll<HTMLElement>("[data-chart-layer]")];
     const barsOf = (layer: string) => [
       ...(layers
@@ -624,7 +625,7 @@ export function UsageStackedChart({
         ? dropAndRise(old, fresh, transition.from)
         : crossFade(old, fresh)
     ).then(done);
-  }, [transition, onTransitionEnd]);
+  }, [transition]);
 
   const toY = (value: number) => valueToY(value, scale.max);
   const format = metric === "tokens" ? formatTokens : (value: number) => formatUsd(value, locale);

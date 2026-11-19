@@ -378,5 +378,6 @@ describe("readCodexSessionFolder", () => {
     expect(await readCodexSessionFolder(at("packed.jsonl.zst"))).toBe("/work/app");
     expect(await readCodexSessionFolder(at("bare.jsonl"))).toBeNull();
     expect(await readCodexSessionFolder(at("missing.jsonl"))).toBeNull();
+    expect(await readCodexSessionFolder(at("missing.jsonl.zst"))).toBeNull();
   });
 });

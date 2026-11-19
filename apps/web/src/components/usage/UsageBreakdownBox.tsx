@@ -25,6 +25,7 @@ import { OTHER_WORK } from "@t3tools/shared/usageMerge";
 export interface BoxRowExtras {
   readonly icon?: ReactNode;
   readonly excluded?: boolean;
+  readonly awaiting?: boolean;
   readonly onToggle?: () => void;
   readonly excludedLabel?: string;
   readonly toggleLabel?: string;
@@ -153,6 +154,7 @@ export function UsageBreakdownBox({
   const cardRef = useRef<HTMLElement | null>(null);
   const rowsRef = useRef<HTMLDivElement | null>(null);
   const pending = useRef<PendingTree | null>(null);
+  const closing = useRef(new Set<string>());
   const label = (band: BoxBand) => (band.named ? band.label : m(band.label));
   const isOpen = (group: BoxGroup) => openParents.has(group.key) && group.children.length > 0;
   const barBands = model.groups
@@ -198,6 +200,7 @@ export function UsageBreakdownBox({
   };
 
   const toggle = (group: BoxGroup) => {
+    if (closing.current.has(group.key)) return;
     const rows = rowsRef.current;
     if (rows === null || reducedMotion()) {
       onToggleParent(group.key);
@@ -228,6 +231,7 @@ export function UsageBreakdownBox({
         : (after < 0
             ? rows.getBoundingClientRect().bottom
             : starts[after]!.getBoundingClientRect().top) - childTop;
+    closing.current.add(group.key);
     const timing = { ...SHUT, delay: SHUT_AFTER_MS, fill: "forwards" as const };
     const moving =
       after < 0
@@ -245,6 +249,7 @@ export function UsageBreakdownBox({
       ...[...slides, shrink].map((a) => a.finished),
     ]).then(
       () => {
+        closing.current.delete(group.key);
         pending.current = {
           kind: "close",
           release: () => {
@@ -253,7 +258,9 @@ export function UsageBreakdownBox({
         };
         onToggleParent(group.key);
       },
-      () => undefined,
+      () => {
+        closing.current.delete(group.key);
+      },
     );
   };
 
@@ -354,12 +361,14 @@ export function UsageBreakdownBox({
           )}
           style={{ color: emphasisColor(position) }}
         >
-          {format(valueOf(band, metric))}
+          {rowExtras?.awaiting === true ? "-" : format(valueOf(band, metric))}
         </span>
         <span data-row={band.key} className={cn("text-end text-muted-foreground", figures, cell)}>
           {rowExtras?.excluded === true
             ? rowExtras.excludedLabel
-            : formatPercent(total === 0 ? 0 : valueOf(band, metric) / total)}
+            : rowExtras?.awaiting === true
+              ? null
+              : formatPercent(total === 0 ? 0 : valueOf(band, metric) / total)}
         </span>
       </div>
     );
