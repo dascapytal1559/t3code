@@ -389,7 +389,14 @@ and what agents claim.
   a row, so they take the first one's label and are not compared. From then on a record at or before "closed
   through" takes its session's latest row (then settles as below), and a
   prompt its row; only the open tail runs the rules above, so a later claim or
-  code change never re-labels a closed day. A session with no row by then (a
+  code change never re-labels a closed day. Only an audited correction does:
+  `t3 usage relabel --manifest <file> --dry-run|--apply` (`UsageRelabel.ts`)
+  takes each closed row with its old and new label, is refused whole unless
+  every row still holds its old one, backs up the closed tables to
+  `usage-relabels/` in the state folder, and records the change set with every
+  old value in `usage_relabels`, so `--undo <id>` restores it exactly. A dry
+  run opens the database read-only; apply is safe beside a running server, and
+  Usage reads closed rows on every read, so no cache needs clearing. A session with no row by then (a
   transcript found late) still runs them. `originAt` at a closed time answers
   from the thread's sessions' rows within a turn and its grace, and as upkeep
   for a coordinator between turns; a work thread between turns still reads its

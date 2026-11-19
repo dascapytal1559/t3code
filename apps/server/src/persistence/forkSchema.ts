@@ -116,6 +116,20 @@ export const ensureForkSchema = Effect.fn("ensureForkSchema")(function* () {
       )
     `;
   }
+  // Audited corrections of closed labels (`t3 usage relabel`): each change set with every old value.
+  if (!existing.has("usage_relabels")) {
+    yield* sql`
+      CREATE TABLE IF NOT EXISTS usage_relabels (
+        id TEXT PRIMARY KEY,
+        applied_at TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        manifest_sha256 TEXT NOT NULL,
+        backup_path TEXT NOT NULL,
+        rows_json TEXT NOT NULL,
+        undone_at TEXT
+      )
+    `;
+  }
   if (claimColumns.length > 0 && !outdated) return;
   yield* sql.withTransaction(
     Effect.gen(function* () {

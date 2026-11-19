@@ -5,16 +5,23 @@ import {
   UsageOriginReasons,
 } from "@t3tools/contracts";
 import { formatPercent, formatTokens } from "@t3tools/shared/usageFormat";
+import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Console from "effect/Console";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Stdio from "effect/Stdio";
 import * as Stream from "effect/Stream";
-import { Command, Flag } from "effect/cli";
+import { Command, Flag, GlobalFlag } from "effect/cli";
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 
-import { projectLocationFlags } from "./config.ts";
+import * as ServerConfig from "../config.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as UsageRelabel from "../usage/UsageRelabel.ts";
+import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
 import {
   jsonFlag,
   printJson,
@@ -177,7 +184,125 @@ const usageExportCommand = Command.make("export", {
   ),
 );
 
+function formatRelabelPlan(plan: UsageRelabel.RelabelPlan, reason: string): readonly string[] {
+  const moves = Object.entries(plan.moves)
+    .map(([move, rows]) => `${move.replace(">", " to ")} ${rows}`)
+    .join(", ");
+  const { toChange, alreadyNew, differs, missing, notClosed } = plan.states;
+  return [
+    `Manifest ${plan.manifestSha256.slice(0, 12)}: ${plan.rows} rows. ${reason}`,
+    `  To change: ${toChange}${moves === "" ? "" : ` (${moves})`}`,
+    `  Already relabelled: ${alreadyNew}. Differ: ${differs}. Missing: ${missing}. Not closed yet: ${notClosed}.`,
+    ...plan.problems.map((problem) => `    ${problem}`),
+    plan.appliedAs !== null
+      ? `Applied already as ${plan.appliedAs}.`
+      : toChange === plan.rows && plan.rows > 0
+        ? "Ready to apply."
+        : "Cannot apply: every row must hold its old label.",
+  ];
+}
+
+const usageRelabelCommand = Command.make("relabel", {
+  ...projectLocationFlags,
+  manifest: Flag.String("manifest").pipe(
+    Flag.withDescription("The relabel manifest (JSON): each closed row, its old and new label."),
+    Flag.optional,
+  ),
+  dryRun: Flag.Boolean("dry-run").pipe(
+    Flag.withDescription("Check the manifest against the database, read-only."),
+    Flag.withDefault(false),
+  ),
+  apply: Flag.Boolean("apply").pipe(
+    Flag.withDescription("Back up the closed labels, then apply the manifest as one change set."),
+    Flag.withDefault(false),
+  ),
+  undo: Flag.String("undo").pipe(
+    Flag.withDescription("Restore every row of an applied change set to its old label."),
+    Flag.optional,
+  ),
+  list: Flag.Boolean("list").pipe(
+    Flag.withDescription("List applied change sets."),
+    Flag.withDefault(false),
+  ),
+  json: jsonFlag,
+}).pipe(
+  Command.withDescription(
+    "Correct labels the daily close wrote down, from an audited manifest. Safe beside a running server.",
+  ),
+  Command.withHandler(
+    Effect.fn("cli.usage.relabel")(function* (flags) {
+      const modes = [
+        Option.isSome(flags.manifest) && flags.dryRun,
+        Option.isSome(flags.manifest) && flags.apply,
+        Option.isSome(flags.undo),
+        flags.list,
+      ].filter(Boolean).length;
+      const mixed =
+        (flags.dryRun || flags.apply) !== Option.isSome(flags.manifest) ||
+        (flags.dryRun && flags.apply);
+      if (modes !== 1 || mixed) {
+        return yield* new UsageRelabel.RelabelRefused({
+          detail:
+            "give one of --manifest <file> --dry-run, --manifest <file> --apply, --undo <id>, or --list.",
+        });
+      }
+      const config = yield* resolveCliAuthConfig(flags, yield* GlobalFlag.LogLevel, {
+        quietLogs: flags.json,
+      });
+      const show = <A>(value: A, lines: (value: A) => readonly string[]) =>
+        flags.json ? printJson(value) : Effect.forEach(lines(value), (line) => Console.log(line));
+      // A dry run and a listing open the database read-only, so they write nothing at all.
+      const readOnly = NodeSqliteClient.layer({ filename: config.dbPath, readonly: true });
+      const writable = SqlitePersistence.layerCliConfig.pipe(
+        Layer.provide(ServerConfig.layer(config)),
+      );
+      const readManifest = Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const file = Option.getOrThrow(flags.manifest);
+        return yield* UsageRelabel.decodeManifest(yield* fs.readFileString(file));
+      });
+
+      if (flags.list) {
+        const records = yield* UsageRelabel.listRelabels().pipe(Effect.provide(readOnly));
+        return yield* show(records, (list) =>
+          list.length === 0
+            ? ["No relabels applied."]
+            : list.map(
+                (record) =>
+                  `${record.id}  ${record.appliedAt}  ${record.rows} rows  ${record.undoneAt === null ? "applied" : `undone ${record.undoneAt}`}  ${record.reason}`,
+              ),
+        );
+      }
+      if (Option.isSome(flags.undo)) {
+        const undone = yield* UsageRelabel.undoRelabel(flags.undo.value).pipe(
+          Effect.provide(writable),
+        );
+        return yield* show(undone, (value) => [
+          `Undid ${value.id}: ${value.rows} rows restored to their old labels.`,
+        ]);
+      }
+      const manifest = yield* readManifest;
+      if (flags.dryRun) {
+        const plan = yield* UsageRelabel.planRelabel(manifest).pipe(Effect.provide(readOnly));
+        return yield* show(plan, (value) => formatRelabelPlan(value, manifest.reason));
+      }
+      const path = yield* Path.Path;
+      const applied = yield* UsageRelabel.applyRelabel({
+        manifest,
+        backupDir: path.join(config.stateDir, "usage-relabels"),
+      }).pipe(Effect.provide(writable));
+      return yield* show(applied, (value) => [
+        `Applied ${value.id}: ${value.rows} rows (${Object.entries(value.moves)
+          .map(([move, rows]) => `${move.replace(">", " to ")} ${rows}`)
+          .join(", ")}).`,
+        `Backup of the closed labels: ${value.backupPath}`,
+        `Undo with: t3 usage relabel --undo ${value.id}`,
+      ]);
+    }),
+  ),
+);
+
 export const usageCommand = Command.make("usage").pipe(
-  Command.withDescription("Read usage from the running server."),
-  Command.withSubcommands([usageReasonsCommand, usageExportCommand]),
+  Command.withDescription("Read usage from the running server, or correct its closed labels."),
+  Command.withSubcommands([usageReasonsCommand, usageExportCommand, usageRelabelCommand]),
 );
