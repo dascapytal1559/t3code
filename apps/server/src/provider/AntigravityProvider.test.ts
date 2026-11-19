@@ -777,12 +777,25 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
       const reads = yield* Ref.make(0);
       const harness = yield* makeHarness({
         probeUsage: Ref.updateAndGet(reads, (count) => count + 1).pipe(
-          Effect.map((count) => ({
-            checkedAt: `2026-10-09T12:0${count}:00.000Z`,
-            windows: [
-              { id: "gemini-5h", kind: "session", label: "Gemini · 5-hour", usedPercent: count },
-            ],
-          })),
+          Effect.map((count): ServerProviderUsageLimits =>
+            count === 3
+              ? {
+                  checkedAt: "2026-10-09T12:03:00.000Z",
+                  windows: [],
+                  unavailable: { reason: "probeFailed" },
+                }
+              : {
+                  checkedAt: `2026-10-09T12:0${count}:00.000Z`,
+                  windows: [
+                    {
+                      id: "gemini-5h",
+                      kind: "session",
+                      label: "Gemini · 5-hour",
+                      usedPercent: count,
+                    },
+                  ],
+                },
+          ),
         ),
       });
       const first = yield* harness.nextPublish((snapshot) => !!snapshot.usageLimits);
@@ -802,6 +815,10 @@ it.layer(layerTest)("Antigravity provider snapshots", (it) => {
       expect((yield* harness.provider.snapshot.getSnapshot).usageLimits?.checkedAt).toBe(
         "2026-10-09T12:02:00.000Z",
       );
+
+      // A read that cannot reach the quota hands over to the full check.
+      yield* harness.provider.snapshot.refreshUsageLimitsOnly!;
+      expect(yield* Ref.get(harness.probeCalls)).toBe(probesBefore + 1);
     }),
   );
 

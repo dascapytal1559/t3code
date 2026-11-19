@@ -662,7 +662,11 @@ export const OpenCodeDriver: ProviderDriver<
       checkUsageLimits,
       readUsageLimits: () =>
         checkUsageLimits.pipe(
-          Effect.map((usageLimits) => (usageLimits === undefined ? undefined : { usageLimits })),
+          Effect.map((usageLimits) =>
+            usageLimits === undefined || usageLimits.unavailable?.reason === "probeFailed"
+              ? undefined
+              : { usageLimits },
+          ),
         ),
       enrichSnapshot: ({ settings, snapshot, publishSnapshot }) =>
         resolveMaintenance().pipe(

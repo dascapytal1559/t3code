@@ -1641,8 +1641,9 @@ export const make = Effect.gen(function* () {
       untilDay: utcDay(throughMs),
       awaitRefresh: true,
     });
-    return read.openRecords === null || read.summary.sources.some((source) => source.refreshing)
-      ? undefined
+    if (read.openRecords === null) return "unreadable" as const;
+    return read.summary.sources.some((source) => source.refreshing)
+      ? ("refreshing" as const)
       : read.openRecords;
   });
 
@@ -1654,7 +1655,7 @@ export const make = Effect.gen(function* () {
     if (nowMs - afterMs <= UsageClose.CLOSE_DUE_MS) return;
     const throughMs = nowMs - UsageClose.CLOSE_AGE_MS;
     const records = yield* closingRecords(afterMs, throughMs);
-    if (records === undefined) return;
+    if (typeof records === "string") return;
     const outcome = yield* usageOrigins.close(throughMs, records);
     if (outcome.closed) yield* Effect.logInfo("Usage closed its labels", outcome);
   });
@@ -1689,7 +1690,9 @@ export const make = Effect.gen(function* () {
           `labels are already closed through ${isoAt(afterMs)}; a close never moves back.`,
         );
       const records = yield* closingRecords(afterMs, throughMs);
-      if (records === undefined)
+      if (records === "unreadable")
+        return yield* refuse("failed", "the server could not read T3's usage origins.");
+      if (records === "refreshing")
         return yield* refuse("refreshing", "a usage source is still refreshing; try again.");
       let backupPath: string | null = null;
       if (!dryRun) {

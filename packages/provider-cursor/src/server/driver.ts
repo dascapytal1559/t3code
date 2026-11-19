@@ -265,11 +265,13 @@ export const CursorDriver: ProviderDriver<
       checkProvider,
       readUsageLimits: () =>
         auth.readApiKey.pipe(
-          Effect.orElseSucceed(() => undefined),
           Effect.flatMap((apiKey) =>
             readCursorUsageLimits(effectiveConfig, { ...processEnv, CURSOR_API_KEY: apiKey }),
           ),
-          Effect.map((usageLimits) => ({ usageLimits })),
+          Effect.map((usageLimits) =>
+            usageLimits.unavailable?.reason === "probeFailed" ? undefined : { usageLimits },
+          ),
+          Effect.orElseSucceed(() => undefined),
           Effect.provideService(HttpClient.HttpClient, httpClient),
         ),
     }).pipe(

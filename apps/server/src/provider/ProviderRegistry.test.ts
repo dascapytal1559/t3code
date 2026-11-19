@@ -3179,6 +3179,7 @@ it.layer(
       Effect.gen(function* () {
         const fullChecks = yield* Ref.make(0);
         const limitsReads = yield* Ref.make(0);
+        const releaseRead = yield* Deferred.make<void>();
         const makeInstance = Effect.fnUntraced(function* (name: string, readsLimits: boolean) {
           const driver = ProviderDriverKind.make(name);
           const instanceId = ProviderInstanceId.make(name);
@@ -3216,6 +3217,7 @@ it.layer(
               ...(readsLimits
                 ? {
                     refreshUsageLimitsOnly: Ref.update(limitsReads, (count) => count + 1).pipe(
+                      Effect.andThen(Deferred.await(releaseRead)),
                       Effect.andThen(
                         Ref.update(current, (provider) => ({
                           ...provider,
@@ -3261,7 +3263,16 @@ it.layer(
 
         yield* Effect.gen(function* () {
           const registry = yield* ProviderRegistry.ProviderRegistry;
-          yield* registry.refreshUsageLimitsOnly;
+          // Clients opening Usage together share one read per instance.
+          const first = yield* registry.refreshUsageLimitsOnly.pipe(
+            Effect.forkChild({ startImmediately: true }),
+          );
+          const second = yield* registry.refreshUsageLimitsOnly.pipe(
+            Effect.forkChild({ startImmediately: true }),
+          );
+          yield* Deferred.succeed(releaseRead, undefined);
+          yield* Fiber.join(first);
+          yield* Fiber.join(second);
           assert.strictEqual(yield* Ref.get(limitsReads), 1);
           assert.strictEqual(yield* Ref.get(fullChecks), 0);
           const providers = yield* registry.getProviders;

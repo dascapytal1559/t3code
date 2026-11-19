@@ -668,7 +668,7 @@ export function UsageStackedChart({
             />
           ))}
           {outgoing === null ? null : (
-            <div data-chart-layer="outgoing" className="absolute inset-0">
+            <div key={transition?.id} data-chart-layer="outgoing" className="absolute inset-0">
               <ChartBars
                 bars={outgoing}
                 widthPercent={widthPercent}

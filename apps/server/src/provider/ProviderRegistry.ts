@@ -797,17 +797,48 @@ export const layer = Layer.effect(
       return yield* refreshOneSource(instance);
     });
 
+    const limitsOnlyInFlightRef = yield* Ref.make<Option.Option<Deferred.Deferred<void>>>(
+      Option.none(),
+    );
     const refreshUsageLimitsOnly = Effect.fn("ProviderRegistry.refreshUsageLimitsOnly")(
       function* () {
-        yield* syncLiveSourcesAndContinue;
-        yield* Effect.forEach(
-          (yield* Ref.get(liveSubsRef)).values(),
-          (instance) =>
-            instance.snapshot.refreshUsageLimitsOnly
-              ? refreshOneSource(instance, instance.snapshot.refreshUsageLimitsOnly)
-              : Effect.void,
-          { concurrency: "unbounded", discard: true },
+        const claimed = yield* Ref.modify(
+          limitsOnlyInFlightRef,
+          (
+            inFlight,
+          ): readonly [
+            { readonly owner: boolean; readonly completion: Deferred.Deferred<void> },
+            Option.Option<Deferred.Deferred<void>>,
+          ] => {
+            if (Option.isSome(inFlight)) {
+              return [{ owner: false, completion: inFlight.value }, inFlight];
+            }
+            const completion = Deferred.makeUnsafe<void>();
+            return [{ owner: true, completion }, Option.some(completion)];
+          },
         );
+        if (claimed.owner) {
+          yield* syncLiveSourcesAndContinue.pipe(
+            Effect.andThen(Ref.get(liveSubsRef)),
+            Effect.flatMap((instances) =>
+              Effect.forEach(
+                instances.values(),
+                (instance) =>
+                  instance.snapshot.refreshUsageLimitsOnly
+                    ? refreshOneSource(instance, instance.snapshot.refreshUsageLimitsOnly)
+                    : Effect.void,
+                { concurrency: "unbounded", discard: true },
+              ),
+            ),
+            Effect.onExit((exit) =>
+              Ref.set(limitsOnlyInFlightRef, Option.none()).pipe(
+                Effect.andThen(Deferred.done(claimed.completion, exit)),
+              ),
+            ),
+            Effect.forkDetach,
+          );
+        }
+        return yield* Deferred.await(claimed.completion);
       },
     );
 

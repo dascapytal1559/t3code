@@ -205,6 +205,7 @@ export function UsageBreakdownBox({
     );
   };
 
+  const finishClose = useEffectEvent((group: string) => onToggleParent(group));
   const toggle = (group: BoxGroup) => {
     if (closing.current.has(group.key)) return;
     const rows = rowsRef.current;
@@ -262,7 +263,7 @@ export function UsageBreakdownBox({
             for (const animation of [...slides, shrink]) animation.cancel();
           },
         };
-        onToggleParent(group.key);
+        finishClose(group.key);
       },
       () => {
         closing.current.delete(group.key);
@@ -304,10 +305,12 @@ export function UsageBreakdownBox({
         className="group/box block w-full cursor-pointer rounded-md py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         onClick={(event) => {
           const rect = event.currentTarget.getBoundingClientRect();
-          const clickAt = rect.width === 0 ? 0.5 : (event.clientX - rect.left) / rect.width;
+          const keyboard = event.detail === 0;
+          const clickAt =
+            keyboard || rect.width === 0 ? 0.5 : (event.clientX - rect.left) / rect.width;
           onOpen({
             clickAt: Math.min(1, Math.max(0, clickAt)),
-            x: event.clientX - rect.left,
+            x: keyboard ? rect.width / 2 : event.clientX - rect.left,
             y: 14,
           });
         }}

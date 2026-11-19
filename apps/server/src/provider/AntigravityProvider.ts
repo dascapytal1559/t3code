@@ -353,6 +353,7 @@ export const makeAntigravityProvider = Effect.fn("makeAntigravityProvider")(func
   ) {
     const before = yield* SubscriptionRef.get(metadata);
     const probed = yield* probe;
+    if (probed.unavailable?.reason === "probeFailed") return undefined;
     return yield* SubscriptionRef.modify(metadata, (state) =>
       state.authRevision === before.authRevision
         ? ([
