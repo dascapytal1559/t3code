@@ -90,21 +90,21 @@ stays, greyed, showing what it would have added.
 
 ![The Usage page with Grok Build and Codex muted and grayed out, leaving Claude Code and Pi in the headline, the chart and the bars under it](media/usage-provider-filter.png)
 
-On the Usage page, click a provider's dot, icon or name to mute it; click again
-to bring it back. The row looks like plain text until you hover it. Muting grays
-the row and leaves it in the list, showing what that provider would have added.
-Everything else drops it: the headline, the other rows' shares, the chart, the
-by-type bars and the breakdown. Rows follow upstream's order by the
-selected metric (cost or tokens); a muted row ranks by what it would have added,
-so muting it does not move it.
+On the Usage page, click a provider's icon or name in the provider box to mute
+it; click again to bring it back. The row looks like plain text until you hover
+it. Muting grays the row, shows **Excluded** in place of its share and leaves it
+in the list, showing what that provider would have added. Everything else drops
+it: the headline, the other rows' shares, the chart and the other boxes. Rows
+follow upstream's order by the selected metric (cost or tokens); a muted row
+ranks by what it would have added, so muting it does not move it.
 
 This is a second control on upstream's own filter, the provider menu in the
 Usage header, and they share one saved setting. Keep that setting
 (`hiddenProviders`) as the single source when syncing, and keep what the fork
-adds: `excludedProviders` in `apps/web/src/state/usage.ts` and the rows in
-`apps/web/src/components/usage/UsagePage.tsx`. Upstream's filter also hides a
-provider's Limits cards, so a row muted here hides them too. The mobile app
-has no row toggles.
+adds: `excludedProviders` in `apps/web/src/state/usage.ts`, the row extras in
+`apps/web/src/components/usage/UsagePage.tsx` and the row switch in
+`UsageBreakdownBox.tsx`. Upstream's filter also hides a provider's Limits
+cards, so a row muted here hides them too. The mobile app has no row toggles.
 
 Upstream: partly: the provider menu in its Usage header filters the same way;
 clicking a row is the fork's.
@@ -120,30 +120,27 @@ The captain reads the Usage page for where the tokens went, so the Tokens and
 Cost tabs on web and desktop put the figures he compares where the eye can
 compare them:
 
-- **No Totals row.** Upstream's row of five totals repeats the type bar. Cache
-  savings moves beside the **Cost by type** heading.
+- **No Totals row.** Upstream's row of five totals repeats the type bar. On
+  the Cost tab, cache savings sits under the chart, beside **Cost by speed**.
 - **The other figure rides along.** Under the headline the Tokens tab shows the
-  sessions and the dollar total, and the Cost tab the sessions and the token
-  total. A provider's row shows the tab's figure one size up, then its sessions
-  and the other figure, with its share at the right under the figure.
+  sessions, and the Cost tab the sessions and the token total.
 - **Figures fade by size.** The largest figure in a group is at full strength,
   the smallest at 70%, and the rest are placed between by order of magnitude,
-  so billions stand apart from millions. On provider rows a figure in the top
-  fifth of that scale is bold; in the captain's words, "if it's in a league of
-  its own, then it should be separated from the others". The scale never spans
-  less than one order of magnitude, so three providers of similar size all stay
-  bold rather than being stretched apart.
-- **Figures sit in columns.** Tokens by type, Cost by type and Cost by speed
-  print each part's share and set the parts two to a line, in the order Input,
-  Cache read, Output, Cache write, so every M and B, percent sign and colour
-  square is directly above its like. A fifth part (Other, on Cost by type)
-  follows the second line where it fits. Tokens by origin sets its figures in
-  columns too.
-- **The chart is as tall as the provider list.** With four or more providers
-  the bars stretch so the chart ends level with the last row. It is never
-  shorter than upstream's. Its value labels sit on the right of the bars, and
-  its title is centered over them; upstream puts the labels on the left and
-  the title flush left.
+  so billions stand apart from millions. On a breakdown box's rows a figure in
+  the top fifth of that scale is bold; in the captain's words, "if it's in a
+  league of its own, then it should be separated from the others". The scale
+  never spans less than one order of magnitude, so three providers of similar
+  size all stay bold rather than being stretched apart.
+- **Figures sit in columns.** A breakdown box sets each row's figure and share
+  in columns. A model's pop-up prints each type's share and sets the types two
+  to a line, in the order Input, Cache read, Output, Cache write, so every M
+  and B, percent sign and colour square is directly above its like; a fifth
+  part follows the second line where it fits. Cost by speed sets its parts the
+  same way.
+- **The chart sits beside the boxes.** The chart takes the left two thirds at a
+  fixed height taller than upstream's, with the headline and the breakdown
+  boxes on the right. Its value labels sit on the right of the bars; upstream
+  puts them on the left.
 - **Whole dollars from $100.** The page's standing dollar figures drop cents
   from $100 up (`formatUsdShort`). The chart's tooltip and a model's pop-up
   keep cents.
@@ -151,14 +148,13 @@ compare them:
 The mobile app keeps upstream's layout. A model's pop-up uses the same bars,
 so its legends take the columns, shares and fade too.
 
-For syncs, the fork's parts are: the provider rows, the headline's second line
-and the missing Totals section in
-`apps/web/src/components/usage/UsagePage.tsx`; the legend in
-`UsageShareBar.tsx` and the segment order in `usageBreakdown.ts`; the legend
-in `UsageOriginBreakdown.tsx`; `min-h-56 flex-1` in place of upstream's fixed
-`h-56` and the value labels after the plot in `UsageProviderChart.tsx`, with
-the chart title's `pr-16 text-center` in `UsagePage.tsx`; the scale in
-`usageEmphasis.ts`; and `formatUsdShort` in `packages/shared/src/usageFormat.ts`.
+For syncs, the fork's parts are: the headline's second line, the grid that
+puts the chart beside the boxes, and the missing Totals section in
+`apps/web/src/components/usage/UsagePage.tsx`; the box rows in
+`UsageBreakdownBox.tsx`; the legend in `UsageShareBar.tsx` and the segment
+order in `usageBreakdown.ts`; the value labels after the plot in
+`UsageProviderChart.tsx`; the scale in `usageEmphasis.ts`; and
+`formatUsdShort` in `packages/shared/src/usageFormat.ts`.
 
 Upstream: none.
 
@@ -248,12 +244,12 @@ The Usage page splits tokens and cost by where the work started: on your phone
 or your computer, typed by you or started by an agent for you.
 
 The captain wants to see the prompts he sent from his phone and the work they
-started, so the Usage page on web and desktop has a **Tokens by origin** bar
-(Cost by origin): the period's usage split between phone and computer, direct
-or orchestrated. Usage with no phone evidence counts to the computer; in the
-captain's words, "the computer is sort of its true back end … ever since we
-have T3 code we're starting to add phone label to what would otherwise be
-computer". It is built from what T3 records (see
+started, so the Usage page on web and desktop has a **Tokens by device** box
+(Cost by device), and the Usage chart on every client can split the same way:
+the period's usage split between phone and computer, direct or orchestrated.
+Usage with no phone evidence counts to the computer; in the captain's words,
+"the computer is sort of its true back end … ever since we have T3 code
+we're starting to add phone label to what would otherwise be computer". It is built from what T3 records (see
 [Which device sent it](#which-device-sent-it))
 and what agents claim.
 
@@ -464,14 +460,17 @@ and what agents claim.
   28 Oct once to add it. On syncs, an upstream cache bump becomes the fork's next
   number, never upstream's.
 
-The server sends `origins` on `UsageSummary` (optional; usage rows keyed by
-origin, basis, `via`, provider and source with no day, so the payload stays small),
-and clients merge the rows with the same source ownership as buckets. The mobile app gets the merged
-figures but does not show them yet. Code: `apps/server/src/usage/UsageOrigins.ts`
-(classifier, cause chains, SQL, turn index), `attributeOrigin` and `countPrompt` in
-`usageAggregation.ts`, `readOriginReasons` in `UsageService.ts`, `mergeOrigins`
-in `packages/shared/src/usageMerge.ts`, `apps/server/src/cli/usage.ts`, and
-`apps/web/src/components/usage/UsageOriginBreakdown.tsx`.
+Each usage bucket carries `devices` (optional; the bucket split by device band,
+`UsageDeviceBand` in `packages/contracts/src/usage.ts`), which web's device
+box and the chart's device split on web and mobile read. The server also sends
+`origins` on `UsageSummary` (optional; usage rows keyed by origin, basis, `via`,
+provider and source with no day, so the payload stays small), and clients merge
+the rows with the same source ownership as buckets. Code:
+`apps/server/src/usage/UsageOrigins.ts` (classifier, cause chains, SQL, turn
+index), `attributeOrigin` and `countPrompt` in `usageAggregation.ts`, `readOriginReasons` in `UsageService.ts`, `mergeOrigins`
+and `usageSplitBands` in `packages/shared/src/usageMerge.ts`,
+`apps/server/src/cli/usage.ts`, and `deviceBox` in
+`apps/web/src/components/usage/usageSplits.ts`.
 
 FirstMate half, in the FirstMate fork:
 [Nightly usage-labels check](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#nightly-usage-labels-check).
