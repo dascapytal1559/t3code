@@ -108,8 +108,8 @@ export const UsageBucket = Schema.Struct({
   unpricedTokens: Schema.optional(NonNegativeInt),
   sessions: NonNegativeInt,
   /**
-   * The bucket by `UsageDeviceBand`; absent when the server cannot read its T3 prompts. Usage in
-   * no band, or in a band a client does not know, counts as unlabelled.
+   * The bucket by `UsageDeviceBand`; absent when the server cannot read its T3 prompts. Clients
+   * count usage in no band, in `unlabelled`, or in a band they do not know as `computerDirect`.
    */
   devices: Schema.optional(UsageSplit),
   /** The bucket by `UsageProcessBand`; usage in no band, or from older servers, counts as other. */
@@ -465,7 +465,8 @@ export const UsageSummary = Schema.Struct({
   modelFilter: Schema.optional(UsageModelFilter),
   /**
    * Whether the buckets' `devices` split labels usage; absent when the server cannot read its T3
-   * prompts, and from servers that predate the flag, so their usage reads as unlabelled.
+   * prompts, and from servers that predate the flag, so clients count their usage as
+   * `computerDirect`.
    */
   devices: Schema.optional(Schema.Literal(true)),
   /** The `usageWorkGroups` names in settings order; absent from servers that predate them. */

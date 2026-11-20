@@ -75,8 +75,7 @@ tablets. Sessions an agent runs outside T3, such as a CLI run in its worktree, c
 agent's turn. A coordinator's own turns that nobody typed, such as FirstMate's wakes and
 background checks, count to the computer as upkeep unless FirstMate says what they were about.
 Usage with no sign of the phone counts to the computer, including agent work with
-no recorded cause. Usage from before T3 recorded the sending device (7 Nov 2026) and archived
-history show as **Unlabelled**. To see how much of the computer's share is there only by default, and why, run
+no recorded cause. To see how much of the computer's share is there only by default, and why, run
 `t3 usage reasons`. Once usage is more than a day old, its origin is final: the server writes it
 down within a day or two and reads it back from then on, so nothing done later changes it. To
 write it down sooner, run `t3 usage close --through <time>` with the time's offset, such as

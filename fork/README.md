@@ -537,7 +537,7 @@ Each usage bucket carries `devices` (optional; the bucket split by device band,
 box and the chart's device split on web and mobile read. `devices: true` on
 `UsageSummary` says the server labels devices; a server without it (one that
 cannot read its T3 prompts, or predates the flag) has its usage read as
-unlabelled. Code:
+Computer · Direct, as clients read the `unlabelled` band. Code:
 `apps/server/src/usage/UsageOrigins.ts` (classifier, cause chains, SQL, turn
 index), `attributeOrigin` in `usageAggregation.ts`, `readOriginReasons` in
 `UsageService.ts`, `usageSplitBands` in `packages/shared/src/usageMerge.ts`,
@@ -567,7 +567,7 @@ it unless a sibling folder of that name is on disk. A shared group, and with
 by their own share (`spreadSharedWork` in `packages/shared/src/usageMerge.ts`),
 so the bars still add up; the export keeps each call's own group. Groups open
 into their members unless turned off, and members can be hidden; the user
-guide's [Kinds of work](../docs/user/usage.md#split-the-chart-by-provider-device-process-kind-of-work-or-type)
+guide's [Kinds of work](../docs/user/usage.md#split-the-chart-by-provider-kind-of-work-device-process-or-direction)
 covers the settings.
 
 The groups are server settings (`usageWorkGroups`, `usageWorkShareOther`,
@@ -607,6 +607,7 @@ made-up values:
     "via": "agent",
     "basis": "stamp",
     "reason": "inherited",
+    "process": "other",
     "cause": true,
     "promptThreadId": "thread-7"
   },
@@ -618,7 +619,8 @@ made-up values:
 - `costUsd` is null when no price is known; `origin` is null when the server
   cannot read its T3 prompts. `started` is `direct` when the device's own
   prompt started the work, `orchestrated` (with `via`) when an agent sent it.
-  `basis` and `reason` are as in [Phone vs computer split](#phone-vs-computer-split).
+  `basis` and `reason` are as in [Phone vs computer split](#phone-vs-computer-split);
+  `process` is the process box's band, `journal`, `routines` or `other` (Direct).
 - `callId` names the model call the same way in every export, whichever
   transcript T3 read it from: a forked conversation, a deleted old file or a
   reader change can move a call to another `sessionId` or `at`, but not to
