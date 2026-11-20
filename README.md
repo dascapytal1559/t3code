@@ -10,7 +10,7 @@ Every difference from upstream, in the order [fork/README.md](fork/README.md) de
 - [6 and 12 months](fork/README.md#6-and-12-months): the Usage page reaches back 6 and 12 months, drawn as stacked bars.
 - [Mute a provider](fork/README.md#mute-a-provider): click a provider on the Usage page to leave it out of every figure.
 - [Figures that read](fork/README.md#figures-that-read): Usage figures sit in columns and fade by size; the big ones stand out.
-- [Breakdown boxes and the chart split](fork/README.md#breakdown-boxes-and-the-chart-split): four boxes beside the Usage chart, by provider, device, kind of work and type; the open one splits the chart.
+- [Breakdown boxes and the chart split](fork/README.md#breakdown-boxes-and-the-chart-split): five boxes beside the Usage chart, by provider, kind of work, device, process and direction; the open one splits the chart.
 - [Accounts in your order](fork/README.md#accounts-in-your-order): usage lists accounts in the Settings › Providers order.
 - [Limits in the sidebar](fork/README.md#limits-in-the-sidebar): one bar per account shows what is left this week, with a pace mark.
 - [Archived usage](fork/README.md#archived-usage): usage counts machines and accounts that no longer run T3.
