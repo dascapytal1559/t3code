@@ -1,4 +1,4 @@
-import type { UsageDeviceBand, UsageProcessBand, UsageProviderKind } from "@t3tools/contracts";
+import type { UsageProcessBand, UsageProviderKind } from "@t3tools/contracts";
 import {
   DEVICE_SPLIT_COLORS,
   OTHER_WORK_COLOR,
@@ -11,6 +11,7 @@ import {
   OTHER_WORK,
   usageMemberBands,
   usageSplitBands,
+  type MergedDeviceBand,
   type MergedUsage,
   type UsageTypeBand,
 } from "@t3tools/shared/usageMerge";
@@ -21,8 +22,8 @@ export type UsageBreakdown = "provider" | "device" | "process" | "work" | "type"
 export const BREAKDOWN_ORDER: readonly UsageBreakdown[] = [
   "provider",
   "device",
-  "process",
   "work",
+  "process",
   "type",
 ];
 
@@ -114,17 +115,11 @@ const DEVICE_GROUPS = [
       },
     ],
   },
-  {
-    key: "unlabelled",
-    label: msg("Unlabelled", { $context: "usage band: usage from before devices were recorded" }),
-    color: css(DEVICE_SPLIT_COLORS.unlabelled),
-    children: [],
-  },
 ] as const satisfies readonly {
   key: string;
   label: string;
   color: string;
-  children: readonly { key: UsageDeviceBand; label: string; color: string }[];
+  children: readonly { key: MergedDeviceBand; label: string; color: string }[];
 }[];
 
 const PROCESSES: readonly { key: UsageProcessBand; label: string; color: string }[] = [
@@ -184,14 +179,13 @@ export function deviceBox(
       named: false,
       ...amountOf(child.key),
     }));
-    const own = group.children.length === 0 ? amountOf(group.key) : null;
     return {
       key: group.key,
       label: group.label,
       named: false,
       color: group.color,
-      totalTokens: own?.totalTokens ?? children.reduce((sum, child) => sum + child.totalTokens, 0),
-      costUsd: own?.costUsd ?? children.reduce((sum, child) => sum + child.costUsd, 0),
+      totalTokens: children.reduce((sum, child) => sum + child.totalTokens, 0),
+      costUsd: children.reduce((sum, child) => sum + child.costUsd, 0),
       children: children.filter((child) => child.totalTokens > 0 || child.costUsd > 0),
       hidden: new Set(),
     };
@@ -204,7 +198,7 @@ export function deviceBox(
     groups,
     valueAt: (period, key, by) => {
       const children = childrenOf.get(key);
-      return children === undefined || children.length === 0
+      return children === undefined
         ? split.valueAt(period, key, by)
         : children.reduce((sum, child) => sum + split.valueAt(period, child, by), 0);
     },

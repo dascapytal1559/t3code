@@ -53,7 +53,7 @@ const valueOf = (band: BoxBand, metric: "cost" | "tokens") =>
 /** A band under this share of the bar would be a sliver under a pixel; the rows still list it. */
 const SLIVER = 0.002;
 
-/** The colour bar: segments meet edge to edge, only the two ends are rounded. */
+/** The colour bar: segments meet edge to edge, and the bar clips them to its rounded ends. */
 function ShareBar({
   bands,
   metric,
@@ -90,20 +90,21 @@ function ShareBar({
     );
   }, [ghost]);
   const segments = (list: readonly BoxBand[]) =>
-    list.map((band, index) => (
+    list.map((band) => (
       <span
         key={band.key}
         data-segment
-        className={cn(
-          "block h-full min-w-0",
-          index === 0 && "rounded-s-full",
-          index === list.length - 1 && "rounded-e-full",
-        )}
+        className="block h-full min-w-0"
         style={{ flex: `${valueOf(band, metric)} 1 0`, backgroundColor: band.color }}
       />
     ));
   return (
-    <div ref={barRef} data-share-bar aria-hidden className="relative flex h-2">
+    <div
+      ref={barRef}
+      data-share-bar
+      aria-hidden
+      className="relative flex h-2 overflow-hidden rounded-xs"
+    >
       {segments(shown)}
       {ghost === null ? null : (
         <div ref={ghostRef} className="pointer-events-none absolute inset-0 flex">
@@ -302,7 +303,7 @@ export function UsageBreakdownBox({
         type="button"
         aria-label={title}
         aria-expanded={false}
-        className="group/box block w-full cursor-pointer rounded-md py-2 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        className="group/box block w-full cursor-pointer rounded-md py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         onClick={(event) => {
           const rect = event.currentTarget.getBoundingClientRect();
           const keyboard = event.detail === 0;

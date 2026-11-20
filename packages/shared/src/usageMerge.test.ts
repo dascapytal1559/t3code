@@ -584,7 +584,7 @@ describe("mergeUsage", () => {
                 bucket({
                   day: day8,
                   sourcePath: mac.homePath,
-                  devices: "computerDirect",
+                  devices: "unlabelled",
                   work: "Trading",
                 }),
               ],
@@ -620,8 +620,12 @@ describe("mergeUsage", () => {
     expect(Object.fromEntries(merged.devices!.daily.get("2026-08-07")!)).toEqual({
       phoneDirect: { totalTokens: 800, costUsd: 6 },
       computerOrchestrated: { totalTokens: 360, costUsd: 4 },
-      computerDirect: { totalTokens: 1000, costUsd: expect.closeTo(2, 5) },
-      unlabelled: { totalTokens: 160, costUsd: expect.closeTo(1, 5) },
+      // Unlabelled usage, and an unsplit remainder, count as typed on the computer.
+      computerDirect: { totalTokens: 1160, costUsd: expect.closeTo(3, 5) },
+    });
+    // An unlabelled bucket, and an older server's unsplit one, count as typed on the computer.
+    expect(Object.fromEntries(merged.devices!.daily.get(day8)!)).toEqual({
+      computerDirect: { totalTokens: 2320, costUsd: 20 },
     });
     // A bucket with no process split, and an older server's, count as other.
     expect(Object.fromEntries(merged.processes.daily.get("2026-08-07")!)).toEqual({
@@ -654,7 +658,6 @@ describe("mergeUsage", () => {
       "computerDirect",
       "phoneDirect",
       "computerOrchestrated",
-      "unlabelled",
     ]);
   });
 
@@ -799,7 +802,7 @@ describe("mergeUsage", () => {
     });
   });
 
-  it("counts all usage as unlabelled when no server labels devices", () => {
+  it("counts all usage as typed on the computer when no server labels devices", () => {
     const merged = mergeUsage(
       [
         environment(
@@ -812,7 +815,7 @@ describe("mergeUsage", () => {
 
     expect(merged.devices).toBeNull();
     expect(usageSplitBands(merged, "device", "cost", false).bands).toEqual([
-      { key: "unlabelled", groupIndex: null, costUsd: 10, totalTokens: 1160 },
+      { key: "computerDirect", groupIndex: null, costUsd: 10, totalTokens: 1160 },
     ]);
   });
 

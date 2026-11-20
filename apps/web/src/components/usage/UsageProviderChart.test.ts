@@ -4,6 +4,7 @@ import {
   axisLabelIndices,
   barGeometry,
   buildPeriodColumns,
+  stackOrder,
   stackedPeak,
 } from "./UsageProviderChart";
 
@@ -42,6 +43,13 @@ describe("buildPeriodColumns", () => {
 
     expect(shown(["codex", "claude", "pi", "muse"])).toBe(42);
     expect(shown(["claude"])).toBe(20);
+  });
+
+  it("stacks the series largest over the window on top, whatever the legend's order", () => {
+    const columns = buildPeriodColumns(days, series(["codex", "claude", "grok", "pi"]), valueAt);
+
+    // claude 25, codex 10, pi 5, grok 0; a tie keeps the legend's order.
+    expect(stackOrder(columns, 4)).toEqual([1, 0, 3, 2]);
   });
 });
 

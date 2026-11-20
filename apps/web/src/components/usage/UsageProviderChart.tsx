@@ -114,6 +114,17 @@ export function axisLabelIndices(count: number): readonly number[] {
   return indices;
 }
 
+/**
+ * The series' slots in stacking order, top band first: the largest over the window on top,
+ * whatever order the legend lists them in. One order for every bar, so a band never hops.
+ */
+export function stackOrder(columns: readonly DayColumn[], count: number): readonly number[] {
+  const totals = Array.from({ length: count }, (_, slot) =>
+    columns.reduce((sum, column) => sum + (column.bands[slot]?.value ?? 0), 0),
+  );
+  return totals.map((_, slot) => slot).sort((a, b) => totals[b]! - totals[a]! || a - b);
+}
+
 /** A bar as the page draws it: its height in the plot and its bands, top band first. */
 interface ChartBar {
   readonly top: number;
@@ -126,11 +137,12 @@ function buildBars(
   series: readonly ChartSeries[],
   max: number,
 ): readonly ChartBar[] {
+  const order = stackOrder(columns, series.length);
   return columns.map((column) => {
-    // The first series is the top band, as the breakdown box lists it; paint runs bottom up.
+    // Paint runs bottom up, so from the end of the stacking order.
     const stops: string[] = [];
     let at = 0;
-    for (let slot = series.length - 1; slot >= 0; slot--) {
+    for (const slot of order.toReversed()) {
       const value = column.bands[slot]?.value ?? 0;
       if (value <= 0 || column.total <= 0) continue;
       const from = (at / column.total) * 100;

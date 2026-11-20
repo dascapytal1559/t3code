@@ -55,13 +55,13 @@ export function UsageShareBar({
         {aside}
       </div>
       {/* The legend below carries every figure; the bar's tooltips are pointer-only. */}
-      <div aria-hidden className="flex h-2 gap-0.5">
+      <div aria-hidden className="flex h-2 gap-0.5 overflow-hidden rounded-xs">
         {visible.map((segment) => (
           <Tooltip key={segment.label}>
             <TooltipTrigger
               render={
                 <div
-                  className="h-full min-w-1 rounded-xs first:rounded-l-full last:rounded-r-full"
+                  className="h-full min-w-1 rounded-xs"
                   style={{ flex: `${segment.value} 1 0`, backgroundColor: segment.color }}
                 />
               }

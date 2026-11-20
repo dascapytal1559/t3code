@@ -16,8 +16,8 @@ export type UsageBreakdown = "provider" | "device" | "process" | "work";
 export const BREAKDOWN_OPTIONS = [
   { value: "provider", label: msg("Provider", { $context: "usage breakdown option" }) },
   { value: "device", label: msg("Device", { $context: "usage breakdown option" }) },
-  { value: "process", label: msg("Process", { $context: "usage breakdown option" }) },
   { value: "work", label: msg("Kind of work", { $context: "usage breakdown option" }) },
+  { value: "process", label: msg("Process", { $context: "usage breakdown option" }) },
 ] as const satisfies readonly { value: UsageBreakdown; label: string }[];
 
 const DEVICE_LABEL: Record<UsageDeviceBand, string> = {

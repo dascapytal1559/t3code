@@ -38,27 +38,29 @@ const BOUNCE = springCurve(0.42);
 /** Where a chart switch starts: the side the breakdown boxes are on. */
 export type ChartWaveOrigin = "start" | "end";
 
-const order = (index: number, count: number, from: ChartWaveOrigin) =>
-  from === "end" ? count - 1 - index : index;
+/** How far behind the first bar the last one starts, however many days the chart shows. */
+const WAVE_SPREAD_MS = 60;
+
+/** A bar's delay in a wave that crosses the chart in `WAVE_SPREAD_MS`. */
+const waveDelay = (index: number, count: number, from: ChartWaveOrigin) =>
+  count <= 1 ? 0 : ((from === "end" ? count - 1 - index : index) / (count - 1)) * WAVE_SPREAD_MS;
 
 /**
- * Drop and rise: each old bar falls into the baseline, then its new bar springs up past its
- * height and settles, one day after another from the boxes' side. Resolves when the last lands.
+ * Drop and rise: each old bar falls into the baseline and its new bar rises in its place, in a
+ * quick wave from the boxes' side. 300 ms at most; resolves when the last lands.
  */
 export function dropAndRise(
   outgoing: readonly HTMLElement[],
   incoming: readonly HTMLElement[],
   from: ChartWaveOrigin,
 ): Promise<unknown> {
-  const fall = 130;
-  const stagger = 8;
-  const pause = 20;
-  const rise = 560;
+  const fall = 90;
+  const rise = 150;
   const count = Math.max(outgoing.length, incoming.length);
   outgoing.forEach((bar, index) => {
     bar.animate([{ transform: "scaleY(1)" }, { transform: "scaleY(0)" }], {
       duration: fall,
-      delay: order(index, count, from) * stagger,
+      delay: waveDelay(index, count, from),
       easing: "cubic-bezier(0.55, 0, 0.8, 0.3)",
       fill: "forwards",
     });
@@ -68,8 +70,8 @@ export function dropAndRise(
       (bar, index) =>
         bar.animate([{ transform: "scaleY(0)" }, { transform: "scaleY(1)" }], {
           duration: rise,
-          delay: order(index, count, from) * stagger + fall + pause,
-          easing: BOUNCE,
+          delay: waveDelay(index, count, from) + fall,
+          easing: "cubic-bezier(0.22, 1, 0.36, 1)",
           fill: "backwards",
         }).finished,
     ),
@@ -81,10 +83,11 @@ export function crossFade(
   outgoing: readonly HTMLElement[],
   incoming: readonly HTMLElement[],
 ): Promise<unknown> {
+  const count = Math.max(outgoing.length, incoming.length);
   outgoing.forEach((bar, index) => {
     bar.animate([{ opacity: 1 }, { opacity: 0 }], {
       duration: 160,
-      delay: index * 8 + 160,
+      delay: waveDelay(index, count, "start") + 160,
       easing: "ease-in",
       fill: "forwards",
     });
@@ -94,7 +97,7 @@ export function crossFade(
       (bar, index) =>
         bar.animate([{ opacity: 0 }, { opacity: 1 }], {
           duration: 320,
-          delay: index * 8,
+          delay: waveDelay(index, count, "start"),
           easing: "ease-out",
           fill: "backwards",
         }).finished,
@@ -202,7 +205,10 @@ export function ripple(bar: HTMLElement, clickAt: number): void {
     layer.append(wrap);
     return { wrap, shape };
   });
+  // The bar clips its segments to its rounded ends; the wave reaches past them and draws its own.
+  const corner = Number.parseFloat(getComputedStyle(bar).borderStartStartRadius) || 0;
   bar.append(layer);
+  bar.style.overflow = "visible";
   for (const segment of segments) segment.style.visibility = "hidden";
   const total = 900 + 40 + bar.offsetWidth / 1.1;
   const start = performance.now();
@@ -223,11 +229,14 @@ export function ripple(bar: HTMLElement, clickAt: number): void {
         const x = left + local;
         const distance = Math.abs(x - clickPx);
         let half = (thickness * rippleScale(t - 40 - distance / 1.1, distance / width)) / 2;
-        // The bar's two outer ends stay round: a half-circle of the current thickness.
-        if (index === 0 && x < half) half *= Math.sqrt(Math.max(0, 1 - ((half - x) / half) ** 2));
-        const fromEnd = width - x;
-        if (index === shapes.length - 1 && fromEnd < half) {
-          half *= Math.sqrt(Math.max(0, 1 - ((half - fromEnd) / half) ** 2));
+        // The bar's two outer ends keep its corner radius at the current thickness.
+        const fromEdge = Math.min(
+          index === 0 ? x : Infinity,
+          index === shapes.length - 1 ? width - x : Infinity,
+        );
+        const radius = Math.min(corner, half);
+        if (fromEdge < radius) {
+          half -= radius - Math.sqrt(Math.max(0, radius ** 2 - (radius - fromEdge) ** 2));
         }
         const px = `${own === 0 ? 0 : ((local / own) * 100).toFixed(2)}%`;
         top.push(`${px} ${(((height / 2 - half) / height) * 100).toFixed(2)}%`);
@@ -238,6 +247,7 @@ export function ripple(bar: HTMLElement, clickAt: number): void {
     if (t < total && layer.isConnected) requestAnimationFrame(frame);
     else {
       layer.remove();
+      bar.style.overflow = "";
       for (const segment of segments) segment.style.visibility = "";
     }
   };

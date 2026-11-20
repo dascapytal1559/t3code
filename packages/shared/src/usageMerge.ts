@@ -110,8 +110,8 @@ export interface MergedUsage {
   readonly duplicateSources: readonly string[];
   readonly contributingEnvironments: readonly EnvironmentId[];
   readonly contractMismatches: readonly UsageContractMismatch[];
-  /** Usage by device band; null when no selected server labels devices. */
-  readonly devices: MergedSplit<UsageDeviceBand> | null;
+  /** Usage by device band (see `MergedDeviceBand`); null when no selected server labels devices. */
+  readonly devices: MergedSplit<MergedDeviceBand> | null;
   /** Usage by process; usage no server places in one counts as other. */
   readonly processes: MergedSplit<UsageProcessBand>;
   /** Usage by kind-of-work group; `OTHER_WORK` holds usage in no group. */
@@ -149,14 +149,19 @@ export interface MergedSplit<Key extends string> {
 /** The kind-of-work key for usage in no group. */
 export const OTHER_WORK = "";
 
-const USAGE_DEVICE_BANDS: readonly UsageDeviceBand[] = [
+/**
+ * A device band as clients show it. The computer is the default device: usage with no phone
+ * evidence, `unlabelled` history and servers that label no devices included, counts as typed there.
+ */
+export type MergedDeviceBand = Exclude<UsageDeviceBand, "unlabelled">;
+const UNLABELLED_DEVICE: MergedDeviceBand = "computerDirect";
+const USAGE_DEVICE_BANDS: readonly MergedDeviceBand[] = [
   "phoneDirect",
   "phoneOrchestrated",
   "computerDirect",
   "computerOrchestrated",
-  "unlabelled",
 ];
-const isDeviceBand = (key: string): key is UsageDeviceBand =>
+const isDeviceBand = (key: string): key is MergedDeviceBand =>
   (USAGE_DEVICE_BANDS as readonly string[]).includes(key);
 
 /** Processes in the order clients list and stack them, top first; other is the catch-all. */
@@ -546,8 +551,8 @@ export function mergeUsage(
     }
   >();
   const contributingEnvironments: EnvironmentId[] = [];
-  const devices = new SplitAccumulator<UsageDeviceBand>("unlabelled", (key) =>
-    isDeviceBand(key) ? key : "unlabelled",
+  const devices = new SplitAccumulator<MergedDeviceBand>(UNLABELLED_DEVICE, (key) =>
+    isDeviceBand(key) ? key : UNLABELLED_DEVICE,
   );
   const processes = new SplitAccumulator<UsageProcessBand>("other", (key) =>
     isProcessBand(key) ? key : "other",
@@ -822,7 +827,7 @@ export interface UsageSplitBand extends SplitAmount {
 }
 
 export interface UsageSplitBands {
-  /** Bands with usage, largest first by the metric; unlabelled or Other always last. */
+  /** Bands with usage, largest first by the metric; Other always last. */
   readonly bands: readonly UsageSplitBand[];
   /** Shared kinds of work whose usage the bands carry; `OTHER_WORK` for Other. */
   readonly spread: readonly string[];
@@ -832,13 +837,11 @@ export interface UsageSplitBands {
 
 const NO_AMOUNT: SplitAmount = { costUsd: 0, totalTokens: 0 };
 
-/** A server that labels no devices has all of its usage unlabelled. */
-function deviceSplitOf(usage: MergedUsage): MergedSplit<UsageDeviceBand> {
+/** A server that labels no devices has all of its usage on the computer. */
+function deviceSplitOf(usage: MergedUsage): MergedSplit<MergedDeviceBand> {
   if (usage.devices !== null) return usage.devices;
   const whole = (period: SplitAmount) =>
-    new Map([
-      ["unlabelled" as const, { costUsd: period.costUsd, totalTokens: period.totalTokens }],
-    ]);
+    new Map([[UNLABELLED_DEVICE, { costUsd: period.costUsd, totalTokens: period.totalTokens }]]);
   return {
     totals: whole(usage),
     daily: new Map(usage.daily.map((day) => [day.day, whole(day)])),
@@ -880,11 +883,7 @@ export function usageSplitBands(
   const periods = spread?.periods ?? (hourly ? merged.hourly : merged.daily);
   const totals = spread?.totals ?? merged.totals;
   const catchAll =
-    split === "device"
-      ? "unlabelled"
-      : split === "type" || split === "process"
-        ? "other"
-        : OTHER_WORK;
+    split === "device" ? null : split === "type" || split === "process" ? "other" : OTHER_WORK;
   const keys =
     split === "device"
       ? USAGE_DEVICE_BANDS
