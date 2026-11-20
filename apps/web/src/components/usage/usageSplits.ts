@@ -21,8 +21,8 @@ import { msg } from "gt-react";
 export type UsageBreakdown = "provider" | "device" | "process" | "work" | "type";
 export const BREAKDOWN_ORDER: readonly UsageBreakdown[] = [
   "provider",
-  "device",
   "work",
+  "device",
   "process",
   "type",
 ];
@@ -68,8 +68,6 @@ export interface BoxModel {
   readonly groups: readonly BoxGroup[];
   /** A group's or child's value in one day or hour; keys as the groups and children carry them. */
   readonly valueAt: (period: string, key: string, metric: "cost" | "tokens") => number;
-  /** Shared kinds of work spread over the rows, `OTHER_WORK` for Other; empty for other boxes. */
-  readonly spread?: readonly string[];
 }
 
 const ink = (percent: number) =>
@@ -267,7 +265,6 @@ export function workBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: b
   return {
     kind: "work",
     groups: largestFirst(groups, metric),
-    spread: split.spread,
     valueAt: (period, key, by) => {
       if (split.bands.some((band) => band.key === key)) return split.valueAt(period, key, by);
       for (const members of memberSplits.values()) {

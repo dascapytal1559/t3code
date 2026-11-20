@@ -83,15 +83,17 @@ write it down sooner, run `t3 usage close --through <time>` with the time's offs
 `2026-11-19T15:00:00+11:00` (at least 5 minutes ago); add `--dry-run` first to see what it would
 write.
 
-## Split the chart by provider, device, kind of work, process or type
+## Split the chart by provider, kind of work, device, process or type
 
 Beside the chart on **Usage** are five breakdowns of the same window: **by provider**, **by
-device**, **by kind of work**, **by process** and **by type**. One of them is open as a card, and the chart splits
+kind of work**, **by device**, **by process** and **by type**. One of them is open as a card, and the chart splits
 its bars the same way; the others fold down to their colour bar. Click a folded bar to open it in
 the chart. The card lists each part with its figure and share; the chart stacks its largest band over the window
-on top, so every bar stacks the same way. Cost and Tokens work in every breakdown, and hovering a bar names
+on top, so every bar stacks the same way. On web and desktop, **by device** and **by kind of work**
+draw as a mirror when they split in two: the larger part above a centre line, the other below. Cost
+and Tokens work in every breakdown, and hovering a bar names
 each band. On a phone the breakdowns sit under the chart. On mobile, choose **Provider**,
-**Device**, **Kind of work** or **Process** under the period.
+**Kind of work**, **Device** or **Process** under the period.
 
 **By provider** lists each provider; click a provider's name to leave it out of the totals, and
 again to bring it back.
@@ -155,7 +157,7 @@ a bar has no usage in those groups, the window's proportions are used instead; w
 none either, the usage stays **Other**.
 
 **Share Other** spreads usage in no group across the groups the same way, so the chart has no Other
-band. It is off by default. The kind-of-work card names what was spread. Exported records keep
+band. It is off by default. Exported records keep
 each call's own group in `group`.
 
 ### Example: a coordinator and its workers

@@ -28,12 +28,11 @@ export const DEVICE_SPLIT_COLORS = {
   unlabelled: { ink: 28 },
 } as const satisfies Record<UsageDeviceBand | "phone" | "computer", UsageSplitColor>;
 
-// Journal is a rose and routines a green, clear of the device colours' orange and blue; other is
-// the grey every catch-all band uses.
+// Journal is a rose, routines a green and direct (shown for `other`) an amber, well apart.
 export const PROCESS_SPLIT_COLORS = {
   journal: hue(355, 0.62, 0.16),
   routines: hue(160, 0.6, 0.11),
-  other: { ink: 36 },
+  other: hue(80, 0.76, 0.14),
 } as const satisfies Record<UsageProcessBand, UsageSplitColor>;
 
 // Kinds of work take these in settings order, with their members in the neighbouring hues. The

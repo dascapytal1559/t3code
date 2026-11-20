@@ -101,7 +101,6 @@ import {
 import { UsageBreakdownBox, type BoxOpening } from "./UsageBreakdownBox";
 import { keepStation, reducedMotion, regrow } from "./usageMotion";
 import { collectUsageAnnotations, placeUsageAnnotations } from "./usageAnnotations";
-import { splitSkippedRecords } from "./usageSkippedRecords";
 import { SpeedPremium, UsageModelDialog } from "./UsageModelDialog";
 import { UsageShareBar } from "./UsageShareBar";
 import { speedCostSegments } from "./usageBreakdown";
@@ -124,6 +123,9 @@ import {
   saveUsagePagePreferences,
   type UsagePagePreferences,
 } from "./usagePagePreferences";
+
+/** Breakdowns that draw as a mirror chart when they have exactly two groups. */
+const MIRRORED: readonly UsageBreakdown[] = ["device", "work"];
 
 function isUsageMetric(value: string | null | undefined): value is UsageMetric {
   return METRIC_OPTIONS.some((option) => option.value === value);
@@ -720,21 +722,14 @@ function UsageOverview({
   const listedProviders = [...PROVIDER_ORDER].filter(
     (provider) => activeProviders.includes(provider) || excludedProviders.has(provider),
   );
-  const sourceNotices = usageSourceMessages(
+  const sourceMessages = usageSourceMessages(
     selectedEnvironments.flatMap(
       (environment) =>
         environment.summary?.sources.filter(
           (source) => !hiddenProviders.has(source.fingerprint.provider),
         ) ?? [],
     ),
-    m,
-  ).map(splitSkippedRecords);
-  const sourceMessages = [
-    ...new Set(sourceNotices.flatMap((notice) => (notice.notice ? [notice.notice] : []))),
-  ];
-  const skippedRecordMessages = [
-    ...new Set(sourceNotices.flatMap((notice) => (notice.skipped ? [notice.skipped] : []))),
-  ];
+  );
   // Muted rows rank by what they would have added, so muting one does not move it.
   const rankedProviders = rankProvidersByMetric(
     listedProviders,
@@ -776,6 +771,12 @@ function UsageOverview({
   const openSetOf = (kind: UsageBreakdown): ReadonlySet<string> => new Set(openParents[kind] ?? []);
   const seriesOf = (kind: UsageBreakdown): readonly ChartSeries[] => {
     const model = models[kind];
+    // A two-sided card draws as a mirror: its larger group above the centre line, the other below,
+    // each group's children on its side.
+    const lower =
+      MIRRORED.includes(kind) && model.groups.length === 2
+        ? new Set([model.groups[1]!.key, ...model.groups[1]!.children.map((child) => child.key)])
+        : null;
     return chartBands(model, openSetOf(kind))
       .filter(
         (band) => kind !== "provider" || !excludedProviders.has(band.key as UsageProviderKind),
@@ -786,6 +787,7 @@ function UsageOverview({
           key: band.key,
           label: band.named ? band.label : m(band.label),
           color: band.color,
+          ...(lower?.has(band.key) === true ? { below: true } : {}),
           ...(provider === null
             ? { loading: loadingPartial }
             : {
@@ -827,8 +829,6 @@ function UsageOverview({
   const leaving = (kind: ChartTransition["kind"]): ChartTransition => ({
     id: ++transitionCount.current,
     kind,
-    // The boxes are on the chart's right, so a switch starts from that side.
-    from: "end",
     series: chartSeries,
     valueAt: chartValueAt,
   });
@@ -1036,7 +1036,7 @@ function UsageOverview({
             <div
               key={kind}
               // The open card sits as far from the bars around it as the bars sit from each other.
-              className={kind === split ? "my-1.5 first:mt-0 last:mb-0" : undefined}
+              className={kind === split ? "my-2.75 first:mt-0 last:mb-0" : undefined}
               ref={(element) => {
                 if (element === null) boxRefs.current.delete(kind);
                 else boxRefs.current.set(kind, element);
@@ -1083,12 +1083,6 @@ function UsageOverview({
           ) : null}
         </section>
       ) : null}
-
-      {skippedRecordMessages.map((message) => (
-        <p key={message} className="text-xs text-muted-foreground">
-          {message}
-        </p>
-      ))}
     </div>
   );
 }

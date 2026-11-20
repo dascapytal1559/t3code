@@ -81,8 +81,8 @@ its default: 367 days instead of upstream's 92, in `ServerSettings` in
 draw lines; the 6- and 12-month views and the bars stay the fork's.
 
 Upstream's "N malformed or inconsistent usage record(s) were skipped" sentence
-shows as a small muted footnote at the bottom of the page instead of a notice
-at the top (`apps/web/src/components/usage/UsagePage.tsx`).
+is not shown on the Usage page, web or mobile; the server still counts the
+skipped records (`usageSourceMessages` in `packages/shared/src/usageFormatCopy.ts`).
 
 Upstream: partly ([#28111](https://github.com/pingdotgg/t3code/pull/28111)): it
 keeps usage history as long as you set, but its views stop at 90 days and draw

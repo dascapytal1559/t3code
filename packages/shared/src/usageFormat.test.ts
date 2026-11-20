@@ -91,17 +91,18 @@ describe("usage source messages", () => {
       message: "Cursor history is limited to the last 30 days.",
     });
 
-    expect(
-      usageSourceMessages([
-        { ...source, message: `${readFailure} ${source.message}` },
-        { ...source, malformedRecords: 0, message: readFailure },
-        cursor,
-      ]),
-    ).toEqual([
+    const sources = [
+      { ...source, message: `${readFailure} ${source.message}` },
+      { ...source, malformedRecords: 0, message: readFailure },
+      cursor,
+    ];
+    expect(usageSourceMessages(sources)).toEqual([
       readFailure,
       cursor.message,
       "1 malformed or inconsistent usage record(s) were skipped; usage may be incomplete.",
     ]);
+    // Without the sentence, the server's appended copy is still taken off each message.
+    expect(usageSourceMessages(sources, null)).toEqual([readFailure, cursor.message]);
   });
 
   it("includes cached diagnostics when a transcript directory is missing", () => {

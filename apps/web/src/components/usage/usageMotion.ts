@@ -14,47 +14,94 @@ export const reducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** Where a chart switch starts: the side the breakdown boxes are on. */
-export type ChartWaveOrigin = "start" | "end";
+type WaveOrigin = "start" | "end";
 
-/** How far behind the first bar the last one starts, however many days the chart shows. */
+/** How far behind the first bar the last one starts, however many bars the chart shows. */
 const WAVE_SPREAD_MS = 60;
 
 /** A bar's delay in a wave that crosses the chart in `WAVE_SPREAD_MS`. */
-const waveDelay = (index: number, count: number, from: ChartWaveOrigin) =>
+const waveDelay = (index: number, count: number, from: WaveOrigin = "start") =>
   count <= 1 ? 0 : ((from === "end" ? count - 1 - index : index) / (count - 1)) * WAVE_SPREAD_MS;
 
-/** The chart's bars at a card switch: each old bar falls, then its new bar rises, on one curve. */
-const BAR_SWITCH = { easing: "linear", fall: 90, rise: 200 };
+/** The chart's bars at a card switch: each new bar pours in, then its old bar fades, on one curve. */
+const BAR_SWITCH = { easing: "linear", pour: 200, fade: 90 };
+/** A bar stretching from its old shape to its new one, when the chart turns mirror or back. */
+const BAR_MORPH = { duration: 360, easing: "cubic-bezier(0.3, 0, 0.2, 1)" };
+
+/** A bar pours up from its foot, or out both ways from a mirror chart's centre line. */
+const pourStart = (bar: HTMLElement) =>
+  bar.dataset.pourFrom === undefined
+    ? "inset(100% 0 0 0)"
+    : `inset(${bar.dataset.pourFrom}% 0 ${100 - Number(bar.dataset.pourFrom)}% 0)`;
 
 /**
- * Drop and rise: each old bar falls into the baseline and its new bar rises in its place, in a
- * quick wave from the boxes' side. 350 ms at most; resolves when the last lands.
+ * Pour: each new bar's colours pour in over its old bar, which fades once covered, in a quick
+ * wave from the boxes' side. Resolves when the last new bar is full.
  */
-export function dropAndRise(
+export function pourOver(
   outgoing: readonly HTMLElement[],
   incoming: readonly HTMLElement[],
-  from: ChartWaveOrigin,
 ): Promise<unknown> {
   const count = Math.max(outgoing.length, incoming.length);
   outgoing.forEach((bar, index) => {
-    bar.animate([{ transform: "scaleY(1)" }, { transform: "scaleY(0)" }], {
-      duration: BAR_SWITCH.fall,
+    bar.animate([{ opacity: 1 }, { opacity: 0 }], {
+      duration: BAR_SWITCH.fade,
       easing: BAR_SWITCH.easing,
-      delay: waveDelay(index, count, from),
+      delay: waveDelay(index, count, "end") + BAR_SWITCH.pour,
       fill: "forwards",
     });
   });
   return Promise.all(
     incoming.map(
       (bar, index) =>
-        bar.animate([{ transform: "scaleY(0)" }, { transform: "scaleY(1)" }], {
-          duration: BAR_SWITCH.rise,
+        bar.animate([{ clipPath: pourStart(bar) }, { clipPath: "inset(0 0 0 0)" }], {
+          duration: BAR_SWITCH.pour,
           easing: BAR_SWITCH.easing,
-          delay: waveDelay(index, count, from) + BAR_SWITCH.fall,
+          delay: waveDelay(index, count, "end"),
           fill: "backwards",
         }).finished,
     ),
   ).catch(() => undefined);
+}
+
+/**
+ * Morph, for a switch between a stacked and a mirror chart: each new bar stretches from its old
+ * bar's extent to its own as the colours cross over, in the same wave from the boxes' side.
+ */
+export function morphBars(
+  outgoing: readonly HTMLElement[],
+  incoming: readonly HTMLElement[],
+): Promise<unknown> {
+  const count = Math.max(outgoing.length, incoming.length);
+  const plays = incoming.map((bar, index) => {
+    const timing = { ...BAR_MORPH, delay: waveDelay(index, count, "end") };
+    const next = bar.getBoundingClientRect();
+    const prior = outgoing[index]?.getBoundingClientRect();
+    const toward = (from: DOMRect, to: DOMRect) =>
+      `translateY(${to.top - from.top}px) scaleY(${from.height === 0 ? 0 : to.height / from.height})`;
+    if (prior !== undefined && prior.height > 0) {
+      outgoing[index]!.animate(
+        [
+          { transform: "none", transformOrigin: "top", opacity: 1 },
+          { transform: toward(prior, next), transformOrigin: "top", opacity: 0 },
+        ],
+        { ...timing, fill: "forwards" },
+      );
+    }
+    if (next.height === 0) return Promise.resolve();
+    return bar.animate(
+      [
+        {
+          transform: prior === undefined ? "scaleY(0)" : toward(next, prior),
+          transformOrigin: "top",
+          opacity: 0,
+        },
+        { transform: "none", transformOrigin: "top", opacity: 1 },
+      ],
+      { ...timing, fill: "backwards" },
+    ).finished;
+  });
+  return Promise.all(plays).catch(() => undefined);
 }
 
 /** A parent opening or closing: each bar cross-fades into its new split, left to right. */
@@ -66,7 +113,7 @@ export function crossFade(
   outgoing.forEach((bar, index) => {
     bar.animate([{ opacity: 1 }, { opacity: 0 }], {
       duration: 160,
-      delay: waveDelay(index, count, "start") + 160,
+      delay: waveDelay(index, count) + 160,
       easing: "ease-in",
       fill: "forwards",
     });
@@ -76,7 +123,7 @@ export function crossFade(
       (bar, index) =>
         bar.animate([{ opacity: 0 }, { opacity: 1 }], {
           duration: 320,
-          delay: waveDelay(index, count, "start"),
+          delay: waveDelay(index, count),
           easing: "ease-out",
           fill: "backwards",
         }).finished,
@@ -122,12 +169,12 @@ export function burst(host: HTMLElement, x: number, y: number, colors: readonly 
 }
 
 /** A card opening out of its bar, which holds still while the card grows around it. */
-const CARD_REVEAL = { duration: 420, easing: cubicBezier(EASE_OPEN) };
+const CARD_REVEAL = { duration: 420, easing: "cubic-bezier(0.05, 0.35, 0.37, 1.1)" };
 /** The column closing up, from `delay` ms into the opening, when the opening moved the bar. */
 const CARD_SETTLE = {
-  delay: 150,
+  delay: 0,
   duration: 260,
-  easing: "cubic-bezier(0.87, 0.06, 0.9, 0.42)",
+  easing: "cubic-bezier(0.95, -0.01, 0.92, 0.32)",
 };
 
 /**

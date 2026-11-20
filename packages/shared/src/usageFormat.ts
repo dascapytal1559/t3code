@@ -60,9 +60,10 @@ export function formatMalformedUsageWarning(count: number): string {
   return `${count} malformed or inconsistent usage record(s) were skipped; usage may be incomplete.`;
 }
 
+/** `malformedWarning` null leaves the skipped-records sentence out; the count still drops it from messages. */
 export function usageSourceMessages(
   sources: readonly UsageSource[],
-  malformedWarning: (count: number) => string = formatMalformedUsageWarning,
+  malformedWarning: ((count: number) => string) | null = formatMalformedUsageWarning,
 ): readonly string[] {
   const messages = new Set<string>();
   const malformedBySource = new Map<string, number>();
@@ -93,7 +94,9 @@ export function usageSourceMessages(
     (total, count) => total + count,
     0,
   );
-  if (malformedRecords > 0) messages.add(malformedWarning(malformedRecords));
+  if (malformedRecords > 0 && malformedWarning !== null) {
+    messages.add(malformedWarning(malformedRecords));
+  }
   return [...messages];
 }
 

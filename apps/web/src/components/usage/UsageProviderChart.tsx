@@ -16,7 +16,7 @@ import { PROVIDER_PRESENTATION } from "./usageProviders";
 import { observeResize } from "~/lib/observeResize";
 import { T3Wordmark } from "../T3Wordmark";
 import { layoutAnnotationChips, type PlacedUsageAnnotation } from "./usageAnnotations";
-import { crossFade, dropAndRise, reducedMotion, type ChartWaveOrigin } from "./usageMotion";
+import { crossFade, morphBars, pourOver, reducedMotion } from "./usageMotion";
 
 const VIEW_WIDTH = 960;
 const VIEW_HEIGHT = 260;
@@ -48,6 +48,8 @@ export interface ChartSeries {
   readonly icon?: ReactNode;
   /** Its figures are still arriving, so it draws faded. */
   readonly loading?: boolean;
+  /** Drawn below the centre line: the chart mirrors when any band is. */
+  readonly below?: boolean;
 }
 
 export interface DayColumn {
@@ -86,14 +88,41 @@ export function stackedPeak(columns: readonly DayColumn[]) {
   return columns.reduce((max, column) => Math.max(max, column.total), 0);
 }
 
-function chartScale(columns: readonly DayColumn[], series: readonly ChartSeries[]) {
-  const peak = stackedPeak(columns);
-  return peak === 0 && series.some((entry) => entry.loading === true)
-    ? { max: TICK_COUNT, ticks: PLACEHOLDER_TICKS, labeled: false }
-    : { ...niceScale(peak, TICK_COUNT), labeled: true };
+/** A column's bands above and below the centre line of a mirror chart. */
+function sideTotals(column: DayColumn, series: readonly ChartSeries[]) {
+  let up = 0;
+  let down = 0;
+  column.bands.forEach((band, slot) => {
+    if (series[slot]?.below === true) down += band.value;
+    else up += band.value;
+  });
+  return { up, down };
 }
 
-function valueToY(value: number, max: number) {
+export function chartScale(columns: readonly DayColumn[], series: readonly ChartSeries[]) {
+  const mirrored = series.some((entry) => entry.below === true);
+  // A mirror chart scales both halves alike, to the larger side's peak, with half the ticks each.
+  const peak = mirrored
+    ? columns.reduce((max, column) => {
+        const { up, down } = sideTotals(column, series);
+        return Math.max(max, up, down);
+      }, 0)
+    : stackedPeak(columns);
+  const count = mirrored ? TICK_COUNT / 2 : TICK_COUNT;
+  return peak === 0 && series.some((entry) => entry.loading === true)
+    ? { max: count, ticks: PLACEHOLDER_TICKS.slice(0, count + 1), labeled: false, mirrored }
+    : { ...niceScale(peak, count), labeled: true, mirrored };
+}
+
+const MIRROR_HALF = (VIEW_HEIGHT - PLOT_TOP) / 2;
+const MIRROR_MIDDLE = PLOT_TOP + MIRROR_HALF;
+
+/** A value's height in the plot; in a mirror chart, above or below the centre line. */
+function valueToY(value: number, max: number, mirror?: "up" | "down") {
+  if (mirror !== undefined) {
+    const offset = max === 0 ? 0 : (value / max) * MIRROR_HALF;
+    return mirror === "up" ? MIRROR_MIDDLE - offset : MIRROR_MIDDLE + offset;
+  }
   return max === 0 ? VIEW_HEIGHT : VIEW_HEIGHT - (value / max) * (VIEW_HEIGHT - PLOT_TOP);
 }
 
@@ -125,10 +154,14 @@ export function stackOrder(columns: readonly DayColumn[], count: number): readon
   return totals.map((_, slot) => slot).sort((a, b) => totals[b]! - totals[a]! || a - b);
 }
 
-/** A bar as the page draws it: its height in the plot and its bands, top band first. */
+/** A bar as the page draws it: its extent in the plot and its bands, top band first. */
 interface ChartBar {
   readonly top: number;
+  /** Where it ends, up from the plot's foot: 0 unless it hangs below a mirror chart's centre. */
+  readonly bottom: number;
   readonly background: string;
+  /** In a mirror chart, the centre line's place down the bar, in percent. */
+  readonly centre?: number;
 }
 
 /** One element per bar, painted with hard colour stops, so its bands meet with no seam. */
@@ -138,6 +171,8 @@ function buildBars(
   max: number,
 ): readonly ChartBar[] {
   const order = stackOrder(columns, series.length);
+  if (series.some((entry) => entry.below === true))
+    return buildMirrorBars(columns, series, max, order);
   return columns.map((column) => {
     // Paint runs bottom up, so from the end of the stacking order.
     const stops: string[] = [];
@@ -153,8 +188,47 @@ function buildBars(
     }
     return {
       top: valueToY(column.total, max),
+      bottom: 0,
       background:
         stops.length === 0 ? "transparent" : `linear-gradient(to top, ${stops.join(", ")})`,
+    };
+  });
+}
+
+/**
+ * Mirror bars: the upper bands rise from the centre line and the lower bands hang from it, each
+ * side with its largest band outermost. One element per period, painted top to bottom.
+ */
+function buildMirrorBars(
+  columns: readonly DayColumn[],
+  series: readonly ChartSeries[],
+  max: number,
+  order: readonly number[],
+): readonly ChartBar[] {
+  const upper = order.filter((slot) => series[slot]?.below !== true);
+  const lower = order.filter((slot) => series[slot]?.below === true).toReversed();
+  return columns.map((column) => {
+    const { up, down } = sideTotals(column, series);
+    const top = valueToY(up, max, "up");
+    const foot = valueToY(down, max, "down");
+    const height = foot - top;
+    if (height <= 0) return { top, bottom: VIEW_HEIGHT - foot, background: "transparent" };
+    const stops: string[] = [];
+    let at = top;
+    for (const slot of [...upper, ...lower]) {
+      const value = column.bands[slot]?.value ?? 0;
+      if (value <= 0) continue;
+      const from = ((at - top) / height) * 100;
+      at += (value / max) * MIRROR_HALF;
+      stops.push(
+        `${series[slot]!.color} ${from.toFixed(3)}% ${(((at - top) / height) * 100).toFixed(3)}%`,
+      );
+    }
+    return {
+      top,
+      bottom: VIEW_HEIGHT - foot,
+      background: `linear-gradient(to bottom, ${stops.join(", ")})`,
+      centre: ((MIRROR_MIDDLE - top) / height) * 100,
     };
   });
 }
@@ -527,12 +601,12 @@ export function usageChartCaption(
 
 /**
  * The bars a chart is leaving while it moves to new ones: the breakdown it showed, and how to move.
- * `switch` drops the old bars and raises the new ones from `from`; `split` cross-fades them.
+ * `switch` pours the new bars over the old, or morphs them between a stacked and a mirror chart;
+ * `split` cross-fades them.
  */
 export interface ChartTransition {
   readonly id: number;
   readonly kind: "switch" | "split";
-  readonly from: ChartWaveOrigin;
   readonly series: readonly ChartSeries[];
   readonly valueAt: (period: string, key: string) => number;
 }
@@ -558,6 +632,7 @@ function ChartBars({
         <div key={index} className="relative min-w-0 flex-1">
           <span
             data-chart-bar
+            data-pour-from={bar.centre === undefined ? undefined : bar.centre.toFixed(2)}
             className={cn(
               "absolute bottom-0 left-1/2 block max-w-16 origin-bottom -translate-x-1/2 transition-opacity",
               layered && "will-change-transform",
@@ -565,6 +640,7 @@ function ChartBars({
             )}
             style={{
               top: `${(bar.top / VIEW_HEIGHT) * 100}%`,
+              bottom: `${(bar.bottom / VIEW_HEIGHT) * 100}%`,
               width: `${widthPercent}%`,
               background: bar.background,
             }}
@@ -639,14 +715,29 @@ export function UsageStackedChart({
     }
     const old = barsOf("outgoing");
     const fresh = barsOf("current");
+    // Only a mirror chart's bars mark their centre line.
+    const mirrored = (bars: readonly HTMLElement[]) =>
+      bars.some((bar) => bar.dataset.pourFrom !== undefined);
     void (
-      transition.kind === "switch"
-        ? dropAndRise(old, fresh, transition.from)
-        : crossFade(old, fresh)
+      transition.kind === "split"
+        ? crossFade(old, fresh)
+        : mirrored(old) === mirrored(fresh)
+          ? pourOver(old, fresh)
+          : morphBars(old, fresh)
     ).then(done);
   }, [transition]);
 
-  const toY = (value: number) => valueToY(value, scale.max);
+  // A mirror chart labels each tick above and below the centre line, in absolute values.
+  const tickRows = scale.mirrored
+    ? scale.ticks.flatMap((tick) =>
+        tick === 0
+          ? [{ key: "0", tick, y: MIRROR_MIDDLE }]
+          : [
+              { key: `up-${tick}`, tick, y: valueToY(tick, scale.max, "up") },
+              { key: `down-${tick}`, tick, y: valueToY(tick, scale.max, "down") },
+            ],
+      )
+    : scale.ticks.map((tick) => ({ key: String(tick), tick, y: valueToY(tick, scale.max) }));
   const format = metric === "tokens" ? formatTokens : (value: number) => formatUsd(value, locale);
   const formatPeriod = (period: string) =>
     resolution === "hour"
@@ -679,11 +770,11 @@ export function UsageStackedChart({
             )
           }
         >
-          {scale.ticks.map((tick) => (
+          {tickRows.map((row) => (
             <div
-              key={tick}
+              key={row.key}
               className="absolute inset-x-0 h-px bg-border"
-              style={{ top: `${(toY(tick) / VIEW_HEIGHT) * 100}%` }}
+              style={{ top: `${(row.y / VIEW_HEIGHT) * 100}%` }}
             />
           ))}
           {outgoing === null ? null : (
@@ -709,13 +800,13 @@ export function UsageStackedChart({
             : null}
         </div>
         {scale.labeled
-          ? scale.ticks.map((tick) => (
+          ? tickRows.map((row) => (
               <span
-                key={tick}
+                key={row.key}
                 className="absolute right-0 -translate-y-1/2 whitespace-nowrap"
-                style={{ top: `${(toY(tick) / VIEW_HEIGHT) * 100}%` }}
+                style={{ top: `${(row.y / VIEW_HEIGHT) * 100}%` }}
               >
-                {tickLabel(tick)}
+                {tickLabel(row.tick)}
               </span>
             ))
           : null}

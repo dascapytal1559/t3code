@@ -8,19 +8,12 @@ import {
 } from "./usageFormat.ts";
 import type { UsageContractMismatch } from "./usageMerge.ts";
 
-/** @public */
-export function usageSourceMessages(
-  sources: readonly UsageSource[],
-  resolve: MFunctionType = mFallback,
-): readonly string[] {
-  return usageSourceMessagesWith(sources, (count) =>
-    resolve(
-      msg(
-        "{count, plural, one {{count} malformed or inconsistent usage record(s) were skipped; usage may be incomplete.} other {{count} malformed or inconsistent usage record(s) were skipped; usage may be incomplete.}}",
-        { count },
-      ),
-    ),
-  );
+/**
+ * @public
+ * Fork: the clients show no skipped-records sentence; the server still counts and logs them.
+ */
+export function usageSourceMessages(sources: readonly UsageSource[]): readonly string[] {
+  return usageSourceMessagesWith(sources, null);
 }
 
 /** @public */

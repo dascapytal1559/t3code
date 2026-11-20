@@ -1,6 +1,6 @@
 import { formatPercent } from "@t3tools/shared/usageFormat";
 import { ChevronRightIcon } from "lucide-react";
-import { useGT, useLocale, useMessages } from "gt-react";
+import { useMessages } from "gt-react";
 import { useEffectEvent, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "../../lib/utils";
@@ -18,14 +18,7 @@ import {
   unfold,
   type TreeRow,
 } from "./usageMotion";
-import {
-  OTHER_WORK_LABEL,
-  opensIntoChildren,
-  type BoxBand,
-  type BoxGroup,
-  type BoxModel,
-} from "./usageSplits";
-import { OTHER_WORK } from "@t3tools/shared/usageMerge";
+import { opensIntoChildren, type BoxBand, type BoxGroup, type BoxModel } from "./usageSplits";
 
 /** A provider row's extras: its mark, and the switch that leaves it out of the totals. */
 export interface BoxRowExtras {
@@ -157,8 +150,6 @@ export function UsageBreakdownBox({
   readonly loading: boolean;
 }) {
   const m = useMessages();
-  const gt = useGT();
-  const locale = useLocale();
   const cardRef = useRef<HTMLElement | null>(null);
   const rowsRef = useRef<HTMLDivElement | null>(null);
   const pending = useRef<PendingTree | null>(null);
@@ -304,7 +295,7 @@ export function UsageBreakdownBox({
         type="button"
         aria-label={title}
         aria-expanded={false}
-        className="group/box block w-full cursor-pointer rounded-md py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        className="group/box block w-full cursor-pointer rounded-md py-1.25 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         onClick={(event) => {
           const rect = event.currentTarget.getBoundingClientRect();
           const bar =
@@ -482,15 +473,6 @@ export function UsageBreakdownBox({
           ];
         })}
       </div>
-      {model.spread === undefined || model.spread.length === 0 ? null : (
-        <p className="text-xs text-muted-foreground">
-          {gt("Spread across these groups: {kinds}", {
-            kinds: new Intl.ListFormat(locale, { type: "conjunction" }).format(
-              model.spread.map((key) => (key === OTHER_WORK ? m(OTHER_WORK_LABEL) : key)),
-            ),
-          })}
-        </p>
-      )}
     </section>
   );
 }

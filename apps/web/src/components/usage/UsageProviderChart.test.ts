@@ -4,6 +4,7 @@ import {
   axisLabelIndices,
   barGeometry,
   buildPeriodColumns,
+  chartScale,
   stackOrder,
   stackedPeak,
 } from "./UsageProviderChart";
@@ -43,6 +44,20 @@ describe("buildPeriodColumns", () => {
 
     expect(shown(["codex", "claude", "pi", "muse"])).toBe(42);
     expect(shown(["claude"])).toBe(20);
+  });
+
+  it("scales a mirror chart to the larger side, not the stacked total", () => {
+    const mirror = [
+      { key: "codex", label: "codex", color: "red" },
+      { key: "claude", label: "claude", color: "red", below: true },
+    ];
+    // Day one stacks to 30, but its sides are 10 above and 20 below.
+    expect(chartScale(buildPeriodColumns(days, mirror, valueAt), mirror)).toEqual({
+      max: 20,
+      ticks: [0, 10, 20],
+      labeled: true,
+      mirrored: true,
+    });
   });
 
   it("stacks the series largest over the window on top, whatever the legend's order", () => {
