@@ -1,7 +1,8 @@
-import type { UsageDeviceBand, UsageProviderKind } from "@t3tools/contracts";
+import type { UsageDeviceBand, UsageProcessBand, UsageProviderKind } from "@t3tools/contracts";
 import {
   DEVICE_SPLIT_COLORS,
   OTHER_WORK_COLOR,
+  PROCESS_SPLIT_COLORS,
   WORK_GROUP_PALETTE,
   darkLightness,
   type UsageSplitColor,
@@ -16,19 +17,27 @@ import {
 import { msg } from "gt-react";
 
 /** The breakdown boxes beside the Usage chart, in page order; the open one is the chart's split. */
-export type UsageBreakdown = "provider" | "device" | "work" | "type";
-export const BREAKDOWN_ORDER: readonly UsageBreakdown[] = ["provider", "device", "work", "type"];
+export type UsageBreakdown = "provider" | "device" | "process" | "work" | "type";
+export const BREAKDOWN_ORDER: readonly UsageBreakdown[] = [
+  "provider",
+  "device",
+  "process",
+  "work",
+  "type",
+];
 
 export const BREAKDOWN_TITLES = {
   tokens: {
     provider: msg("Tokens by provider"),
     device: msg("Tokens by device"),
+    process: msg("Tokens by process"),
     work: msg("Tokens by kind of work"),
     type: msg("Tokens by type"),
   },
   cost: {
     provider: msg("Cost by provider"),
     device: msg("Cost by device"),
+    process: msg("Cost by process"),
     work: msg("Cost by kind of work"),
     type: msg("Cost by type"),
   },
@@ -118,6 +127,26 @@ const DEVICE_GROUPS = [
   children: readonly { key: UsageDeviceBand; label: string; color: string }[];
 }[];
 
+const PROCESSES: readonly { key: UsageProcessBand; label: string; color: string }[] = [
+  {
+    key: "journal",
+    label: msg("Journal", {
+      $context: "usage process: filing voice journals and their items' work",
+    }),
+    color: css(PROCESS_SPLIT_COLORS.journal),
+  },
+  {
+    key: "routines",
+    label: msg("Routines", { $context: "usage process: upkeep such as the bedtime routine" }),
+    color: css(PROCESS_SPLIT_COLORS.routines),
+  },
+  {
+    key: "other",
+    label: msg("Other", { $context: "usage process: usage that is neither journal nor routine" }),
+    color: css(PROCESS_SPLIT_COLORS.other),
+  },
+];
+
 const GROUP_PALETTE = WORK_GROUP_PALETTE.map((group) => ({
   color: css(group.color),
   members: group.members.map(css),
@@ -180,6 +209,25 @@ export function deviceBox(
         : children.reduce((sum, child) => sum + split.valueAt(period, child, by), 0);
     },
   };
+}
+
+/** The process box: journal, routines and other, in that order. */
+export function processBox(
+  usage: MergedUsage,
+  metric: "cost" | "tokens",
+  hourly: boolean,
+): BoxModel {
+  const split = usageSplitBands(usage, "process", metric, hourly);
+  const groups = PROCESSES.map((process) => {
+    const band = split.bands.find((entry) => entry.key === process.key);
+    return leaf({
+      ...process,
+      named: false,
+      totalTokens: band?.totalTokens ?? 0,
+      costUsd: band?.costUsd ?? 0,
+    });
+  }).filter((group) => group.totalTokens > 0 || group.costUsd > 0);
+  return { kind: "process", groups, valueAt: split.valueAt };
 }
 
 /**

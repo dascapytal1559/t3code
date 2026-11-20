@@ -731,6 +731,23 @@ describe("UsageOrigins.read", () => {
           causedBy: { threadId: ThreadId.make("firstmate"), messageId: MessageId.make("gone") },
         },
       });
+      // A journal typed on the computer and claimed as one: it keeps the computer, as journal work.
+      yield* seedRun({
+        id: "fm-typed-journal",
+        ordinal: 6,
+        threadId: "firstmate",
+        sessionId: "fm-session",
+        startedAt: "2026-08-07T04:50:00.000Z",
+        message: {
+          createdBy: "user",
+          creationSource: "web",
+          origin: { surface: "web", deviceType: "desktop" },
+        },
+      });
+      yield* claims.claim({
+        target: { kind: "run", runId: "run-fm-typed-journal" },
+        value: { device: "phone" },
+      });
       yield* seedThread({
         id: "fm-worker",
         crewOf: "firstmate",
@@ -984,6 +1001,11 @@ describe("UsageOrigins.read", () => {
       } as const;
       assert.deepStrictEqual(at("fm-session", "2026-08-07T04:01:00Z"), fromPhone);
       assert.deepStrictEqual(at("fm-session", "2026-08-07T04:11:00Z"), fromPhone);
+      assert.deepStrictEqual(at("fm-session", "2026-08-07T04:51:00Z"), {
+        origin: "computer",
+        basis: "stamp",
+        reason: "journal",
+      });
       const filed = { origin: "computer", reason: "upkeep" } as const;
       assert.deepStrictEqual(at("fm-session", "2026-08-07T04:21:00Z"), {
         ...filed,
@@ -1059,6 +1081,7 @@ describe("UsageOrigins.read", () => {
           "computer/claim/crew",
           "computer/notification/agent",
           "computer/notification/crew",
+          "computer/stamp/-",
           "computer/stamp/-",
           "computer/stamp/-",
           "crew/stamp/-",

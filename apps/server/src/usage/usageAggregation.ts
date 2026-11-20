@@ -1,6 +1,7 @@
 // @effect-diagnostics globalDate:off
 import {
   usageOriginCountsByDefault,
+  usageProcessOf,
   type UsageBucket,
   type UsageCategoryCost,
   type UsageDay,
@@ -9,6 +10,7 @@ import {
   type UsageModelFilter,
   type UsageModelSelector,
   type UsageOriginReasonUsage,
+  type UsageProcessBand,
   type UsageResolution,
   type UsageSplit,
   type UsageSplitAmount,
@@ -75,6 +77,7 @@ interface MutableBucket {
   providerReportedRecords: number;
   sessions: Set<string>;
   devices: Map<UsageDeviceBand, SplitCell> | null;
+  processes: Map<UsageProcessBand, SplitCell> | null;
   /** Keyed by group name, `""` for no group. */
   work: Map<string, SplitCell> | null;
   /** Keyed by member, for usage in groups that open into members. */
@@ -146,6 +149,7 @@ export function toUsageExportRecord(
             ...(origin.via === undefined ? {} : { via: origin.via }),
             basis: origin.basis,
             reason: origin.reason,
+            process: usageProcessOf(origin),
             ...(origin.claim === undefined ? {} : { claim: origin.claim }),
             ...(origin.folder === true ? { folder: true as const } : {}),
             ...(origin.registered === true ? { registered: true as const } : {}),
@@ -452,6 +456,9 @@ export class UsageAggregator {
     if (bucket.devices !== null && key !== null) {
       addToCell(bucket.devices, deviceBand(key), tokens, priced.costUsd);
     }
+    if (bucket.processes !== null && key !== null) {
+      addToCell(bucket.processes, usageProcessOf(key), tokens, priced.costUsd);
+    }
     if (bucket.work !== null) addToCell(bucket.work, group ?? "", tokens, priced.costUsd);
     if (place?.member != null) {
       bucket.workMembers ??= new Map();
@@ -554,6 +561,7 @@ export class UsageAggregator {
         providerReportedRecords: 0,
         sessions: new Set<string>(),
         devices: this.#options.attributeOrigin === undefined ? null : new Map(),
+        processes: this.#options.attributeOrigin === undefined ? null : new Map(),
         work: this.#options.attributeWork === undefined ? null : new Map(),
         workMembers: null,
       };
@@ -604,6 +612,11 @@ export class UsageAggregator {
         unpricedTokens: bucket.unpricedTokens,
         sessions: bucket.sessions.size,
         ...(bucket.devices === null ? {} : { devices: splitAmounts(bucket.devices) }),
+        // Clients count a bucket with no process split as other, the usual case, so none is sent.
+        ...(bucket.processes === null ||
+        [...bucket.processes.keys()].every((process) => process === "other")
+          ? {}
+          : { processes: splitAmounts(bucket.processes) }),
         ...(bucket.work === null ? {} : { work: splitAmounts(bucket.work) }),
         // Members cover only part of a bucket, so even one member is sent with its amount.
         ...(bucket.workMembers === null

@@ -1,4 +1,4 @@
-import type { UsageDeviceBand } from "@t3tools/contracts";
+import type { UsageDeviceBand, UsageProcessBand } from "@t3tools/contracts";
 
 /**
  * A Usage split colour: an oklch hue in light mode (dark mode is a little lighter, as every split
@@ -36,6 +36,14 @@ export const DEVICE_BAND_ORDER: readonly UsageDeviceBand[] = [
   "computerOrchestrated",
   "unlabelled",
 ];
+
+// Journal is a rose and routines a green, clear of the device colours' orange and blue; other is
+// the grey every catch-all band uses.
+export const PROCESS_SPLIT_COLORS = {
+  journal: hue(355, 0.62, 0.16),
+  routines: hue(160, 0.6, 0.11),
+  other: { ink: 36 },
+} as const satisfies Record<UsageProcessBand, UsageSplitColor>;
 
 // Kinds of work take these in settings order, with their members in the neighbouring hues. The
 // first two are a warm stone and a crimson; none reuses the device colours' orange and blue.

@@ -553,7 +553,7 @@ describe("mergeUsage", () => {
     ]);
   });
 
-  it("splits usage by device and kind of work so each day's bands add up to its total", () => {
+  it("splits usage by device, process and kind of work so each day's bands add up to its total", () => {
     const mac = { provider: "claude" as const, hostId: "mac", homePath: "/a/.claude" };
     const day8 = "2026-08-08" as UsageDay;
     const withDevices = (usageSummary: UsageSummary): UsageSummary => ({
@@ -570,6 +570,7 @@ describe("mergeUsage", () => {
                 bucket({
                   sourcePath: mac.homePath,
                   devices: { phoneDirect: [800, 6], computerOrchestrated: [360, 4] },
+                  processes: { journal: [800, 6], routines: [300, 3] },
                   work: { Tooling: [1000, 7], "": [160, 3] },
                 }),
                 // Parts rounded to a micro-dollar, and a part the server did not split.
@@ -610,7 +611,7 @@ describe("mergeUsage", () => {
     );
 
     for (const day of merged.daily) {
-      for (const split of [merged.devices!, merged.work]) {
+      for (const split of [merged.devices!, merged.processes, merged.work]) {
         const bands = [...(split.daily.get(day.day)?.values() ?? [])];
         expect(bands.reduce((sum, band) => sum + band.totalTokens, 0)).toBe(day.totalTokens);
         expect(bands.reduce((sum, band) => sum + band.costUsd, 0)).toBeCloseTo(day.costUsd, 9);
@@ -621,6 +622,12 @@ describe("mergeUsage", () => {
       computerOrchestrated: { totalTokens: 360, costUsd: 4 },
       computerDirect: { totalTokens: 1000, costUsd: expect.closeTo(2, 5) },
       unlabelled: { totalTokens: 160, costUsd: expect.closeTo(1, 5) },
+    });
+    // A bucket with no process split, and an older server's, count as other.
+    expect(Object.fromEntries(merged.processes.daily.get("2026-08-07")!)).toEqual({
+      journal: { totalTokens: 800, costUsd: 6 },
+      routines: { totalTokens: 300, costUsd: 3 },
+      other: { totalTokens: 1220, costUsd: expect.closeTo(4, 5) },
     });
     expect(Object.fromEntries(merged.work.daily.get(day8)!)).toEqual({
       Trading: { totalTokens: 1160, costUsd: 10 },

@@ -335,7 +335,7 @@ it.effect("a launch names a parent the caller can read and refuses an unknown on
   }),
 );
 
-it.effect("an upkeep launch counts to the computer whichever turn launches it", () =>
+it.effect("an upkeep or journal launch counts by its label whichever turn launches it", () =>
   Effect.gen(function* () {
     const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
     const { projectId, dependencies } = clientLaunchHarness({
@@ -376,17 +376,28 @@ it.effect("an upkeep launch counts to the computer whichever turn launches it", 
       reason: "upkeep",
     });
 
-    for (const named of [
-      { fromThread: { threadId: goodnight } },
-      { causedBy: { threadId: goodnight, messageId: "message:goodnight" } },
-    ]) {
-      const refused = yield* launch({ upkeep: true, ...named });
-      expect(refused.at(-1)?.result).toMatchObject({
-        code: "invalid_request",
-        message: expect.stringMatching(/^upkeep:/),
-      });
+    yield* launch({ journal: true });
+    expect(launched[3]?.usageOrigin).toEqual({
+      origin: "phone",
+      basis: "claim",
+      reason: "journal",
+    });
+
+    for (const label of ["upkeep", "journal"]) {
+      for (const named of [
+        { fromThread: { threadId: goodnight } },
+        { causedBy: { threadId: goodnight, messageId: "message:goodnight" } },
+      ]) {
+        const refused = yield* launch({ [label]: true, ...named });
+        expect(refused.at(-1)?.result).toMatchObject({
+          code: "invalid_request",
+          message: expect.stringMatching(new RegExp(`^${label}:`)),
+        });
+      }
     }
-    expect(launched).toHaveLength(3);
+    const both = yield* launch({ upkeep: true, journal: true });
+    expect(both.at(-1)?.result).toMatchObject({ code: "invalid_request" });
+    expect(launched).toHaveLength(4);
   }),
 );
 

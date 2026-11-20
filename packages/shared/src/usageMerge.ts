@@ -3,6 +3,7 @@ import {
   type EnvironmentId,
   type UsageBucket,
   type UsageDeviceBand,
+  type UsageProcessBand,
   type UsageSplit,
   type UsageProviderKind,
   type UsageSource,
@@ -111,6 +112,8 @@ export interface MergedUsage {
   readonly contractMismatches: readonly UsageContractMismatch[];
   /** Usage by device band; null when no selected server labels devices. */
   readonly devices: MergedSplit<UsageDeviceBand> | null;
+  /** Usage by process; usage no server places in one counts as other. */
+  readonly processes: MergedSplit<UsageProcessBand>;
   /** Usage by kind-of-work group; `OTHER_WORK` holds usage in no group. */
   readonly work: MergedSplit<string>;
   /** The servers' group names in their settings order, first server first. */
@@ -155,6 +158,11 @@ const USAGE_DEVICE_BANDS: readonly UsageDeviceBand[] = [
 ];
 const isDeviceBand = (key: string): key is UsageDeviceBand =>
   (USAGE_DEVICE_BANDS as readonly string[]).includes(key);
+
+/** Processes in the order clients list and stack them, top first; other is the catch-all. */
+export const USAGE_PROCESS_BANDS: readonly UsageProcessBand[] = ["journal", "routines", "other"];
+const isProcessBand = (key: string): key is UsageProcessBand =>
+  (USAGE_PROCESS_BANDS as readonly string[]).includes(key);
 
 class SplitAccumulator<Key extends string> {
   readonly totals = new Map<Key, { costUsd: number; totalTokens: number }>();
@@ -447,6 +455,7 @@ const EMPTY_MERGED: MergedUsage = {
   contributingEnvironments: [],
   contractMismatches: [],
   devices: null,
+  processes: { totals: new Map(), daily: new Map(), hourly: new Map() },
   work: { totals: new Map(), daily: new Map(), hourly: new Map() },
   workGroups: [],
   sharedWork: [],
@@ -540,6 +549,9 @@ export function mergeUsage(
   const devices = new SplitAccumulator<UsageDeviceBand>("unlabelled", (key) =>
     isDeviceBand(key) ? key : "unlabelled",
   );
+  const processes = new SplitAccumulator<UsageProcessBand>("other", (key) =>
+    isProcessBand(key) ? key : "other",
+  );
   const work = new SplitAccumulator<string>(OTHER_WORK, (key) => key);
   // A member split covers only part of a bucket; the rest lands on "" and is never read.
   const workMembers = new SplitAccumulator<string>("", (key) => key);
@@ -574,6 +586,7 @@ export function mergeUsage(
     for (const bucket of buckets) {
       const tokens = bucketTokens(bucket);
       devices.add(bucket, bucket.devices, tokens);
+      processes.add(bucket, bucket.processes, tokens);
       work.add(bucket, bucket.work, tokens);
       if (bucket.workMembers !== undefined && typeof bucket.workMembers !== "string") {
         workMembers.add(
@@ -787,6 +800,7 @@ export function mergeUsage(
     contributingEnvironments,
     contractMismatches,
     devices: current.some((environment) => environment.summary.devices === true) ? devices : null,
+    processes,
     work,
     workGroups: [
       ...new Set(current.flatMap((environment) => environment.summary.workGroups ?? [])),
@@ -850,29 +864,42 @@ function spreadWork(usage: MergedUsage, hourly: boolean) {
 
 export function usageSplitBands(
   usage: MergedUsage,
-  split: "device" | "work" | "type",
+  split: "device" | "process" | "work" | "type",
   metric: "cost" | "tokens",
   hourly: boolean,
 ): UsageSplitBands {
   const merged: MergedSplit<string> =
-    split === "device" ? deviceSplitOf(usage) : split === "type" ? usage.types : usage.work;
+    split === "device"
+      ? deviceSplitOf(usage)
+      : split === "process"
+        ? usage.processes
+        : split === "type"
+          ? usage.types
+          : usage.work;
   const spread = split === "work" ? spreadWork(usage, hourly) : null;
   const periods = spread?.periods ?? (hourly ? merged.hourly : merged.daily);
   const totals = spread?.totals ?? merged.totals;
-  const catchAll = split === "device" ? "unlabelled" : split === "type" ? "other" : OTHER_WORK;
+  const catchAll =
+    split === "device"
+      ? "unlabelled"
+      : split === "type" || split === "process"
+        ? "other"
+        : OTHER_WORK;
   const keys =
     split === "device"
       ? USAGE_DEVICE_BANDS
-      : split === "type"
-        ? USAGE_TYPE_BANDS
-        : [
-            ...usage.workGroups,
-            // Groups only another server names, then the usage in no group.
-            ...[...merged.totals.keys()].filter(
-              (key) => key !== OTHER_WORK && !usage.workGroups.includes(key),
-            ),
-            OTHER_WORK,
-          ];
+      : split === "process"
+        ? USAGE_PROCESS_BANDS
+        : split === "type"
+          ? USAGE_TYPE_BANDS
+          : [
+              ...usage.workGroups,
+              // Groups only another server names, then the usage in no group.
+              ...[...merged.totals.keys()].filter(
+                (key) => key !== OTHER_WORK && !usage.workGroups.includes(key),
+              ),
+              OTHER_WORK,
+            ];
   const value = (amount: SplitAmount) => (metric === "cost" ? amount.costUsd : amount.totalTokens);
   const bands = keys
     .map((key, index) => ({

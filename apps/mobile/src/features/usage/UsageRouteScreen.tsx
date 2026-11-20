@@ -219,7 +219,7 @@ function UsageScreen(props: {
     breakdown === "provider" || splitBands === null
       ? []
       : orderBands(breakdown, splitBands.bands).map((band) => {
-          const shown = presentBand(band, dark);
+          const shown = presentBand(breakdown, band, dark);
           return { ...band, color: shown.color, label: shown.named ? shown.label : m(shown.label) };
         });
   const totalsByPeriod = new Map(chartTotals.map((totals) => [totals.day, totals]));

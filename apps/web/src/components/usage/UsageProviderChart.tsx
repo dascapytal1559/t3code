@@ -459,7 +459,7 @@ export function UsageProviderChart({
   );
 }
 
-export type UsageChartSplit = "provider" | "device" | "work" | "type";
+export type UsageChartSplit = "provider" | "device" | "process" | "work" | "type";
 
 /** The screen-reader caption of a chart's table, as a message. */
 export function usageChartCaption(
@@ -486,6 +486,14 @@ export function usageChartCaption(
         : tokens
           ? msg("Daily processed tokens by device")
           : msg("Daily cost by device");
+    case "process":
+      return hourly
+        ? tokens
+          ? msg("Hourly processed tokens by process")
+          : msg("Hourly cost by process")
+        : tokens
+          ? msg("Daily processed tokens by process")
+          : msg("Daily cost by process");
     case "work":
       return hourly
         ? tokens

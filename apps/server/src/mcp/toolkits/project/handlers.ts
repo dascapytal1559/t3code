@@ -226,14 +226,22 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
             message:
               "scratch:true picks its own project and folder; omit projectId and workspaceStrategy.",
           });
-        if (
-          input.upkeep === true &&
-          (input.fromThread !== undefined || input.causedBy !== undefined)
-        )
+        if (input.upkeep === true && input.journal === true)
           return yield* new OrchestratorMcpFailure({
             code: "invalid_request",
-            message:
-              "upkeep: a launch counted as upkeep names no origin; omit fromThread and causedBy.",
+            message: "upkeep and journal are two labels; give one.",
+          });
+        // FirstMate's labels: its upkeep counts to the computer, a journal's work to the phone.
+        const label =
+          input.upkeep === true
+            ? { name: "upkeep", origin: UsageOrigins.LAUNCHED_UPKEEP }
+            : input.journal === true
+              ? { name: "journal", origin: UsageOrigins.LAUNCHED_JOURNAL }
+              : undefined;
+        if (label !== undefined && (input.fromThread !== undefined || input.causedBy !== undefined))
+          return yield* new OrchestratorMcpFailure({
+            code: "invalid_request",
+            message: `${label.name}: a launch counted as ${label.name} names no origin; omit fromThread and causedBy.`,
           });
         // Reading the parent is enough: naming it grants nothing on it.
         if (input.parentThreadId !== undefined) yield* readThread(input.parentThreadId, []);
@@ -243,12 +251,12 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
             : yield* verifyCause(context.threads, input.causedBy);
         // Born where the launching thread's work counts now; a link's work has no thread here.
         const bound =
-          linkOrigin === undefined && input.upkeep !== true
+          linkOrigin === undefined && label === undefined
             ? yield* bindUsageOrigin(context.threads, input.fromThread, caller?.id)
             : null;
         const usageOrigin =
-          input.upkeep === true
-            ? UsageOrigins.storedOrigin(UsageOrigins.LAUNCHED_UPKEEP)
+          label !== undefined
+            ? UsageOrigins.storedOrigin(label.origin)
             : bound === null
               ? undefined
               : UsageOrigins.storedOrigin(bound.key, bound.atMs);

@@ -298,6 +298,7 @@ describe("UsageAggregator", () => {
           via: "crew",
           basis: "default",
           reason: "noCause",
+          process: "other",
           cause: true,
         },
         group: null,
@@ -324,6 +325,7 @@ describe("UsageAggregator", () => {
           started: "direct",
           basis: "stamp",
           reason: "typed",
+          process: "other",
           promptThreadId: "thread-1",
         },
         group: "Tooling",
@@ -335,22 +337,23 @@ describe("UsageAggregator", () => {
     );
   });
 
-  it("splits each bucket by device band and by group, so the parts add up to the bucket", () => {
+  it("splits each bucket by device band, process and group, so the parts add up to the bucket", () => {
     const at = (iso: string) => Date.parse(iso);
     const aggregator = new UsageAggregator({
       timeZone: "UTC",
       sinceDay: "2026-08-01",
       untilDay: "2026-08-31",
       rates,
-      // Upkeep counts by how it started, like any other computer work.
+      // Upkeep counts by how it started, like any other computer work. A journal typed on the
+      // phone is journal work; only declared upkeep is a routine, a coordinator's own is other.
       attributeOrigin: (item) =>
         item.sessionId === "phone"
-          ? { origin: "phone", basis: "stamp", reason: "typed" }
+          ? { origin: "phone", basis: "stamp", reason: "journal" }
           : item.sessionId === "upkeep"
             ? { origin: "computer", basis: "default", reason: "upkeep", via: "agent" }
             : item.sessionId === "early"
               ? { origin: "computer", basis: "beforeOrigins", reason: "beforeStamps" }
-              : { origin: "computer", basis: "default", reason: "noCause" },
+              : { origin: "computer", basis: "claim", reason: "upkeep" },
       // Tooling opens into its members; Trading does not.
       attributeWork: (item, filePath) =>
         item.cwd === "/repos/app"
@@ -388,6 +391,9 @@ describe("UsageAggregator", () => {
     const amount = [tokens, expect.closeTo(cost, 6)];
     // A bucket all in one band names it alone.
     expect(early).toMatchObject({ devices: "unlabelled", work: "Tooling" });
+    // A bucket all other sends no process split.
+    expect(early?.processes).toBeUndefined();
+    expect(day?.processes).toEqual({ journal: amount, other: amount, routines: amount });
     expect(day?.devices).toEqual({
       phoneDirect: amount,
       computerOrchestrated: amount,

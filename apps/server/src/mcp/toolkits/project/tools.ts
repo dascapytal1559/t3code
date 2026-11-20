@@ -188,6 +188,12 @@ const ThreadLaunchTool = Tool.make("t3_thread_launch", {
           "FirstMate's spawn only, for its own upkeep: Usage counts this thread's work to the computer, whichever turn launches it. Not with fromThread or causedBy.",
       }),
     ),
+    journal: Schema.optional(
+      Schema.Boolean.annotate({
+        description:
+          "FirstMate's spawn only, for a voice journal's items: Usage counts this thread's work to the phone as journal work. Not with fromThread, causedBy or upkeep.",
+      }),
+    ),
     /** Set by a linked environment launching its agent's delegated task here; ignored otherwise. */
     delegatedFrom: Schema.optional(OrchestrationV2DelegatedFrom),
   }),

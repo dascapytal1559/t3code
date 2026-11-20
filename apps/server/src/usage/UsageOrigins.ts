@@ -242,6 +242,13 @@ export const LAUNCHED_UPKEEP: DeviceOriginKey = {
   reason: "upkeep",
 };
 
+/** A launch FirstMate declares journal work: launched from a voice journal's items, it counts to the phone. */
+export const LAUNCHED_JOURNAL: DeviceOriginKey = {
+  origin: "phone",
+  basis: "claim",
+  reason: "journal",
+};
+
 /** Where a usage record came from: this machine's transcripts, an archive, or a provider account. */
 export type UsageRecordSource = "live" | "archive" | "account";
 
@@ -405,19 +412,21 @@ export interface OriginResolver {
 function turnSegments(turn: TurnFacts, resolver: OriginResolver): OriginSegment[] {
   const { message } = turn;
   const endMs = turn.completedAtMs ?? Number.POSITIVE_INFINITY;
+  const claimed = turn.runId === null ? undefined : resolver.claimOfRun(turn.runId);
+  // A journal claim names its whole run: a prompt typed in it keeps its device but files a journal.
+  const journal = claimed?.reason === "journal";
   const segment = (startedAtMs: number, key: UsageOriginKey, typed: boolean): OriginSegment => ({
     sessionId: turn.sessionId,
     threadId: turn.threadId,
     runId: turn.runId,
     startedAtMs,
     completedAtMs: turn.completedAtMs,
-    key,
+    key: journal && isDevice(key) ? { ...key, reason: "journal" } : key,
     typed,
   });
   const within = (atMs: number | undefined): atMs is number =>
     atMs !== undefined && atMs > turn.startedAtMs && atMs <= endMs;
   const startTyped = message !== null && typedOrigin(message) !== undefined;
-  const claimed = turn.runId === null ? undefined : resolver.claimOfRun(turn.runId);
   const first = (key: UsageOriginKey) =>
     segment(turn.startedAtMs, key, startTyped || key.reason === "journal");
   if (turn.coordinator) {

@@ -1,20 +1,22 @@
-import type { UsageDeviceBand } from "@t3tools/contracts";
+import type { UsageDeviceBand, UsageProcessBand } from "@t3tools/contracts";
 import {
   DEVICE_BAND_ORDER,
   DEVICE_SPLIT_COLORS,
   OTHER_WORK_COLOR,
+  PROCESS_SPLIT_COLORS,
   WORK_GROUP_PALETTE,
   usageSplitHex,
   type UsageSplitColor,
 } from "@t3tools/client-runtime/usage-split-palette";
-import { OTHER_WORK, type UsageSplitBand } from "@t3tools/shared/usageMerge";
+import { OTHER_WORK, USAGE_PROCESS_BANDS, type UsageSplitBand } from "@t3tools/shared/usageMerge";
 import { msg } from "gt-react-native";
 
-export type UsageBreakdown = "provider" | "device" | "work";
+export type UsageBreakdown = "provider" | "device" | "process" | "work";
 
 export const BREAKDOWN_OPTIONS = [
   { value: "provider", label: msg("Provider", { $context: "usage breakdown option" }) },
   { value: "device", label: msg("Device", { $context: "usage breakdown option" }) },
+  { value: "process", label: msg("Process", { $context: "usage breakdown option" }) },
   { value: "work", label: msg("Kind of work", { $context: "usage breakdown option" }) },
 ] as const satisfies readonly { value: UsageBreakdown; label: string }[];
 
@@ -34,6 +36,15 @@ const DEVICE_LABEL: Record<UsageDeviceBand, string> = {
   }),
 };
 const OTHER_LABEL = msg("Other", { $context: "usage kind of work: usage in no group" });
+const PROCESS_LABEL: Record<UsageProcessBand, string> = {
+  journal: msg("Journal", {
+    $context: "usage process: filing voice journals and their items' work",
+  }),
+  routines: msg("Routines", { $context: "usage process: upkeep such as the bedtime routine" }),
+  other: msg("Other", {
+    $context: "usage process: usage that is neither journal nor routine",
+  }),
+};
 
 // The screen's text over its background, which greys mix as on web.
 const LIGHT = { foreground: "#27272a", background: "#fcfcfc" };
@@ -41,10 +52,19 @@ const DARK = { foreground: "#f5f5f5", background: "#0a0a0a" };
 
 /** A band's label, as a message unless it is a user's group name, and its colour as on web. */
 export function presentBand(
+  breakdown: Exclude<UsageBreakdown, "provider">,
   band: UsageSplitBand,
   dark: boolean,
 ): { readonly label: string; readonly named: boolean; readonly color: string } {
   const hex = (color: UsageSplitColor) => usageSplitHex(color, dark, dark ? DARK : LIGHT);
+  if (breakdown === "process") {
+    const process = band.key in PROCESS_LABEL ? (band.key as UsageProcessBand) : "other";
+    return {
+      label: PROCESS_LABEL[process],
+      named: false,
+      color: hex(PROCESS_SPLIT_COLORS[process]),
+    };
+  }
   if (band.groupIndex !== null) {
     const palette = WORK_GROUP_PALETTE[band.groupIndex % WORK_GROUP_PALETTE.length]!;
     return { label: band.key, named: true, color: hex(palette.color) };
@@ -56,12 +76,13 @@ export function presentBand(
   return { label: DEVICE_LABEL[device], named: false, color: hex(DEVICE_SPLIT_COLORS[device]) };
 }
 
-/** Bands top first as web lists them: devices in their fixed order, kinds of work as given. */
+/** Bands top first as web lists them: devices and processes in fixed order, kinds of work as given. */
 export function orderBands<B extends UsageSplitBand>(
   breakdown: Exclude<UsageBreakdown, "provider">,
   bands: readonly B[],
 ): readonly B[] {
-  if (breakdown !== "device") return bands;
-  const rank = (key: string) => DEVICE_BAND_ORDER.indexOf(key as UsageDeviceBand);
+  if (breakdown === "work") return bands;
+  const order: readonly string[] = breakdown === "device" ? DEVICE_BAND_ORDER : USAGE_PROCESS_BANDS;
+  const rank = (key: string) => order.indexOf(key);
   return [...bands].sort((a, b) => rank(a.key) - rank(b.key));
 }

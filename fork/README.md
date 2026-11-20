@@ -165,12 +165,12 @@ Upstream: none.
 
 ## Breakdown boxes and the chart split
 
-Beside the Usage chart sit four boxes, by provider, device, kind of work and
-type; the open one is how the chart splits its bars, and a box's parent rows
-open into their parts.
+Beside the Usage chart sit five boxes, by provider, device, process, kind of
+work and type; the open one is how the chart splits its bars, and a box's parent
+rows open into their parts.
 
 The captain reads the chart for where usage went, so on web and desktop the
-four boxes beside it (`BREAKDOWN_ORDER` in
+five boxes beside it (`BREAKDOWN_ORDER` in
 `apps/web/src/components/usage/usageSplits.ts`) are also the chart's legend.
 One box is open as a card and the others fold down to their colour bar;
 clicking a folded bar opens that box and splits the chart its way. The chart's
@@ -195,6 +195,13 @@ splits in `apps/server/src/usage/usageAggregation.ts`, the merge functions
 above, and `apps/mobile/src/features/usage/usageSplitBands.ts`. Upstream's
 provider rows and type bar become the provider and type boxes; keep upstream's
 own figures in them.
+
+The process box splits usage into Journal (reason `journal`), Routines (`upkeep`
+a claim or launch declared, basis `claim`) and Other, FirstMate's own wakes
+included (`usageProcessOf` in `packages/contracts/src/usage.ts`, each bucket's
+`processes`).
+
+![The Usage page's Tokens tab with the Tokens by process box open, made-up data: the chart splits each day into Journal, Routines and Other](media/usage-process-split.png)
 
 Upstream: none; its chart splits by provider only.
 
@@ -338,7 +345,9 @@ and what agents claim.
   `t3_thread_launch` with `upkeep: true` (FirstMate's own upkeep, work a
   process set up on the computer runs, such as the bedtime routine) binds
   nothing and stores `computer`, basis `claim`, reason `upkeep`, also over a
-  link; it is refused beside `fromThread` or `causedBy`. `t3_thread_send`
+  link; `journal: true` (work from a voice journal's items) stores `phone`,
+  basis `claim`, reason `journal` the same way. Either is refused beside
+  `fromThread`, `causedBy` or the other. `t3_thread_send`
   and `t3_thread_send_attachments` store it on the message only when the
   sender's segment was started by a prompt typed in that turn or is a
   voice-journal claim (`reroots`), so only typed input moves work. `schedule_task` stores the creating turn's origin in the fork
@@ -386,7 +395,8 @@ and what agents claim.
   claiming again replaces one unless `ifUnclaimed` keeps the first (answered
   with `kept`, so a wake drain never overwrites a journal claim), and
   `causedBy: null` removes it. A claimed turn counts there unless its own
-  prompt already traces.
+  prompt already traces; a journal claim on such a turn keeps its device but
+  makes its reason `journal`.
 - A pinned coordinator's turn (FirstMate's thread, or a secondmate's) that
   no claim names and no person typed (a wake, a background command's update,
   a server prompt, a turn with no prompt) is its upkeep: it counts to the
@@ -541,7 +551,7 @@ it unless a sibling folder of that name is on disk. A shared group, and with
 by their own share (`spreadSharedWork` in `packages/shared/src/usageMerge.ts`),
 so the bars still add up; the export keeps each call's own group. Groups open
 into their members unless turned off, and members can be hidden; the user
-guide's [Kinds of work](../docs/user/usage.md#split-the-chart-by-provider-device-kind-of-work-or-type)
+guide's [Kinds of work](../docs/user/usage.md#split-the-chart-by-provider-device-process-kind-of-work-or-type)
 covers the settings.
 
 The groups are server settings (`usageWorkGroups`, `usageWorkShareOther`,

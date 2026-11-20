@@ -98,6 +98,7 @@ import {
   BREAKDOWN_TITLES,
   chartBands,
   deviceBox,
+  processBox,
   providerBox,
   typeBox,
   workBox,
@@ -789,6 +790,7 @@ function UsageOverview({
       },
     ),
     device: deviceBox(merged, metric, shownHourly),
+    process: processBox(merged, metric, shownHourly),
     work: workBox(merged, metric, shownHourly),
     type: typeBox(merged, metric, shownHourly),
   };
