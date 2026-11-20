@@ -93,7 +93,11 @@ lines.
 Click a provider on the Usage page to leave it out of every figure; its row
 stays, greyed, showing what it would have added.
 
-![The Usage page's Cost tab over 30 days with Codex muted: its row in the Cost by provider box is greyed and shows Excluded, while the headline, the chart and the other boxes count Claude Code alone](media/usage-provider-filter.png)
+![The Usage page's Cost tab over 30 days with Codex muted: its row in the Cost by provider box is greyed and shows Excluded, while the headline, the chart and the model table under it count Claude Code alone](media/usage-provider-filter.png)
+
+The Usage screenshots in this and the next two sections predate the model
+table's removal, the mirror chart and the Direct label; the text describes what
+ships now.
 
 On the Usage page, click a provider's icon or name in the provider box to mute
 it; click again to bring it back. The row looks like plain text until you hover
@@ -119,7 +123,7 @@ clicking a row is the fork's.
 On the Usage page the figures you compare sit in columns and fade by size, so
 the big ones stand out, and upstream's Totals row is gone.
 
-![The Usage page's Tokens tab over 7 days: the daily chart on the left; on the right the 1.97B headline with its sessions, the Tokens by provider box with Claude Code and Codex, their figures and shares in columns, and the device, kind-of-work and type boxes folded to their colour bars](media/usage-figures.png)
+![The Usage page's Tokens tab over 7 days: the daily chart on the left; on the right the 1.97B headline with its sessions, the Tokens by provider box with Claude Code and Codex, their figures and shares in columns, and three other boxes folded to their colour bars; the model table sits under the chart](media/usage-figures.png)
 
 The captain reads the Usage page for where the tokens went, so the Tokens and
 Cost tabs on web and desktop put the figures he compares where the eye can
@@ -213,7 +217,7 @@ a claim or launch declared, basis `claim`) and Direct, in amber: everything
 else, FirstMate's own wakes included (`usageProcessOf` in
 `packages/contracts/src/usage.ts`, each bucket's `processes`).
 
-![The Usage page's Tokens tab with the Tokens by process box open, made-up data: the chart splits each day into Journal, Routines and Other](media/usage-process-split.png)
+![The Usage page's Tokens tab with the Tokens by process box open, made-up data: the chart stacks each day's Journal, Routines and Other, the label and grey colour Direct had before, with the model table under the chart](media/usage-process-split.png)
 
 Upstream: none; its chart splits by provider only.
 
