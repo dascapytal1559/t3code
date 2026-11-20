@@ -252,10 +252,13 @@ describe("UsageLabels", () => {
       // the last pass has no born label yet, so it is not counted as differing.
       yield* TestClock.setTime(time("23:59"));
       const late = { sessionId: "late-session", timestampMs: time("06:30") };
-      const closed = yield* origins.close(time("12:00"), [...records, late]);
+      // A terminal session T3 never registered has no born label, which is not a difference.
+      const terminal = { sessionId: "terminal-session", timestampMs: time("02:10") };
+      const closed = yield* origins.close(time("12:00"), [...records, late, terminal]);
       assert.deepStrictEqual(closed.closed ? closed.born : closed, {
-        records: records.length,
+        records: records.length + 1,
         differingRecords: 0,
+        unbornRecords: 1,
         prompts: 6,
         differingPrompts: 0,
         byReason: {},
@@ -279,6 +282,26 @@ describe("UsageLabels", () => {
         ]),
       ),
     ),
+  );
+
+  it.effect("labels a thread again after passes could not, once its moment is past", () =>
+    Effect.gen(function* () {
+      const { passAt, rowsOf } = yield* labelling;
+      const sql = yield* SqlClient.SqlClient;
+      yield* seedThread({ id: "firstmate", coordinator: true });
+      yield* passAt("00:50");
+      yield* start("fm-phone", 1, "firstmate", "01:00", phone);
+      // Failing until the turn's start is past the settle window the next pass writes again.
+      yield* sql`ALTER TABLE usage_work_labels RENAME TO usage_work_labels_away`;
+      yield* passAt("01:00:05");
+      yield* passAt("01:06");
+      yield* sql`ALTER TABLE usage_work_labels_away RENAME TO usage_work_labels`;
+      assert.deepStrictEqual(yield* rowsOf("firstmate-session"), []);
+      yield* passAt("01:07");
+      assert.deepStrictEqual(yield* rowsOf("firstmate-session"), [
+        "01:00:00.000 phone typed message-fm-phone",
+      ]);
+    }).pipe(Effect.provide(layerWith([]))),
   );
 
   it.effect("names a wake while it runs, and refuses a name given after it ended", () =>
@@ -331,6 +354,17 @@ describe("UsageLabels", () => {
         value: { device: "phone" },
       });
       assert.strictEqual(yield* labels.named("run-fm-late"), "refused");
+      // The journal's wake named again after it ended still counts as named while it ran.
+      yield* claims.claim({
+        target: { kind: "run", runId: "run-fm-journal" },
+        value: { device: "phone" },
+      });
+      assert.deepStrictEqual(
+        (yield* claims.readRuns(["run-fm-journal", "run-fm-late"], { whileRunning: true })).map(
+          (claim) => claim.target,
+        ),
+        ["run-fm-journal"],
+      );
       yield* passAt("06:21");
       assert.deepStrictEqual(yield* rowsOf("firstmate-session"), [
         "04:00:00.000 phone inherited run claim message-task-1",
@@ -354,6 +388,7 @@ describe("UsageLabels", () => {
       assert.deepStrictEqual(closed.closed ? closed.born : closed, {
         records: 3,
         differingRecords: 1,
+        unbornRecords: 0,
         prompts: 4,
         differingPrompts: 1,
         byReason: {

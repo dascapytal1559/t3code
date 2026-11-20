@@ -54,7 +54,7 @@ import {
   useProviderColors,
   useUsageMixColors,
 } from "./usageProviders";
-import { BREAKDOWN_OPTIONS, presentBand, type UsageBreakdown } from "./usageSplitBands";
+import { BREAKDOWN_OPTIONS, orderBands, presentBand, type UsageBreakdown } from "./usageSplitBands";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 
 type UsageView = UsageChartMetric | "limits";
@@ -215,10 +215,13 @@ function UsageScreen(props: {
   const dark = useAppearancePreferences().themeAppearance === "dark";
   const splitBands =
     breakdown === "provider" ? null : usageSplitBands(merged, breakdown, metric, isPast24Hours);
-  const bands = (splitBands?.bands ?? []).map((band) => {
-    const shown = presentBand(band, dark);
-    return { ...band, color: shown.color, label: shown.named ? shown.label : m(shown.label) };
-  });
+  const bands =
+    breakdown === "provider" || splitBands === null
+      ? []
+      : orderBands(breakdown, splitBands.bands).map((band) => {
+          const shown = presentBand(band, dark);
+          return { ...band, color: shown.color, label: shown.named ? shown.label : m(shown.label) };
+        });
   const totalsByPeriod = new Map(chartTotals.map((totals) => [totals.day, totals]));
   const series: readonly UsageChartSeries[] =
     splitBands === null
@@ -227,7 +230,8 @@ function UsageScreen(props: {
           label: PROVIDER_LABEL[provider],
           color: providerColors[provider],
         }))
-      : bands;
+      : // The chart stacks bottom first; the legend lists the first band on top, as web draws it.
+        [...bands].reverse();
   const valueAt = (period: string, key: string) => {
     if (splitBands !== null) return splitBands.valueAt(period, key, metric);
     const entry = totalsByPeriod.get(period)?.byProvider.get(key as UsageProviderKind);

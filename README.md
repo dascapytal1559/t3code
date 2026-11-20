@@ -10,10 +10,12 @@ Every difference from upstream, in the order [fork/README.md](fork/README.md) de
 - [6 and 12 months](fork/README.md#6-and-12-months): the Usage page reaches back 6 and 12 months, drawn as stacked bars.
 - [Mute a provider](fork/README.md#mute-a-provider): click a provider on the Usage page to leave it out of every figure.
 - [Figures that read](fork/README.md#figures-that-read): Usage figures sit in columns and fade by size; the big ones stand out.
+- [Breakdown boxes and the chart split](fork/README.md#breakdown-boxes-and-the-chart-split): four boxes beside the Usage chart, by provider, device, kind of work and type; the open one splits the chart.
 - [Accounts in your order](fork/README.md#accounts-in-your-order): usage lists accounts in the Settings › Providers order.
 - [Limits in the sidebar](fork/README.md#limits-in-the-sidebar): one bar per account shows what is left this week, with a pace mark.
 - [Archived usage](fork/README.md#archived-usage): usage counts machines and accounts that no longer run T3.
 - [Phone vs computer split](fork/README.md#phone-vs-computer-split): tokens and cost split by phone or computer, typed or started by an agent.
+- [Kinds of work](fork/README.md#kinds-of-work): usage split into groups of projects and folders you name; a shared group spreads over the rest.
 - [Usage export](fork/README.md#usage-export): `t3 usage export` prints each model call as T3 counted it, as JSON lines.
 - [Chart annotations](fork/README.md#chart-annotations): dated notes from a local file show on the Usage chart, with an on/off button.
 - [Banked resets on a Mac](fork/README.md#banked-resets-on-a-mac): Claude's banked resets show and can be redeemed on macOS, each on the rows it refills.

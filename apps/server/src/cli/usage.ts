@@ -196,7 +196,7 @@ function formatClose(result: UsageCloseResult): readonly string[] {
     `  ${result.records} records, ${result.sessionRows} session rows, ${result.promptRows} prompts.`,
     born === null
       ? "  No labels were written at birth in this span."
-      : `  Labels written at birth: ${born.differingRecords} of ${born.records} records and ${born.differingPrompts} of ${born.prompts} prompts differ.`,
+      : `  Labels written at birth: ${born.differingRecords} of ${born.records} records and ${born.differingPrompts} of ${born.prompts} prompts differ; ${born.unbornRecords} records have none (sessions T3 never registered).`,
     ...Object.entries(born?.byReason ?? {}).map(([reason, count]) => `    ${reason}  ${count}`),
     result.backupPath === null
       ? "Dry run: nothing was written."

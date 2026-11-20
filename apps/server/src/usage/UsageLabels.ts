@@ -13,11 +13,6 @@ import * as UsageClose from "./UsageClose.ts";
 import * as UsageLabelStore from "./UsageLabelStore.ts";
 import * as UsageOrigins from "./UsageOrigins.ts";
 
-/**
- * Labels change for this long after their moment: T3 can record a turn's start some seconds after
- * it began (33 s seen), so a pass writes this much of the last one's labels again.
- */
-const SETTLE_MS = 5 * 60 * 1000;
 // The windows Usage reads origins with: a turn running into the window, a session outside T3.
 const TURN_LOOKBACK_MS = 2 * 24 * 60 * 60 * 1000;
 const REGISTER_LOOKBACK_MS = 31 * 24 * 60 * 60 * 1000;
@@ -54,6 +49,8 @@ const make = Effect.gen(function* () {
   const origins = yield* UsageOrigins.UsageOrigins;
   const store = UsageLabelStore.makeLabelStore(sql);
   const lock = yield* Semaphore.make(1);
+  // Threads a pass could not label, from when: the next passes label them again until one works.
+  const retry = new Map<string, number>();
   const readError = (cause: unknown) => new UsageOrigins.UsageOriginsReadError({ cause });
 
   /** Rewrites a thread's labels after `afterMs`: its sessions', its prompts' and its work's. */
@@ -129,7 +126,8 @@ const make = Effect.gen(function* () {
     // Labels begin where the close's rows end, so the next close checks every record it seals.
     const fromMs =
       cursor?.fromMs ?? (yield* origins.closedSpan)?.throughMs ?? UsageClose.CLOSE_FROM_MS - 1;
-    const afterMs = cursor === null ? fromMs : Math.max(fromMs, cursor.throughMs - SETTLE_MS);
+    const afterMs =
+      cursor === null ? fromMs : Math.max(fromMs, cursor.throughMs - UsageClose.SETTLE_MS);
     const threads = new Map<string, number>();
     const include = (threadId: string, sinceMs: number) =>
       threads.set(threadId, Math.min(threads.get(threadId) ?? sinceMs, sinceMs));
@@ -142,6 +140,7 @@ const make = Effect.gen(function* () {
       include(threadId, afterMs);
     for (const named of yield* store.namedRuns(afterMs, nowMs))
       include(named.threadId, named.startedAtMs - 1);
+    for (const [threadId, sinceMs] of retry) include(threadId, sinceMs);
     const registrations = yield* origins.registrations(afterMs - REGISTER_LOOKBACK_MS, nowMs + 1);
     const pending = yield* store.unlabelled(registrations);
     for (const registration of pending)
@@ -155,8 +154,10 @@ const make = Effect.gen(function* () {
         throughMs: nowMs,
         registrations: registrationsOf(threadId),
       }).pipe(
+        Effect.tap(() => Effect.sync(() => retry.delete(threadId))),
         Effect.catch((cause) =>
           Effect.logWarning("Usage could not write a thread's labels", { threadId, cause }).pipe(
+            Effect.andThen(Effect.sync(() => retry.set(threadId, sinceMs))),
             Effect.as(true),
           ),
         ),

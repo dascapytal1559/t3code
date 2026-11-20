@@ -93,7 +93,7 @@ lines.
 Click a provider on the Usage page to leave it out of every figure; its row
 stays, greyed, showing what it would have added.
 
-![The Usage page with Grok Build and Codex muted and grayed out, leaving Claude Code and Pi in the headline, the chart and the bars under it](media/usage-provider-filter.png)
+![The Usage page's Cost tab over 30 days with Codex muted: its row in the Cost by provider box is greyed and shows Excluded, while the headline, the chart and the model list count Claude Code alone](media/usage-provider-filter.png)
 
 On the Usage page, click a provider's icon or name in the provider box to mute
 it; click again to bring it back. The row looks like plain text until you hover
@@ -119,7 +119,7 @@ clicking a row is the fork's.
 On the Usage page the figures you compare sit in columns and fade by size, so
 the big ones stand out, and upstream's Totals row is gone.
 
-![The Usage page's Tokens tab: a headline with sessions and a dollar total, four provider rows whose counts fade from 1.93B down to 32.3M, a chart as tall as the provider list, and Tokens by type and Tokens by origin with their figures in columns](media/usage-figures.png)
+![The Usage page's Tokens tab over 7 days: the daily chart on the left; on the right the 1.97B headline with its sessions, the Tokens by provider box with Claude Code and Codex, their figures and shares in columns, and the device, kind-of-work and type boxes folded to their colour bars](media/usage-figures.png)
 
 The captain reads the Usage page for where the tokens went, so the Tokens and
 Cost tabs on web and desktop put the figures he compares where the eye can
@@ -162,6 +162,41 @@ order in `usageBreakdown.ts`; the value labels after the plot in
 `formatUsdShort` in `packages/shared/src/usageFormat.ts`.
 
 Upstream: none.
+
+## Breakdown boxes and the chart split
+
+Beside the Usage chart sit four boxes, by provider, device, kind of work and
+type; the open one is how the chart splits its bars, and a box's parent rows
+open into their parts.
+
+The captain reads the chart for where usage went, so on web and desktop the
+four boxes beside it (`BREAKDOWN_ORDER` in
+`apps/web/src/components/usage/usageSplits.ts`) are also the chart's legend.
+One box is open as a card and the others fold down to their colour bar;
+clicking a folded bar opens that box and splits the chart its way. The chart's
+bands stack in the card's order, first row on top. A parent row (Phone,
+Computer, a kind of work) opens into its children (Orchestrated and Direct, a
+group's projects and folders), and only an opened parent's band splits in the
+chart (`chartBands`). Each box owns its colours: a parent one hue, its
+children neighbouring hues. The page remembers the open box and opened rows
+(`usagePagePreferences.ts`). The mobile app has no boxes: a Provider, Device
+or Kind of work choice under the period splits the chart and lists the bands
+top first, as web stacks them. Both clients take the device and kind-of-work
+colours, and the device order, from one palette in
+`packages/client-runtime/src/usageSplitPalette.ts`; web draws them as oklch and
+mobile as the same colours in hex.
+
+The splits come from the server: each bucket carries `devices`, `work` and
+`workMembers` amounts, and `usageSplitBands` and `usageMemberBands` in
+`packages/shared/src/usageMerge.ts` merge them across servers, so web and
+mobile read one model. For syncs, the fork's parts are `UsageBreakdownBox.tsx`,
+`usageSplits.ts`, the split modes in `UsageProviderChart.tsx`, the bucket
+splits in `apps/server/src/usage/usageAggregation.ts`, the merge functions
+above, and `apps/mobile/src/features/usage/usageSplitBands.ts`. Upstream's
+provider rows and type bar become the provider and type boxes; keep upstream's
+own figures in them.
+
+Upstream: none; its chart splits by provider only.
 
 ## Accounts in your order
 
@@ -395,7 +430,8 @@ and what agents claim.
   `UsageService.ts`). It asks the running server, through
   `POST /api/usage/close` with the maintain scope, since only the server holds
   the transcript readers the close labels records from. It is refused for a
-  time in the future or at or before "closed through", backs up the closed
+  time in the future or under 5 minutes ago (labels are still settling, the
+  same window the label pass writes again) or at or before "closed through", backs up the closed
   tables to `usage-closes/` in the state folder before writing, and prints the
   span, the record, session-row and prompt counts and how the born labels
   compare; a dry run writes nothing. The daily close then continues from the
@@ -428,15 +464,20 @@ and what agents claim.
   `usage_prompt_labels`, and `usage_label_cursor` (from when, and through
   when). A pass writes again the last 5 minutes before the previous one,
   since T3 can record a turn's start seconds after it began; older rows never
-  change. Naming a running turn with `t3_usage_claim` writes its thread's
+  change. A thread a pass could not write is written again by the next passes,
+  from where it failed, until one succeeds (kept in memory, so a restart
+  drops it). Naming a running turn with `t3_usage_claim` writes its thread's
   labels again from the turn's start; a name given after the run ended is
-  refused there, so it changes no born label. Writing catches up from the
+  refused there, so it changes no born label. Naming it again keeps the
+  claim's first `claimed_at`, so a run named while it ran stays so. Writing catches up from the
   cursor on start, from projections rather than the event log (kept about a
   day), and begins, the first time, where the close's rows end. A session that
   registers again (resumed, or under another task) follows each registration
   from its start. When the close seals a span, it compares each record's and
   prompt's born label with its own and logs the differences counted by reason
-  ("Usage labels written at birth match the close", or "differ").
+  ("Usage labels written at birth match the close", or "differ"). Records of a
+  session with no born label at all (a terminal session T3 never registered)
+  are counted apart, as `unbornRecords`, not as differences.
 - Every settled record also carries a `reason`, kept on the server: `typed`,
   `inherited`, `journal`, `upkeep` or `terminal` when there is device
   evidence, else what is missing (`unregisteredSession`,
@@ -467,18 +508,49 @@ and what agents claim.
 
 Each usage bucket carries `devices` (optional; the bucket split by device band,
 `UsageDeviceBand` in `packages/contracts/src/usage.ts`), which web's device
-box and the chart's device split on web and mobile read. The server also sends
-`origins` on `UsageSummary` (optional; usage rows keyed by origin, basis, `via`,
-provider and source with no day, so the payload stays small), and clients merge
-the rows with the same source ownership as buckets. Code:
+box and the chart's device split on web and mobile read. `devices: true` on
+`UsageSummary` says the server labels devices; a server without it (one that
+cannot read its T3 prompts, or predates the flag) has its usage read as
+unlabelled. Code:
 `apps/server/src/usage/UsageOrigins.ts` (classifier, cause chains, SQL, turn
-index), `attributeOrigin` and `countPrompt` in `usageAggregation.ts`, `readOriginReasons` in `UsageService.ts`, `mergeOrigins`
-and `usageSplitBands` in `packages/shared/src/usageMerge.ts`,
+index), `attributeOrigin` in `usageAggregation.ts`, `readOriginReasons` in
+`UsageService.ts`, `usageSplitBands` in `packages/shared/src/usageMerge.ts`,
 `apps/server/src/cli/usage.ts`, and `deviceBox` in
 `apps/web/src/components/usage/usageSplits.ts`.
 
 FirstMate half, in the FirstMate fork:
 [Nightly usage-labels check](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#nightly-usage-labels-check).
+
+Upstream: none.
+
+## Kinds of work
+
+Usage splits into groups you name, such as Trading or Tooling, each holding
+projects, folders or both; a shared group spreads over the others.
+
+The captain wants to see what his tokens buy by kind of work, not by provider,
+so the server places every model call in a group by the folder its session ran
+in (`apps/server/src/usage/usageWork.ts`): a project covers its folder and the
+same places in its repository's worktrees, even removed ones T3 ran a thread
+in; a folder entry covers that folder only; the closest entry wins, a folder
+entry on a tie. A no-mistakes review counts to the repository it reviewed.
+Claude history with no folder is placed by its transcript folder's name, which
+Claude writes with `/` and `-` alike: a name longer than a project's counts to
+it unless a sibling folder of that name is on disk. A shared group, and with
+**Share Other** usage in no group, is spread over the other groups in each bar
+by their own share (`spreadSharedWork` in `packages/shared/src/usageMerge.ts`),
+so the bars still add up; the export keeps each call's own group. Groups open
+into their members unless turned off, and members can be hidden; the user
+guide's [Kinds of work](../docs/user/usage.md#split-the-chart-by-provider-device-kind-of-work-or-type)
+covers the settings.
+
+The groups are server settings (`usageWorkGroups`, `usageWorkShareOther`,
+`usageWorkMemberLabel` in `packages/contracts/src/settings.ts`), edited in
+**Settings → Providers → Kinds of work**
+(`apps/web/src/components/settings/UsageWorkGroupsSettings.tsx`), so every
+client sees the same ones. For syncs, keep those settings keys, the `work` and
+`workMembers` bucket splits and `workGroups`, `sharedWork` and `workMembers`
+on `UsageSummary`, and the member names `usageWork.ts` builds.
 
 Upstream: none.
 

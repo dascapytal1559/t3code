@@ -849,16 +849,11 @@ export class UsageOrigins extends Context.Service<
     ) => Effect.Effect<void, UsageOriginsReadError>;
     /** How far labels are written down; null before the first close. */
     readonly closedSpan: Effect.Effect<UsageClose.ClosedSpan | null, UsageOriginsReadError>;
-    /** These sessions' stored labels, and the prompts labelled in the window's closed part. */
+    /** These sessions' stored labels. */
     readonly readClosed: (input: {
       readonly span: UsageClose.ClosedSpan;
       readonly sessionIds: readonly string[];
-      readonly sinceMs: number;
-      readonly untilMs: number;
-    }) => Effect.Effect<
-      { readonly labels: UsageClose.ClosedLabels; readonly prompts: readonly OriginPrompt[] },
-      UsageOriginsReadError
-    >;
+    }) => Effect.Effect<{ readonly labels: UsageClose.ClosedLabels }, UsageOriginsReadError>;
     /**
      * Writes down the label of every record and prompt after the last close through `throughMs`,
      * as Usage reads them now, then reads them back; anything read back differently rolls it back.
@@ -1858,17 +1853,9 @@ const make = Effect.gen(function* () {
     function* (input: {
       readonly span: UsageClose.ClosedSpan;
       readonly sessionIds: readonly string[];
-      readonly sinceMs: number;
-      readonly untilMs: number;
     }) {
-      const [rows, prompts] = yield* Effect.all([
-        store.sessionLabels(input.sessionIds, input.span.throughMs),
-        store.promptLabels(
-          Math.max(input.sinceMs, input.span.fromMs),
-          Math.min(input.untilMs, input.span.throughMs + 1),
-        ),
-      ]);
-      return { labels: new UsageClose.ClosedLabels(rows), prompts };
+      const rows = yield* store.sessionLabels(input.sessionIds, input.span.throughMs);
+      return { labels: new UsageClose.ClosedLabels(rows) };
     },
     Effect.mapError((cause) => new UsageOriginsReadError({ cause })),
   );

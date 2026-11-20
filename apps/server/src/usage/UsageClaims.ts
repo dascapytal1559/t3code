@@ -222,6 +222,7 @@ const make = Effect.gen(function* () {
       "bound" in input.value && input.value.bound !== undefined
         ? encodeBound(input.value.bound)
         : null;
+    // `claimed_at` stays the first claim's: a run named while it ran stays so when named again.
     const onConflict =
       input.ifUnclaimed === true
         ? sql`DO NOTHING`
@@ -230,8 +231,7 @@ const make = Effect.gen(function* () {
             cause_run_id = excluded.cause_run_id,
             cause_message_id = excluded.cause_message_id,
             device = excluded.device,
-            bound_json = excluded.bound_json,
-            claimed_at = excluded.claimed_at`;
+            bound_json = excluded.bound_json`;
     const written = yield* sql`
       INSERT INTO usage_claims
         (target_kind, target, claimed_from, cause_thread_id, cause_run_id, cause_message_id,

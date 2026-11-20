@@ -213,6 +213,8 @@ export const makeLabelStore = (sql: SqlClient.SqlClient) => {
 export interface BornCheck {
   readonly records: number;
   readonly differingRecords: number;
+  /** Records whose session has no born label, such as a terminal session T3 never registered. */
+  readonly unbornRecords: number;
   readonly prompts: number;
   readonly differingPrompts: number;
   /** Differences by the close's reason and the born row's (`none` when it has none). */
@@ -252,9 +254,14 @@ export function checkBorn(input: {
     byReason[reason] = (byReason[reason] ?? 0) + 1;
   };
   let differingRecords = 0;
+  let unbornRecords = 0;
   for (const record of input.records) {
     const derived = input.derived(record);
     const born = input.born.labelAt(record);
+    if (born === undefined) {
+      unbornRecords++;
+      continue;
+    }
     if (UsageClose.sameKey(derived, born)) continue;
     differingRecords++;
     count("record", derived, born);
@@ -270,6 +277,7 @@ export function checkBorn(input: {
   return {
     records: input.records.length,
     differingRecords,
+    unbornRecords,
     prompts: input.derivedPrompts.length,
     differingPrompts,
     byReason,

@@ -556,15 +556,15 @@ describe("mergeUsage", () => {
   it("splits usage by device and kind of work so each day's bands add up to its total", () => {
     const mac = { provider: "claude" as const, hostId: "mac", homePath: "/a/.claude" };
     const day8 = "2026-08-08" as UsageDay;
-    const withOrigins = (usageSummary: UsageSummary): UsageSummary => ({
+    const withDevices = (usageSummary: UsageSummary): UsageSummary => ({
       ...usageSummary,
-      origins: { usage: [], prompts: [] },
+      devices: true,
     });
     const merged = mergeUsage(
       [
         environment(
           "mac",
-          withOrigins({
+          withDevices({
             ...summary(
               [
                 bucket({
@@ -792,7 +792,7 @@ describe("mergeUsage", () => {
     });
   });
 
-  it("counts all usage as unlabelled when no server reports origins", () => {
+  it("counts all usage as unlabelled when no server labels devices", () => {
     const merged = mergeUsage(
       [
         environment(
@@ -980,84 +980,5 @@ describe("mergeUsage", () => {
 
     expect(merged.sessions).toBe(1);
     expect(merged.providers[0]?.sessions).toBe(1);
-  });
-
-  it("counts origin usage once per owned source, sums prompts, and leaves the rest unlinked", () => {
-    const shared = { provider: "claude" as const, hostId: "mac", homePath: "/mac/.claude" };
-    const phoneRow = {
-      origin: "phone" as const,
-      basis: "stamp" as const,
-      provider: "claude" as const,
-      sourcePath: shared.homePath,
-      totals: { ...bucket().totals, uncachedInputTokens: 40, cachedInputTokens: 0 },
-      costUsd: 4,
-    };
-    const withOrigins = (
-      usageSummary: UsageSummary,
-      origins: NonNullable<UsageSummary["origins"]>,
-    ): UsageSummary => ({ ...usageSummary, origins });
-    const merged = mergeUsage(
-      [
-        environment(
-          "env-a",
-          withOrigins(summary([bucket({ sourcePath: shared.homePath })], [shared]), {
-            usage: [phoneRow],
-            prompts: [
-              { origin: "phone", basis: "stamp", prompts: 2 },
-              { origin: "phone", basis: "nativeApp", prompts: 3 },
-              // A crew prompt whose cause leads to a phone prompt keeps its sender apart.
-              { origin: "phone", basis: "stamp", via: "crew", prompts: 1 },
-            ],
-          }),
-        ),
-        // Reads the same directory, so its origin usage is env-a's, but its prompts are its own.
-        environment(
-          "env-b",
-          withOrigins(summary([bucket({ sourcePath: shared.homePath })], [shared]), {
-            usage: [phoneRow],
-            prompts: [{ origin: "unknown", basis: "unstamped", prompts: 7 }],
-          }),
-        ),
-        // Predates origins: all of its usage is unlinked.
-        environment(
-          "env-old",
-          summary(
-            [bucket({ provider: "codex", sourcePath: "/old/.codex" })],
-            [{ provider: "codex", hostId: "old", homePath: "/old/.codex" }],
-          ),
-        ),
-      ],
-      USAGE_CONTRACT_VERSION,
-    );
-
-    expect(merged.costUsd).toBe(20);
-    expect(merged.origins).toEqual({
-      rows: [
-        {
-          origin: "phone",
-          prompts: 6,
-          costUsd: 4,
-          totalTokens: 100,
-          bases: [
-            { basis: "nativeApp", prompts: 3, costUsd: 0, totalTokens: 0 },
-            { basis: "stamp", prompts: 2, costUsd: 4, totalTokens: 100 },
-            { basis: "stamp", via: "crew", prompts: 1, costUsd: 0, totalTokens: 0 },
-          ],
-        },
-        {
-          origin: "unknown",
-          prompts: 7,
-          costUsd: 0,
-          totalTokens: 0,
-          bases: [{ basis: "unstamped", prompts: 7, costUsd: 0, totalTokens: 0 }],
-        },
-      ],
-      unlinkedCostUsd: 16,
-      unlinkedTokens: merged.totalTokens - 100,
-    });
-    expect(
-      mergeUsage([environment("env-old", summary([bucket()], [shared]))], USAGE_CONTRACT_VERSION)
-        .origins,
-    ).toBeNull();
   });
 });

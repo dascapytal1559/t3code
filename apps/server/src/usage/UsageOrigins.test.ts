@@ -1706,8 +1706,6 @@ describe("UsageOrigins daily close", () => {
         const stored = yield* origins.readClosed({
           span: span!,
           sessionIds: ["firstmate-session", "worker-session"],
-          sinceMs: time("00:00"),
-          untilMs: time("23:59"),
         });
         const relabelled = new UsageOriginIndex(yield* origins.read(time("00:00"), time("23:59")));
         assert.deepStrictEqual(
@@ -1745,7 +1743,6 @@ describe("UsageOrigins daily close", () => {
             ],
           ],
         );
-        assert.strictEqual(stored.prompts.length, 3);
         // Binding at a closed time answers from the stored labels, as it answered before.
         assert.deepStrictEqual(yield* bindAll, boundBefore);
       }).pipe(Effect.provide(layer)),
@@ -1768,8 +1765,6 @@ describe("UsageOrigins daily close", () => {
       const stored = yield* origins.readClosed({
         span: (yield* origins.closedSpan)!,
         sessionIds: ["stray"],
-        sinceMs: time("00:00"),
-        untilMs: time("23:59"),
       });
       assert.deepStrictEqual(
         records.map((record) => label(stored.labels.labelAt(record))),

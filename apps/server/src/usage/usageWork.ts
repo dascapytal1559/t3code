@@ -327,15 +327,28 @@ export function makeUsageWork(options: UsageWorkOptions) {
     decoder = { key, candidates };
     return decoder;
   };
-  const decode = (name: string, candidates: readonly [string, string][]) => {
+  // Claude writes '/' and '-' alike, so a name longer than a candidate's may be one of its
+  // folders or a sibling, such as `app-web` for `app`. A sibling on disk rules the candidate out;
+  // with neither on disk, the folder is gone and the candidate stays the best guess.
+  const decode = async (name: string, candidates: readonly [string, string][]) => {
     if (decoded.has(name)) return decoded.get(name)!;
     const review = noMistakesEncoded.exec(name);
-    const found =
-      review !== null
-        ? reviewFolder(review)
-        : (candidates.find(
-            ([encoded]) => name === encoded || name.startsWith(encoded + "-"),
-          )?.[1] ?? null);
+    let found = review === null ? null : reviewFolder(review);
+    for (const [encoded, folder] of review === null ? candidates : []) {
+      if (name !== encoded && !name.startsWith(encoded + "-")) continue;
+      const rest = name.slice(encoded.length + 1);
+      if (
+        name !== encoded &&
+        !(await hasEncodedFolder(folder, rest)) &&
+        (await hasEncodedFolder(
+          NodePath.dirname(folder),
+          `${encodeClaudeFolder(NodePath.basename(folder))}-${rest}`,
+        ))
+      )
+        continue;
+      found = folder;
+      break;
+    }
     decoded.set(name, found);
     return found;
   };
@@ -446,7 +459,7 @@ export function makeUsageWork(options: UsageWorkOptions) {
           file.provider === "codex"
             ? (codex?.get(filePath) ?? null)
             : file.provider === "claude"
-              ? decode(claudeFolderName(filePath, file.sourceDir), claudeNames)
+              ? await decode(claudeFolderName(filePath, file.sourceDir), claudeNames)
               : null;
         byFile.set(filePath, folder === null ? null : await groupOfFolder(folder));
       }),
@@ -490,6 +503,30 @@ export function makeUsageWork(options: UsageWorkOptions) {
 }
 
 export type UsageWork = ReturnType<typeof makeUsageWork>;
+
+/** Whether a folder inside `folder` encodes, relative to it, as `rest`. */
+async function hasEncodedFolder(folder: string, rest: string): Promise<boolean> {
+  const children = await NodeFSP.readdir(folder, { withFileTypes: true }).catch(() => []);
+  for (const child of children) {
+    const path = NodePath.join(folder, child.name);
+    const isFolder =
+      child.isDirectory() ||
+      (child.isSymbolicLink() &&
+        (await NodeFSP.stat(path).then(
+          (stat) => stat.isDirectory(),
+          () => false,
+        )));
+    if (!isFolder) continue;
+    const encoded = encodeClaudeFolder(child.name);
+    if (rest === encoded) return true;
+    if (
+      rest.startsWith(encoded + "-") &&
+      (await hasEncodedFolder(path, rest.slice(encoded.length + 1)))
+    )
+      return true;
+  }
+  return false;
+}
 
 /** The first folder below Claude's projects folder: the encoded working folder. */
 const claudeFolderName = (filePath: string, sourceDir: string) =>

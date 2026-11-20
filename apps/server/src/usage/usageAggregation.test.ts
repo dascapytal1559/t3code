@@ -183,7 +183,7 @@ describe("UsageAggregator", () => {
     expect(result.buckets).toHaveLength(0);
   });
 
-  it("splits kept records by origin so the origins and the unlinked rest partition the totals", () => {
+  it("tallies kept records once each by why they count where they do", () => {
     const aggregator = new UsageAggregator({
       timeZone: "UTC",
       sinceDay: "2026-08-01",
@@ -210,59 +210,10 @@ describe("UsageAggregator", () => {
     ]) {
       aggregator.add(item, "/claude");
     }
-    const typed = { origin: "phone", basis: "stamp", reason: "typed" } as const;
-    aggregator.countPrompt(Date.parse("2026-08-07T00:00:00Z"), typed);
-    aggregator.countPrompt(Date.parse("2026-08-08T00:00:00Z"), typed);
-    aggregator.countPrompt(Date.parse("2026-07-30T00:00:00Z"), typed);
-    aggregator.countPrompt(Date.parse("2026-08-07T00:00:00Z"), {
-      origin: "phone",
-      basis: "stamp",
-      via: "crew",
-      reason: "inherited",
-    });
-    aggregator.countPrompt(Date.parse("2026-08-07T00:00:00Z"), {
-      origin: "computer",
-      basis: "default",
-      reason: "unstamped",
-    });
     const result = aggregator.finish();
 
     const recordCost = result.buckets[0]!.costUsd / 4;
     expect(result.buckets[0]?.records).toBe(4);
-    // Keyed usage is counted in finish(), after the unkeyed records.
-    expect(result.origins?.usage).toEqual([
-      {
-        origin: "computer",
-        basis: "default",
-        via: "crew",
-        provider: "claude",
-        sourcePath: "/claude",
-        totals: record().totals,
-        costUsd: expect.closeTo(recordCost),
-      },
-      {
-        origin: "phone",
-        basis: "stamp",
-        via: "crew",
-        provider: "claude",
-        sourcePath: "/claude",
-        totals: record().totals,
-        costUsd: expect.closeTo(recordCost),
-      },
-      {
-        origin: "phone",
-        basis: "stamp",
-        provider: "claude",
-        sourcePath: "/claude",
-        totals: record().totals,
-        costUsd: expect.closeTo(recordCost),
-      },
-    ]);
-    expect(result.origins?.prompts).toEqual([
-      { origin: "phone", basis: "stamp", prompts: 2 },
-      { origin: "phone", basis: "stamp", via: "crew", prompts: 1 },
-      { origin: "computer", basis: "default", prompts: 1 },
-    ]);
     // The same usage by why it counts there, with no via split and the folder match kept.
     const reason = { provider: "claude", tokens: 1160, records: 1 } as const;
     expect(result.originReasons).toEqual([

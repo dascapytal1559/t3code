@@ -2235,7 +2235,9 @@ describe("UsageService", () => {
               Effect.map((error) => error.reason),
             );
 
-          assert.strictEqual(yield* refusal(Date.parse("2026-11-08T23:00:00Z")), "future");
+          assert.strictEqual(yield* refusal(Date.parse("2026-11-08T23:00:00Z")), "unsettled");
+          // A turn's start can be recorded seconds late, so a time just past is not closed yet.
+          assert.strictEqual(yield* refusal(Date.parse("2026-11-08T21:58:00Z")), "unsettled");
           const dryRun = yield* service.closeThrough({ throughMs: through, dryRun: true });
           assert.deepStrictEqual(dryRun, {
             dryRun: true,
@@ -4176,22 +4178,27 @@ describe("UsageService", () => {
         output_tokens: output,
         total_tokens: input + output,
       });
-      const rollout = [
-        { type: "session_meta", payload: { id: "moved" } },
-        { type: "turn_context", payload: { turn_id: "turn-1", model: "gpt-6-astra" } },
-        {
-          type: "token_usage_record",
-          timestamp: "2026-08-01T10:00:01Z",
-          payload: { usage: usage(100, 20), response_id: "resp-1" },
-        },
-      ]
-        .map((value) => `${encodeUnknownJsonString(value)}\n`)
-        .join("");
+      // The copy's line carries another time, so only the response id says it is the same call.
+      const rollout = (at: string) =>
+        [
+          { type: "session_meta", payload: { id: "moved" } },
+          { type: "turn_context", payload: { turn_id: "turn-1", model: "gpt-6-astra" } },
+          {
+            type: "token_usage_record",
+            timestamp: at,
+            payload: { usage: usage(100, 20), response_id: "resp-1" },
+          },
+        ]
+          .map((value) => `${encodeUnknownJsonString(value)}\n`)
+          .join("");
       const original = NodePath.join(sessions, "rollout.jsonl");
       yield* Effect.promise(async () => {
         await NodeFSP.mkdir(sessions, { recursive: true });
-        await NodeFSP.writeFile(original, rollout);
-        await NodeFSP.writeFile(NodePath.join(sessions, "moved.jsonl"), rollout);
+        await NodeFSP.writeFile(original, rollout("2026-08-01T10:00:01Z"));
+        await NodeFSP.writeFile(
+          NodePath.join(sessions, "moved.jsonl"),
+          rollout("2026-08-01T10:00:02Z"),
+        );
       });
       yield* Effect.gen(function* () {
         const service = yield* UsageService.make;

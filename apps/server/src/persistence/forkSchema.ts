@@ -169,6 +169,31 @@ export const ensureForkSchema = Effect.fn("ensureForkSchema")(function* () {
       )
     `;
   }
+  // The label pass looks up what happened in a time range (`UsageLabelStore.activeThreads`).
+  // A table an upstream migration rebuilds loses its index here, and gets it back on next start.
+  const timeIndexes = [
+    [
+      "usage_provider_turns_started_idx",
+      sql`CREATE INDEX IF NOT EXISTS usage_provider_turns_started_idx
+        ON orchestration_v2_projection_provider_turns (started_at)`,
+    ],
+    [
+      "usage_provider_turns_completed_idx",
+      sql`CREATE INDEX IF NOT EXISTS usage_provider_turns_completed_idx
+        ON orchestration_v2_projection_provider_turns (completed_at)`,
+    ],
+    [
+      "usage_user_messages_created_idx",
+      sql`CREATE INDEX IF NOT EXISTS usage_user_messages_created_idx
+        ON orchestration_v2_projection_messages (created_at) WHERE role = 'user'`,
+    ],
+    [
+      "usage_threads_created_idx",
+      sql`CREATE INDEX IF NOT EXISTS usage_threads_created_idx
+        ON orchestration_v2_projection_threads (created_at)`,
+    ],
+  ] as const;
+  for (const [name, create] of timeIndexes) if (!existing.has(name)) yield* create;
   // Audited corrections of closed labels (`t3 usage relabel`): each change set with every old value.
   if (!existing.has("usage_relabels")) {
     yield* sql`

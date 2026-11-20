@@ -1268,8 +1268,6 @@ export const make = Effect.gen(function* () {
             usageOrigins.readClosed({
               span: closedSpan,
               sessionIds: [...new Set(closedRecords.map((record) => record.sessionId))],
-              sinceMs: windowStartMs,
-              untilMs: windowEndMs,
             }),
           );
     // A transcript found after its day closed has no stored label: it is worked out live.
@@ -1341,19 +1339,6 @@ export const make = Effect.gen(function* () {
             },
           }),
     });
-    const prompts =
-      labelOf === null
-        ? []
-        : [
-            ...(liveOrigins?.prompts ?? []).filter((prompt) => !isClosedAt(prompt.createdAtMs)),
-            ...(closed?.prompts ?? []),
-          ];
-    for (const prompt of prompts) {
-      aggregator.countPrompt(
-        prompt.createdAtMs,
-        UsageOrigins.settleOrigin(prompt.key, prompt.createdAtMs, "live"),
-      );
-    }
     let resolvedAny = false;
     for (const { reader } of transcriptReaders) {
       if (reader.resolveServiceTiers === undefined || fromMemory) continue;
@@ -1430,10 +1415,12 @@ export const make = Effect.gen(function* () {
           const record = correctedRecord(rawRecord);
           let dedupeKey = record.dedupeKey;
           if (
+            dedupeKey === null &&
             sharedSessionProviders.has(record.provider) &&
             crossFileSessions.has(record.sessionId)
           ) {
-            // Dedupe moved copies but retain repeated equal events within a file, including second-precision timestamps.
+            // A record with the provider's own id dedupes on it. Others dedupe moved copies but
+            // retain repeated equal events within a file, including second-precision timestamps.
             const key = encodeUsageRecordKey([
               record.provider,
               record.sessionId,
@@ -1521,7 +1508,7 @@ export const make = Effect.gen(function* () {
       sinceDay: input.sinceDay,
       untilDay: input.untilDay,
       buckets: aggregated.buckets,
-      ...(aggregated.origins === undefined ? {} : { origins: aggregated.origins }),
+      ...(labelOf === null ? {} : { devices: true as const }),
       workGroups: work.groups,
       ...(sharedWork.length === 0 ? {} : { sharedWork }),
       ...(work.members.length === 0 ? {} : { workMembers: work.members }),
@@ -1680,8 +1667,13 @@ export const make = Effect.gen(function* () {
     function* (input: { readonly throughMs: number; readonly dryRun: boolean }) {
       const { throughMs, dryRun } = input;
       const nowMs = yield* Clock.currentTimeMillis;
-      if (throughMs > nowMs)
-        return yield* refuse("future", `${isoAt(throughMs)} is in the future.`);
+      if (throughMs > nowMs - UsageClose.SETTLE_MS)
+        return yield* refuse(
+          "unsettled",
+          throughMs > nowMs
+            ? `${isoAt(throughMs)} is in the future.`
+            : `${isoAt(throughMs)} is under ${UsageClose.SETTLE_MS / 60_000} minutes ago, so its labels may still change.`,
+        );
       const span = yield* usageOrigins.closedSpan;
       const afterMs = span?.throughMs ?? UsageClose.CLOSE_FROM_MS - 1;
       if (throughMs <= afterMs)

@@ -160,6 +160,7 @@ describe("makeUsageWork", () => {
 
   it("places a Claude transcript with no folder by its encoded folder name, worktrees included", async () => {
     await linkWorktree("app", "pool/7/app", "app1");
+    await NodeFSP.mkdir(at("app-web"), { recursive: true });
     const { work } = make({ repos: { abc123: at("trader") } });
     const claudeDir = at("home", ".claude", "projects");
     const transcript = (folder: string) =>
@@ -172,6 +173,10 @@ describe("makeUsageWork", () => {
         sourceDir: claudeDir,
       },
       [transcript(at("tmp/x"))]: { provider: "claude" as const, sourceDir: claudeDir },
+      // A sibling folder, which encodes like a folder inside `app`.
+      [transcript(at("app-web"))]: { provider: "claude" as const, sourceDir: claudeDir },
+      // A folder gone from disk, sibling or not, still counts to the folder it may be inside.
+      [transcript(at("app/.t3/scratch"))]: { provider: "claude" as const, sourceDir: claudeDir },
       [transcript(at("pool/9/gone"))]: { provider: "claude" as const, sourceDir: claudeDir },
       [NodePath.join(claudeDir, encodeClaudeFolder(at("trader")), "s1", "subagents", "a.jsonl")]: {
         provider: "claude" as const,
@@ -194,6 +199,8 @@ describe("makeUsageWork", () => {
       "Tooling",
       "Trading",
       null,
+      null,
+      "Tooling",
       "Tooling",
       "Trading",
     ]);

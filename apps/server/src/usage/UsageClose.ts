@@ -24,6 +24,12 @@ import type {
 
 /** Labels are closed from here on: before it, T3 recorded no devices to label by. */
 export const CLOSE_FROM_MS = Date.parse(USAGE_ORIGINS_RECORDED_SINCE);
+
+/**
+ * Labels change for this long after their moment: T3 can record a turn's start some seconds after
+ * it began (33 s seen), so labels are written again this far back and never closed nearer now.
+ */
+export const SETTLE_MS = 5 * 60 * 1000;
 /** A close writes down everything older than this. */
 export const CLOSE_AGE_MS = 24 * 60 * 60 * 1000;
 /** A close is due once the open tail is longer than this. */
@@ -238,7 +244,7 @@ export class CloseSuperseded extends Schema.TaggedError<CloseSuperseded>()("Clos
 /** A close through a chosen time that wrote nothing; `failed` is the server's fault, not the time's. */
 export class UsageCloseError extends Schema.TaggedError<UsageCloseError>()("UsageCloseError", {
   reason: Schema.Literals([
-    "future",
+    "unsettled",
     "alreadyClosed",
     "refreshing",
     "superseded",

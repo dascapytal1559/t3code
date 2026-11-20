@@ -4,11 +4,6 @@ import {
   type UsageBucket,
   type UsageDeviceBand,
   type UsageSplit,
-  type UsageOrigin,
-  type UsageOriginBasis,
-  type UsageOriginPrompts,
-  type UsageOriginUsage,
-  type UsageOriginVia,
   type UsageProviderKind,
   type UsageSource,
   type UsageSourceFingerprint,
@@ -114,9 +109,7 @@ export interface MergedUsage {
   readonly duplicateSources: readonly string[];
   readonly contributingEnvironments: readonly EnvironmentId[];
   readonly contractMismatches: readonly UsageContractMismatch[];
-  /** Null when no selected server reports origins. */
-  readonly origins: MergedOrigins | null;
-  /** Usage by device band; null when no selected server reports origins. */
+  /** Usage by device band; null when no selected server labels devices. */
   readonly devices: MergedSplit<UsageDeviceBand> | null;
   /** Usage by kind-of-work group; `OTHER_WORK` holds usage in no group. */
   readonly work: MergedSplit<string>;
@@ -234,39 +227,6 @@ function addAmount<Key>(
     amount.totalTokens += totalTokens;
   }
 }
-
-export interface OriginBasisTotals {
-  readonly basis: UsageOriginBasis;
-  /** Who sent these prompts when the origin is the root of their recorded cause chain. */
-  readonly via?: UsageOriginVia;
-  readonly prompts: number;
-  readonly costUsd: number;
-  readonly totalTokens: number;
-}
-
-export interface OriginTotals {
-  readonly origin: UsageOrigin;
-  readonly prompts: number;
-  readonly costUsd: number;
-  readonly totalTokens: number;
-  readonly bases: readonly OriginBasisTotals[];
-}
-
-export interface MergedOrigins {
-  /** Phone, computer, agent, crew, unknown; only origins with prompts or usage. */
-  readonly rows: readonly OriginTotals[];
-  /** The rest of the merged totals: records in no T3 run, or from servers that do not report origins. */
-  readonly unlinkedCostUsd: number;
-  readonly unlinkedTokens: number;
-}
-
-const USAGE_ORIGIN_ORDER: readonly UsageOrigin[] = [
-  "phone",
-  "computer",
-  "agent",
-  "crew",
-  "unknown",
-];
 
 // volumeId distinguishes machines sharing a hostname and home path.
 function fingerprintKey(fingerprint: UsageSourceFingerprint): string {
@@ -413,7 +373,6 @@ function ownedContribution(
   sourceKey: (fingerprint: UsageSourceFingerprint) => string,
 ): {
   readonly buckets: readonly UsageBucket[];
-  readonly originUsage: readonly UsageOriginUsage[];
   readonly sessionsByProvider: ReadonlyMap<UsageProviderKind, number>;
 } {
   const ownedProviders = new Set<UsageProviderKind>();
@@ -436,85 +395,15 @@ function ownedContribution(
       );
     }
   }
-  const owned = (row: {
-    readonly provider: UsageProviderKind;
-    readonly sourcePath?: string | undefined;
-  }) =>
-    row.sourcePath === undefined
-      ? ownedProviders.has(row.provider)
-      : ownedSources.has(`${row.provider}\u0000${row.sourcePath}`);
+  const owned = (bucket: UsageBucket) =>
+    bucket.sourcePath === undefined
+      ? ownedProviders.has(bucket.provider)
+      : ownedSources.has(`${bucket.provider}\u0000${bucket.sourcePath}`);
   return {
     buckets: environment.summary.buckets.filter(
       (bucket) => supplementalBuckets.has(bucket) || owned(bucket),
     ),
-    // Origins have no cells to supplement from a partial scan; those cells count as unlinked.
-    originUsage: environment.summary.origins?.usage.filter(owned) ?? [],
     sessionsByProvider,
-  };
-}
-
-function mergeOrigins(
-  current: readonly EnvironmentUsage[],
-  originUsage: readonly UsageOriginUsage[],
-  costUsd: number,
-  totalTokens: number,
-): MergedOrigins | null {
-  if (!current.some((environment) => environment.summary.origins !== undefined)) return null;
-  const bases = new Map<UsageOrigin, Map<string, OriginBasisTotals>>();
-  const add = (
-    row: Pick<UsageOriginPrompts, "origin" | "basis" | "via">,
-    amount: Pick<OriginBasisTotals, "prompts" | "costUsd" | "totalTokens">,
-  ) => {
-    const byBasis = bases.get(row.origin) ?? new Map<string, OriginBasisTotals>();
-    const key = `${row.basis}\u0000${row.via ?? ""}`;
-    const entry = byBasis.get(key);
-    byBasis.set(key, {
-      basis: row.basis,
-      ...(row.via === undefined ? {} : { via: row.via }),
-      prompts: (entry?.prompts ?? 0) + amount.prompts,
-      costUsd: (entry?.costUsd ?? 0) + amount.costUsd,
-      totalTokens: (entry?.totalTokens ?? 0) + amount.totalTokens,
-    });
-    bases.set(row.origin, byBasis);
-  };
-  for (const row of originUsage) {
-    add(row, { prompts: 0, costUsd: row.costUsd, totalTokens: bucketTokens(row) });
-  }
-  for (const environment of current) {
-    for (const row of environment.summary.origins?.prompts ?? []) {
-      add(row, { prompts: row.prompts, costUsd: 0, totalTokens: 0 });
-    }
-  }
-  const rows: OriginTotals[] = [];
-  let linkedCostUsd = 0;
-  let linkedTokens = 0;
-  for (const origin of USAGE_ORIGIN_ORDER) {
-    const byBasis = [...(bases.get(origin)?.values() ?? [])].sort(
-      (a, b) => b.prompts - a.prompts || b.totalTokens - a.totalTokens,
-    );
-    if (byBasis.length === 0) continue;
-    let prompts = 0;
-    let originCostUsd = 0;
-    let originTokens = 0;
-    for (const basis of byBasis) {
-      prompts += basis.prompts;
-      originCostUsd += basis.costUsd;
-      originTokens += basis.totalTokens;
-    }
-    linkedCostUsd += originCostUsd;
-    linkedTokens += originTokens;
-    rows.push({
-      origin,
-      prompts,
-      costUsd: originCostUsd,
-      totalTokens: originTokens,
-      bases: byBasis,
-    });
-  }
-  return {
-    rows,
-    unlinkedCostUsd: Math.max(0, costUsd - linkedCostUsd),
-    unlinkedTokens: Math.max(0, totalTokens - linkedTokens),
   };
 }
 
@@ -557,7 +446,6 @@ const EMPTY_MERGED: MergedUsage = {
   duplicateSources: [],
   contributingEnvironments: [],
   contractMismatches: [],
-  origins: null,
   devices: null,
   work: { totals: new Map(), daily: new Map(), hourly: new Map() },
   workGroups: [],
@@ -649,7 +537,6 @@ export function mergeUsage(
     }
   >();
   const contributingEnvironments: EnvironmentId[] = [];
-  const originUsage: UsageOriginUsage[] = [];
   const devices = new SplitAccumulator<UsageDeviceBand>("unlabelled", (key) =>
     isDeviceBand(key) ? key : "unlabelled",
   );
@@ -662,11 +549,7 @@ export function mergeUsage(
     const groupOfMember = new Map(
       (environment.summary.workMembers ?? []).map((member) => [member.key, member.group]),
     );
-    const {
-      buckets,
-      originUsage: ownedOriginUsage,
-      sessionsByProvider,
-    } = ownedContribution(
+    const { buckets, sessionsByProvider } = ownedContribution(
       environment,
       ownerScanByFingerprint,
       supplementalBucketsByEnvironment.get(environment.environmentId) ?? new Set(),
@@ -674,7 +557,6 @@ export function mergeUsage(
       sourceKey,
     );
     if (buckets.length > 0) contributingEnvironments.push(environment.environmentId);
-    originUsage.push(...ownedOriginUsage);
 
     for (const [providerKind, providerSessions] of sessionsByProvider) {
       sessions += providerSessions;
@@ -904,10 +786,7 @@ export function mergeUsage(
     duplicateSources: duplicates,
     contributingEnvironments,
     contractMismatches,
-    origins: mergeOrigins(current, originUsage, costUsd, totalTokens),
-    devices: current.some((environment) => environment.summary.origins !== undefined)
-      ? devices
-      : null,
+    devices: current.some((environment) => environment.summary.devices === true) ? devices : null,
     work,
     workGroups: [
       ...new Set(current.flatMap((environment) => environment.summary.workGroups ?? [])),
@@ -939,7 +818,7 @@ export interface UsageSplitBands {
 
 const NO_AMOUNT: SplitAmount = { costUsd: 0, totalTokens: 0 };
 
-/** A server that reports no origins has all of its usage unlabelled. */
+/** A server that labels no devices has all of its usage unlabelled. */
 function deviceSplitOf(usage: MergedUsage): MergedSplit<UsageDeviceBand> {
   if (usage.devices !== null) return usage.devices;
   const whole = (period: SplitAmount) =>

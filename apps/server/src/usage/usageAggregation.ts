@@ -8,10 +8,7 @@ import {
   type UsageExportRecord,
   type UsageModelFilter,
   type UsageModelSelector,
-  type UsageOriginPrompts,
   type UsageOriginReasonUsage,
-  type UsageOrigins,
-  type UsageProviderKind,
   type UsageResolution,
   type UsageSplit,
   type UsageSplitAmount,
@@ -176,23 +173,6 @@ type MutableOriginReasonUsage = {
   -readonly [K in keyof UsageOriginReasonUsage]: UsageOriginReasonUsage[K];
 };
 
-interface MutableOriginUsage {
-  readonly key: UsageOriginKey;
-  readonly provider: UsageProviderKind;
-  readonly sourcePath: string | undefined;
-  totals: { -readonly [K in keyof UsageTokenTotals]: number };
-  costUsd: number;
-}
-
-const originKeyString = (key: UsageOriginKey) =>
-  `${key.origin}\u0000${key.basis}\u0000${key.via ?? ""}`;
-
-const originKeyFields = (key: UsageOriginKey) => ({
-  origin: key.origin,
-  basis: key.basis,
-  ...(key.via === undefined ? {} : { via: key.via }),
-});
-
 export function resolveModelAliases(
   aliases: Readonly<Record<string, string>>,
 ): ReadonlyMap<string, string> {
@@ -254,8 +234,7 @@ export function canonicalModelFilter(
 
 export interface AggregateResult {
   readonly buckets: readonly UsageBucket[];
-  readonly origins?: UsageOrigins;
-  /** The same usage as `origins` by why it counts where it does; kept on the server. */
+  /** Usage by why it counts where it does, with `attributeOrigin`; kept on the server. */
   readonly originReasons?: readonly UsageOriginReasonUsage[];
   readonly duplicatesDropped: number;
   readonly outOfWindow: number;
@@ -350,14 +329,10 @@ export class UsageAggregator {
   } | null = null;
   #duplicatesDropped = 0;
   #outOfWindow = 0;
-  readonly #originUsage: Map<string, MutableOriginUsage> | null;
-  readonly #originPrompts: Map<string, UsageOriginPrompts> | null;
   readonly #originReasons = new Map<string, MutableOriginReasonUsage>();
 
   constructor(options: AggregateOptions) {
     this.#options = options;
-    this.#originUsage = options.attributeOrigin === undefined ? null : new Map();
-    this.#originPrompts = options.attributeOrigin === undefined ? null : new Map();
     this.#toDay = makeDayFormatter(options.timeZone);
     if (options.resolution === "hour") {
       if (options.sinceTimeMs === undefined || options.untilTimeMs === undefined) {
@@ -482,25 +457,7 @@ export class UsageAggregator {
       bucket.workMembers ??= new Map();
       addToCell(bucket.workMembers, place.member, tokens, priced.costUsd);
     }
-    if (this.#originUsage !== null && key !== null) {
-      const originKey = `${originKeyString(key)}\u0000${record.provider}\u0000${sourcePath ?? ""}`;
-      let origin = this.#originUsage.get(originKey);
-      if (origin === undefined) {
-        origin = {
-          key,
-          provider: record.provider,
-          sourcePath,
-          totals: { ...EMPTY_TOTALS },
-          costUsd: 0,
-        };
-        this.#originUsage.set(originKey, origin);
-      }
-      origin.totals.uncachedInputTokens += record.totals.uncachedInputTokens;
-      origin.totals.cachedInputTokens += record.totals.cachedInputTokens;
-      origin.totals.cacheCreationTokens += record.totals.cacheCreationTokens;
-      origin.totals.outputTokens += record.totals.outputTokens;
-      origin.totals.reasoningTokens += record.totals.reasoningTokens;
-      origin.costUsd += priced.costUsd;
+    if (key !== null) {
       this.#tallyReason(key, record, priced.costUsd);
     }
   }
@@ -533,16 +490,6 @@ export class UsageAggregator {
       record.totals.outputTokens;
     row.costUsd += costUsd;
     row.records += 1;
-  }
-
-  /** Counts a T3 prompt sent inside the window; needs `attributeOrigin`. */
-  countPrompt(timestampMs: number, key: UsageOriginKey): void {
-    if (this.#originPrompts === null || this.#windowDay(timestampMs) === null) return;
-    const promptKey = originKeyString(key);
-    this.#originPrompts.set(promptKey, {
-      ...originKeyFields(key),
-      prompts: (this.#originPrompts.get(promptKey)?.prompts ?? 0) + 1,
-    });
   }
 
   #windowDay(timestampMs: number): string | null {
@@ -674,32 +621,13 @@ export class UsageAggregator {
 
     return {
       buckets,
-      ...(this.#originUsage === null || this.#originPrompts === null
+      ...(this.#options.attributeOrigin === undefined
         ? {}
-        : {
-            origins: finishOrigins(this.#originUsage, this.#originPrompts),
-            originReasons: [...this.#originReasons.values()].map((row) => ({ ...row })),
-          }),
+        : { originReasons: [...this.#originReasons.values()].map((row) => ({ ...row })) }),
       duplicatesDropped: this.#duplicatesDropped,
       outOfWindow: this.#outOfWindow,
     };
   }
-}
-
-function finishOrigins(
-  usage: ReadonlyMap<string, MutableOriginUsage>,
-  prompts: ReadonlyMap<string, UsageOriginPrompts>,
-): UsageOrigins {
-  return {
-    usage: [...usage.values()].map((entry) => ({
-      ...originKeyFields(entry.key),
-      provider: entry.provider,
-      ...(entry.sourcePath === undefined ? {} : { sourcePath: entry.sourcePath }),
-      totals: { ...entry.totals },
-      costUsd: entry.costUsd,
-    })),
-    prompts: [...prompts.values()],
-  };
 }
 
 function addToCell<K>(cells: Map<K, SplitCell>, key: K, tokens: number, costUsd: number): void {

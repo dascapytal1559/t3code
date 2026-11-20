@@ -1,5 +1,12 @@
 import type { UsageDeviceBand, UsageProviderKind } from "@t3tools/contracts";
 import {
+  DEVICE_SPLIT_COLORS,
+  OTHER_WORK_COLOR,
+  WORK_GROUP_PALETTE,
+  darkLightness,
+  type UsageSplitColor,
+} from "@t3tools/client-runtime/usage-split-palette";
+import {
   OTHER_WORK,
   usageMemberBands,
   usageSplitBands,
@@ -57,53 +64,51 @@ export interface BoxModel {
 
 const ink = (percent: number) =>
   `color-mix(in oklab, var(--foreground) ${percent}%, var(--background))`;
-const tone = (hue: number, light: readonly [number, number], dark: readonly [number, number]) =>
-  `light-dark(oklch(${light[0]} ${light[1]} ${hue}), oklch(${dark[0]} ${dark[1]} ${hue}))`;
-/** A colour that is a little lighter in dark mode, as every split colour on the page is. */
-const shade = (hue: number, lightness: number, chroma: number) =>
-  tone(hue, [lightness, chroma], [Math.min(0.9, lightness + 0.08), chroma]);
+const css = (color: UsageSplitColor) =>
+  "ink" in color
+    ? ink(color.ink)
+    : `light-dark(oklch(${color.lightness} ${color.chroma} ${color.hue}), oklch(${darkLightness(color.lightness)} ${color.chroma} ${color.hue}))`;
 
-// A parent owns one colour; an opened parent's children take neighbouring hues, so they read as
-// relatives that are clearly different. Phone is amber and computer blue, as on the origin bar.
+// The device box lists the children in `DEVICE_BAND_ORDER`, as mobile stacks them.
 const DEVICE_GROUPS = [
   {
     key: "phone",
     label: msg("Phone", { $context: "device a usage origin traces to" }),
-    color: shade(66, 0.74, 0.145),
+    color: css(DEVICE_SPLIT_COLORS.phone),
     children: [
       {
         key: "phoneOrchestrated",
         label: msg("Orchestrated", { $context: "usage sent by an agent for a person's prompt" }),
-        color: shade(42, 0.68, 0.17),
+        color: css(DEVICE_SPLIT_COLORS.phoneOrchestrated),
       },
       {
         key: "phoneDirect",
         label: msg("Direct", { $context: "usage from a prompt a person typed" }),
-        color: shade(92, 0.78, 0.15),
+        color: css(DEVICE_SPLIT_COLORS.phoneDirect),
       },
     ],
   },
   {
     key: "computer",
     label: msg("Computer", { $context: "device a usage origin traces to" }),
-    color: shade(264, 0.58, 0.17),
+    color: css(DEVICE_SPLIT_COLORS.computer),
     children: [
       {
         key: "computerDirect",
         label: msg("Direct", { $context: "usage from a prompt a person typed" }),
-        color: shade(236, 0.62, 0.14),
+        color: css(DEVICE_SPLIT_COLORS.computerDirect),
       },
       {
         key: "computerOrchestrated",
         label: msg("Orchestrated", { $context: "usage sent by an agent for a person's prompt" }),
-        color: shade(290, 0.52, 0.19),
+        color: css(DEVICE_SPLIT_COLORS.computerOrchestrated),
       },
     ],
   },
   {
     key: "unlabelled",
     label: msg("Unlabelled", { $context: "usage band: usage from before devices were recorded" }),
-    color: ink(28),
+    color: css(DEVICE_SPLIT_COLORS.unlabelled),
     children: [],
   },
 ] as const satisfies readonly {
@@ -113,34 +118,11 @@ const DEVICE_GROUPS = [
   children: readonly { key: UsageDeviceBand; label: string; color: string }[];
 }[];
 
-// Kinds of work take these in settings order, with their members in the neighbouring hues. The
-// first two are a warm stone and a crimson; none reuses the device box's orange and blue.
-const GROUP_PALETTE = [
-  {
-    color: shade(60, 0.6, 0.02),
-    members: [shade(70, 0.48, 0.035), shade(100, 0.68, 0.045), shade(60, 0.74, 0.02)],
-  },
-  {
-    color: shade(15, 0.52, 0.17),
-    members: [shade(358, 0.46, 0.16), shade(30, 0.62, 0.15), shade(10, 0.7, 0.1)],
-  },
-  {
-    color: shade(150, 0.62, 0.08),
-    members: [shade(138, 0.54, 0.11), shade(165, 0.68, 0.1), shade(150, 0.74, 0.06)],
-  },
-  {
-    color: shade(330, 0.5, 0.13),
-    members: [shade(318, 0.44, 0.14), shade(345, 0.6, 0.13), shade(330, 0.7, 0.08)],
-  },
-  {
-    color: shade(185, 0.6, 0.1),
-    members: [shade(170, 0.52, 0.12), shade(196, 0.7, 0.1), shade(185, 0.76, 0.07)],
-  },
-  {
-    color: shade(115, 0.6, 0.1),
-    members: [shade(108, 0.5, 0.12), shade(132, 0.68, 0.11), shade(118, 0.76, 0.07)],
-  },
-] as const;
+const GROUP_PALETTE = WORK_GROUP_PALETTE.map((group) => ({
+  color: css(group.color),
+  members: group.members.map(css),
+}));
+const OTHER_WORK_CSS = css(OTHER_WORK_COLOR);
 
 export const OTHER_WORK_LABEL = msg("Other", { $context: "usage kind of work: usage in no group" });
 
@@ -217,7 +199,7 @@ export function workBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: b
       key: band.key,
       label: band.key === OTHER_WORK ? OTHER_WORK_LABEL : band.key,
       named: band.key !== OTHER_WORK,
-      color: palette?.color ?? ink(36),
+      color: palette?.color ?? OTHER_WORK_CSS,
       totalTokens: band.totalTokens,
       costUsd: band.costUsd,
       children: (members?.members ?? []).map((member, index) => ({
@@ -225,7 +207,7 @@ export function workBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: b
         label: member.name,
         named: true,
         // Members past the palette's three repeat its hues; the group's members are few.
-        color: palette?.members[index % palette.members.length] ?? ink(36),
+        color: palette?.members[index % palette.members.length] ?? OTHER_WORK_CSS,
         totalTokens: member.totalTokens,
         costUsd: member.costUsd,
       })),

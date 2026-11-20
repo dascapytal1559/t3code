@@ -249,6 +249,8 @@ export const UsageCloseResult = Schema.Struct({
     Schema.Struct({
       records: NonNegativeInt,
       differingRecords: NonNegativeInt,
+      /** Records whose session has no label written at birth, so none to compare. */
+      unbornRecords: NonNegativeInt,
       prompts: NonNegativeInt,
       differingPrompts: NonNegativeInt,
       byReason: Schema.Record(Schema.String, Schema.Number),
@@ -300,32 +302,6 @@ export const UsageExportRecord = Schema.Struct({
 export type UsageExportRecord = typeof UsageExportRecord.Type;
 
 /** Usage of records inside a T3 run, by the origin of the run's starting message. */
-export const UsageOriginUsage = Schema.Struct({
-  origin: UsageOrigin,
-  basis: UsageOriginBasis,
-  via: Schema.optional(UsageOriginVia),
-  provider: UsageProviderKind,
-  sourcePath: Schema.optional(TrimmedNonEmptyString),
-  totals: UsageTokenTotals,
-  costUsd: Schema.Number,
-});
-export type UsageOriginUsage = typeof UsageOriginUsage.Type;
-
-export const UsageOriginPrompts = Schema.Struct({
-  origin: UsageOrigin,
-  basis: UsageOriginBasis,
-  via: Schema.optional(UsageOriginVia),
-  prompts: NonNegativeInt,
-});
-export type UsageOriginPrompts = typeof UsageOriginPrompts.Type;
-
-/** Every usage record settles into a row; servers that predate settling leave records outside T3 runs without one. */
-export const UsageOrigins = Schema.Struct({
-  usage: ForwardCompatibleArray(UsageOriginUsage),
-  prompts: ForwardCompatibleArray(UsageOriginPrompts),
-});
-export type UsageOrigins = typeof UsageOrigins.Type;
-
 export const UsageSourceFingerprint = Schema.Struct({
   hostId: TrimmedNonEmptyString,
   provider: UsageProviderKind,
@@ -456,8 +432,11 @@ export const UsageSummary = Schema.Struct({
   scanDurationMs: NonNegativeInt,
   /** The filter the server applied; absent means unfiltered, including servers that predate filters. */
   modelFilter: Schema.optional(UsageModelFilter),
-  /** Absent when the server cannot read its T3 prompts, including servers that predate origins. */
-  origins: Schema.optional(UsageOrigins),
+  /**
+   * Whether the buckets' `devices` split labels usage; absent when the server cannot read its T3
+   * prompts, and from servers that predate the flag, so their usage reads as unlabelled.
+   */
+  devices: Schema.optional(Schema.Literal(true)),
   /** The `usageWorkGroups` names in settings order; absent from servers that predate them. */
   workGroups: Schema.optional(Schema.Array(Schema.String)),
   /** Kinds of work clients spread over the other groups: shared group names, `""` for Other. */

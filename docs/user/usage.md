@@ -81,7 +81,8 @@ history show as **Unlabelled**. To see how much of the computer's share is there
 `t3 usage reasons`. Once usage is more than a day old, its origin is final: the server writes it
 down within a day or two and reads it back from then on, so nothing done later changes it. To
 write it down sooner, run `t3 usage close --through <time>` with the time's offset, such as
-`2026-11-19T15:00:00+11:00`; add `--dry-run` first to see what it would write.
+`2026-11-19T15:00:00+11:00` (at least 5 minutes ago); add `--dry-run` first to see what it would
+write.
 
 ## Split the chart by provider, device, kind of work or type
 
