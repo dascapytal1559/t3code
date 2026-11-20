@@ -23,14 +23,12 @@ const WAVE_SPREAD_MS = 60;
 const waveDelay = (index: number, count: number, from: ChartWaveOrigin) =>
   count <= 1 ? 0 : ((from === "end" ? count - 1 - index : index) / (count - 1)) * WAVE_SPREAD_MS;
 
-/** A chart bar falling into the baseline at a card switch. */
-const BAR_FALL = { duration: 90, easing: "cubic-bezier(0.55, 0, 0.8, 0.3)" };
-/** A chart bar rising in its place once the old one has fallen. */
-const BAR_RISE = { duration: 150, easing: "cubic-bezier(0.22, 1, 0.36, 1)" };
+/** The chart's bars at a card switch: each old bar falls, then its new bar rises, on one curve. */
+const BAR_SWITCH = { easing: "linear", fall: 90, rise: 200 };
 
 /**
  * Drop and rise: each old bar falls into the baseline and its new bar rises in its place, in a
- * quick wave from the boxes' side. 300 ms at most; resolves when the last lands.
+ * quick wave from the boxes' side. 350 ms at most; resolves when the last lands.
  */
 export function dropAndRise(
   outgoing: readonly HTMLElement[],
@@ -40,7 +38,8 @@ export function dropAndRise(
   const count = Math.max(outgoing.length, incoming.length);
   outgoing.forEach((bar, index) => {
     bar.animate([{ transform: "scaleY(1)" }, { transform: "scaleY(0)" }], {
-      ...BAR_FALL,
+      duration: BAR_SWITCH.fall,
+      easing: BAR_SWITCH.easing,
       delay: waveDelay(index, count, from),
       fill: "forwards",
     });
@@ -49,8 +48,9 @@ export function dropAndRise(
     incoming.map(
       (bar, index) =>
         bar.animate([{ transform: "scaleY(0)" }, { transform: "scaleY(1)" }], {
-          ...BAR_RISE,
-          delay: waveDelay(index, count, from) + BAR_FALL.duration,
+          duration: BAR_SWITCH.rise,
+          easing: BAR_SWITCH.easing,
+          delay: waveDelay(index, count, from) + BAR_SWITCH.fall,
           fill: "backwards",
         }).finished,
     ),
@@ -124,7 +124,11 @@ export function burst(host: HTMLElement, x: number, y: number, colors: readonly 
 /** A card opening out of its bar, which holds still while the card grows around it. */
 const CARD_REVEAL = { duration: 420, easing: cubicBezier(EASE_OPEN) };
 /** The column closing up, from `delay` ms into the opening, when the opening moved the bar. */
-const CARD_SETTLE = { delay: 150, duration: 260, easing: "cubic-bezier(0.3, 0, 0.2, 1)" };
+const CARD_SETTLE = {
+  delay: 150,
+  duration: 260,
+  easing: "cubic-bezier(0.87, 0.06, 0.9, 0.42)",
+};
 
 /**
  * The card grows out of its bar's outline, and the bar eases from where the folded bar stood
@@ -288,7 +292,8 @@ export function ripple(bar: HTMLElement, clickAt: number): void {
 }
 
 // The left nav's Unfold, from crewMotion: the trunk grows, the branch draws down and round its
-// corner, then the row fades and snaps. Played at 0.45 of the nav's pace; closing at 0.7 of that.
+// corner, and the row fades and snaps in as the branch reaches it. Played at 0.45 of the nav's
+// pace; closing at 0.7 of that.
 const PACE = 0.45;
 const CLOSE = 0.7;
 const SNAP = spring(520 / PACE ** 2, 30 / PACE);
@@ -299,8 +304,8 @@ const paced = (start: number, duration: number) => ({
 const UNFOLD = {
   open: paced(0, 320),
   branch: paced(60, 460),
-  fade: paced(300, 140),
-  snap: { start: Math.round(300 * PACE), duration: SNAP.duration },
+  fade: paced(440, 260),
+  snap: { start: Math.round(440 * PACE), duration: SNAP.duration },
 };
 const UNFOLD_TOTAL = Math.max(...Object.values(UNFOLD).map((part) => part.start + part.duration));
 const STAGGER_MS = Math.round(110 * PACE);
@@ -370,11 +375,11 @@ export function fold(rows: readonly TreeRow[]): Promise<unknown> {
 export const SHUT_AFTER_MS = 70;
 /** The nav's retract curve, for the rows below gliding into a closed parent's space. */
 export const SHUT = { duration: 170, easing: "cubic-bezier(0.3, 0, 0.2, 1)" } as const;
-/** The rows below a parent gliding down as its children unfold. */
-export const OPEN_SPACE = {
-  duration: UNFOLD.open.duration,
-  easing: cubicBezier(EASE_OPEN),
-} as const;
+/** The space for `rows` children opening, and the rows below gliding down, as the rows arrive. */
+export const openSpace = (rows: number) => ({
+  duration: UNFOLD.fade.start + UNFOLD.fade.duration + STAGGER_MS * Math.max(0, rows - 1),
+  easing: cubicBezier(EASE_TRAVEL),
+});
 
 /** Rows glide from where they were (`deltas`, px) to where layout now puts them. */
 export function glide(

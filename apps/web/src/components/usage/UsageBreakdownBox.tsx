@@ -9,7 +9,7 @@ import {
   burst,
   fold,
   glide,
-  OPEN_SPACE,
+  openSpace,
   reducedMotion,
   reveal,
   ripple,
@@ -285,18 +285,17 @@ export function UsageBreakdownBox({
       return;
     }
     const tops = topsOf(rows);
+    const children = treeRows(rows, step.group);
+    const space = openSpace(children.length);
     glide(
       [...step.tops].flatMap(([key, top]) => {
         const now = tops.get(key);
         return now === undefined ? [] : [{ cells: rowCells(rows, key), delta: top - now }];
       }),
-      OPEN_SPACE,
+      space,
     );
-    rows.animate(
-      [{ height: `${step.height}px` }, { height: `${rows.offsetHeight}px` }],
-      OPEN_SPACE,
-    );
-    unfold(treeRows(rows, step.group));
+    rows.animate([{ height: `${step.height}px` }, { height: `${rows.offsetHeight}px` }], space);
+    unfold(children);
   });
 
   if (!open) {
@@ -336,14 +335,15 @@ export function UsageBreakdownBox({
 
   const row = (
     band: BoxBand,
-    kind: "parent" | "child",
+    kind: "first" | "parent" | "child",
     first: ReactNode,
     name: ReactNode,
     rowExtras: BoxRowExtras | undefined,
   ) => {
     const position = emphasisOf(band);
     const cell = cn(
-      kind === "parent" && "mt-1 first:mt-0",
+      // Each row sits in a `contents` wrapper, so `first:` would match every row's first cell.
+      kind === "parent" && "mt-1",
       rowExtras?.excluded === true && "opacity-50 grayscale",
     );
     return (
@@ -359,7 +359,7 @@ export function UsageBreakdownBox({
           data-row={band.key}
           className={cn(
             "flex min-w-0 items-center gap-1.5 truncate",
-            kind === "parent" ? "font-medium text-foreground" : "ps-0.5 text-muted-foreground",
+            kind === "child" ? "ps-0.5 text-muted-foreground" : "font-medium text-foreground",
             cell,
           )}
         >
@@ -399,7 +399,7 @@ export function UsageBreakdownBox({
         ref={rowsRef}
         className="grid grid-cols-[0.5rem_minmax(0,1fr)_auto_2.75rem] content-start items-center gap-x-2 gap-y-1 text-xs tabular-nums"
       >
-        {model.groups.map((group) => {
+        {model.groups.map((group, groupIndex) => {
           const rowExtras = extras?.[group.key];
           const dot = (
             <i
@@ -444,7 +444,7 @@ export function UsageBreakdownBox({
             ? group.children.filter((child) => !group.hidden.has(child.key))
             : [];
           return [
-            row(group, "parent", dot, name, rowExtras),
+            row(group, groupIndex === 0 ? "first" : "parent", dot, name, rowExtras),
             ...shownChildren.map((child, index) =>
               row(
                 child,
