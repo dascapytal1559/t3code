@@ -32,10 +32,10 @@ export function resolveUsageShortcut(
       target.tagName === "SELECT" ||
       target.isContentEditable ||
       target.closest(
-        '[role="dialog"]:not([data-app-modal]), [aria-modal="true"]:not([data-app-modal]), [data-slot$="popup"]:not([data-app-modal]), [aria-haspopup]:not([aria-haspopup="false"]), [role="listbox"], [role="menu"]',
+        '[role="dialog"]:not([data-app-modal]), [aria-modal="true"]:not([data-app-modal]), [data-slot$="popup"]:not([data-app-modal])',
       ) ||
       (event.key.startsWith("Arrow") &&
-        target.closest('[role="radiogroup"], [role="tablist"], [data-slot="toggle-group"]')))
+        target.closest('[aria-haspopup]:not([aria-haspopup="false"]), [role="radiogroup"]')))
   ) {
     return null;
   }
