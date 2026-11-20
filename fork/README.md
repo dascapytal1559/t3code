@@ -1586,6 +1586,23 @@ flows to it through `RuntimePolicy.ts`.
 
 Upstream: none.
 
+## Folder MCP servers on Antigravity
+
+An Antigravity thread gets the MCP servers in its folder's `.mcp.json` besides
+T3's own, as a Claude thread does. Antigravity reads no project MCP config, so
+without this an agent that works through a project server lost it on Gemini.
+
+T3 reads the file in Claude Code's format (stdio, http and sse entries, headers,
+`${VAR}` and `${VAR:-default}`) and passes its servers when the session starts,
+loads, resumes or forks. An absent file means none; an invalid file or entry is
+skipped with a warning that names no values; an entry cannot replace T3's own
+`t3-code` server. Code: `readProjectMcpServers` in
+`packages/provider-acp/src/server/projectMcpServers.ts`, which other ACP drivers
+can use, and `makeRuntime` in
+`apps/server/src/orchestration-v2/Adapters/AntigravityAdapterV2.ts`.
+
+Upstream: none. Its Antigravity sessions get T3's server alone.
+
 ## Bridge
 
 The right panel's "Bridge" tab is the captain's overview beside any chat: their

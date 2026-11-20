@@ -36,6 +36,7 @@ Every difference from upstream, in the order [fork/README.md](fork/README.md) de
 - [A fresh start really ends the old one](fork/README.md#a-fresh-start-really-ends-the-old-one): `/clear` on FirstMate stops the old session even when busy.
 - [Auto clearing (cold clear)](fork/README.md#auto-clearing-cold-clear): FirstMate starts fresh once its cache expires; any project can opt in.
 - [Lean Claude startup](fork/README.md#lean-claude-startup): a project can start Claude with only T3's and its folder's MCP servers, for a smaller first request.
+- [Folder MCP servers on Antigravity](fork/README.md#folder-mcp-servers-on-antigravity): an Antigravity thread gets its folder's `.mcp.json` servers, as Claude does.
 - [Bridge](fork/README.md#bridge): your objectives and FirstMate's model routing, in a side-panel tab.
 - [Clean restarts](fork/README.md#clean-restarts): a restart waits for running turns and holds new messages until after it.
 - [One-line cards](fork/README.md#one-line-cards): each thread is one line: project icon, title, status; accounts numbered 1, 2, 3.
