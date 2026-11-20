@@ -13,28 +13,6 @@ import {
 export const reducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-const supportsLinear = () =>
-  typeof CSS !== "undefined" && CSS.supports("animation-timing-function", "linear(0, 1)");
-
-/** A damped spring as a CSS `linear()` curve, sampled over its own length; a back-ease without. */
-function springCurve(damping: number, samples = 60): string {
-  if (!supportsLinear()) return "cubic-bezier(0.34, 1.56, 0.64, 1)";
-  const w = 6.9 / damping;
-  const wd = w * Math.sqrt(1 - damping * damping);
-  const points = Array.from({ length: samples + 1 }, (_, k) => {
-    const t = k / samples;
-    return (
-      1 -
-      Math.exp(-damping * w * t) * (Math.cos(wd * t) + ((damping * w) / wd) * Math.sin(wd * t))
-    ).toFixed(4);
-  });
-  points[samples] = "1";
-  return `linear(${points.join(", ")})`;
-}
-
-/** About a quarter overshoot: what the reward click and the rising bars land on. */
-const BOUNCE = springCurve(0.42);
-
 /** Where a chart switch starts: the side the breakdown boxes are on. */
 export type ChartWaveOrigin = "start" | "end";
 
@@ -45,6 +23,11 @@ const WAVE_SPREAD_MS = 60;
 const waveDelay = (index: number, count: number, from: ChartWaveOrigin) =>
   count <= 1 ? 0 : ((from === "end" ? count - 1 - index : index) / (count - 1)) * WAVE_SPREAD_MS;
 
+/** A chart bar falling into the baseline at a card switch. */
+const BAR_FALL = { duration: 90, easing: "cubic-bezier(0.55, 0, 0.8, 0.3)" };
+/** A chart bar rising in its place once the old one has fallen. */
+const BAR_RISE = { duration: 150, easing: "cubic-bezier(0.22, 1, 0.36, 1)" };
+
 /**
  * Drop and rise: each old bar falls into the baseline and its new bar rises in its place, in a
  * quick wave from the boxes' side. 300 ms at most; resolves when the last lands.
@@ -54,14 +37,11 @@ export function dropAndRise(
   incoming: readonly HTMLElement[],
   from: ChartWaveOrigin,
 ): Promise<unknown> {
-  const fall = 90;
-  const rise = 150;
   const count = Math.max(outgoing.length, incoming.length);
   outgoing.forEach((bar, index) => {
     bar.animate([{ transform: "scaleY(1)" }, { transform: "scaleY(0)" }], {
-      duration: fall,
+      ...BAR_FALL,
       delay: waveDelay(index, count, from),
-      easing: "cubic-bezier(0.55, 0, 0.8, 0.3)",
       fill: "forwards",
     });
   });
@@ -69,9 +49,8 @@ export function dropAndRise(
     incoming.map(
       (bar, index) =>
         bar.animate([{ transform: "scaleY(0)" }, { transform: "scaleY(1)" }], {
-          duration: rise,
-          delay: waveDelay(index, count, from) + fall,
-          easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+          ...BAR_RISE,
+          delay: waveDelay(index, count, from) + BAR_FALL.duration,
           fill: "backwards",
         }).finished,
     ),
@@ -142,24 +121,78 @@ export function burst(host: HTMLElement, x: number, y: number, colors: readonly 
   }
 }
 
-/** The card springs open from a little smaller, with a passing shadow. */
-export function pop(card: HTMLElement): void {
-  card.animate([{ transform: "scale(0.88) translateY(6px)" }, { transform: "none" }], {
-    duration: 900,
-    easing: BOUNCE,
-  });
+/** A card opening out of its bar, which holds still while the card grows around it. */
+const CARD_REVEAL = { duration: 420, easing: cubicBezier(EASE_OPEN) };
+/** The column closing up, from `delay` ms into the opening, when the opening moved the bar. */
+const CARD_SETTLE = { delay: 150, duration: 260, easing: "cubic-bezier(0.3, 0, 0.2, 1)" };
+
+/**
+ * The card grows out of its bar's outline, and the bar eases from where the folded bar stood
+ * (`from`, viewport px) into its place in the card.
+ */
+export function reveal(
+  card: HTMLElement,
+  bar: HTMLElement,
+  from: { readonly left: number; readonly width: number },
+): void {
+  const c = card.getBoundingClientRect();
+  const b = bar.getBoundingClientRect();
+  const left = Math.max(0, from.left - c.left);
+  const right = Math.max(0, c.right - from.left - from.width);
   card.animate(
     [
-      { boxShadow: "0 0 0 0 transparent" },
       {
-        boxShadow:
-          "0 14px 36px -12px color-mix(in srgb, var(--foreground) 40%, transparent), 0 0 0 3px color-mix(in srgb, var(--primary) 30%, transparent)",
-        offset: 0.3,
+        clipPath: `inset(${b.top - c.top}px ${right}px ${c.bottom - b.bottom}px ${left}px round 2px)`,
       },
-      { boxShadow: "0 0 0 0 transparent" },
+      { clipPath: `inset(0 round ${getComputedStyle(card).borderTopLeftRadius})` },
     ],
-    { duration: 900, easing: cubicBezier(EASE_OUT) },
+    CARD_REVEAL,
   );
+  regrow(bar, from);
+}
+
+/**
+ * A share bar easing from where it stood into its place, with the card opening: `from` is its
+ * old left and width in viewport px, `dy` how far it stood below its place in its own box.
+ */
+export function regrow(
+  bar: HTMLElement,
+  from: { readonly left: number; readonly width: number },
+  dy = 0,
+): void {
+  const b = bar.getBoundingClientRect();
+  if (b.width === 0) return;
+  bar.animate(
+    [
+      {
+        transform: `translate(${from.left - b.left}px, ${dy}px) scaleX(${from.width / b.width})`,
+        transformOrigin: "left",
+      },
+      { transform: "none", transformOrigin: "left" },
+    ],
+    CARD_REVEAL,
+  );
+}
+
+/**
+ * A breakdown in the column while a card opens: from `start` px off its place it moves to `held`
+ * px with the opening, and from `CARD_SETTLE.delay` settles into place. The two moves add, so the
+ * settle can start before the opening has finished.
+ */
+export function keepStation(element: HTMLElement, start: number, held: number): void {
+  if (Math.abs(start - held) >= 0.5) {
+    element.animate(
+      [{ transform: `translateY(${start - held}px)` }, { transform: "none" }],
+      CARD_REVEAL,
+    );
+  }
+  if (Math.abs(held) >= 0.5) {
+    element.animate([{ transform: `translateY(${held}px)` }, { transform: "none" }], {
+      ...CARD_SETTLE,
+      fill: "backwards",
+      composite: "add",
+    });
+  }
 }
 
 /** How thick the bar is at a point `tau` ms into its ring, `reach` of the bar from the click. */

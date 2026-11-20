@@ -165,7 +165,7 @@ const isDeviceBand = (key: string): key is MergedDeviceBand =>
   (USAGE_DEVICE_BANDS as readonly string[]).includes(key);
 
 /** Processes in the order clients list and stack them, top first; other is the catch-all. */
-export const USAGE_PROCESS_BANDS: readonly UsageProcessBand[] = ["journal", "routines", "other"];
+const USAGE_PROCESS_BANDS: readonly UsageProcessBand[] = ["journal", "routines", "other"];
 const isProcessBand = (key: string): key is UsageProcessBand =>
   (USAGE_PROCESS_BANDS as readonly string[]).includes(key);
 

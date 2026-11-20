@@ -28,15 +28,6 @@ export const DEVICE_SPLIT_COLORS = {
   unlabelled: { ink: 28 },
 } as const satisfies Record<UsageDeviceBand | "phone" | "computer", UsageSplitColor>;
 
-/** Device bands as clients list and stack them, top first. */
-export const DEVICE_BAND_ORDER: readonly UsageDeviceBand[] = [
-  "phoneOrchestrated",
-  "phoneDirect",
-  "computerDirect",
-  "computerOrchestrated",
-  "unlabelled",
-];
-
 // Journal is a rose and routines a green, clear of the device colours' orange and blue; other is
 // the grey every catch-all band uses.
 export const PROCESS_SPLIT_COLORS = {

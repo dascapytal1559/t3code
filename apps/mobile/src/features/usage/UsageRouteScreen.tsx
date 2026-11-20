@@ -218,7 +218,7 @@ function UsageScreen(props: {
   const bands =
     breakdown === "provider" || splitBands === null
       ? []
-      : orderBands(breakdown, splitBands.bands).map((band) => {
+      : orderBands(breakdown, splitBands.bands, metric).map((band) => {
           const shown = presentBand(breakdown, band, dark);
           return { ...band, color: shown.color, label: shown.named ? shown.label : m(shown.label) };
         });

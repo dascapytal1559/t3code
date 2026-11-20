@@ -84,15 +84,15 @@ write it down sooner, run `t3 usage close --through <time>` with the time's offs
 `2026-11-19T15:00:00+11:00` (at least 5 minutes ago); add `--dry-run` first to see what it would
 write.
 
-## Split the chart by provider, device, process, kind of work or type
+## Split the chart by provider, device, kind of work, process or type
 
 Beside the chart on **Usage** are five breakdowns of the same window: **by provider**, **by
-device**, **by process**, **by kind of work** and **by type**. One of them is open as a card, and the chart splits
+device**, **by kind of work**, **by process** and **by type**. One of them is open as a card, and the chart splits
 its bars the same way; the others fold down to their colour bar. Click a folded bar to open it in
-the chart. The card lists each part with its figure and share, and the chart's bands stack in the
-card's order, first row on top. Cost and Tokens work in every breakdown, and hovering a bar names
+the chart. The card lists each part with its figure and share; the chart stacks its largest band over the window
+on top, so every bar stacks the same way. Cost and Tokens work in every breakdown, and hovering a bar names
 each band. On a phone the breakdowns sit under the chart. On mobile, choose **Provider**,
-**Device**, **Process** or **Kind of work** under the period.
+**Device**, **Kind of work** or **Process** under the period.
 
 **By provider** lists each provider; click a provider's name to leave it out of the totals, and
 again to bring it back.
@@ -101,15 +101,15 @@ again to bring it back.
 open it into **Orchestrated** and **Direct**: work agents sent for a prompt typed there, and the
 prompts typed there themselves. Only the opened device's band splits in the chart. A coordinator's
 upkeep counts to the computer, direct or orchestrated by how its turn started. Usage from before T3
-recorded the sending device (7 Nov 2026) and archived history show as **Unlabelled**, as does usage
-from a server too old to label it.
+recorded the sending device (7 Nov 2026), archived history and usage from a server too old to label
+it count as **Computer** · **Direct**.
 
 **By process** shows what FirstMate was doing: **Journal** is filing your voice journals and the
 work launched from a journal's items; **Routines** is the upkeep FirstMate launches for a routine,
-such as the bedtime routine's tool updates and nightly reviews; **Other** is everything else,
+such as the bedtime routine's tool updates and nightly reviews; **Direct** is everything else,
 including FirstMate's own wakes and checks. A journal you type into FirstMate yourself still counts
 to the device you typed on, as journal work. Usage from before FirstMate labelled its journals is
-**Other**.
+**Direct**.
 
 **By kind of work** splits usage into groups you name in **Settings → Providers → Kinds of work**.
 They start as Trading, Tooling and Projects with nothing in them. Groups are saved on the

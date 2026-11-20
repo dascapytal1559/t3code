@@ -31,20 +31,24 @@ const usage = {
 } as unknown as MergedUsage;
 
 describe("breakdown boxes", () => {
-  it("draws parents until one opens, then that parent's children in the card's order", () => {
+  it("lists rows and children largest first, and draws an opened parent's children", () => {
     const box = deviceBox(usage, "tokens", false);
 
     expect(box.groups.map((group) => [group.key, group.totalTokens])).toEqual([
-      ["phone", 40],
       ["computer", 250],
+      ["phone", 40],
+    ]);
+    expect(box.groups[0]!.children.map((child) => child.key)).toEqual([
+      "computerOrchestrated",
+      "computerDirect",
     ]);
     // A parent's value in a day is its children's.
     expect(box.valueAt(day, "computer", "cost")).toBe(25);
-    expect(chartBands(box, new Set()).map((band) => band.key)).toEqual(["phone", "computer"]);
+    expect(chartBands(box, new Set()).map((band) => band.key)).toEqual(["computer", "phone"]);
     expect(chartBands(box, new Set(["computer"])).map((band) => band.key)).toEqual([
-      "phone",
-      "computerDirect",
       "computerOrchestrated",
+      "computerDirect",
+      "phone",
     ]);
   });
 

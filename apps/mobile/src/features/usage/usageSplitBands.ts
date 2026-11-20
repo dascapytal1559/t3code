@@ -1,6 +1,5 @@
 import type { UsageDeviceBand, UsageProcessBand } from "@t3tools/contracts";
 import {
-  DEVICE_BAND_ORDER,
   DEVICE_SPLIT_COLORS,
   OTHER_WORK_COLOR,
   PROCESS_SPLIT_COLORS,
@@ -8,7 +7,7 @@ import {
   usageSplitHex,
   type UsageSplitColor,
 } from "@t3tools/client-runtime/usage-split-palette";
-import { OTHER_WORK, USAGE_PROCESS_BANDS, type UsageSplitBand } from "@t3tools/shared/usageMerge";
+import { OTHER_WORK, type UsageSplitBand } from "@t3tools/shared/usageMerge";
 import { msg } from "gt-react-native";
 
 export type UsageBreakdown = "provider" | "device" | "process" | "work";
@@ -41,7 +40,7 @@ const PROCESS_LABEL: Record<UsageProcessBand, string> = {
     $context: "usage process: filing voice journals and their items' work",
   }),
   routines: msg("Routines", { $context: "usage process: upkeep such as the bedtime routine" }),
-  other: msg("Other", {
+  other: msg("Direct", {
     $context: "usage process: usage that is neither journal nor routine",
   }),
 };
@@ -76,13 +75,27 @@ export function presentBand(
   return { label: DEVICE_LABEL[device], named: false, color: hex(DEVICE_SPLIT_COLORS[device]) };
 }
 
-/** Bands top first as web lists them: devices and processes in fixed order, kinds of work as given. */
+/**
+ * Bands top first as web lists them: largest first by the metric. A device's two bands stay
+ * together, under the larger device first, as web's device card opens one device into them.
+ */
 export function orderBands<B extends UsageSplitBand>(
   breakdown: Exclude<UsageBreakdown, "provider">,
   bands: readonly B[],
+  metric: "cost" | "tokens",
 ): readonly B[] {
-  if (breakdown === "work") return bands;
-  const order: readonly string[] = breakdown === "device" ? DEVICE_BAND_ORDER : USAGE_PROCESS_BANDS;
-  const rank = (key: string) => order.indexOf(key);
-  return [...bands].sort((a, b) => rank(a.key) - rank(b.key));
+  const valueOf = (band: B) => (metric === "cost" ? band.costUsd : band.totalTokens);
+  if (breakdown !== "device") return [...bands].sort((a, b) => valueOf(b) - valueOf(a));
+  const deviceOf = (band: B) => (band.key.startsWith("phone") ? "phone" : "computer");
+  const deviceTotals = new Map<string, number>();
+  for (const band of bands) {
+    deviceTotals.set(deviceOf(band), (deviceTotals.get(deviceOf(band)) ?? 0) + valueOf(band));
+  }
+  const deviceRank = (band: B) => deviceTotals.get(deviceOf(band)) ?? 0;
+  return [...bands].sort(
+    (a, b) =>
+      deviceRank(b) - deviceRank(a) ||
+      Number(deviceOf(a) === "computer") - Number(deviceOf(b) === "computer") ||
+      valueOf(b) - valueOf(a),
+  );
 }

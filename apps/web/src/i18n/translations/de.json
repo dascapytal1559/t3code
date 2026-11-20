@@ -12085,7 +12085,6 @@
       }
     }
   ],
-  "8a86175b5560c0b4": "Aufschlüsselung",
   "fc41173bcd7495a4": "Anteil",
   "b4ae29a86f8a6ade": "Tokens",
   "0a492183a4c7bb3d": "Ohne Preis",
@@ -12200,7 +12199,7 @@
   "612e1197e29589c3": "Computer",
   "d665316c7bf72c34": "Journal",
   "78b4d517155caf1e": "Routinen",
-  "ef72f283fca7c2fb": "Sonstiges",
+  "86654a396dcc79d7": "Direkt",
   "a6eba429f8e798d6": "Sonstiges",
   "8367779e149f723b": "Anfrage an die primäre Umgebung während {operation} fehlgeschlagen (HTTP {status}).",
   "c5cd027743a2b5a6": "Ungültiges Kopplungstoken. Prüfe das Token und versuch es erneut.",

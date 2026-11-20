@@ -12091,7 +12091,6 @@
       }
     }
   ],
-  "8a86175b5560c0b4": "Fördelning",
   "fc41173bcd7495a4": "Andel",
   "b4ae29a86f8a6ade": "Token",
   "0a492183a4c7bb3d": "Utan pris",
@@ -12206,7 +12205,7 @@
   "612e1197e29589c3": "Dator",
   "d665316c7bf72c34": "Dagbok",
   "78b4d517155caf1e": "Rutiner",
-  "ef72f283fca7c2fb": "Övrigt",
+  "86654a396dcc79d7": "Direkt",
   "a6eba429f8e798d6": "Övrigt",
   "8367779e149f723b": "Begäran till den primära miljön misslyckades under {operation} (HTTP {status}).",
   "c5cd027743a2b5a6": "Ogiltig parkopplingstoken. Kontrollera token och försök igen.",

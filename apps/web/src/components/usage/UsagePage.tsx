@@ -106,7 +106,7 @@ import {
   type UsageBreakdown,
 } from "./usageSplits";
 import { UsageBreakdownBox, type BoxOpening } from "./UsageBreakdownBox";
-import { reducedMotion } from "./usageMotion";
+import { keepStation, reducedMotion, regrow } from "./usageMotion";
 import { collectUsageAnnotations, placeUsageAnnotations } from "./usageAnnotations";
 import { splitSkippedRecords } from "./usageSkippedRecords";
 import { SpeedPremium, UsageModelDialog } from "./UsageModelDialog";
@@ -836,7 +836,15 @@ function UsageOverview({
   } | null>(null);
   const transitionCount = useRef(0);
   const boxRefs = useRef(new Map<UsageBreakdown, HTMLElement>());
-  const boxTops = useRef<ReadonlyMap<UsageBreakdown, number> | null>(null);
+  /** The column as it stood when a folded bar was clicked, until the opened card has drawn. */
+  const opened = useRef<{
+    readonly kind: UsageBreakdown;
+    readonly closed: UsageBreakdown;
+    readonly tops: ReadonlyMap<UsageBreakdown, number>;
+    readonly barTop: number | null;
+    /** The open card's bar, which eases back out to the folded bar's place. */
+    readonly closedBar: DOMRect | null;
+  } | null>(null);
   const leaving = (kind: ChartTransition["kind"]): ChartTransition => ({
     id: ++transitionCount.current,
     kind,
@@ -845,10 +853,19 @@ function UsageOverview({
     series: chartSeries,
     valueAt: chartValueAt,
   });
+  const barOf = (kind: UsageBreakdown) =>
+    boxRefs.current.get(kind)?.querySelector<HTMLElement>("[data-share-bar]") ?? null;
+  const barTopOf = (kind: UsageBreakdown) => barOf(kind)?.getBoundingClientRect().top ?? null;
   const openBox = (kind: UsageBreakdown, at: Omit<BoxOpening, "id">) => {
-    boxTops.current = new Map(
-      [...boxRefs.current].map(([box, element]) => [box, element.getBoundingClientRect().top]),
-    );
+    opened.current = {
+      kind,
+      closed: split,
+      tops: new Map(
+        [...boxRefs.current].map(([box, element]) => [box, element.getBoundingClientRect().top]),
+      ),
+      barTop: barTopOf(kind),
+      closedBar: barOf(split)?.getBoundingClientRect() ?? null,
+    };
     const next = leaving("switch");
     if (chartShown) setTransition(next);
     setOpening({ kind, at: { ...at, id: next.id } });
@@ -858,20 +875,42 @@ function UsageOverview({
     if (kind === split && chartShown) setTransition(leaving("split"));
     onToggleOpenParent(kind, group);
   };
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- slides the boxes from where they stood before a card opened to where layout puts them now
+  // The clicked bar holds still as its card opens: the opened box, and every box whose place the
+  // closing card moved, keep station there; the rest glide to their new places. A moment in, the
+  // column starts settling where layout puts it.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- moves the boxes from where they stood before a card opened to where layout puts them now
   useLayoutEffect(() => {
-    const before = boxTops.current;
-    boxTops.current = null;
+    const before = opened.current;
+    opened.current = null;
     if (before === null || reducedMotion()) return;
-    for (const [kind, element] of boxRefs.current) {
-      const top = before.get(kind);
-      if (top === undefined) continue;
-      const delta = top - element.getBoundingClientRect().top;
-      if (Math.abs(delta) < 0.5) continue;
-      element.animate([{ transform: `translateY(${delta}px)` }, { transform: "none" }], {
-        duration: 260,
-        easing: "cubic-bezier(0.3, 0, 0.2, 1)",
-      });
+    const barTop = barTopOf(before.kind);
+    const hold = before.barTop === null || barTop === null ? 0 : before.barTop - barTop;
+    const openedAt = BREAKDOWN_ORDER.indexOf(before.kind);
+    const closedAt = BREAKDOWN_ORDER.indexOf(before.closed);
+    // Measured before anything moves: where the folded bar now sits in its box, against where the
+    // card's bar sat in it.
+    const closedBox = boxRefs.current.get(before.closed);
+    const closedBar = barOf(before.closed);
+    const closedTop = before.tops.get(before.closed);
+    const closedDy =
+      before.closedBar === null ||
+      closedBox === undefined ||
+      closedBar === null ||
+      closedTop === undefined
+        ? null
+        : before.closedBar.top -
+          closedTop -
+          (closedBar.getBoundingClientRect().top - closedBox.getBoundingClientRect().top);
+    BREAKDOWN_ORDER.forEach((kind, index) => {
+      const element = boxRefs.current.get(kind);
+      const top = before.tops.get(kind);
+      if (element === undefined || top === undefined) return;
+      const start = index === openedAt ? hold : top - element.getBoundingClientRect().top;
+      const held = index >= openedAt || (closedAt < index && index < openedAt);
+      keepStation(element, start, held ? hold : 0);
+    });
+    if (before.closedBar !== null && closedBar !== null && closedDy !== null) {
+      regrow(closedBar, before.closedBar, closedDy);
     }
   });
   const chartAnnotations = placeUsageAnnotations(
@@ -910,8 +949,9 @@ function UsageOverview({
         </p>
       ))}
       {/* Chart left over 8 of 12 columns, the total and the breakdown boxes right over 4, 40px
-          apart. Below lg it is one column: the total, the chart, then the boxes. */}
-      <section className="grid items-start gap-x-6 gap-y-3 lg:grid-cols-12">
+          apart. Below lg it is one column: the total, the chart, then the boxes. The total's row
+          keeps its own height, so the boxes start under it whichever card is open. */}
+      <section className="grid items-start gap-x-6 gap-y-3 lg:grid-cols-12 lg:grid-rows-[auto_1fr]">
         <div className="flex min-w-0 flex-col gap-1 lg:col-span-4 lg:col-start-9 lg:row-start-1">
           <p
             className={cn(
@@ -1064,10 +1104,7 @@ function UsageOverview({
       ) : null}
 
       <section className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm font-medium text-foreground">
-            <T>Breakdown</T>
-          </h2>
+        <div className="flex items-center justify-end gap-3">
           <ToggleGroup
             aria-label={gt("Usage breakdown")}
             variant="segmented"
@@ -1578,10 +1615,7 @@ function UsageSkeleton() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm font-medium text-foreground">
-            <T>Breakdown</T>
-          </h2>
+        <div className="flex items-center justify-end gap-3">
           <Skeleton shape="card" className="h-7 w-28" />
         </div>
         <Skeleton className="h-44" />

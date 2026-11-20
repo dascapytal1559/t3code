@@ -64,7 +64,7 @@ export interface BoxGroup extends BoxBand {
 
 export interface BoxModel {
   readonly kind: UsageBreakdown;
-  /** Rows in card order. A box with no group that has children is flat. */
+  /** Rows in card order, largest first. A box with no group that has children is flat. */
   readonly groups: readonly BoxGroup[];
   /** A group's or child's value in one day or hour; keys as the groups and children carry them. */
   readonly valueAt: (period: string, key: string, metric: "cost" | "tokens") => number;
@@ -79,7 +79,6 @@ const css = (color: UsageSplitColor) =>
     ? ink(color.ink)
     : `light-dark(oklch(${color.lightness} ${color.chroma} ${color.hue}), oklch(${darkLightness(color.lightness)} ${color.chroma} ${color.hue}))`;
 
-// The device box lists the children in `DEVICE_BAND_ORDER`, as mobile stacks them.
 const DEVICE_GROUPS = [
   {
     key: "phone",
@@ -137,7 +136,7 @@ const PROCESSES: readonly { key: UsageProcessBand; label: string; color: string 
   },
   {
     key: "other",
-    label: msg("Other", { $context: "usage process: usage that is neither journal nor routine" }),
+    label: msg("Direct", { $context: "usage process: usage that is neither journal nor routine" }),
     color: css(PROCESS_SPLIT_COLORS.other),
   },
 ];
@@ -163,6 +162,13 @@ const value = (band: { totalTokens: number; costUsd: number }, metric: "cost" | 
   metric === "cost" ? band.costUsd : band.totalTokens;
 
 const leaf = (band: BoxBand): BoxGroup => ({ ...band, children: [], hidden: new Set() });
+
+/** Largest first by the metric, rows and each parent's children alike; ties keep their order. */
+function largestFirst(groups: readonly BoxGroup[], metric: "cost" | "tokens"): BoxGroup[] {
+  const ranked = <B extends BoxBand>(bands: readonly B[]) =>
+    bands.toSorted((a, b) => value(b, metric) - value(a, metric));
+  return ranked(groups).map((group) => ({ ...group, children: ranked(group.children) }));
+}
 
 /** The device box: phone and computer, each opening into prompts typed there and sent by agents. */
 export function deviceBox(
@@ -195,7 +201,7 @@ export function deviceBox(
   );
   return {
     kind: "device",
-    groups,
+    groups: largestFirst(groups, metric),
     valueAt: (period, key, by) => {
       const children = childrenOf.get(key);
       return children === undefined
@@ -205,7 +211,7 @@ export function deviceBox(
   };
 }
 
-/** The process box: journal, routines and other, in that order. */
+/** The process box: journal, routines and direct. */
 export function processBox(
   usage: MergedUsage,
   metric: "cost" | "tokens",
@@ -221,12 +227,12 @@ export function processBox(
       costUsd: band?.costUsd ?? 0,
     });
   }).filter((group) => group.totalTokens > 0 || group.costUsd > 0);
-  return { kind: "process", groups, valueAt: split.valueAt };
+  return { kind: "process", groups: largestFirst(groups, metric), valueAt: split.valueAt };
 }
 
 /**
- * The kind-of-work box: groups largest first and Other last, each opening into its members, named
- * and hidden as the server's settings say.
+ * The kind-of-work box: groups, Other among them, each opening into its members, named and hidden
+ * as the server's settings say.
  */
 export function workBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: boolean): BoxModel {
   const split = usageSplitBands(usage, "work", metric, hourly);
@@ -260,7 +266,7 @@ export function workBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: b
   });
   return {
     kind: "work",
-    groups,
+    groups: largestFirst(groups, metric),
     spread: split.spread,
     valueAt: (period, key, by) => {
       if (split.bands.some((band) => band.key === key)) return split.valueAt(period, key, by);
@@ -286,7 +292,7 @@ export function typeBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: b
       costUsd: band?.costUsd ?? 0,
     });
   }).filter((group) => value(group, metric) > 0);
-  return { kind: "type", groups, valueAt: split.valueAt };
+  return { kind: "type", groups: largestFirst(groups, metric), valueAt: split.valueAt };
 }
 
 /** The provider box: one row per provider, ranked as the page ranks them. */

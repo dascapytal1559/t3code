@@ -12078,7 +12078,6 @@
       }
     }
   ],
-  "8a86175b5560c0b4": "Desglose",
   "fc41173bcd7495a4": "Proporción",
   "b4ae29a86f8a6ade": "Tokens",
   "0a492183a4c7bb3d": "Sin precio",
@@ -12193,7 +12192,7 @@
   "612e1197e29589c3": "Ordenador",
   "d665316c7bf72c34": "Diario",
   "78b4d517155caf1e": "Rutinas",
-  "ef72f283fca7c2fb": "Otro",
+  "86654a396dcc79d7": "Directo",
   "a6eba429f8e798d6": "Otro",
   "8367779e149f723b": "Falló una solicitud al entorno principal durante {operation} (HTTP {status}).",
   "c5cd027743a2b5a6": "El token de emparejamiento no es válido. Revísalo e inténtalo de nuevo.",
