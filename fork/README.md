@@ -51,7 +51,11 @@ Four things are still shared with the official app:
 On macOS the SOCKS tunnel the app opens for another environment's `localhost`
 tabs has no owner check, so any local process can use it while it runs. This is
 upstream's documented gap (`docs/internals/remote.md`); it never starts for the
-local environment.
+local environment. The same holds for a port forward the user starts from a
+thread's **Servers** list or **Forwarded ports** in the command palette: it
+listens on `127.0.0.1` until stopped, and any local process or web page can
+reach it. Upstream's `enablePreviewTunnel` setting (managed-policy key too)
+turns both off on the host that serves them.
 
 Upstream: none.
 
@@ -2129,9 +2133,11 @@ signs in locally, so nothing changes for it. Code:
 https://github.com/pingdotgg/t3code/pull/37679 makes the lifetime configurable
 instead, one for every client.
 
-Upstream: none. Open PR [#37679](https://github.com/pingdotgg/t3code/pull/37679)
-(by an outside contributor, not merged) makes the lifetime configurable instead,
-one for every client.
+Upstream: none. Upstream's links between environments now renew while used
+(#39399), but only peer-link sessions, so FirstMate's pass is unaffected. Open PR
+[#37679](https://github.com/pingdotgg/t3code/pull/37679) (by an outside
+contributor, not merged) makes the lifetime configurable instead, one for every
+client.
 
 ## Which device sent it
 
