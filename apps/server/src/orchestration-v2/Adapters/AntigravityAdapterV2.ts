@@ -52,6 +52,7 @@ import {
   type AcpAdapterV2Flavor,
   type AcpAdapterV2RuntimeInput,
 } from "@t3tools/provider-acp/server/adapter";
+import { readProjectMcpServers } from "@t3tools/provider-acp/server/projectMcpServers";
 
 const ANTIGRAVITY_PROVIDER = ProviderDriverKind.make("antigravity");
 
@@ -104,6 +105,8 @@ export interface AntigravityAdapterV2Options {
   readonly continuationRequests?: Parameters<typeof makeAcpAdapterV2>[0]["continuationRequests"];
   /** The agent's GEMINI_HOME. Its session logs show turns that ended on an upstream error. */
   readonly profileDirectory?: string;
+  /** The instance's process environment, which `${VAR}` in the project's .mcp.json reads. */
+  readonly environment?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -151,12 +154,45 @@ export function makeAntigravityAcpAdapterFlavor(
     cwd === null ? [options.host.paths.attachmentsDir] : [cwd, options.host.paths.attachmentsDir];
   const makeRuntime = Effect.fn("AntigravityAdapterV2.makeRuntime")(
     function* (input: AcpAdapterV2RuntimeInput) {
+      // Antigravity reads no project MCP config, so T3 passes the folder's .mcp.json servers.
+      const projectServers =
+        input.runtimePolicy.cwd === null
+          ? []
+          : yield* readProjectMcpServers({
+              cwd: input.runtimePolicy.cwd,
+              environment: {
+                ...options.environment,
+                ...input.runtimePolicy.environment,
+                ...input.processEnvironment,
+              },
+              reservedNames: input.mcpServers.flatMap((server) =>
+                typeof server.name === "string" ? [server.name] : [],
+              ),
+            }).pipe(
+              Effect.provideService(FileSystem.FileSystem, options.fileSystem),
+              Effect.provideService(Path.Path, options.path),
+            );
+      const withProjectServers = <A extends AcpSessionRuntime.AcpSessionActivationOptions>(
+        servers: A,
+      ): A =>
+        projectServers.length === 0
+          ? servers
+          : {
+              ...servers,
+              ...(servers.mcpServers && { mcpServers: [...servers.mcpServers, ...projectServers] }),
+              ...(servers.acpMcpServers && {
+                acpMcpServers: [...servers.acpMcpServers, ...projectServers],
+              }),
+              ...(servers.httpMcpServers && {
+                httpMcpServers: [...servers.httpMcpServers, ...projectServers],
+              }),
+            };
       const scope = yield* Scope.fork(yield* Effect.scope);
       const runtime = yield* options
         .withProcess(
           Scope.close(scope, Exit.void),
           options.makeRuntime({
-            ...input,
+            ...withProjectServers(input),
             ...(input.runtimePolicy.environment === undefined
               ? {}
               : { threadEnvironment: input.runtimePolicy.environment }),
@@ -171,8 +207,16 @@ export function makeAntigravityAcpAdapterFlavor(
       // Served reads are reported from the read handler, so they take turns with agent updates.
       const updates = yield* Semaphore.make(1);
       let projectUpdate: Parameters<typeof runtime.handleSessionUpdate>[0] | undefined;
+      // Without options, activation falls back to the start options, which already carry them.
+      const activation = (servers: AcpSessionRuntime.AcpSessionActivationOptions | undefined) =>
+        servers === undefined ? undefined : withProjectServers(servers);
       return {
         ...runtime,
+        loadSession: (sessionId, servers) => runtime.loadSession(sessionId, activation(servers)),
+        resumeSession: (sessionId, servers) =>
+          runtime.resumeSession(sessionId, activation(servers)),
+        forkSession: (sessionId, servers, meta) =>
+          runtime.forkSession(sessionId, activation(servers), meta),
         handleReadTextFile: (handler) =>
           runtime.handleReadTextFile((request, context) =>
             handler(request, context).pipe(

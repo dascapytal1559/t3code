@@ -182,6 +182,19 @@ describe("AntigravityAdapterV2 harness recovery", () => {
       );
       const workspace = yield* fileSystem.makeTempDirectoryScoped();
       const requestLogPath = path.join(workspace, "requests.jsonl");
+      // Antigravity reads no project MCP config; the resumed session must keep these servers too.
+      yield* fileSystem.writeFileString(
+        path.join(workspace, ".mcp.json"),
+        JSON.stringify({
+          mcpServers: {
+            archive: {
+              type: "http",
+              url: "http://127.0.0.1:4650/mcp",
+              headers: { Authorization: "Bearer test-key" },
+            },
+          },
+        }),
+      );
       let processCount = 0;
       const firstRuntimeTerminated = yield* Deferred.make<void>();
       let firstRuntime: AcpSessionRuntime.AcpSessionRuntime["Service"] | undefined;
@@ -292,10 +305,26 @@ describe("AntigravityAdapterV2 harness recovery", () => {
       const requests = (yield* fileSystem.readFileString(requestLogPath))
         .trim()
         .split("\n")
-        .map((line) => JSON.parse(line) as { method?: string; params?: { sessionId?: string } });
+        .map(
+          (line) =>
+            JSON.parse(line) as {
+              method?: string;
+              params?: { sessionId?: string; mcpServers?: ReadonlyArray<unknown> };
+            },
+        );
       const resumeRequests = requests.filter((request) => request.method === "session/resume");
       assert.equal(resumeRequests.length, 1);
       assert.equal(resumeRequests[0]?.params?.sessionId, "mock-session-1");
+      const projectServer = {
+        type: "http",
+        name: "archive",
+        url: "http://127.0.0.1:4650/mcp",
+        headers: [{ name: "Authorization", value: "Bearer test-key" }],
+      };
+      for (const method of ["session/new", "session/resume"]) {
+        const request = requests.find((candidate) => candidate.method === method);
+        assert.deepInclude(request?.params?.mcpServers ?? [], projectServer, method);
+      }
     }).pipe(
       Effect.provide(layerSession),
       Effect.scoped,

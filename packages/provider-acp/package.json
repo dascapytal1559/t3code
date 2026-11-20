@@ -27,6 +27,10 @@
       "types": "./src/server/nativeLogging.ts",
       "import": "./src/server/nativeLogging.ts"
     },
+    "./server/projectMcpServers": {
+      "types": "./src/server/projectMcpServers.ts",
+      "import": "./src/server/projectMcpServers.ts"
+    },
     "./server/runtimeModel": {
       "types": "./src/server/runtimeModel.ts",
       "import": "./src/server/runtimeModel.ts"

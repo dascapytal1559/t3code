@@ -481,6 +481,7 @@ export const AntigravityDriver: ProviderDriver<
         ),
       ),
       profileDirectory,
+      environment: processEnvironment,
       onSessionStarted: provider.onSessionStarted,
       onSessionEvent: (event, cwd) => {
         if (event._tag === "ConfigOptionsUpdated") {

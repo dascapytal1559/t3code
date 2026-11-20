@@ -89,6 +89,10 @@ Antigravity creates empty `.gemini/skills` and `.agents/skills` folders in the
 workspace when a session starts. Git does not track empty folders, so they never
 appear in commits.
 
+A thread gets the MCP servers in its folder's `.mcp.json` (the file Claude Code
+reads, headers and `${VAR}` values included) besides T3 Code's own tools.
+Change the file and start a new thread to pick up the change.
+
 Use Antigravity's native `/plan` command for planning. Tool approvals follow [Permission modes](./permission-modes.md).
 Questions with fixed choices still need one of the offered answers, even in
 **Full access**.
