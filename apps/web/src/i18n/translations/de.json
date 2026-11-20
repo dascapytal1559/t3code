@@ -2311,7 +2311,7 @@
   "4a87cae01ccde544": "Der Branch dieses Threads hat noch keinen Pull Request.",
   "32535dba0b9af642": "Dieser Thread hat keine verknüpften Elemente.",
   "07080dead70f4cc5": "Geräte sind nur aus einem Thread verfügbar.",
-  "a7ea04cc3528ac59": "The board is only available from a thread.",
+  "a7ea04cc3528ac59": "Das Board ist nur in einem Thread verfügbar.",
   "a4bf49b31758ff7e": "Nur in der Desktop-App verfügbar.",
   "e917841cb66f9af1": "Verfügbar, wenn ein Projekt geöffnet ist.",
   "14c15fad0c2ee0c8": "Verfügbar für Git-Repositorys.",

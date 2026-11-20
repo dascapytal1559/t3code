@@ -2311,7 +2311,7 @@
   "4a87cae01ccde544": "La rama de este hilo aún no tiene ninguna pull request.",
   "32535dba0b9af642": "Este hilo no tiene elementos vinculados.",
   "07080dead70f4cc5": "Los dispositivos solo están disponibles desde un hilo.",
-  "a7ea04cc3528ac59": "The board is only available from a thread.",
+  "a7ea04cc3528ac59": "El Board solo está disponible desde un hilo.",
   "a4bf49b31758ff7e": "Solo disponible en la app de escritorio.",
   "e917841cb66f9af1": "Disponible cuando hay un proyecto abierto.",
   "14c15fad0c2ee0c8": "Disponible para repositorios Git.",

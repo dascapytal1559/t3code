@@ -2315,7 +2315,7 @@
   "4a87cae01ccde544": "此会话的分支尚无 pull request。",
   "32535dba0b9af642": "此会话没有已关联项。",
   "07080dead70f4cc5": "设备仅在会话中可用。",
-  "a7ea04cc3528ac59": "The board is only available from a thread.",
+  "a7ea04cc3528ac59": "Board 仅可在会话中使用。",
   "a4bf49b31758ff7e": "仅桌面应用可用。",
   "e917841cb66f9af1": "打开项目后可用。",
   "14c15fad0c2ee0c8": "仅适用于 Git 仓库。",

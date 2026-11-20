@@ -93,7 +93,7 @@ lines.
 Click a provider on the Usage page to leave it out of every figure; its row
 stays, greyed, showing what it would have added.
 
-![The Usage page's Cost tab over 30 days with Codex muted: its row in the Cost by provider box is greyed and shows Excluded, while the headline, the chart and the model list count Claude Code alone](media/usage-provider-filter.png)
+![The Usage page's Cost tab over 30 days with Codex muted: its row in the Cost by provider box is greyed and shows Excluded, while the headline, the chart and the other boxes count Claude Code alone](media/usage-provider-filter.png)
 
 On the Usage page, click a provider's icon or name in the provider box to mute
 it; click again to bring it back. The row looks like plain text until you hover
@@ -137,21 +137,19 @@ compare them:
   never spans less than one order of magnitude, so three providers of similar
   size all stay bold rather than being stretched apart.
 - **Figures sit in columns.** A breakdown box sets each row's figure and share
-  in columns. A model's pop-up prints each type's share and sets the types two
-  to a line, in the order Input, Cache read, Output, Cache write, so every M
-  and B, percent sign and colour square is directly above its like; a fifth
-  part follows the second line where it fits. Cost by speed sets its parts the
-  same way.
+  in columns. Cost by speed prints each part's share and sets the parts two to
+  a line, so every figure, percent sign and colour square is directly above its
+  like.
+- **No model table.** Upstream's Model / Day table under the chart is gone; the
+  boxes carry the breakdown.
 - **The chart sits beside the boxes.** The chart takes the left two thirds at a
   fixed height taller than upstream's, with the headline and the breakdown
   boxes on the right. Its value labels sit on the right of the bars; upstream
   puts them on the left.
 - **Whole dollars from $100.** The page's standing dollar figures drop cents
-  from $100 up (`formatUsdShort`). The chart's tooltip and a model's pop-up
-  keep cents.
+  from $100 up (`formatUsdShort`). The chart's tooltip keeps cents.
 
-The mobile app keeps upstream's layout. A model's pop-up uses the same bars,
-so its legends take the columns, shares and fade too.
+The mobile app keeps upstream's layout.
 
 For syncs, the fork's parts are: the headline's second line, the grid that
 puts the chart beside the boxes, and the missing Totals section in
@@ -165,23 +163,37 @@ Upstream: none.
 
 ## Breakdown boxes and the chart split
 
-Beside the Usage chart sit five boxes, by provider, device, process, kind of
-work and type; the open one is how the chart splits its bars, and a box's parent
-rows open into their parts.
+Beside the Usage chart sit five boxes, by provider, kind of work, device,
+process and direction; the open one is how the chart splits its bars, and a
+box's parent rows open into their parts.
 
 The captain reads the chart for where usage went, so on web and desktop the
 five boxes beside it (`BREAKDOWN_ORDER` in
 `apps/web/src/components/usage/usageSplits.ts`) are also the chart's legend.
 One box is open as a card and the others fold down to their colour bar;
-clicking a folded bar opens that box and splits the chart its way. The chart's
-bands stack in the card's order, first row on top. A parent row (Phone,
-Computer, a kind of work) opens into its children (Orchestrated and Direct, a
-group's projects and folders), and only an opened parent's band splits in the
-chart (`chartBands`). Each box owns its colours: a parent one hue, its
-children neighbouring hues. The page remembers the open box and opened rows
-(`usagePagePreferences.ts`). The mobile app has no boxes: a Provider, Device
-or Kind of work choice under the period splits the chart and lists the bands
-top first, as web stacks them. Both clients take the device and kind-of-work
+clicking a folded bar opens that box and splits the chart its way. A card lists
+its rows largest first, and the chart stacks the band largest over the window
+on top, one order for every bar (`stackOrder`). A parent row (Phone, Computer,
+a kind of work, Input) opens into its children (Orchestrated and Direct, a
+group's projects and folders, the input token types), and only an opened
+parent's band splits in the chart (`chartBands`). Each box owns its colours: a
+parent one hue, its children neighbouring hues. The page remembers the open box
+and opened rows (`usagePagePreferences.ts`).
+
+Some boxes draw a mirror chart, one side rising from a centre line and the
+other hanging below it (`lowerGroups` in `UsagePage.tsx`): device and kind of
+work when they have exactly two rows, the larger above; process with Direct
+above and Journal and Routines below; direction with Input above and Output
+below. Each mirrors only when both sides have usage; the other boxes stack.
+
+A kind of work opens into its projects and folders. Members it hides
+(`hiddenMembers`), or all but the ones it lists when **Only shown** is on in
+Settings (`shownMembers`), count to the group but fold into one Others row
+(`foldMembers` in `usageSplits.ts`).
+
+The mobile app has no boxes: a Provider, Kind of work, Device or Process choice
+under the period splits the chart and lists the bands largest first, as web's
+cards do (`orderBands`). Both clients take the device and kind-of-work
 colours, and the device order, from one palette in
 `packages/client-runtime/src/usageSplitPalette.ts`; web draws them as oklch and
 mobile as the same colours in hex.
@@ -193,13 +205,13 @@ mobile read one model. For syncs, the fork's parts are `UsageBreakdownBox.tsx`,
 `usageSplits.ts`, the split modes in `UsageProviderChart.tsx`, the bucket
 splits in `apps/server/src/usage/usageAggregation.ts`, the merge functions
 above, and `apps/mobile/src/features/usage/usageSplitBands.ts`. Upstream's
-provider rows and type bar become the provider and type boxes; keep upstream's
+provider rows and type bar become the provider and direction boxes; keep upstream's
 own figures in them.
 
 The process box splits usage into Journal (reason `journal`), Routines (`upkeep`
-a claim or launch declared, basis `claim`) and Other, FirstMate's own wakes
-included (`usageProcessOf` in `packages/contracts/src/usage.ts`, each bucket's
-`processes`).
+a claim or launch declared, basis `claim`) and Direct, in amber: everything
+else, FirstMate's own wakes included (`usageProcessOf` in
+`packages/contracts/src/usage.ts`, each bucket's `processes`).
 
 ![The Usage page's Tokens tab with the Tokens by process box open, made-up data: the chart splits each day into Journal, Routines and Other](media/usage-process-split.png)
 
