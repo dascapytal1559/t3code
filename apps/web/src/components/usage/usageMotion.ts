@@ -104,6 +104,42 @@ export function morphBars(
   return Promise.all(plays).catch(() => undefined);
 }
 
+/**
+ * An annotation's dot and the top of its line following the zero line from `fromY` (the dot's
+ * centre a moment ago, viewport px) to where layout now puts it, in step with bar `index` of
+ * `count` morphing. The line's foot stays on its label.
+ */
+export function followZero(
+  dot: HTMLElement,
+  line: HTMLElement,
+  fromY: number,
+  index: number,
+  count: number,
+): void {
+  for (const element of [dot, line]) {
+    for (const animation of element.getAnimations()) animation.cancel();
+  }
+  const now = dot.getBoundingClientRect();
+  const dy = fromY - (now.top + now.height / 2);
+  if (Math.abs(dy) < 0.5) return;
+  const timing = {
+    ...BAR_MORPH,
+    delay: waveDelay(index, count, "end"),
+    fill: "backwards" as const,
+  };
+  dot.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], timing);
+  const length = line.offsetHeight;
+  if (length > 0) {
+    line.animate(
+      [
+        { transform: `scaleY(${Math.max(0, length - dy) / length})`, transformOrigin: "bottom" },
+        { transform: "none", transformOrigin: "bottom" },
+      ],
+      timing,
+    );
+  }
+}
+
 /** A parent opening or closing: each bar cross-fades into its new split, left to right. */
 export function crossFade(
   outgoing: readonly HTMLElement[],

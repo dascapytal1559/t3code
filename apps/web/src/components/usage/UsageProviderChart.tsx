@@ -16,7 +16,7 @@ import { PROVIDER_PRESENTATION } from "./usageProviders";
 import { observeResize } from "~/lib/observeResize";
 import { T3Wordmark } from "../T3Wordmark";
 import { layoutAnnotationChips, type PlacedUsageAnnotation } from "./usageAnnotations";
-import { crossFade, morphBars, pourOver, reducedMotion } from "./usageMotion";
+import { crossFade, followZero, morphBars, pourOver, reducedMotion } from "./usageMotion";
 
 const VIEW_WIDTH = 960;
 const VIEW_HEIGHT = 260;
@@ -436,11 +436,24 @@ function UsageChartAnnotations({
   const locale = useLocale();
   const layerRef = useRef<HTMLDivElement | null>(null);
   const chipRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const dotRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const placedZeroY = useRef(zeroY);
 
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- places chips from measured chip and strip sizes through CSS variables before paint and on ResizeObserver
   useLayoutEffect(() => {
     const layer = layerRef.current;
     if (layer === null) return;
+    // The zero line moves when the chart turns mirror or back; the anchors move with the bars.
+    const zeroMoved = placedZeroY.current !== zeroY;
+    placedZeroY.current = zeroY;
+    const from =
+      zeroMoved && !reducedMotion()
+        ? dotRefs.current.map((dot) => {
+            const rect = dot?.getBoundingClientRect();
+            return rect === undefined ? null : rect.top + rect.height / 2;
+          })
+        : null;
     const position = () => {
       const chipHeight = chipRefs.current[0]?.offsetHeight ?? 0;
       const layout = layoutAnnotationChips({
@@ -469,6 +482,14 @@ function UsageChartAnnotations({
       layer.style.height = `${rows === 0 ? 0 : rowTop(rows) - CHIP_ROW_GAP}px`;
     };
     position();
+    if (from !== null) {
+      placed.forEach(({ index }, slot) => {
+        const dot = dotRefs.current[slot];
+        const line = lineRefs.current[slot];
+        const fromY = from[slot];
+        if (dot && line && fromY != null) followZero(dot, line, fromY, index, periodCount);
+      });
+    }
     return observeResize([layer], position);
   }, [placed, periodCount, plotRef, zeroY]);
 
@@ -478,6 +499,9 @@ function UsageChartAnnotations({
       {placed.map(({ annotation }, slot) => (
         <div key={`line:${annotationKey(annotation)}`} aria-hidden>
           <div
+            ref={(element) => {
+              lineRefs.current[slot] = element;
+            }}
             className="absolute w-px -translate-x-1/2 bg-foreground"
             style={{
               left: `var(--annotation-${slot}-x)`,
@@ -486,6 +510,9 @@ function UsageChartAnnotations({
             }}
           />
           <div
+            ref={(element) => {
+              dotRefs.current[slot] = element;
+            }}
             className="absolute size-1.5 -translate-1/2 rounded-full bg-foreground"
             style={{ left: `var(--annotation-${slot}-x)`, top: "var(--annotation-zero)" }}
           />
