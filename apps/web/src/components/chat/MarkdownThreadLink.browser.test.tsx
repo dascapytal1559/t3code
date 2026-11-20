@@ -21,7 +21,9 @@ vi.mock(import("../../state/entities"), () => ({
   useProject: (ref: { projectId: string } | null) =>
     ref?.projectId === "essay-project" ? ({ title: "Essays" } as never) : null,
 }));
-vi.mock(import("../../state/environments"), () => ({
+// Fork: rightPanelStore reads client settings, whose module imports more of this one.
+vi.mock(import("../../state/environments"), async (importOriginal) => ({
+  ...(await importOriginal()),
   useEnvironmentIdentities: () => [
     { environmentId: EnvironmentId.make("environment"), label: "Here" },
     { environmentId: EnvironmentId.make("remote"), label: "Remote" },
