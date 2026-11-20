@@ -95,6 +95,7 @@ import {
   providerBox,
   typeBox,
   workBox,
+  type BoxGroup,
   type BoxModel,
   type UsageBreakdown,
 } from "./usageSplits";
@@ -124,8 +125,23 @@ import {
   type UsagePagePreferences,
 } from "./usagePagePreferences";
 
-/** Breakdowns that draw as a mirror chart when they have exactly two groups. */
-const MIRRORED: readonly UsageBreakdown[] = ["device", "work"];
+/**
+ * The groups a breakdown draws below the centre line of a mirror chart, or null for a stacked one:
+ * device and kind of work mirror when they split in two, the larger part above; process keeps
+ * direct above and the processes below; type keeps what goes in above and output below.
+ */
+function lowerGroups(kind: UsageBreakdown, model: BoxModel): readonly BoxGroup[] | null {
+  if (kind === "device" || kind === "work") {
+    return model.groups.length === 2 ? [model.groups[1]!] : null;
+  }
+  const below =
+    kind === "process"
+      ? model.groups.filter((group) => group.key !== "other")
+      : kind === "type"
+        ? model.groups.filter((group) => group.key === "output")
+        : [];
+  return below.length > 0 && below.length < model.groups.length ? below : null;
+}
 
 function isUsageMetric(value: string | null | undefined): value is UsageMetric {
   return METRIC_OPTIONS.some((option) => option.value === value);
@@ -771,12 +787,14 @@ function UsageOverview({
   const openSetOf = (kind: UsageBreakdown): ReadonlySet<string> => new Set(openParents[kind] ?? []);
   const seriesOf = (kind: UsageBreakdown): readonly ChartSeries[] => {
     const model = models[kind];
-    // A two-sided card draws as a mirror: its larger group above the centre line, the other below,
-    // each group's children on its side.
+    // Each lower group's children draw on its side too.
+    const below = lowerGroups(kind, model);
     const lower =
-      MIRRORED.includes(kind) && model.groups.length === 2
-        ? new Set([model.groups[1]!.key, ...model.groups[1]!.children.map((child) => child.key)])
-        : null;
+      below === null
+        ? null
+        : new Set(
+            below.flatMap((group) => [group.key, ...group.children.map((child) => child.key)]),
+          );
     return chartBands(model, openSetOf(kind))
       .filter(
         (band) => kind !== "provider" || !excludedProviders.has(band.key as UsageProviderKind),
@@ -850,6 +868,32 @@ function UsageOverview({
     setOpening({ kind, at: { ...at, id: next.id } });
     onBreakdownChange(kind);
   };
+  // ↑ and ↓ (by default) step through the cards, round from the last to the first.
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const onStepKey = useEffectEvent((event: KeyboardEvent) => {
+    if (event.defaultPrevented || event.repeat || event.isComposing) return;
+    if (isCommandPaletteOpen() || isModelPickerOpen()) return;
+    const command = resolveUsageShortcut(event, keybindings);
+    const step =
+      command === "usage.breakdown.previous" ? -1 : command === "usage.breakdown.next" ? 1 : 0;
+    if (step === 0) return;
+    event.preventDefault();
+    const next =
+      BREAKDOWN_ORDER[
+        (BREAKDOWN_ORDER.indexOf(split) + step + BREAKDOWN_ORDER.length) % BREAKDOWN_ORDER.length
+      ]!;
+    const bar = barOf(next)?.getBoundingClientRect();
+    openBox(next, {
+      clickAt: 0.5,
+      x: (bar?.width ?? 0) / 2,
+      from: { left: bar?.left ?? 0, width: bar?.width ?? 0 },
+    });
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window keydown listener for stepping through the breakdown cards
+  useEffect(() => {
+    globalThis.window.addEventListener("keydown", onStepKey, true);
+    return () => globalThis.window.removeEventListener("keydown", onStepKey, true);
+  }, []);
   const toggleParent = (kind: UsageBreakdown, group: string) => {
     if (kind === split && chartShown) setTransition(leaving("split"));
     onToggleOpenParent(kind, group);
@@ -986,28 +1030,14 @@ function UsageOverview({
           ) : null}
         </div>
 
-        <div className="flex h-88 min-w-0 flex-col gap-3 lg:col-span-8 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:me-4">
+        <div className="flex min-w-0 flex-col gap-3 lg:col-span-8 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:me-4">
           <div className="flex min-w-0 items-center gap-1">
             <h2 className="truncate text-sm font-medium text-foreground">
               {usageChartTitle(metric, shownHourly, days.length, m)}
             </h2>
-            {annotations.length === 0 ? null : (
-              <ToggleButton
-                aria-label={gt("Chart annotations")}
-                title={
-                  showAnnotations ? gt("Hide chart annotations") : gt("Show chart annotations")
-                }
-                pressed={showAnnotations}
-                onPressedChange={onShowAnnotationsChange}
-                size="micro"
-                variant="ghost"
-              >
-                <MilestoneIcon aria-hidden />
-              </ToggleButton>
-            )}
           </div>
           {!chartShown ? (
-            <p className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
+            <p className="flex h-80 items-center justify-center text-sm text-muted-foreground">
               <T>No activity in this window.</T>
             </p>
           ) : (
@@ -1023,6 +1053,26 @@ function UsageOverview({
               timeZone={shownWindow.timeZone}
               hour12={hour12}
               annotations={chartAnnotations}
+              {...(annotations.length === 0
+                ? {}
+                : {
+                    annotationToggle: (
+                      <ToggleButton
+                        aria-label={gt("Chart annotations")}
+                        title={
+                          showAnnotations
+                            ? gt("Hide chart annotations")
+                            : gt("Show chart annotations")
+                        }
+                        pressed={showAnnotations}
+                        onPressedChange={onShowAnnotationsChange}
+                        size="micro"
+                        variant="ghost"
+                      >
+                        <MilestoneIcon aria-hidden />
+                      </ToggleButton>
+                    ),
+                  })}
               transition={transition}
               onTransitionEnd={(id) =>
                 setTransition((current) => (current?.id === id ? null : current))

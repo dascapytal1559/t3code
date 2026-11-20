@@ -56,43 +56,31 @@ describe("placeUsageAnnotations", () => {
 });
 
 describe("layoutAnnotationChips", () => {
-  const base = { periodCount: 10, plotWidth: 1000, plotHeight: 200, chipHeight: 20 };
+  const base = { periodCount: 10, plotWidth: 1000 };
 
-  it("sits a chip just above the tallest bar it spans, in the plot's upper part", () => {
-    const barTop = (index: number) => (index === 5 ? 50 : 180);
-    expect(layoutAnnotationChips({ ...base, chips: [{ index: 4, width: 120 }], barTop })).toEqual([
-      { left: 390, top: 24, x: 450 },
+  it("centres a chip under its date and keeps it inside the plot", () => {
+    expect(layoutAnnotationChips({ ...base, chips: [{ index: 4, width: 120 }] })).toEqual([
+      { left: 390, row: 0, x: 450 },
     ]);
-    expect(layoutAnnotationChips({ ...base, chips: [{ index: 0, width: 120 }], barTop })).toEqual([
-      { left: 0, top: 60, x: 50 },
-    ]);
-  });
-
-  it("keeps chips inside the plot and lifts one above an earlier chip it would overlap", () => {
-    const layout = layoutAnnotationChips({
-      ...base,
-      chips: [
-        { index: 8, width: 120 },
-        { index: 9, width: 120 },
-      ],
-      barTop: () => 190,
-    });
-    expect(layout).toEqual([
-      { left: 790, top: 60, x: 850 },
-      { left: 880, top: 34, x: 950 },
+    expect(layoutAnnotationChips({ ...base, chips: [{ index: 9, width: 120 }] })).toEqual([
+      { left: 880, row: 0, x: 950 },
     ]);
   });
 
-  it("sets a chip beside its line when the bars under its centre reach the top", () => {
-    const barTop = (index: number) => (index === 6 ? 4 : 180);
-    expect(layoutAnnotationChips({ ...base, chips: [{ index: 5, width: 120 }], barTop })).toEqual([
-      { left: 440, top: 60, x: 550 },
-    ]);
-  });
-
-  it("covers a bar only when the plot leaves no room above it", () => {
+  it("moves a chip to the next row only when it would overlap one in the first", () => {
     expect(
-      layoutAnnotationChips({ ...base, chips: [{ index: 2, width: 80 }], barTop: () => 4 }),
-    ).toEqual([{ left: 210, top: 0, x: 250 }]);
+      layoutAnnotationChips({
+        ...base,
+        chips: [
+          { index: 1, width: 120 },
+          { index: 2, width: 120 },
+          { index: 7, width: 120 },
+        ],
+      }),
+    ).toEqual([
+      { left: 90, row: 0, x: 150 },
+      { left: 190, row: 1, x: 250 },
+      { left: 690, row: 0, x: 750 },
+    ]);
   });
 });

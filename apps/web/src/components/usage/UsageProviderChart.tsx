@@ -297,7 +297,6 @@ function UsageChartPlot({
   series,
   format,
   formatTooltipPeriod,
-  overlay,
   children,
 }: {
   readonly periods: readonly string[];
@@ -305,7 +304,6 @@ function UsageChartPlot({
   readonly series: readonly ChartSeries[];
   readonly format: (value: number) => string;
   readonly formatTooltipPeriod: (period: string) => string;
-  readonly overlay?: React.ReactNode;
   readonly children: React.ReactNode;
 }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -387,7 +385,6 @@ function UsageChartPlot({
         )}
         {children}
       </div>
-      {overlay}
 
       {hoverIndex === null || hoveredPeriod === undefined ? null : (
         <UsageChartTooltip
@@ -417,82 +414,98 @@ function annotationKey({ date, label, logo }: UsageAnnotation): string {
   return `${date}:${label}:${logo ?? ""}`;
 }
 
-/** Each chip rises on a line from its date on the axis; it never takes pointer input from the plot. */
+const CHIP_ROW_GAP = 4;
+
+/**
+ * The chart's annotations, under its axis: each chip hangs on a short line under its date, in as
+ * many rows as overlapping chips need. The strip sizes itself to its rows.
+ */
 function UsageChartAnnotations({
   placed,
   periodCount,
-  barTops,
+  plotRef,
+  zeroY,
 }: {
   readonly placed: readonly PlacedUsageAnnotation[];
   readonly periodCount: number;
-  /** Each period's bar top in chart units. */
-  readonly barTops: readonly number[];
+  /** The plot above, whose zero line each chip's line runs up to. */
+  readonly plotRef: React.RefObject<HTMLDivElement | null>;
+  /** The zero line in chart units: the foot, or a mirror chart's centre. */
+  readonly zeroY: number;
 }) {
   const locale = useLocale();
   const layerRef = useRef<HTMLDivElement | null>(null);
   const chipRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- places chips from measured chip and plot sizes through CSS variables before paint and on ResizeObserver
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- places chips from measured chip and strip sizes through CSS variables before paint and on ResizeObserver
   useLayoutEffect(() => {
     const layer = layerRef.current;
     if (layer === null) return;
     const position = () => {
-      const chips = placed.map(({ index }, slot) => ({
-        index,
-        width: chipRefs.current[slot]?.offsetWidth ?? 0,
-      }));
       const chipHeight = chipRefs.current[0]?.offsetHeight ?? 0;
-      const plotHeight = layer.clientHeight;
       const layout = layoutAnnotationChips({
-        chips,
+        chips: placed.map(({ index }, slot) => ({
+          index,
+          width: chipRefs.current[slot]?.offsetWidth ?? 0,
+        })),
         periodCount,
         plotWidth: layer.clientWidth,
-        plotHeight,
-        chipHeight,
-        barTop: (index) => ((barTops[index] ?? VIEW_HEIGHT) / VIEW_HEIGHT) * plotHeight,
       });
-      layout.forEach(({ left, top, x }, slot) => {
+      const lineLength = 6;
+      const rowTop = (row: number) => lineLength + row * (chipHeight + CHIP_ROW_GAP);
+      const plot = plotRef.current?.getBoundingClientRect();
+      // How far above the strip the zero line sits; the lines run up to it over the axis.
+      const zero =
+        plot === undefined
+          ? 0
+          : plot.top + (zeroY / VIEW_HEIGHT) * plot.height - layer.getBoundingClientRect().top;
+      layer.style.setProperty("--annotation-zero", `${zero}px`);
+      layout.forEach(({ left, row, x }, slot) => {
         layer.style.setProperty(`--annotation-${slot}-left`, `${left}px`);
-        layer.style.setProperty(`--annotation-${slot}-top`, `${top}px`);
-        layer.style.setProperty(`--annotation-${slot}-line-top`, `${top + chipHeight}px`);
+        layer.style.setProperty(`--annotation-${slot}-top`, `${rowTop(row)}px`);
         layer.style.setProperty(`--annotation-${slot}-x`, `${x}px`);
       });
+      const rows = Math.max(0, ...layout.map(({ row }) => row + 1));
+      layer.style.height = `${rows === 0 ? 0 : rowTop(rows) - CHIP_ROW_GAP}px`;
     };
     position();
     return observeResize([layer], position);
-  }, [placed, periodCount, barTops]);
+  }, [placed, periodCount, plotRef, zeroY]);
 
   return (
-    <div ref={layerRef} className="pointer-events-none absolute inset-0">
+    <div ref={layerRef} className="pointer-events-none relative">
+      {/* Lines first, so a later row's line never crosses an earlier row's chip. */}
       {placed.map(({ annotation }, slot) => (
-        <div key={annotationKey(annotation)}>
+        <div key={`line:${annotationKey(annotation)}`} aria-hidden>
           <div
-            aria-hidden
-            className="absolute bottom-0 w-px -translate-x-1/2 bg-foreground"
+            className="absolute w-px -translate-x-1/2 bg-foreground"
             style={{
               left: `var(--annotation-${slot}-x)`,
-              top: `var(--annotation-${slot}-line-top)`,
+              top: "var(--annotation-zero)",
+              height: `calc(var(--annotation-${slot}-top) - var(--annotation-zero))`,
             }}
           />
           <div
-            aria-hidden
-            className="absolute bottom-0 size-1.5 -translate-x-1/2 translate-y-1/2 rounded-full bg-foreground"
-            style={{ left: `var(--annotation-${slot}-x)` }}
+            className="absolute size-1.5 -translate-1/2 rounded-full bg-foreground"
+            style={{ left: `var(--annotation-${slot}-x)`, top: "var(--annotation-zero)" }}
           />
-          <div
-            ref={(element) => {
-              chipRefs.current[slot] = element;
-            }}
-            className="absolute flex h-6 items-center gap-1 rounded-md bg-foreground px-2 text-xs font-semibold whitespace-nowrap text-background shadow-sm"
-            style={{
-              left: `var(--annotation-${slot}-left)`,
-              top: `var(--annotation-${slot}-top)`,
-            }}
-          >
-            <span className="sr-only">{formatDayShort(annotation.date, locale)}: </span>
-            {annotation.label}
-            {annotation.logo === "t3" ? <T3Badge /> : null}
-          </div>
+        </div>
+      ))}
+      {placed.map(({ annotation }, slot) => (
+        <div
+          key={annotationKey(annotation)}
+          ref={(element) => {
+            chipRefs.current[slot] = element;
+          }}
+          className="absolute flex h-6 items-center gap-1 rounded-md bg-foreground px-2 text-xs font-semibold whitespace-nowrap text-background shadow-sm"
+          style={{
+            left: `var(--annotation-${slot}-left)`,
+            top: `var(--annotation-${slot}-top)`,
+          }}
+        >
+          <span className="sr-only">{formatDayShort(annotation.date, locale)}: </span>
+          {annotation.label}
+          {annotation.logo === "t3" ? <T3Badge /> : null}
         </div>
       ))}
     </div>
@@ -591,11 +604,11 @@ export function usageChartCaption(
     case "type":
       return hourly
         ? tokens
-          ? msg("Hourly processed tokens by type")
-          : msg("Hourly cost by type")
+          ? msg("Hourly processed tokens by direction")
+          : msg("Hourly cost by direction")
         : tokens
-          ? msg("Daily processed tokens by type")
-          : msg("Daily cost by type");
+          ? msg("Daily processed tokens by direction")
+          : msg("Daily cost by direction");
   }
 }
 
@@ -664,6 +677,7 @@ export function UsageStackedChart({
   timeZone,
   hour12,
   annotations = NO_ANNOTATIONS,
+  annotationToggle,
   transition = null,
   onTransitionEnd,
 }: UsageChartWindowProps & {
@@ -674,6 +688,8 @@ export function UsageStackedChart({
   /** Set while the chart moves from another breakdown to this one. */
   readonly transition?: ChartTransition | null;
   readonly onTransitionEnd?: (id: number) => void;
+  /** Drawn under the chart, where it stays whether or not the annotations show. */
+  readonly annotationToggle?: ReactNode;
 }) {
   const gt = useGT();
   const locale = useLocale();
@@ -692,7 +708,6 @@ export function UsageStackedChart({
         );
   const geometry = barGeometry(periods.length);
   const widthPercent = (geometry.width / geometry.step) * 100;
-  const barTops = bars.map((bar) => bar.top);
   const layered = periods.length <= LAYERED_BARS;
   const dim = series.some((entry) => entry.loading === true);
   const plotRef = useRef<HTMLDivElement | null>(null);
@@ -752,87 +767,98 @@ export function UsageStackedChart({
   return (
     // The y-axis column is as wide as its widest label, ending flush with the chart's right edge;
     // the plot takes the rest. It fills a taller column and never shrinks below h-56.
-    <div className="grid flex-1 grid-cols-[minmax(0,1fr)_auto] grid-rows-[minmax(14rem,1fr)_auto] gap-x-2 gap-y-1">
-      <div ref={plotRef} className="relative min-h-56">
-        <UsageChartPlot
-          periods={periods}
-          columns={columns}
-          series={series}
-          format={format}
-          formatTooltipPeriod={formatTooltipPeriod}
-          overlay={
-            annotations.length === 0 ? undefined : (
-              <UsageChartAnnotations
-                placed={annotations}
-                periodCount={periods.length}
-                barTops={barTops}
+    // The chart keeps one height; the annotation toggle and the annotations go under it.
+    <div className="flex min-w-0 flex-col gap-2">
+      <div className="grid h-80 grid-cols-[minmax(0,1fr)_auto] grid-rows-[minmax(0,1fr)_auto] gap-x-2 gap-y-1">
+        <div ref={plotRef} className="relative">
+          <UsageChartPlot
+            periods={periods}
+            columns={columns}
+            series={series}
+            format={format}
+            formatTooltipPeriod={formatTooltipPeriod}
+          >
+            {tickRows.map((row) => (
+              <div
+                key={row.key}
+                className="absolute inset-x-0 h-px bg-border"
+                style={{ top: `${(row.y / VIEW_HEIGHT) * 100}%` }}
               />
-            )
-          }
-        >
-          {tickRows.map((row) => (
-            <div
-              key={row.key}
-              className="absolute inset-x-0 h-px bg-border"
-              style={{ top: `${(row.y / VIEW_HEIGHT) * 100}%` }}
-            />
-          ))}
-          {outgoing === null ? null : (
-            <div key={transition?.id} data-chart-layer="outgoing" className="absolute inset-0">
-              <ChartBars
-                bars={outgoing}
-                widthPercent={widthPercent}
-                dim={false}
-                layered={layered}
-              />
+            ))}
+            {outgoing === null ? null : (
+              <div key={transition?.id} data-chart-layer="outgoing" className="absolute inset-0">
+                <ChartBars
+                  bars={outgoing}
+                  widthPercent={widthPercent}
+                  dim={false}
+                  layered={layered}
+                />
+              </div>
+            )}
+            <div data-chart-layer="current" className="absolute inset-0">
+              <ChartBars bars={bars} widthPercent={widthPercent} dim={dim} layered={layered} />
             </div>
-          )}
-          <div data-chart-layer="current" className="absolute inset-0">
-            <ChartBars bars={bars} widthPercent={widthPercent} dim={dim} layered={layered} />
+          </UsageChartPlot>
+        </div>
+        <div aria-hidden className="relative text-3xs text-muted-foreground tabular-nums">
+          {/* Sizes the column to the widest label; the shown labels sit on their ticks. */}
+          <div className="invisible grid h-0 overflow-hidden">
+            {scale.labeled
+              ? scale.ticks.map((tick) => <span key={tick}>{tickLabel(tick)}</span>)
+              : null}
           </div>
-        </UsageChartPlot>
-      </div>
-      <div aria-hidden className="relative text-3xs text-muted-foreground tabular-nums">
-        {/* Sizes the column to the widest label; the shown labels sit on their ticks. */}
-        <div className="invisible grid h-0 overflow-hidden">
           {scale.labeled
-            ? scale.ticks.map((tick) => <span key={tick}>{tickLabel(tick)}</span>)
+            ? tickRows.map((row) => (
+                <span
+                  key={row.key}
+                  className="absolute right-0 -translate-y-1/2 whitespace-nowrap"
+                  style={{ top: `${(row.y / VIEW_HEIGHT) * 100}%` }}
+                >
+                  {tickLabel(row.tick)}
+                </span>
+              ))
             : null}
         </div>
-        {scale.labeled
-          ? tickRows.map((row) => (
-              <span
-                key={row.key}
-                className="absolute right-0 -translate-y-1/2 whitespace-nowrap"
-                style={{ top: `${(row.y / VIEW_HEIGHT) * 100}%` }}
-              >
-                {tickLabel(row.tick)}
-              </span>
-            ))
-          : null}
-      </div>
 
-      <div
-        aria-hidden
-        className="relative h-4 text-3xs whitespace-nowrap text-muted-foreground uppercase"
-      >
-        {axisLabelIndices(periods.length).map((index) => {
-          // Past a week the edge bars hug the plot's sides, so their labels align to the sides.
-          const pinned = periods.length > 7;
-          const style =
-            pinned && index === 0
-              ? { left: 0 }
-              : pinned && index === periods.length - 1
-                ? { right: 0 }
-                : { left: `${((index + 0.5) / periods.length) * 100}%`, translate: "-50% 0" };
-          return (
-            <span key={periods[index]} className="absolute" style={style}>
-              {formatPeriod(periods[index] ?? "")}
-            </span>
-          );
-        })}
+        <div
+          aria-hidden
+          className="relative h-4 text-3xs whitespace-nowrap text-muted-foreground uppercase"
+        >
+          {axisLabelIndices(periods.length).map((index) => {
+            // Past a week the edge bars hug the plot's sides, so their labels align to the sides.
+            const pinned = periods.length > 7;
+            const style =
+              pinned && index === 0
+                ? { left: 0 }
+                : pinned && index === periods.length - 1
+                  ? { right: 0 }
+                  : { left: `${((index + 0.5) / periods.length) * 100}%`, translate: "-50% 0" };
+            return (
+              <span key={periods[index]} className="absolute" style={style}>
+                {formatPeriod(periods[index] ?? "")}
+              </span>
+            );
+          })}
+        </div>
+        <div />
       </div>
-      <div />
+      {annotationToggle === undefined ? null : <div className="flex">{annotationToggle}</div>}
+      {annotations.length === 0 ? null : (
+        // The same columns as the chart: the y-axis labels size the right one.
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2">
+          <UsageChartAnnotations
+            placed={annotations}
+            periodCount={periods.length}
+            plotRef={plotRef}
+            zeroY={scale.mirrored ? MIRROR_MIDDLE : VIEW_HEIGHT}
+          />
+          <div aria-hidden className="invisible grid h-0 overflow-hidden text-3xs tabular-nums">
+            {scale.labeled
+              ? scale.ticks.map((tick) => <span key={tick}>{tickLabel(tick)}</span>)
+              : null}
+          </div>
+        </div>
+      )}
 
       {/* The plot and its axes are hover-only; this carries the same figures for screen readers.
           sr-only sits on a wrapper: Firefox does not clip a table's caption by the table's own box. */}

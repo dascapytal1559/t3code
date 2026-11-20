@@ -83,14 +83,16 @@ write it down sooner, run `t3 usage close --through <time>` with the time's offs
 `2026-11-19T15:00:00+11:00` (at least 5 minutes ago); add `--dry-run` first to see what it would
 write.
 
-## Split the chart by provider, kind of work, device, process or type
+## Split the chart by provider, kind of work, device, process or direction
 
 Beside the chart on **Usage** are five breakdowns of the same window: **by provider**, **by
-kind of work**, **by device**, **by process** and **by type**. One of them is open as a card, and the chart splits
+kind of work**, **by device**, **by process** and **by direction**. One of them is open as a card, and the chart splits
 its bars the same way; the others fold down to their colour bar. Click a folded bar to open it in
 the chart. The card lists each part with its figure and share; the chart stacks its largest band over the window
 on top, so every bar stacks the same way. On web and desktop, **by device** and **by kind of work**
-draw as a mirror when they split in two: the larger part above a centre line, the other below. Cost
+draw as a mirror when they split in two: the larger part above a centre line, the other below.
+**By process** draws **Direct** above the line and the processes below it, and **by direction**
+draws **Input** above and **Output** below. Cost
 and Tokens work in every breakdown, and hovering a bar names
 each band. On a phone the breakdowns sit under the chart. On mobile, choose **Provider**,
 **Kind of work**, **Device** or **Process** under the period.
@@ -118,8 +120,8 @@ environment, so every client sees the same ones. A group holds projects, folders
 group to open it into its projects and folders; each opens and closes on its own, and the page
 remembers what you leave open.
 
-**By type** splits tokens into input, cache reads, output and cache writes, and cost into what each
-of those cost. Cost no category accounts for is **Other**.
+**By direction** splits usage into **Input** and **Output**. Click **Input** to open it into
+cache reads, cache writes and uncached input. In cost, cost no category accounts for is **Other**.
 
 ### Choose what a kind of work opens into
 
@@ -365,5 +367,6 @@ On web and desktop, open Usage from the command palette. While on Usage,
 press `C`, `T`, or `L` for Cost, Tokens, or Limits while not typing in a field.
 Use `Ctrl+Shift+1` through `Ctrl+Shift+6` (`Cmd+Shift+1`–`6` on macOS) for the past
 24 hours, 7 days, 30 days, 90 days, 6 months, or 12 months. Period shortcuts do nothing on Limits.
+Press `↑` or `↓` to open the previous or next breakdown card.
 Press `Escape` to return to the previous page. Customize these shortcuts in
 **Settings → Keybindings**.

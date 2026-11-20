@@ -33,14 +33,14 @@ export const BREAKDOWN_TITLES = {
     device: msg("Tokens by device"),
     process: msg("Tokens by process"),
     work: msg("Tokens by kind of work"),
-    type: msg("Tokens by type"),
+    type: msg("Tokens by direction"),
   },
   cost: {
     provider: msg("Cost by provider"),
     device: msg("Cost by device"),
     process: msg("Cost by process"),
     work: msg("Cost by kind of work"),
-    type: msg("Cost by type"),
+    type: msg("Cost by direction"),
   },
 } as const satisfies Record<"tokens" | "cost", Record<UsageBreakdown, string>>;
 
@@ -147,14 +147,20 @@ const OTHER_WORK_CSS = css(OTHER_WORK_COLOR);
 
 export const OTHER_WORK_LABEL = msg("Other", { $context: "usage kind of work: usage in no group" });
 
-// Greys from usageBreakdown.ts, in its token-type order; cost no category accounts for is Other.
-const TYPES: readonly { key: UsageTypeBand; label: string; color: string }[] = [
-  { key: "input", label: msg("Input"), color: ink(60) },
+// Greys from usageBreakdown.ts. What goes in opens into its token types; cost no category accounts
+// for is Other.
+const INPUT_TYPES: readonly { key: UsageTypeBand; label: string; color: string }[] = [
   { key: "cacheRead", label: msg("Cache read"), color: ink(30) },
-  { key: "output", label: msg("Output"), color: ink(100) },
   { key: "cacheWrite", label: msg("Cache write"), color: ink(72) },
-  { key: "other", label: msg("Other"), color: ink(44) },
+  {
+    key: "input",
+    label: msg("Uncached", { $context: "usage input tokens not read from cache" }),
+    color: ink(60),
+  },
 ];
+const INPUT = { key: "in", label: msg("Input"), color: ink(44) };
+const OUTPUT = { key: "output", label: msg("Output"), color: ink(100) };
+const OTHER_TYPE = { key: "other", label: msg("Other"), color: ink(20) };
 
 const value = (band: { totalTokens: number; costUsd: number }, metric: "cost" | "tokens") =>
   metric === "cost" ? band.costUsd : band.totalTokens;
@@ -277,19 +283,43 @@ export function workBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: b
   };
 }
 
-/** The type box: tokens by token type, or cost by priced category. */
+/**
+ * The direction box: what goes in, opening into its token types, and output; cost no priced
+ * category accounts for is Other.
+ */
 export function typeBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: boolean): BoxModel {
   const split = usageSplitBands(usage, "type", metric, hourly);
-  const groups = TYPES.map((type) => {
-    const band = split.bands.find((entry) => entry.key === type.key);
-    return leaf({
-      ...type,
-      named: false,
-      totalTokens: band?.totalTokens ?? 0,
-      costUsd: band?.costUsd ?? 0,
-    });
-  }).filter((group) => value(group, metric) > 0);
-  return { kind: "type", groups: largestFirst(groups, metric), valueAt: split.valueAt };
+  const amountOf = (key: string) => {
+    const band = split.bands.find((entry) => entry.key === key);
+    return { totalTokens: band?.totalTokens ?? 0, costUsd: band?.costUsd ?? 0 };
+  };
+  const children = INPUT_TYPES.map((type) => ({
+    ...type,
+    named: false,
+    ...amountOf(type.key),
+  })).filter((child) => value(child, metric) > 0);
+  const input: BoxGroup = {
+    ...INPUT,
+    named: false,
+    totalTokens: children.reduce((sum, child) => sum + child.totalTokens, 0),
+    costUsd: children.reduce((sum, child) => sum + child.costUsd, 0),
+    children,
+    hidden: new Set(),
+  };
+  const groups = [
+    input,
+    leaf({ ...OUTPUT, named: false, ...amountOf(OUTPUT.key) }),
+    leaf({ ...OTHER_TYPE, named: false, ...amountOf(OTHER_TYPE.key) }),
+  ].filter((group) => value(group, metric) > 0);
+  const inputKeys = INPUT_TYPES.map((type) => type.key);
+  return {
+    kind: "type",
+    groups: largestFirst(groups, metric),
+    valueAt: (period, key, by) =>
+      key === INPUT.key
+        ? inputKeys.reduce((sum, child) => sum + split.valueAt(period, child, by), 0)
+        : split.valueAt(period, key, by),
+  };
 }
 
 /** The provider box: one row per provider, ranked as the page ranks them. */

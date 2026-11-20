@@ -116,6 +116,8 @@ export const STATIC_KEYBINDING_COMMANDS = [
   "usage.period.quarter",
   "usage.period.halfYear",
   "usage.period.year",
+  "usage.breakdown.previous",
+  "usage.breakdown.next",
   ...MODEL_PICKER_KEYBINDING_COMMANDS,
   ...THREAD_KEYBINDING_COMMANDS,
 ] as const;
