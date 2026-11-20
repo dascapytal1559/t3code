@@ -395,6 +395,11 @@ export const UsageWorkGroup = Schema.Struct({
   opensIntoMembers: Schema.optionalKey(Schema.Boolean),
   /** Members (`UsageWorkMember` keys) that count to the group but get no row of their own. */
   hiddenMembers: Schema.optionalKey(Schema.Array(Schema.String)),
+  /**
+   * When set, the only members with a row of their own; the rest count without one, and
+   * `hiddenMembers` is not read. Easier than hiding when only a few should show.
+   */
+  shownMembers: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 export type UsageWorkGroup = typeof UsageWorkGroup.Type;
 

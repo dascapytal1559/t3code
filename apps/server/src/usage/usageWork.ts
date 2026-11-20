@@ -466,12 +466,19 @@ export function makeUsageWork(options: UsageWorkOptions) {
     );
     // Every member a place can name: by project name, or by its repository's folder name.
     const rootById = new Map(roots.map((project) => [project.id, project.root]));
-    const hidden = new Set(groups.flatMap((group) => group.hiddenMembers ?? []));
+    const groupByName = new Map(groups.map((group) => [group.name, group]));
+    // A group lists either the members to show or the members to hide.
+    const isHidden = (key: string, groupName: string) => {
+      const group = groupByName.get(groupName);
+      return group?.shownMembers !== undefined
+        ? !group.shownMembers.includes(key)
+        : group?.hiddenMembers?.includes(key) === true;
+    };
     const member = (key: string, group: string, name: string): UsageWorkMember => ({
       key,
       group,
       name,
-      ...(hidden.has(key) ? { hidden: true as const } : {}),
+      ...(isHidden(key, group) ? { hidden: true as const } : {}),
     });
     const members: UsageWorkMember[] = [];
     for (const project of projects) {

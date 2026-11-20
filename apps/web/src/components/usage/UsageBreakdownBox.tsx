@@ -431,9 +431,7 @@ export function UsageBreakdownBox({
               <span className="truncate">{label(group)}</span>
             </button>
           );
-          const shownChildren = expanded
-            ? group.children.filter((child) => !group.hidden.has(child.key))
-            : [];
+          const shownChildren = expanded ? group.children : [];
           return [
             row(group, groupIndex === 0 ? "first" : "parent", dot, name, rowExtras),
             ...shownChildren.map((child, index) =>

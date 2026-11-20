@@ -1,7 +1,7 @@
 import type { MergedUsage, SplitAmount } from "@t3tools/shared/usageMerge";
 import { describe, expect, it } from "vite-plus/test";
 
-import { chartBands, deviceBox, type BoxModel } from "./usageSplits";
+import { chartBands, deviceBox, foldMembers } from "./usageSplits";
 
 const amount = (totalTokens: number, costUsd: number): SplitAmount => ({ totalTokens, costUsd });
 const day = "2026-11-19";
@@ -52,25 +52,24 @@ describe("breakdown boxes", () => {
     ]);
   });
 
-  it("keeps a parent whole when every child it holds is hidden", () => {
-    const band = (key: string) => ({
+  it("folds the members a kind of work hides into one Others row, or keeps it whole", () => {
+    const member = (key: string, totalTokens: number, hidden?: true) => ({
       key,
-      label: key,
-      named: true,
-      color: "",
-      totalTokens: 1,
-      costUsd: 0,
+      totalTokens,
+      costUsd: totalTokens * 2,
+      ...(hidden === undefined ? {} : { hidden }),
     });
-    const box: BoxModel = {
-      kind: "work",
-      groups: [
-        { ...band("Bones"), children: [band("t3"), band("fm")], hidden: new Set(["t3", "fm"]) },
-      ],
-      valueAt: () => 0,
-    };
-    expect(chartBands(box, new Set(["Bones"])).map((entry) => entry.key)).toEqual(["Bones"]);
-    // One shown member opens it, and the hidden one keeps its band beside it.
-    const shown = { ...box, groups: [{ ...box.groups[0]!, hidden: new Set(["fm"]) }] };
-    expect(chartBands(shown, new Set(["Bones"])).map((entry) => entry.key)).toEqual(["t3", "fm"]);
+    const bones = [
+      member("t3", 5),
+      member("fm", 3),
+      member("pilot", 2, true),
+      member("harness", 1, true),
+    ];
+    const folded = foldMembers(bones);
+    expect(folded.shown.map((entry) => entry.key)).toEqual(["t3", "fm"]);
+    expect(folded.others).toEqual({ totalTokens: 3, costUsd: 6 });
+    // Showing every member leaves no Others row; showing none keeps the group whole.
+    expect(foldMembers([member("t3", 5), member("fm", 3)]).others).toBeNull();
+    expect(foldMembers([member("pilot", 2, true)])).toEqual({ shown: [], others: null });
   });
 });

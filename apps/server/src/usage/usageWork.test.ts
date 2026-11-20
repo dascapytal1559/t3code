@@ -350,6 +350,26 @@ describe("makeUsageWork", () => {
       { key: "app-docs", group: "Docs", name: "docs", hidden: true },
     ]);
 
+    // A show list names the members with rows; the rest are hidden, and the hide list is unread.
+    const showList = await work.attribution(
+      withFolders.map((group) =>
+        group.name === "Docs"
+          ? { ...group, shownMembers: [] }
+          : group.name === "Bones"
+            ? { ...group, shownMembers: ["app"], hiddenMembers: ["app"] }
+            : group,
+      ),
+      "repository",
+      projects(),
+      removed,
+      seen(folders, files),
+      0,
+    );
+    expect(showList.members.slice(0, 2)).toEqual([
+      { key: "app", group: "Bones", name: "app" },
+      { key: "app-docs", group: "Docs", name: "docs", hidden: true },
+    ]);
+
     // Folder entries alone are enough to place usage.
     const foldersOnly = await work.attribution(
       withFolders.filter((group) => group.name === "Notes"),

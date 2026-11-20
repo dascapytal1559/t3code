@@ -24,6 +24,7 @@ import {
   removeGroup,
   renameGroup,
   setGroupOpens,
+  setGroupShowsOnly,
   setGroupShared,
   setMemberShown,
   unsavedWorkGroups,
@@ -140,6 +141,21 @@ export function UsageWorkGroupsSettings({
                   )}
                   onCheckedChange={(checked) =>
                     save(setGroupOpens(groups, group.name, Boolean(checked)))
+                  }
+                />
+              </label>
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <T>Only shown</T>
+                <Switch
+                  size="sm"
+                  checked={group.shownMembers !== undefined}
+                  disabled={readOnly || group.shared === true || group.opensIntoMembers === false}
+                  aria-label={gt(
+                    "Give rows only to the members of {group} marked Shown; new members start hidden",
+                    { group: group.name },
+                  )}
+                  onCheckedChange={(checked) =>
+                    save(setGroupShowsOnly(groups, group.name, Boolean(checked)))
                   }
                 />
               </label>

@@ -19,12 +19,27 @@ export function groupOfProject(
   return groups.find((group) => group.projectIds.includes(projectId))?.name ?? null;
 }
 
-/** A group without `member` among its hidden members; a member that moves starts shown. */
-function unhide(group: UsageWorkGroup, member: string): UsageWorkGroup {
-  const { hiddenMembers = [], ...rest } = group;
-  const kept = hiddenMembers.filter((key) => key !== member);
-  return kept.length === 0 ? rest : { ...rest, hiddenMembers: kept };
+/**
+ * A group with `member` off both its member lists, so a member that moves starts shown in a group
+ * that hides and hidden in one that shows only its list. A show list stays, even empty.
+ */
+function forget(group: UsageWorkGroup, member: string): UsageWorkGroup {
+  const { hiddenMembers = [], shownMembers, ...rest } = group;
+  const hidden = hiddenMembers.filter((key) => key !== member);
+  return {
+    ...rest,
+    ...(hidden.length === 0 ? {} : { hiddenMembers: hidden }),
+    ...(shownMembers === undefined
+      ? {}
+      : { shownMembers: shownMembers.filter((key) => key !== member) }),
+  };
 }
+
+/** The members a group holds, as the server keys them. */
+const membersOf = (group: UsageWorkGroup) => [
+  ...group.projectIds,
+  ...(group.folders ?? []).map((folder) => folderMemberKey(folder)),
+];
 
 /** Moves a project into one group, or into none (Other) with null. */
 export function assignProject(
@@ -34,10 +49,8 @@ export function assignProject(
 ): readonly UsageWorkGroup[] {
   return groups.map((group) => {
     const projectIds = group.projectIds.filter((id) => id !== projectId);
-    return {
-      ...unhide(group, projectId),
-      projectIds: group.name === groupName ? [...projectIds, projectId] : projectIds,
-    };
+    const kept = { ...forget(group, projectId), projectIds };
+    return group.name === groupName ? { ...kept, projectIds: [...projectIds, projectId] } : kept;
   });
 }
 
@@ -68,11 +81,12 @@ export function setMemberShown(
   shown: boolean,
 ): readonly UsageWorkGroup[] {
   return groups.map((group) => {
-    const holds =
-      group.projectIds.some((id) => id === member) ||
-      (group.folders ?? []).some((folder) => folderMemberKey(folder) === member);
-    if (!holds) return group;
-    const shownGroup = unhide(group, member);
+    if (!membersOf(group).includes(member)) return group;
+    if (group.shownMembers !== undefined) {
+      const others = group.shownMembers.filter((key) => key !== member);
+      return { ...group, shownMembers: shown ? [...others, member] : others };
+    }
+    const shownGroup = forget(group, member);
     return shown
       ? shownGroup
       : {
@@ -82,9 +96,36 @@ export function setMemberShown(
   });
 }
 
-/** Whether a member has a row of its own. */
-export const memberShown = (groups: readonly UsageWorkGroup[], member: string) =>
-  !groups.some((group) => group.hiddenMembers?.includes(member) === true);
+/** Whether a member has a row of its own: on its group's show list, or off its hide list. */
+export function memberShown(groups: readonly UsageWorkGroup[], member: string): boolean {
+  const group = groups.find((entry) => membersOf(entry).includes(member));
+  if (group === undefined) return true;
+  return group.shownMembers !== undefined
+    ? group.shownMembers.includes(member)
+    : group.hiddenMembers?.includes(member) !== true;
+}
+
+/**
+ * Whether a group lists the members to show (on) or the members to hide (off). Switching keeps
+ * the same members shown.
+ */
+export function setGroupShowsOnly(
+  groups: readonly UsageWorkGroup[],
+  name: string,
+  only: boolean,
+): readonly UsageWorkGroup[] {
+  return groups.map((group) => {
+    if (group.name !== name || (group.shownMembers !== undefined) === only) return group;
+    const { hiddenMembers: _hidden, shownMembers: _shown, ...rest } = group;
+    const shown = membersOf(group).filter((member) => memberShown([group], member));
+    const hidden = membersOf(group).filter((member) => !shown.includes(member));
+    return only
+      ? { ...rest, shownMembers: shown }
+      : hidden.length === 0
+        ? rest
+        : { ...rest, hiddenMembers: hidden };
+  });
+}
 
 /** Each folder entry with the group it counts to: the first that lists it, as the server reads them. */
 export function folderEntries(
@@ -112,7 +153,7 @@ export function assignFolder(
   groupName: string | null,
 ): readonly UsageWorkGroup[] {
   return groups.map((group) => {
-    const { folders: current = [], ...rest } = unhide(group, folderMemberKey(folder));
+    const { folders: current = [], ...rest } = forget(group, folderMemberKey(folder));
     const others = current.filter((entry) => entry !== folder);
     const folders = group.name === groupName ? [...others, folder] : others;
     return folders.length === 0 ? rest : { ...rest, folders };

@@ -129,8 +129,11 @@ In **Settings → Providers → Kinds of work**:
 
 - **Members**, per group, lets the group open into its projects and folders. It is on unless you
   turn it off; a shared group never opens.
-- **Shown**, per project or folder, gives it a row of its own when its group opens. A project you
-  hide still counts to its group and keeps its colour in the bar and the chart.
+- **Shown**, per project or folder, gives it a row of its own when its group opens. The projects
+  and folders you hide still count to the group, together, as one **Others** row.
+- **Only shown**, per group, gives rows only to the members you mark **Shown**, so a group of many
+  projects can show just a few; a project you add later starts hidden there. Switching it keeps the
+  same rows.
 - **Name members by** names them by **Project name** or by **Repository**, the repository's folder
   name. Two projects of one repository show as one.
 

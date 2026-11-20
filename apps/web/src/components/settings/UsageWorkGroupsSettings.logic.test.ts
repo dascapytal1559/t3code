@@ -12,6 +12,7 @@ import {
   removeGroup,
   setGroupOpens,
   setGroupShared,
+  setGroupShowsOnly,
   setMemberShown,
   unsavedWorkGroups,
   usableFolder,
@@ -56,6 +57,25 @@ describe("usage work groups", () => {
       opensIntoMembers: false,
     });
     expect(setGroupOpens(setGroupOpens(groups, "Trading", false), "Trading", true)).toEqual(groups);
+  });
+
+  it("lists the members to show instead, keeping the same rows when it switches", () => {
+    const both = assignProject(groups, app, "Trading");
+    const hidden = setMemberShown(both, trader, false);
+    // Switching to a show list keeps who shows: app stays shown, trader stays hidden.
+    const only = setGroupShowsOnly(hidden, "Trading", true);
+    expect(only[0]).toEqual({ name: "Trading", projectIds: [trader, app], shownMembers: [app] });
+    expect([memberShown(only, app), memberShown(only, trader)]).toEqual([true, false]);
+    // A member joining a show-list group starts hidden; Shown edits the show list.
+    const joined = assignFolder(only, "/work/main", "Trading");
+    expect(memberShown(joined, folderMemberKey("/work/main"))).toBe(false);
+    expect(setMemberShown(only, app, false)[0]?.shownMembers).toEqual([]);
+    // Switching back lists the hidden members again.
+    expect(setGroupShowsOnly(only, "Trading", false)[0]).toEqual({
+      name: "Trading",
+      projectIds: [trader, app],
+      hiddenMembers: [trader],
+    });
   });
 
   it("refuses blank and duplicate names, ignoring case, but lets a group keep its own", () => {

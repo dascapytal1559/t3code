@@ -13,6 +13,7 @@ import {
   usageSplitBands,
   type MergedDeviceBand,
   type MergedUsage,
+  type SplitAmount,
   type UsageTypeBand,
 } from "@t3tools/shared/usageMerge";
 import { msg } from "gt-react";
@@ -56,10 +57,7 @@ export interface BoxBand {
 
 /** A parent row: a band of its own, and the children it opens into. */
 export interface BoxGroup extends BoxBand {
-  /** Every child, hidden ones included: they keep their colour in the bar and the chart. */
   readonly children: readonly BoxBand[];
-  /** Children that count to the parent but get no row. */
-  readonly hidden: ReadonlySet<string>;
 }
 
 export interface BoxModel {
@@ -165,7 +163,30 @@ const OTHER_TYPE = { key: "other", label: msg("Other"), color: ink(20) };
 const value = (band: { totalTokens: number; costUsd: number }, metric: "cost" | "tokens") =>
   metric === "cost" ? band.costUsd : band.totalTokens;
 
-const leaf = (band: BoxBand): BoxGroup => ({ ...band, children: [], hidden: new Set() });
+const leaf = (band: BoxBand): BoxGroup => ({ ...band, children: [] });
+
+/** The members a kind of work hides, folded into one Others row: their key's prefix. */
+const OTHERS_PREFIX = "others:";
+const OTHERS_LABEL = msg("Others", { $context: "usage kind of work: its members without a row" });
+
+/**
+ * A kind of work's member rows: the members it shows, and the rest summed into one Others row.
+ * A group that shows none opens into nothing, and stays one row.
+ */
+export function foldMembers<M extends { readonly hidden?: boolean | undefined } & SplitAmount>(
+  members: readonly M[],
+): { readonly shown: readonly M[]; readonly others: SplitAmount | null } {
+  const shown = members.filter((member) => member.hidden !== true);
+  const folded = members.filter((member) => member.hidden === true);
+  const others = {
+    totalTokens: folded.reduce((sum, member) => sum + member.totalTokens, 0),
+    costUsd: folded.reduce((sum, member) => sum + member.costUsd, 0),
+  };
+  return {
+    shown: shown.length === 0 ? [] : shown,
+    others: shown.length === 0 || folded.length === 0 ? null : others,
+  };
+}
 
 /** Largest first by the metric, rows and each parent's children alike; ties keep their order. */
 function largestFirst(groups: readonly BoxGroup[], metric: "cost" | "tokens"): BoxGroup[] {
@@ -197,7 +218,6 @@ export function deviceBox(
       totalTokens: children.reduce((sum, child) => sum + child.totalTokens, 0),
       costUsd: children.reduce((sum, child) => sum + child.costUsd, 0),
       children: children.filter((child) => child.totalTokens > 0 || child.costUsd > 0),
-      hidden: new Set(),
     };
   }).filter((group) => group.totalTokens > 0 || group.costUsd > 0);
   const childrenOf = new Map<string, readonly string[]>(
@@ -235,8 +255,8 @@ export function processBox(
 }
 
 /**
- * The kind-of-work box: groups, Other among them, each opening into its members, named and hidden
- * as the server's settings say.
+ * The kind-of-work box: groups, Other among them, each opening into the members its settings show
+ * and one Others row for the rest.
  */
 export function workBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: boolean): BoxModel {
   const split = usageSplitBands(usage, "work", metric, hourly);
@@ -247,6 +267,7 @@ export function workBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: b
     const members =
       band.key === OTHER_WORK ? null : usageMemberBands(usage, band.key, metric, hourly);
     if (members !== null) memberSplits.set(band.key, members);
+    const folded = foldMembers(members?.members ?? []);
     return {
       key: band.key,
       label: band.key === OTHER_WORK ? OTHER_WORK_LABEL : band.key,
@@ -254,18 +275,28 @@ export function workBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: b
       color: palette?.color ?? OTHER_WORK_CSS,
       totalTokens: band.totalTokens,
       costUsd: band.costUsd,
-      children: (members?.members ?? []).map((member, index) => ({
-        key: member.key,
-        label: member.name,
-        named: true,
-        // Members past the palette's three repeat its hues; the group's members are few.
-        color: palette?.members[index % palette.members.length] ?? OTHER_WORK_CSS,
-        totalTokens: member.totalTokens,
-        costUsd: member.costUsd,
-      })),
-      hidden: new Set(
-        (members?.members ?? []).flatMap((member) => (member.hidden === true ? [member.key] : [])),
-      ),
+      children: [
+        ...folded.shown.map((member, index) => ({
+          key: member.key,
+          label: member.name,
+          named: true,
+          // Members past the palette's three repeat its hues; the group's members are few.
+          color: palette?.members[index % palette.members.length] ?? OTHER_WORK_CSS,
+          totalTokens: member.totalTokens,
+          costUsd: member.costUsd,
+        })),
+        ...(folded.others === null
+          ? []
+          : [
+              {
+                key: `${OTHERS_PREFIX}${band.key}`,
+                label: OTHERS_LABEL,
+                named: false,
+                color: OTHER_WORK_CSS,
+                ...folded.others,
+              },
+            ]),
+      ],
     };
   });
   return {
@@ -273,6 +304,12 @@ export function workBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: b
     groups: largestFirst(groups, metric),
     valueAt: (period, key, by) => {
       if (split.bands.some((band) => band.key === key)) return split.valueAt(period, key, by);
+      if (key.startsWith(OTHERS_PREFIX)) {
+        const members = memberSplits.get(key.slice(OTHERS_PREFIX.length));
+        return (members?.members ?? [])
+          .filter((member) => member.hidden === true)
+          .reduce((sum, member) => sum + (members?.valueAt(period, member.key, by) ?? 0), 0);
+      }
       for (const members of memberSplits.values()) {
         if (members.members.some((member) => member.key === key)) {
           return members.valueAt(period, key, by);
@@ -304,7 +341,6 @@ export function typeBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: b
     totalTokens: children.reduce((sum, child) => sum + child.totalTokens, 0),
     costUsd: children.reduce((sum, child) => sum + child.costUsd, 0),
     children,
-    hidden: new Set(),
   };
   const groups = [
     input,
@@ -340,13 +376,12 @@ export function providerBox(
   };
 }
 
-/** Whether a parent opens: it has a child with a row of its own. */
-export const opensIntoChildren = (group: BoxGroup) =>
-  group.children.some((child) => !group.hidden.has(child.key));
+/** Whether a parent opens: it has children of its own. */
+export const opensIntoChildren = (group: BoxGroup) => group.children.length > 0;
 
 /**
  * What the chart draws for a box, top band first as the card lists them: every row, with each
- * opened parent replaced by all of its children, hidden ones included.
+ * opened parent replaced by its children.
  */
 export function chartBands(box: BoxModel, open: ReadonlySet<string>): readonly BoxBand[] {
   return box.groups.flatMap((group) =>
