@@ -48,6 +48,11 @@ Four things are still shared with the official app:
   command does follow that feed, but the app never runs it: its server is
   desktop-managed (`apps/server/src/cloud/selfUpdate.ts`).
 
+On macOS the SOCKS tunnel the app opens for another environment's `localhost`
+tabs has no owner check, so any local process can use it while it runs. This is
+upstream's documented gap (`docs/internals/remote.md`); it never starts for the
+local environment.
+
 Upstream: none.
 
 ## 6 and 12 months
