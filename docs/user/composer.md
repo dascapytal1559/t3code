@@ -467,7 +467,9 @@ On web and desktop, a Markdown file you can edit opens as a rendered page that
 you type into. Markdown markers, such as `**`, show only where your cursor is.
 The file keeps its exact text, and your edits save by themselves. When an agent
 changes the open file, the change appears in place and the changed lines are
-briefly tinted.
+briefly tinted. While you are typing, your unsaved edits win: an agent's change
+that lands before they save is overwritten, so pause before an agent edits the
+same file.
 
 - Select a link to follow it. Hold `Option` on macOS or `Alt` elsewhere while
   you click to put the cursor in the link instead.
