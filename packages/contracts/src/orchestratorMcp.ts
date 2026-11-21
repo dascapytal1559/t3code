@@ -823,6 +823,7 @@ export const OrchestratorMcpSaveScheduledTaskInput = Schema.Struct({
   scheduledTaskId: Schema.optional(ScheduledTaskId),
   prompt: Schema.optional(OrchestratorMcpPrompt),
   schedule: Schema.optional(OrchestratorMcpSchedule),
+  fromThread: Schema.optional(OrchestratorMcpFromThread),
 });
 export type OrchestratorMcpSaveScheduledTaskInput =
   typeof OrchestratorMcpSaveScheduledTaskInput.Type;

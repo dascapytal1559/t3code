@@ -1,4 +1,4 @@
-import { OrchestratorMcpFailure } from "@t3tools/contracts";
+import { OrchestratorMcpFailure, type OrchestratorMcpFromThread } from "@t3tools/contracts";
 import { OrchestratorToolkit } from "./tools.ts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -14,17 +14,24 @@ import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as OrchestratorMcpService from "../../OrchestratorMcpService.ts";
 import * as ThreadMetadataMcpService from "../../ThreadMetadataMcpService.ts";
 
+/** Where the caller's turn, or `fromThread`'s for a script outside threads, counts now. */
+const scheduledTaskOrigin = Effect.fn("mcp.scheduledTaskOrigin")(function* (
+  fromThread: OrchestratorMcpFromThread | undefined,
+) {
+  const { caller, threads } = yield* loadCaller();
+  return yield* bindUsageOrigin(threads, fromThread, caller?.id);
+});
+
 /**
  * A scheduled task's runs count where the turn that created it counted then; an edit made from
- * a typed turn re-roots it. Best effort: the task is saved either way.
+ * a typed turn re-roots its later runs. Best effort: the task is saved either way.
  */
 const bindScheduledTask = Effect.fn("mcp.bindScheduledTask")(function* (
   taskId: string,
+  bound: Effect.Success<ReturnType<typeof scheduledTaskOrigin>>,
   onlyIfTyped: boolean,
 ) {
   yield* Effect.gen(function* () {
-    const { caller, threads } = yield* loadCaller();
-    const bound = yield* bindUsageOrigin(threads, undefined, caller?.id);
     if (bound === null || (onlyIfTyped && !bound.reroots)) return;
     const origins = yield* UsageOrigins.UsageOrigins;
     yield* origins.bindScheduledTask(taskId, bound.key);
@@ -115,7 +122,7 @@ const handlers = {
     (input) => input.scheduledTaskId === undefined,
     McpToolAccess.startsThreads(
       () => ({}),
-      ({ prompt, schedule, ...input }) =>
+      ({ prompt, schedule, fromThread, ...input }) =>
         Effect.gen(function* () {
           if (prompt === undefined || schedule === undefined) {
             return yield* new OrchestratorMcpFailure({
@@ -125,19 +132,30 @@ const handlers = {
           }
           const scope = yield* McpInvocationContext.McpInvocationContext;
           const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+          const bound = yield* scheduledTaskOrigin(fromThread);
           const task = yield* service.scheduleTask(scope, { ...input, prompt, schedule });
-          yield* bindScheduledTask(task.scheduledTaskId, false);
+          yield* bindScheduledTask(task.scheduledTaskId, bound, false);
           return task;
         }),
       // A scheduled run starts long after its caller, with nothing to carry the link.
       { refused: "schedule tasks in this environment" },
     ),
     McpToolAccess.writes(
-      ({ scheduledTaskId, prompt, title, schedule, enabled, freshSession, bindToCurrentThread }) =>
+      ({
+        scheduledTaskId,
+        prompt,
+        title,
+        schedule,
+        enabled,
+        freshSession,
+        bindToCurrentThread,
+        fromThread,
+      }) =>
         Effect.gen(function* () {
           if (scheduledTaskId === undefined) return yield* Effect.die("unreachable");
           const scope = yield* McpInvocationContext.McpInvocationContext;
           const service = yield* OrchestratorMcpService.OrchestratorMcpService;
+          const bound = yield* scheduledTaskOrigin(fromThread);
           const task = yield* service.updateScheduledTask(scope, {
             scheduledTaskId,
             prompt,
@@ -147,7 +165,7 @@ const handlers = {
             freshSession,
             bindToCurrentThread,
           });
-          yield* bindScheduledTask(task.scheduledTaskId, true);
+          yield* bindScheduledTask(task.scheduledTaskId, bound, true);
           return task;
         }),
     ),

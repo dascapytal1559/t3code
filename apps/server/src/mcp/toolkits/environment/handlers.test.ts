@@ -511,3 +511,64 @@ it.effect(
     );
   },
 );
+
+it.effect("t3_restart_request counts its note where the calling thread's turn counts", () =>
+  Effect.gen(function* () {
+    const requests: Array<Parameters<Orchestrator.OrchestratorV2["Service"]["requestRestart"]>[0]> =
+      [];
+    const key = { origin: "phone", basis: "stamp", reason: "inherited" } as const;
+    const layerDependencies = Layer.mergeAll(
+      ThreadCommandExecutor.layer,
+      layerServerEnvironment,
+      Layer.mock(Orchestrator.OrchestratorV2)({
+        requestRestart: (request) =>
+          Effect.sync(() => {
+            requests.push(request);
+            return { ...request, requestedAt: "1970-01-01T00:00:00.000Z" };
+          }),
+        restartStatus: Effect.succeed({
+          pending: true,
+          reason: "install build",
+          requestedAt: "1970-01-01T00:00:00.000Z",
+          activeTurns: 1,
+          drained: false,
+          serverStartedAt: "1970-01-01T00:00:00.000Z",
+        }),
+      }),
+      Layer.mock(ThreadManagement.ThreadManagementService)({
+        getThreadShell: () => Effect.succeed(liveThreadShell(phoneTask)),
+      }),
+      Layer.mock(Settings.ServerSettingsService)({}),
+      Layer.mock(UsageOrigins.UsageOrigins)({
+        originAt: (_thread, atMs) => Effect.succeed({ key, reroots: false, runId: null, atMs }),
+      }),
+      Layer.succeed(McpInvocationContext.McpInvocationContext, {
+        environmentId,
+        requestNamespace: "provider:worker",
+        thread: {
+          threadId: phoneTask,
+          providerSessionId: "provider:worker",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+        },
+        client: undefined,
+        capabilities: new Set(["orchestration" as const]),
+        issuedAt: 0,
+      }),
+    );
+    yield* Effect.gen(function* () {
+      const toolkit = yield* EnvironmentToolkit;
+      yield* toolkit
+        .handle("t3_restart_request", { reason: "install build" })
+        .pipe(Stream.unwrap, Stream.runDrain);
+    }).pipe(
+      Effect.provide(
+        McpToolAccess.HandlersLayer.layer(EnvironmentHandlers.layer).pipe(
+          Layer.provideMerge(layerDependencies),
+        ),
+      ),
+    );
+    expect(requests.map((request) => request.usageOrigin)).toEqual([
+      UsageOrigins.storedOrigin(key, 0),
+    ]);
+  }),
+);

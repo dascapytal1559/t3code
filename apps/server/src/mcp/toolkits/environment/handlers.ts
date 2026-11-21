@@ -153,8 +153,7 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
       const { scope, caller, threads } = yield* access;
       const orchestrator = yield* Orchestrator.OrchestratorV2;
       // The note and continuations count where the work it installs counts.
-      const bound =
-        fromThread === undefined ? null : yield* bindUsageOrigin(threads, fromThread, caller?.id);
+      const bound = yield* bindUsageOrigin(threads, fromThread, caller?.id);
       yield* orchestrator.requestRestart({
         reason,
         requestedBy: caller?.title ?? scope.client?.label ?? "MCP",
