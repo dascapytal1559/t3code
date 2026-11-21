@@ -50,6 +50,7 @@ Every difference from upstream, in the order [fork/README.md](fork/README.md) de
 - [FirstMate answers approvals](fork/README.md#firstmate-answers-approvals): FirstMate can allow or deny a worker's permission prompt.
 - [Stopped turns close approvals](fork/README.md#stopped-turns-close-approvals): a stopped turn's approval prompts close instead of hanging.
 - [Approvals reach FirstMate at once](fork/README.md#approvals-reach-firstmate-at-once): FirstMate hears a worker's question or approval the moment it appears.
+- [FirstMate's marks stay first](fork/README.md#firstmates-marks-stay-first): FirstMate's wakes and doorbells reach its agent without T3's sender note in front.
 - [Long sign-in](fork/README.md#long-sign-in): FirstMate's sign-in lasts 10 years instead of 30 days.
 - [Which device sent it](fork/README.md#which-device-sent-it): every message records whether it came from the phone, the computer or an agent.
 - [Work records its cause](fork/README.md#work-records-its-cause): each worker records which of your prompts started it.

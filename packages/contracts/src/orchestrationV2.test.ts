@@ -733,6 +733,21 @@ describe("withMessageSenderNote", () => {
       "Hi",
       "[T3 Code: this message came through T3 Code's tools, not from the user typing in this chat.]\n\nHi",
     ],
+    [
+      { createdBy: "agent", creationSource: "mcp" },
+      "\u2063FIRSTMATE_OP: v1 watcher: wake",
+      "\u2063FIRSTMATE_OP: v1 watcher: wake",
+    ],
+    [
+      { createdBy: "agent", creationSource: "mcp" },
+      ": Firstmate operational input waiting: read '/x.msg'",
+      ": Firstmate operational input waiting: read '/x.msg'",
+    ],
+    [
+      { createdBy: "agent", creationSource: "mcp" },
+      "Note: ship it",
+      "[T3 Code: this message came through T3 Code's tools, not from the user typing in this chat.]\n\nNote: ship it",
+    ],
     [{ createdBy: "user", creationSource: "web" }, "Hi", "Hi"],
     [{ createdBy: "agent", creationSource: "server" }, "Hi", "Hi"],
   ] as const)("labels %j's message %j for the provider", (message, text, expected) => {

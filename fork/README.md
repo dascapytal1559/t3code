@@ -2113,6 +2113,23 @@ FirstMate half, in the FirstMate fork:
 Upstream: open PR ([#24712](https://github.com/pingdotgg/t3code/pull/24712), by
 an outside contributor, not merged) adds a similar return to thread waits.
 
+## FirstMate's marks stay first
+
+A message FirstMate sends through T3 keeps its own mark at the very start, so
+FirstMate still recognises its wakes, briefs and doorbells.
+
+Upstream puts a sender note in front of every message an agent sends through
+T3's tools ("[T3 Code: this message came through T3 Code's tools, …]"), so the
+model can tell it from the user's typing (#39306). FirstMate already marks its
+operational input and reads that mark from the start of the prompt: a leading
+U+2063, or a doorbell line that begins with the shell no-op `: `. With the note
+in front, its hooks would take its own wakes for human input. So, like
+upstream's exemption for slash commands, text starting with either mark is
+sent without the note. Every other agent message still carries it. Code:
+`withMessageSenderNote` in `packages/contracts/src/orchestrationV2.ts`.
+
+Upstream: none.
+
 ## Long sign-in
 
 FirstMate's sign-in to T3 lasts 10 years instead of 30 days, so it never needs
