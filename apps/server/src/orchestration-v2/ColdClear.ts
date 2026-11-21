@@ -41,7 +41,7 @@ export type ColdClearRule =
 
 /**
  * Fork: the cold-clear rule, or undefined where it is off: FirstMate's main thread always clears
- * on cache expiry over 100k, and a project's own threads follow its `clearAfterQuiet`.
+ * on cache expiry over 100k, and a project's own top-level threads follow its `clearAfterQuiet`.
  */
 export function coldClearRule(
   thread: Pick<OrchestrationV2AppThread, "coordinator" | "crewOf" | "lineage" | "delegatedFrom">,
@@ -50,8 +50,15 @@ export function coldClearRule(
   if (isPrimaryCoordinator(thread)) {
     return { kind: "cache", minContextTokens: COORDINATOR_MIN_CONTEXT_TOKENS };
   }
-  // Crew and delegated threads carry another agent's work, which a fresh session would lose.
-  if (thread.crewOf !== undefined || isDelegatedAppThread(thread)) return undefined;
+  // Only top-level threads: crew and delegated threads carry another agent's work, and forks,
+  // side chats and subagents hold their parent's context only in the session a clear would drop.
+  if (
+    thread.crewOf !== undefined ||
+    isDelegatedAppThread(thread) ||
+    thread.lineage.parentThreadId !== null
+  ) {
+    return undefined;
+  }
   const setting = project?.clearAfterQuiet ?? undefined;
   if (setting === undefined) return undefined;
   return setting === "cache"

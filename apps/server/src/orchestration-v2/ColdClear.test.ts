@@ -118,6 +118,31 @@ describe("coldClearRule", () => {
       undefined,
     ],
     [
+      "a fork",
+      {
+        lineage: {
+          parentThreadId: ThreadId.make("thread:parent"),
+          relationshipToParent: "fork",
+          rootThreadId: threadId,
+        },
+      },
+      tenMinutes,
+      undefined,
+    ],
+    [
+      "a side chat",
+      {
+        lineage: {
+          parentThreadId: ThreadId.make("thread:parent"),
+          relationshipToParent: "fork",
+          rootThreadId: threadId,
+          sideChat: true,
+        },
+      },
+      cache,
+      undefined,
+    ],
+    [
       "a delegated task",
       {
         ...LOGGER,

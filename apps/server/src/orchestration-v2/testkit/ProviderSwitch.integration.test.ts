@@ -5395,6 +5395,52 @@ describe("orchestration v2 provider switching", () => {
       }),
   );
 
+  it.live("keeps a requeued steer in the old session after FirstMate's cache expired", () =>
+    Effect.gen(function* () {
+      const key = "cold-cache-requeued-steer";
+      const cwd = yield* checkpointWorkspace(key);
+      const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+      const closedSessions = yield* Ref.make<ReadonlyArray<string>>([]);
+      const harness = coldCacheHarness(key, cwd, {
+        cacheExpiresAt: COLD_CACHE_EXPIRY,
+        capturedTurns,
+        closedSessions,
+        nativeThreadGeneration: yield* Ref.make(0),
+      });
+      const threadId = ThreadId.make(`thread:${key}`);
+      yield* Effect.gen(function* () {
+        const orchestrator = yield* Orchestrator.OrchestratorV2;
+        const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+        yield* createColdCacheCoordinator(key, cwd);
+        yield* orchestrator.dispatch(coldCacheMessage(key, "alpha", "web"));
+        yield* worker.drain();
+        const source = (yield* waitForIdle(threadId)).runs[0]!;
+        // As requeueUnreadSteers and a declined steer's re-send do: a message on the ended run.
+        yield* orchestrator.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make(`command:${key}:requeue`),
+          threadId,
+          messageId: source.userMessageId,
+          steerFollowUpOfRunId: source.id,
+          steerFollowUpAfterRunOrdinal: source.ordinal,
+          text: "Prompt steer",
+          attachments: [],
+          modelSelection: CLAUDE_MODEL_SELECTION,
+          dispatchMode: { type: "queue_after_active" },
+          createdBy: "user",
+          creationSource: "web",
+        });
+        yield* worker.drain();
+        const followUp = (yield* waitForIdle(threadId)).runs.at(-1)!;
+        assert.notEqual(followUp.id, source.id);
+        assert.equal(followUp.status, "completed");
+        assert.isUndefined(followUp.freshContext);
+        assert.equal(followUp.providerThreadId, source.providerThreadId);
+        assert.deepEqual(yield* Ref.get(closedSessions), []);
+      }).pipe(Effect.provide(harness));
+    }),
+  );
+
   it.live(
     "starts a scheduled fresh run while the previous run's session still has background work",
     () =>

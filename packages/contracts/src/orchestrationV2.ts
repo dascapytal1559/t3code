@@ -914,6 +914,8 @@ export const OrchestrationV2Run = Schema.Struct({
   /** The hold belongs to a pending T3 restart, which releases it; Stop's and failures' do not. */
   restartHold: Schema.optional(Schema.Boolean),
   steerWhenReadyRunId: Schema.optional(RunId),
+  /** Fork: the ended run a declined or requeued steer was sent to, so it continues that session. */
+  steerFollowUpOfRunId: Schema.optional(RunId),
   requestedAt: Schema.DateTimeUtc,
   startedAt: Schema.NullOr(Schema.DateTimeUtc),
   completedAt: Schema.NullOr(Schema.DateTimeUtc),

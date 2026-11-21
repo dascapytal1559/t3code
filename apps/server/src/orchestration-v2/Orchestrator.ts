@@ -2856,7 +2856,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             restartContinuationOfRunId: queuedRun.restartContinuationOfRunId,
             usageLimitContinuationOfRunId: queuedRun.usageLimitContinuationOfRunId,
             manualContinuationOfRunId: queuedRun.manualContinuationOfRunId,
-            steerFollowUpOfRunId: queuedRun.steerWhenReadyRunId,
+            steerFollowUpOfRunId: queuedRun.steerFollowUpOfRunId ?? queuedRun.steerWhenReadyRunId,
           },
           { nowMs: DateTime.toEpochMillis(now), rule: coldRule },
         ) && !(yield* freshContextEndsBackgroundWork(projection, activeProviderThread));
@@ -8559,6 +8559,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...(command.usageLimitContinuationOfRunId === undefined
           ? {}
           : { usageLimitContinuationOfRunId: command.usageLimitContinuationOfRunId }),
+        ...(command.steerFollowUpOfRunId === undefined
+          ? {}
+          : { steerFollowUpOfRunId: command.steerFollowUpOfRunId }),
         ...(continuedTaskId === undefined ? {} : { delegatedTaskId: continuedTaskId }),
         ...(freshContext ? { freshContext: true } : {}),
       };
