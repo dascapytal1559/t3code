@@ -57,6 +57,8 @@ describe("usage work groups", () => {
       { [trader]: "#1b4ed8" },
       { [folder]: "#d9a747" },
     ]);
+    const toggled = setMemberShown(setMemberShown(colored, trader, true), trader, false);
+    expect(toggled).toEqual(colored);
     const moved = assignFolder(assignProject(colored, trader, "Tooling"), "/work/main", "Trading");
     expect(moved.map((group) => group.hiddenMembers)).toEqual([undefined, undefined]);
     expect(moved.map((group) => group.memberColors)).toEqual([

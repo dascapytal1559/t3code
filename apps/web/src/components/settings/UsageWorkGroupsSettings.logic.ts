@@ -97,13 +97,10 @@ export function setMemberShown(
       const others = group.shownMembers.filter((key) => key !== member);
       return { ...group, shownMembers: shown ? [...others, member] : others };
     }
-    const shownGroup = forget(group, member);
-    return shown
-      ? shownGroup
-      : {
-          ...shownGroup,
-          hiddenMembers: [...(group.hiddenMembers ?? []).filter((key) => key !== member), member],
-        };
+    const { hiddenMembers = [], ...rest } = group;
+    const others = hiddenMembers.filter((key) => key !== member);
+    const hidden = shown ? others : [...others, member];
+    return hidden.length === 0 ? rest : { ...rest, hiddenMembers: hidden };
   });
 }
 

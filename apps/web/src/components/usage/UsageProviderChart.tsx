@@ -691,7 +691,6 @@ function ChartBars({
   );
 }
 
-/** Stacked bars of usage per period, one band per series, the first series on top. */
 /** The chart's fixed frame: the plot and its y-axis labels over the x-axis labels. */
 export function UsageChartFrame({
   plot,
@@ -711,6 +710,7 @@ export function UsageChartFrame({
   );
 }
 
+/** Stacked bars of usage per period, one band per series, the first series on top. */
 export function UsageStackedChart({
   series,
   valueAt,
