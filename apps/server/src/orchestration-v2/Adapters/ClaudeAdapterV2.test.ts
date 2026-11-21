@@ -773,6 +773,20 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
     assert.notEqual(rotatedKey, initialKey);
   });
 
+  it("invalidates live-query reuse when lean startup or its MCP config changes", () => {
+    const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
+      ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "approval-required",
+        interactionMode: "default",
+        cwd: "/workspace",
+      }),
+    );
+    const keys = [undefined, {}, { mcpConfigPath: "/a.json" }, { mcpConfigPath: "/b.json" }].map(
+      (leanStartup) => ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(queryPolicy, {}, leanStartup),
+    );
+    assert.equal(new Set(keys).size, keys.length);
+  });
+
   it("matches the read-only allowlist to the orchestrator toolkit annotations", () => {
     const readOnlyToolNames = [
       ...Object.values(OrchestratorToolkit.tools),
@@ -1270,7 +1284,11 @@ describe("ClaudeAdapterV2 Auto-accept edits", () => {
 });
 
 describe("ClaudeAdapterV2 append-system-prompt-file launch argument", () => {
-  const startTurnWithLaunchArgs = Effect.fnUntraced(function* (launchArgs: string, cwd: string) {
+  const startTurnWithLaunchArgs = Effect.fnUntraced(function* (
+    launchArgs: string,
+    cwd: string,
+    leanClaudeStartup?: boolean,
+  ) {
     const fileSystem = yield* FileSystem.FileSystem;
     const opened: Array<ClaudeAdapterV2.ClaudeAgentSdkQueryOptions> = [];
     const adapter = yield* ClaudeAdapterV2.makeClaudeAdapterV2({
@@ -1278,6 +1296,7 @@ describe("ClaudeAdapterV2 append-system-prompt-file launch argument", () => {
       settings: { ...DEFAULT_CLAUDE_SETTINGS, launchArgs },
       environment: {},
       attachmentsDir: yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-claude-append-" }),
+      leanMcpConfigDir: yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-claude-lean-" }),
       fileSystem,
       path: yield* Path.Path,
       random: yield* SecureRandom.SecureRandom,
@@ -1314,6 +1333,7 @@ describe("ClaudeAdapterV2 append-system-prompt-file launch argument", () => {
       runtimeMode: "full-access",
       interactionMode: "default",
       cwd,
+      ...(leanClaudeStartup === true ? { leanClaudeStartup } : {}),
     });
     const threadId = ThreadId.make("thread-claude-append-file");
     const runtime = yield* adapter.openSession({
@@ -1395,6 +1415,74 @@ describe("ClaudeAdapterV2 append-system-prompt-file launch argument", () => {
       assert.isUndefined(opened[0]!.extraArgs?.["append-system-prompt"]);
       assert.isUndefined(opened[0]!.extraArgs?.["append-system-prompt-file"]);
       assert.equal(opened[0]!.extraArgs?.["system-prompt"], "Replacement");
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
+  const leanMcpServers = (options: ClaudeAdapterV2.ClaudeAgentSdkQueryOptions | undefined) =>
+    Effect.gen(function* () {
+      const configPath = options?.extraArgs?.["mcp-config"];
+      assert.isString(configPath);
+      const text = yield* (yield* FileSystem.FileSystem).readFileString(configPath!);
+      return Object.keys((JSON.parse(text) as { mcpServers: object }).mcpServers);
+    });
+
+  it.effect(
+    "starts lean with the folder's approved .mcp.json servers and the user's own MCP config",
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-claude-lean-cwd-" });
+        const server = { command: "node", args: ["server.js"] };
+        yield* fileSystem.writeFileString(
+          NodePath.join(cwd, ".mcp.json"),
+          JSON.stringify({ mcpServers: { approved: server, rejected: server } }),
+        );
+        vi.mocked(ClaudeSdk.resolveSettings).mockResolvedValue({
+          effective: { disabledMcpjsonServers: ["rejected"] },
+          provenance: {},
+          sources: [],
+        });
+        yield* fileSystem.writeFileString(
+          NodePath.join(cwd, "mine.json"),
+          JSON.stringify({ mcpServers: { mine: server } }),
+        );
+        const { exit, opened } = yield* startTurnWithLaunchArgs(
+          "--mcp-config mine.json",
+          cwd,
+          true,
+        );
+        assert.isTrue(Exit.isSuccess(exit));
+        assert.isTrue(opened[0]!.strictMcpConfig);
+        assert.deepEqual(yield* leanMcpServers(opened[0]), ["approved", "mine"]);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+  );
+
+  it.effect("starts lean without a malformed .mcp.json's servers rather than failing", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-claude-lean-cwd-" });
+      yield* fileSystem.writeFileString(NodePath.join(cwd, ".mcp.json"), "{ not json");
+      const { exit, opened } = yield* startTurnWithLaunchArgs("", cwd, true);
+      assert.isTrue(Exit.isSuccess(exit));
+      assert.deepEqual(yield* leanMcpServers(opened[0]), []);
     }).pipe(
       Effect.provide(
         Layer.mergeAll(

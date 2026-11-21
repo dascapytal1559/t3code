@@ -71,6 +71,8 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk/sdk-tools";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- the SDK takes a Node ChildProcess for the CLI.
 import * as NodeChildProcess from "node:child_process";
+// @effect-diagnostics-next-line nodeBuiltinImport:off - names lean startup's MCP config file synchronously.
+import * as NodeCrypto from "node:crypto";
 import * as NodeUtil from "node:util";
 import { parseCliArgs, tokenizeCliArgs } from "@t3tools/shared/cliArgs";
 import { fromLenientJson } from "@t3tools/shared/schemaJson";
@@ -2297,7 +2299,7 @@ export function makeClaudeQueryOptions(input: {
   readonly threadInstructions?: string;
   // Flag settings, because a user's settings.json env beats the process env in Claude Code.
   readonly toolSearchOverride?: "true";
-  /** Fork: besides T3's server, only this .mcp.json's (none when absent), and no skills list. */
+  /** Fork: besides T3's server, only this config's MCP servers (none when absent), and no skills list. */
   readonly leanStartup?: { readonly mcpConfigPath?: string };
 }): ClaudeAgentSdkQueryOptions {
   const compiledSelection = compileClaudeModelSelection(input.modelSelection, input.modelCatalog);
@@ -2333,7 +2335,8 @@ export function makeClaudeQueryOptions(input: {
     input.settings === undefined ? [] : claudeLaunchArgPluginDirectories(input.settings.launchArgs);
   // A bare --plugin-dir still reaches Claude, which reports the missing path.
   if (launchArgPluginDir === null) extraArgs["plugin-dir"] = null;
-  // A path keeps the folder's MCP credentials out of argv, as T3's own server's are.
+  // A path keeps the folder's MCP credentials out of argv, as T3's own server's are. The file
+  // holds the user's own --mcp-config servers too, which it replaces here.
   if (input.leanStartup?.mcpConfigPath !== undefined) {
     extraArgs["mcp-config"] = input.leanStartup.mcpConfigPath;
   }
@@ -3682,6 +3685,8 @@ export function claudeEffectiveQueryPolicyKey(
     readonly allowedTools?: ReadonlyArray<string>;
     readonly mcpServers?: ClaudeQueryOptions["mcpServers"];
   },
+  // Fork: lean startup is fixed when the process starts, so a change needs a new one.
+  leanStartup?: Parameters<typeof makeClaudeQueryOptions>[0]["leanStartup"],
 ): string {
   return JSON.stringify({
     runtimePolicy: claudeRuntimeQueryPolicyKey({
@@ -3691,7 +3696,32 @@ export function claudeEffectiveQueryPolicyKey(
         : { allowedTools: mcpOverrides.allowedTools }),
     }),
     mcpServers: mcpOverrides.mcpServers,
+    ...(leanStartup === undefined ? {} : { leanStartup }),
   });
+}
+
+const ClaudeMcpConfigFile = Schema.Struct({
+  mcpServers: Schema.Record(Schema.String, Schema.Unknown),
+});
+const decodeClaudeMcpConfigFile = Schema.decodeUnknownEffect(fromLenientJson(ClaudeMcpConfigFile));
+const decodeClaudeMcpjsonRejections = Schema.decodeUnknownOption(
+  Schema.Struct({ disabledMcpjsonServers: Schema.optionalKey(Schema.Array(Schema.String)) }),
+);
+
+/**
+ * Fork: lean startup's one MCP config. An explicit config skips Claude Code's .mcp.json
+ * approvals, so the servers the user rejected there stay out; the user's own --mcp-config
+ * servers follow and win a shared name, as that flag is the user's explicit choice.
+ */
+function claudeLeanMcpConfigText(input: {
+  readonly projectServers: Readonly<Record<string, unknown>>;
+  readonly rejected: ReadonlyArray<string>;
+  readonly userServers: Readonly<Record<string, unknown>>;
+}): string {
+  const approved = Object.entries(input.projectServers).filter(
+    ([name]) => !input.rejected.includes(name),
+  );
+  return JSON.stringify({ mcpServers: { ...Object.fromEntries(approved), ...input.userServers } });
 }
 
 type ClaudeToolItemType = Extract<
@@ -5696,6 +5726,8 @@ export interface ClaudeAdapterV2Options {
   readonly modelCatalog?: Effect.Effect<ClaudeModelCatalog>;
   readonly environment: NodeJS.ProcessEnv;
   readonly attachmentsDir: string;
+  /** Fork: where lean startup writes the MCP config it passes Claude Code; beside attachments by default. */
+  readonly leanMcpConfigDir?: string;
   readonly fileSystem: FileSystem.FileSystem;
   readonly path: Path.Path;
   readonly random: SecureRandom.SecureRandom["Service"];
@@ -5732,6 +5764,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
   const { attachmentsDir, fileSystem, path, random, idAllocator, queryRunner } = adapterOptions;
+  const leanMcpConfigDir =
+    adapterOptions.leanMcpConfigDir ?? path.join(path.dirname(attachmentsDir), "claude-lean-mcp");
   const loadModelCatalog = (
     adapterOptions.modelCatalog ?? Effect.succeed(BUNDLED_CLAUDE_MODEL_CATALOG)
   ).pipe(
@@ -5872,14 +5906,90 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
     }
     return adapterOptions.environment[name];
   });
+  // Claude Code's own rule for a .mcp.json server it would otherwise start unasked.
+  const rejectedMcpjsonServers = Effect.fn("ClaudeAdapterV2.rejectedMcpjsonServers")(function* (
+    cwd: string,
+  ) {
+    const resolved = yield* Effect.tryPromise({
+      try: () =>
+        resolveClaudeSettings({
+          cwd,
+          settingSources: customHome ? ["project", "local"] : ["user", "project", "local"],
+        }),
+      catch: (cause) => queryRunnerError(cause, "resolveSettings"),
+    }).pipe(Effect.orElseSucceed(() => undefined));
+    const home = customHome
+      ? yield* fileSystem.readFileString(path.join(homePath, "settings.json")).pipe(
+          Effect.flatMap(Schema.decodeUnknownEffect(fromLenientJson(Schema.Unknown))),
+          Effect.orElseSucceed(() => undefined),
+        )
+      : undefined;
+    const launch = yield* readClaudeLaunchArgSettings({
+      settings: adapterOptions.settings,
+      cwd,
+      fileSystem,
+      path,
+    }).pipe(Effect.orElseSucceed(() => undefined));
+    return [resolved?.effective, home, launch].flatMap((settings) =>
+      Option.match(decodeClaudeMcpjsonRejections(settings ?? {}), {
+        onNone: () => [],
+        onSome: (decoded) => decoded.disabledMcpjsonServers ?? [],
+      }),
+    );
+  });
+  const readClaudeMcpConfig = (text: string) =>
+    decodeClaudeMcpConfigFile(text).pipe(Effect.map((config) => config.mcpServers));
+  // Undefined keeps the user's --mcp-config as given: Claude Code reports one it cannot read.
   const leanClaudeStartup = Effect.fn("ClaudeAdapterV2.leanClaudeStartup")(function* (
     cwd: string | null,
   ) {
     if (cwd === null) return {};
-    const mcpConfigPath = path.join(cwd, ".mcp.json");
-    return (yield* fileSystem.exists(mcpConfigPath).pipe(Effect.orElseSucceed(() => false)))
-      ? { mcpConfigPath }
-      : {};
+    const projectConfigPath = path.join(cwd, ".mcp.json");
+    const projectText = yield* fileSystem
+      .readFileString(projectConfigPath)
+      .pipe(Effect.orElseSucceed(() => undefined));
+    if (projectText === undefined) return {};
+    // A malformed .mcp.json only warns in Claude Code, but fails every turn as --mcp-config.
+    const projectServers = yield* readClaudeMcpConfig(projectText).pipe(
+      Effect.tapError(() =>
+        Effect.logWarning("Lean Claude startup skipped a malformed .mcp.json", {
+          path: projectConfigPath,
+        }),
+      ),
+      Effect.orElseSucceed(() => ({})),
+    );
+    const userConfig = parseCliArgs(adapterOptions.settings.launchArgs, claudeLaunchArgParseOptions)
+      .flags["mcp-config"];
+    // Claude Code takes the flag's value as inline JSON or as a path from cwd.
+    const userServers =
+      typeof userConfig !== "string"
+        ? Option.some({})
+        : yield* (
+            userConfig.trimStart().startsWith("{")
+              ? Effect.succeed(userConfig)
+              : fileSystem.readFileString(path.resolve(cwd, userConfig))
+          ).pipe(Effect.flatMap(readClaudeMcpConfig), Effect.option);
+    if (Option.isNone(userServers)) return {};
+    const text = claudeLeanMcpConfigText({
+      projectServers,
+      rejected: yield* rejectedMcpjsonServers(cwd),
+      userServers: userServers.value,
+    });
+    const digest = NodeCrypto.createHash("sha256").update(text).digest("hex").slice(0, 32);
+    const mcpConfigPath = path.join(leanMcpConfigDir, `${digest}.json`);
+    const written = yield* fileSystem.exists(mcpConfigPath).pipe(Effect.orElseSucceed(() => false));
+    if (!written) {
+      // It can hold the folder's MCP credentials; the rename keeps a concurrent reader whole.
+      const staging = `${mcpConfigPath}.${yield* random.uuidV4()}.tmp`;
+      yield* fileSystem
+        .makeDirectory(leanMcpConfigDir, { recursive: true, mode: 0o700 })
+        .pipe(
+          Effect.andThen(fileSystem.writeFileString(staging, text, { mode: 0o600 })),
+          Effect.andThen(fileSystem.rename(staging, mcpConfigPath)),
+          Effect.orDie,
+        );
+    }
+    return { mcpConfigPath };
   });
 
   const resolveToolSearchOverride = (
@@ -13004,7 +13114,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               ? {}
               : { allowedTools: queryPolicy.allowedTools }),
           });
-          const queryPolicyKey = claudeEffectiveQueryPolicyKey(queryPolicy, mcpOverrides);
+          const queryPolicyKey = claudeEffectiveQueryPolicyKey(
+            queryPolicy,
+            mcpOverrides,
+            leanStartup,
+          );
           const resumeSessionAt = yield* getNativeConversationHeadId(turnInput.providerThread);
           const existing = yield* Ref.get(queryContext);
           // Continuations drain existing output without prompting; retain the live process regardless of selection.
@@ -14945,6 +15059,7 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
       settings: { ...config, enabled, binaryPath },
       environment: claudeEnvironment,
       attachmentsDir: serverConfig.attachmentsDir,
+      leanMcpConfigDir: path.join(serverConfig.stateDir, "claude-lean-mcp"),
       fileSystem,
       path,
       random,
