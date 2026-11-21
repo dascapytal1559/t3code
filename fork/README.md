@@ -570,7 +570,8 @@ it unless a sibling folder of that name is on disk. A shared group, and with
 **Share Other** usage in no group, is spread over the other groups in each bar
 by their own share (`spreadSharedWork` in `packages/shared/src/usageMerge.ts`),
 so the bars still add up; the export keeps each call's own group. Groups open
-into their members unless turned off, and members can be hidden; the user
+into their members unless turned off, and members can be hidden or given their
+own colour (`memberColors`); the user
 guide's [Kinds of work](../docs/user/usage.md#split-the-chart-by-provider-kind-of-work-device-process-or-direction)
 covers the settings.
 
