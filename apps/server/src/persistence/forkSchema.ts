@@ -53,15 +53,28 @@ export const ensureForkSchema = Effect.fn("ensureForkSchema")(function* () {
   if (claimColumns.length > 0 && !outdated && !hasColumn("bound_json")) {
     yield* sql`ALTER TABLE usage_claims ADD COLUMN bound_json TEXT`;
   }
-  // The origin a scheduled task's runs count to, bound from the turn that created it.
-  if (!existing.has("usage_scheduled_task_origins")) {
-    yield* sql`
-      CREATE TABLE IF NOT EXISTS usage_scheduled_task_origins (
-        task_id TEXT PRIMARY KEY,
-        origin_json TEXT NOT NULL,
-        bound_at TEXT NOT NULL
-      )
-    `;
+  // The origin a scheduled task's runs count to, bound from the turn that created it and again
+  // by each typed edit; a run counts to the last binding made before it.
+  if (!existing.has("usage_scheduled_task_bindings")) {
+    yield* sql.withTransaction(
+      Effect.gen(function* () {
+        yield* sql`
+          CREATE TABLE IF NOT EXISTS usage_scheduled_task_bindings (
+            task_id TEXT NOT NULL,
+            bound_at TEXT NOT NULL,
+            origin_json TEXT NOT NULL,
+            PRIMARY KEY (task_id, bound_at)
+          )
+        `;
+        // That table kept only each task's latest binding, so its earlier ones are gone.
+        if (!existing.has("usage_scheduled_task_origins")) return;
+        yield* sql`
+          INSERT INTO usage_scheduled_task_bindings (task_id, bound_at, origin_json)
+          SELECT task_id, bound_at, origin_json FROM usage_scheduled_task_origins
+        `;
+        yield* sql`DROP TABLE usage_scheduled_task_origins`;
+      }),
+    );
   }
   // The daily close: labels written down once and read as stored from then on. A session's label
   // from each time it changes, each prompt's label, and how far they are written (one row).

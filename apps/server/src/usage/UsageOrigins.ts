@@ -851,7 +851,7 @@ export class UsageOrigins extends Context.Service<
       readonly throughMs: number;
       readonly registrations: readonly OriginRegistration[];
     }) => Effect.Effect<ThreadLabels | null, UsageOriginsReadError>;
-    /** Every run of the scheduled task counts here from now on. */
+    /** Every later run of the scheduled task counts here, until it is bound again. */
     readonly bindScheduledTask: (
       taskId: string,
       key: UsageOriginKey,
@@ -1009,14 +1009,25 @@ const parseMs = (value: string | null): number | null => {
   return Number.isNaN(parsed) ? null : parsed;
 };
 
-const messageOf = (
-  row: MessageColumns,
-  scheduledOrigins: ReadonlyMap<string, UsageOriginKey>,
-): CausalMessage => {
+/** Each scheduled task's bindings, oldest first. */
+type ScheduledOrigins = ReadonlyMap<
+  string,
+  ReadonlyArray<{ readonly boundAtMs: number; readonly key: UsageOriginKey }>
+>;
+
+const scheduledOriginAt = (
+  origins: ScheduledOrigins,
+  taskId: string | null,
+  createdAtMs: number | null,
+): UsageOriginKey | undefined => {
+  if (taskId === null || createdAtMs === null) return undefined;
+  return origins.get(taskId)?.findLast((binding) => binding.boundAtMs <= createdAtMs)?.key;
+};
+
+const messageOf = (row: MessageColumns, scheduledOrigins: ScheduledOrigins): CausalMessage => {
   const createdAtMs = parseMs(row.message_created_at);
   const usageOrigin = storedOriginOf(row.usage_origin);
-  const scheduledOrigin =
-    row.scheduled_task_id === null ? undefined : scheduledOrigins.get(row.scheduled_task_id);
+  const scheduledOrigin = scheduledOriginAt(scheduledOrigins, row.scheduled_task_id, createdAtMs);
   return {
     id: row.message_id,
     runId: row.run_id,
@@ -1156,19 +1167,27 @@ const make = Effect.gen(function* () {
     LEFT JOIN orchestration_v2_projection_threads AS thread
       ON thread.thread_id = message.thread_id`);
 
-  const loadScheduledOrigins = sql<{ readonly task_id: string; readonly origin_json: string }>`
-    SELECT task_id, origin_json FROM usage_scheduled_task_origins
+  const loadScheduledOrigins = sql<{
+    readonly task_id: string;
+    readonly bound_at: string;
+    readonly origin_json: string;
+  }>`
+    SELECT task_id, bound_at, origin_json FROM usage_scheduled_task_bindings
+    ORDER BY task_id, bound_at
   `.pipe(
     NodeSqliteClient.readOnly,
-    Effect.map(
-      (rows) =>
-        new Map(
-          rows.flatMap((row) => {
-            const key = storedOriginOf(row.origin_json);
-            return key === undefined ? [] : [[row.task_id, key] as const];
-          }),
-        ),
-    ),
+    Effect.map((rows) => {
+      const origins = new Map<string, Array<{ boundAtMs: number; key: UsageOriginKey }>>();
+      for (const row of rows) {
+        const key = storedOriginOf(row.origin_json);
+        const boundAtMs = parseMs(row.bound_at);
+        if (key === undefined || boundAtMs === null) continue;
+        const bindings = origins.get(row.task_id);
+        if (bindings === undefined) origins.set(row.task_id, [{ boundAtMs, key }]);
+        else bindings.push({ boundAtMs, key });
+      }
+      return origins;
+    }),
   );
 
   // Loads the recorded causes of agent prompts, one chain hop per query.
@@ -1220,7 +1239,7 @@ const make = Effect.gen(function* () {
     /** Already read by the caller, so its snapshot is built from exactly these. */
     readonly read?: {
       readonly claims: ReadonlyArray<UsageClaims.StoredUsageClaim>;
-      readonly scheduledOrigins: ReadonlyMap<string, UsageOriginKey>;
+      readonly scheduledOrigins: ScheduledOrigins;
     };
   }) {
     const until = iso(input.untilMs);
@@ -1844,11 +1863,9 @@ const make = Effect.gen(function* () {
       if (stored === undefined) return;
       const boundAt = DateTime.formatIso(yield* DateTime.now);
       yield* sql`
-        INSERT INTO usage_scheduled_task_origins (task_id, origin_json, bound_at)
-        VALUES (${taskId}, ${encodeStoredOrigin(stored)}, ${boundAt})
-        ON CONFLICT (task_id) DO UPDATE SET
-          origin_json = excluded.origin_json,
-          bound_at = excluded.bound_at
+        INSERT INTO usage_scheduled_task_bindings (task_id, bound_at, origin_json)
+        VALUES (${taskId}, ${boundAt}, ${encodeStoredOrigin(stored)})
+        ON CONFLICT (task_id, bound_at) DO UPDATE SET origin_json = excluded.origin_json
       `;
     },
     Effect.mapError((cause) => new UsageOriginsReadError({ cause })),

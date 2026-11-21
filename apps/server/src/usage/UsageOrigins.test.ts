@@ -2,6 +2,7 @@ import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as TestClock from "effect/testing/TestClock";
 
 import {
   MessageId,
@@ -11,6 +12,7 @@ import {
 } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 
+import { ensureForkSchema } from "../persistence/forkSchema.ts";
 import * as Sqlite from "../persistence/Sqlite.ts";
 import * as UsageClaims from "./UsageClaims.ts";
 import * as UsageSessionRegister from "./UsageSessionRegister.ts";
@@ -1392,6 +1394,22 @@ describe("UsageOrigins born labelled", () => {
             "agent-bound 01:31 phone inherited",
           ],
         );
+        // Editing the task from a turn typed on the computer moves only its later runs.
+        yield* TestClock.setTime(time("08:00"));
+        yield* origins.bindScheduledTask("task-daily", steer.key);
+        yield* run("daily-2", 2, "daily", "09:00", "09:10", {
+          createdBy: "agent",
+          creationSource: "mcp",
+          scheduledTaskId: "task-daily",
+        });
+        const rebound = new UsageOriginIndex(yield* origins.read(time("00:00"), time("23:59")));
+        assert.deepStrictEqual(
+          ["07:01", "09:01"].map((clock) => {
+            const key = rebound.lookup({ sessionId: "daily-session", timestampMs: time(clock) });
+            return `${clock} ${key.origin} ${key.reason}`;
+          }),
+          ["07:01 phone inherited", "09:01 computer inherited"],
+        );
         // Deleting the scheduled task leaves its past runs counted where they were.
         const sql = yield* SqlClient.SqlClient;
         yield* sql`INSERT INTO scheduled_tasks ${sql.insert({
@@ -1611,6 +1629,32 @@ describe("UsageOrigins born labelled", () => {
       ),
   );
 });
+
+it.effect("keeps each scheduled task's stored binding when bindings gain their time key", () =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`DROP TABLE usage_scheduled_task_bindings`;
+    yield* sql`
+      CREATE TABLE usage_scheduled_task_origins (
+        task_id TEXT PRIMARY KEY,
+        origin_json TEXT NOT NULL,
+        bound_at TEXT NOT NULL
+      )
+    `;
+    yield* sql`
+      INSERT INTO usage_scheduled_task_origins VALUES ('task-daily', '{}', '2026-08-08T01:02:00.000Z')
+    `;
+    yield* ensureForkSchema();
+    assert.deepStrictEqual(
+      yield* sql`SELECT task_id, bound_at, origin_json FROM usage_scheduled_task_bindings`,
+      [{ task_id: "task-daily", bound_at: "2026-08-08T01:02:00.000Z", origin_json: "{}" }],
+    );
+    assert.deepStrictEqual(
+      yield* sql`SELECT name FROM sqlite_master WHERE name = 'usage_scheduled_task_origins'`,
+      [],
+    );
+  }).pipe(Effect.provide(Layer.merge(Sqlite.layerMemory, NodeServices.layer))),
+);
 
 describe("UsageOrigins daily close", () => {
   const phone = {
