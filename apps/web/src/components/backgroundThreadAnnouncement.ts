@@ -1,4 +1,6 @@
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { OrchestrationV2RunStatus, RunId } from "@t3tools/contracts";
+import { isTopLevelThread } from "@t3tools/shared/agentAwareness";
 
 import { msg } from "gt-react";
 
@@ -21,6 +23,18 @@ export interface BackgroundThreadSnapshot {
   readonly activeRunId: RunId | null;
   /** A snoozed thread stays hidden until its timer, so it stays quiet too. */
   readonly snoozed: boolean;
+  /** Fork: a stopped run or a coordinator's supervision run ends without a word, as without an alert. */
+  readonly endsQuietly: boolean;
+}
+
+/**
+ * Fork: only a top-level thread speaks, as only one alerts. Crew report to their coordinator;
+ * subagents and side chats have no row of their own, and their requests surface on the parent.
+ */
+export function isAnnouncedThread(
+  thread: Pick<EnvironmentThreadShell, "archivedAt" | "crewOf" | "lineage">,
+): boolean {
+  return thread.archivedAt === null && isTopLevelThread(thread);
 }
 
 /** The request and its id come from the same source, so a subagent's request never takes the parent's id. */
@@ -88,7 +102,12 @@ export function nextBackgroundThreadAnnouncement(
     // cancelled before it started) isn't the thread finishing. The shell then
     // only reports the latest run, so the working run's own ending stays quiet.
     const anotherRunWorking = thread.activeRunId !== null && thread.activeRunId !== thread.runId;
-    if (outcome !== null && thread.runId !== before.settledRunId && !anotherRunWorking) {
+    if (
+      outcome !== null &&
+      !thread.endsQuietly &&
+      thread.runId !== before.settledRunId &&
+      !anotherRunWorking
+    ) {
       announcements.push(
         resolve(msg("{status}: {title}", { status: outcome, title: thread.title })),
       );

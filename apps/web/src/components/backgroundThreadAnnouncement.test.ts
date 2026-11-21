@@ -1,10 +1,11 @@
-import { RunId, RuntimeRequestId } from "@t3tools/contracts";
+import { RunId, RuntimeRequestId, ThreadId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   type BackgroundThreadMemory,
   type BackgroundThreadSnapshot,
+  isAnnouncedThread,
   nextBackgroundThreadAnnouncement,
   resolveBackgroundThreadRequest,
 } from "./backgroundThreadAnnouncement";
@@ -26,6 +27,7 @@ function thread(
     runStatus: "running",
     activeRunId: null,
     snoozed: false,
+    endsQuietly: false,
     ...state,
   };
 }
@@ -149,6 +151,16 @@ describe("nextBackgroundThreadAnnouncement", () => {
     ).toEqual([]);
   });
 
+  it("doesn't announce a stopped run or a coordinator's supervision run ending", () => {
+    expect(
+      speak([
+        { threads: [login({ endsQuietly: true })] },
+        { threads: [login({ endsQuietly: true, runStatus: "completed" })] },
+        { threads: [login({ endsQuietly: true, request: "input" })] },
+      ]),
+    ).toEqual(["Needs your input: Fix login redirect"]);
+  });
+
   it("speaks threads that change together in one announcement", () => {
     expect(
       speak([
@@ -185,5 +197,34 @@ describe("resolveBackgroundThreadRequest", () => {
         { threads: [login(childApproval(null))] },
       ]),
     ).toEqual(["Needs approval: Fix login redirect"]);
+  });
+});
+
+describe("isAnnouncedThread", () => {
+  const lineage = {
+    parentThreadId: null,
+    relationshipToParent: null,
+    rootThreadId: ThreadId.make("t"),
+  };
+  const parent = ThreadId.make("thread:parent");
+  it.each([
+    ["a top-level thread", { archivedAt: null, lineage }, true],
+    ["an archived thread", { archivedAt: "2026-01-01T00:00:00.000Z", lineage }, false],
+    ["a crew worker", { archivedAt: null, lineage, crewOf: parent }, false],
+    [
+      "a side chat",
+      {
+        archivedAt: null,
+        lineage: {
+          ...lineage,
+          parentThreadId: parent,
+          relationshipToParent: "fork",
+          sideChat: true,
+        },
+      },
+      false,
+    ],
+  ] as const)("for %s", (_name, thread, expected) => {
+    expect(isAnnouncedThread(thread)).toBe(expected);
   });
 });
