@@ -14,7 +14,7 @@ import {
 import { fileBasename, workspaceRelativeFilePath } from "@t3tools/shared/path";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useGT } from "gt-react";
-import { PencilIcon, QuoteIcon } from "lucide-react";
+import { PencilIcon, QuoteIcon, XIcon } from "lucide-react";
 import {
   use,
   useEffect,
@@ -289,9 +289,11 @@ function FileChipSource({ citation, label }: { citation: FileCitation; label: st
 /** The citation chip in the composer, with its comment editor. */
 export function AssistantCitationChip({
   citation,
+  onRemove,
   commentEditor,
 }: {
   citation: Citation;
+  onRemove?: () => void;
   commentEditor?: {
     open: boolean;
     sourceAnchor?: AssistantCitationSourceAnchor | undefined;
@@ -376,7 +378,10 @@ export function AssistantCitationChip({
       kind="citation"
       contentEditable={false}
       data-assistant-citation-chip="true"
+      data-comment={citation.comment ? "present" : "empty"}
       data-markdown-copy={serializeAssistantCitation(citation)}
+      // A chip with no comment is muted so it reads as one that can go.
+      className={cn(!citation.comment && "[--context-chip-ink:var(--muted-foreground)]")}
     >
       {composerSourceLink}
       {commentEditor ? (
@@ -471,6 +476,16 @@ export function AssistantCitationChip({
             </PopoverPopup>
           ) : null}
         </Popover>
+      ) : null}
+      {onRemove ? (
+        <ContextChipAction
+          aria-label={gt("Remove citation")}
+          data-citation-remove="true"
+          onClick={onRemove}
+          className="text-destructive-foreground hover:bg-destructive/20 [&_svg]:size-[0.95em] [&_svg]:stroke-3"
+        >
+          <XIcon aria-hidden="true" />
+        </ContextChipAction>
       ) : null}
     </ContextChip>
   );

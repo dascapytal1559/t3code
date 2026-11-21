@@ -92,8 +92,10 @@ it("keeps an unsaved citation comment when a question takes the composer", async
       insertedSpaces: { before: false, after: true },
     }),
   );
+  const chip = () => screen.container.querySelector("[data-assistant-citation-chip]");
   const comment = page.getByLabelText("Comment on selected text");
   await expect.element(comment).toBeVisible();
+  expect(chip()?.getAttribute("data-comment")).toBe("empty");
   await comment.click();
   await userEvent.keyboard("check this");
 
@@ -105,6 +107,36 @@ it("keeps an unsaved citation comment when a question takes the composer", async
     `See ${serializeAssistantCitation(withAssistantCitationComment(citation, "check this"))} `,
   );
   await expect.element(page.getByLabelText("Edit citation comment")).toBeInTheDocument();
+  expect(chip()?.getAttribute("data-comment")).toBe("present");
+});
+
+it("removes a citation and its space with the chip's cross, and undo brings it back", async () => {
+  const editorRef = createRef<ComposerPromptEditorHandle>();
+  await using screen = await render(<Composer question={false} editorRef={editorRef} />);
+  const prompt = () => screen.container.querySelector("output")?.dataset.prompt;
+
+  await page.getByRole("button", { name: "Remove citation" }).click();
+
+  expect(prompt()).toBe("See ");
+  await expect.element(page.getByLabelText("Add comment to citation")).not.toBeInTheDocument();
+  await expect.element(page.getByTestId("composer-editor")).toHaveFocus();
+  await userEvent.keyboard("{ControlOrMeta>}z{/ControlOrMeta}");
+  expect(prompt()).toBe(promptBefore);
+});
+
+it("reaches the citation's cross from the caret after it with Shift+Tab", async () => {
+  const editorRef = createRef<ComposerPromptEditorHandle>();
+  await using screen = await render(<Composer question={false} editorRef={editorRef} />);
+
+  // Cursors count a chip as one character.
+  await act(async () => editorRef.current?.focusAt("See ".length + 1));
+  await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+  await expect.element(page.getByRole("button", { name: "Remove citation" })).toHaveFocus();
+  await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+  await expect.element(page.getByLabelText("Add comment to citation")).toHaveFocus();
+  await userEvent.keyboard("{Tab}{Enter}");
+
+  expect(screen.container.querySelector("output")?.dataset.prompt).toBe("See ");
 });
 
 it("clears the sent prompt when an empty citation comment sends it", async () => {

@@ -487,20 +487,26 @@ function ComposerCitationNodeView({ node, editor, getPos }: NodeViewProps) {
     return true;
   };
 
-  const removeOnCancel = commentTarget?.removeOnCancel;
-  const onRemove = () => {
-    if (!removeOnCancel) return;
+  /** Deletes the chip and, where `spaces` asks, the space beside it; without `spaces`, one space. */
+  const removeCitation = (spaces?: CitationInsertedSpaces) => {
     const pos = nodePos();
     if (pos === null) return;
     const { doc } = editor.state;
     const current = doc.nodeAt(pos);
     if (!current) return;
     const end = pos + current.nodeSize;
-    const from = removeOnCancel.before && doc.textBetween(pos - 1, pos) === " " ? pos - 1 : pos;
-    const to = removeOnCancel.after && doc.textBetween(end, end + 1) === " " ? end + 1 : end;
+    const spaceBefore = doc.textBetween(pos - 1, pos) === " ";
+    const spaceAfter = doc.textBetween(end, end + 1) === " ";
+    const { before, after } = spaces ?? { before: !spaceAfter, after: spaceAfter };
+    const from = before && spaceBefore ? pos - 1 : pos;
+    const to = after && spaceAfter ? end + 1 : end;
     // A read-only composer (dictation) can still receive a new citation, so Cancel must undo it.
     const chain = editor.chain();
     (editor.isEditable ? chain.focus() : chain).deleteRange({ from, to }).run();
+  };
+  const removeOnCancel = commentTarget?.removeOnCancel;
+  const onRemove = () => {
+    if (removeOnCancel) removeCitation(removeOnCancel);
   };
 
   const sentRef = useRef(false);
@@ -538,7 +544,7 @@ function ComposerCitationNodeView({ node, editor, getPos }: NodeViewProps) {
           event.metaKey ||
           event.ctrlKey ||
           !(event.target instanceof HTMLElement) ||
-          event.target.dataset.citationCommentTrigger === undefined
+          event.target.dataset.citationRemove === undefined
         ) {
           return;
         }
@@ -548,6 +554,9 @@ function ComposerCitationNodeView({ node, editor, getPos }: NodeViewProps) {
     >
       <AssistantCitationChip
         citation={citation}
+        onRemove={() => {
+          if (editor.isEditable) removeCitation();
+        }}
         commentEditor={{
           open: commentTarget !== null,
           sourceAnchor: commentTarget?.sourceAnchor,
@@ -1249,7 +1258,7 @@ function ComposerPromptEditorTiptapInner(
               return true;
             }
           }
-          // Native tab order skips citation comment buttons inside the editor.
+          // Native tab order skips citation chip buttons inside the editor.
           if (
             event.key === "Tab" &&
             event.shiftKey &&
@@ -1262,14 +1271,14 @@ function ComposerPromptEditorTiptapInner(
             const citation = $from.nodeBefore;
             if (citation?.type.name === "composer-citation") {
               const chip = view.nodeDOM($from.pos - citation.nodeSize);
-              const commentButton =
+              const removeButton =
                 chip instanceof HTMLElement
-                  ? chip.querySelector<HTMLElement>("[data-citation-comment-trigger]")
+                  ? chip.querySelector<HTMLElement>("[data-citation-remove]")
                   : null;
-              if (commentButton) {
+              if (removeButton) {
                 event.preventDefault();
                 event.stopPropagation();
-                commentButton.focus();
+                removeButton.focus();
                 return true;
               }
             }
