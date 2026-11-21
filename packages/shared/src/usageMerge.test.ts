@@ -728,9 +728,15 @@ describe("mergeUsage", () => {
             sharedWork: ["Coordination", ""],
             workMembers: [
               { key: "t3", group: "Bones", name: "t3code-fork" },
-              { key: "fm", group: "Bones", name: "firstmate", hidden: true },
-              // A second project of the same repository: one row with the first.
-              { key: "t3-mcp", group: "Bones", name: "t3code-fork", hidden: true },
+              { key: "fm", group: "Bones", name: "firstmate", hidden: true, color: "#d9a747" },
+              // A second project of the same repository: one row with the first, and its colour.
+              {
+                key: "t3-mcp",
+                group: "Bones",
+                name: "t3code-fork",
+                hidden: true,
+                color: "#2b5fd9",
+              },
             ],
           }),
         ],
@@ -772,9 +778,11 @@ describe("mergeUsage", () => {
       // Bones' members add up to Bones as shown, shared usage included, each keeping its share;
       // the day with only shared usage splits by the members' window shares.
       const members = usageMemberBands(merged, "Bones", "tokens", false);
-      expect(members.members.map((member) => [member.key, member.name, member.hidden])).toEqual([
-        ["t3", "t3code-fork", undefined],
-        ["fm", "firstmate", true],
+      expect(
+        members.members.map((member) => [member.key, member.name, member.hidden, member.color]),
+      ).toEqual([
+        ["t3", "t3code-fork", undefined, "#2b5fd9"],
+        ["fm", "firstmate", true, "#d9a747"],
       ]);
       for (const day of merged.daily) {
         for (const by of ["tokens", "cost"] as const) {

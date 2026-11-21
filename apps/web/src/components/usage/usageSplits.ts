@@ -5,6 +5,7 @@ import {
   PROCESS_SPLIT_COLORS,
   WORK_GROUP_PALETTE,
   darkLightness,
+  usageSplitColorOfHex,
   type UsageSplitColor,
 } from "@t3tools/client-runtime/usage-split-palette";
 import {
@@ -281,7 +282,10 @@ export function workBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: b
           label: member.name,
           named: true,
           // Members past the palette's three repeat its hues; the group's members are few.
-          color: palette?.members[index % palette.members.length] ?? OTHER_WORK_CSS,
+          color:
+            member.color === undefined
+              ? (palette?.members[index % palette.members.length] ?? OTHER_WORK_CSS)
+              : css(usageSplitColorOfHex(member.color)),
           totalTokens: member.totalTokens,
           costUsd: member.costUsd,
         })),

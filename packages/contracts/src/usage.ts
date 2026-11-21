@@ -382,6 +382,10 @@ export const UsageModelSelector = Schema.Struct({
 });
 export type UsageModelSelector = typeof UsageModelSelector.Type;
 
+/** A kind-of-work member's own colour, as `#rrggbb`. */
+export const UsageMemberColor = Schema.String.check(Schema.isPattern(/^#[0-9a-fA-F]{6}$/));
+export type UsageMemberColor = typeof UsageMemberColor.Type;
+
 /**
  * A kind of work the Usage page splits by: a name, the projects it counts with their worktrees,
  * and folders it counts without them. A shared group's usage is spread over the other groups.
@@ -400,6 +404,8 @@ export const UsageWorkGroup = Schema.Struct({
    * `hiddenMembers` is not read. Easier than hiding when only a few should show.
    */
   shownMembers: Schema.optionalKey(Schema.Array(Schema.String)),
+  /** Members' own colours on the Usage page; the rest take the group's palette in order. */
+  memberColors: Schema.optionalKey(Schema.Record(Schema.String, UsageMemberColor)),
 });
 export type UsageWorkGroup = typeof UsageWorkGroup.Type;
 
@@ -413,6 +419,7 @@ export const UsageWorkMember = Schema.Struct({
   group: Schema.String,
   name: Schema.String,
   hidden: Schema.optional(Schema.Literal(true)),
+  color: Schema.optional(UsageMemberColor),
 });
 export type UsageWorkMember = typeof UsageWorkMember.Type;
 

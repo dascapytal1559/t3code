@@ -109,6 +109,17 @@ function oklabToHex([lightness, a, b]: Lab): string {
     .join("")}`;
 }
 
+/** A member's own `#rrggbb` colour as a split colour, so dark mode lightens it as it does the rest. */
+export function usageSplitColorOfHex(hex: string): UsageSplitColor {
+  const [lightness, a, b] = hexToOklab(hex);
+  const round = (value: number) => Math.round(value * 1000) / 1000;
+  return {
+    lightness: round(lightness),
+    chroma: round(Math.hypot(a, b)),
+    hue: round(((Math.atan2(b, a) * 180) / Math.PI + 360) % 360),
+  };
+}
+
 /** A split colour as `#rrggbb`, for clients that cannot draw oklch; greys mix in oklab as CSS does. */
 export function usageSplitHex(
   color: UsageSplitColor,

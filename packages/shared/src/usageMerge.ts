@@ -932,6 +932,8 @@ export interface UsageMemberBand extends SplitAmount {
   readonly name: string;
   /** Counts to its group and keeps its colour, but gets no row of its own. */
   readonly hidden?: true | undefined;
+  /** Its own colour, as `#rrggbb`; without one it takes the group's palette. */
+  readonly color?: string | undefined;
 }
 
 export interface UsageMemberBands {
@@ -939,6 +941,12 @@ export interface UsageMemberBands {
   readonly members: readonly UsageMemberBand[];
   readonly valueAt: (period: string, key: string, metric: "cost" | "tokens") => number;
 }
+
+/** The first colour among the members one row stands for. */
+const pickColor = (same: readonly UsageWorkMember[]) => {
+  const color = same.find((member) => member.color !== undefined)?.color;
+  return color === undefined ? {} : { color };
+};
 
 /** Where `MergedUsage.workMembers` keeps a member's usage in one group. */
 const workMemberKey = (group: string, member: string) => `${group}\u0000${member}`;
@@ -1005,6 +1013,7 @@ export function usageMemberBands(
       ...([first!, ...rest].every((member) => member.hidden === true)
         ? { hidden: true as const }
         : {}),
+      ...pickColor([first!, ...rest]),
       ...(totals.get(first!.key) ?? NO_AMOUNT),
     }))
     .filter((member) => member.totalTokens > 0 || member.costUsd > 0)

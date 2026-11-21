@@ -11288,6 +11288,8 @@
   "1d1e9cda847bd398": "La clave de gestión del hub se elimina de este servidor. Sus cuentas salen de la vista Límites; el hub en sí no se toca. Vuelve a añadirlo con la URL y la clave para recuperarlas.",
   "c9bee4f93481b77a": "Quitar hub",
   "71a3218d0f03f59b": "Mostrar {member} en su tipo de trabajo",
+  "88c20bf6447b209d": "Color de {member} en la página de uso",
+  "6d49999f19231b80": "Restablecer",
   "77657af141324051": "Grupo",
   "a119c06a9cceeca6": "Grupos",
   "fbcf6391a7283102": "La página de uso puede dividir el uso por estos tipos de trabajo. El uso en un proyecto sin grupo, o fuera de cualquier proyecto, cuenta como Otro.",

@@ -334,10 +334,15 @@ describe("makeUsageWork", () => {
       member: null,
     });
     expect(closed.members.map((member) => member.key)).not.toContain("app");
-    // Named by repository folder instead, a hidden member keeps its place but says so.
+    // Named by repository folder instead, a hidden member keeps its place but says so; a member
+    // takes a colour only from the group that holds it.
     const byRepository = await work.attribution(
       withFolders.map((group) =>
-        group.name === "Docs" ? { ...group, hiddenMembers: ["app-docs"] } : group,
+        group.name === "Docs"
+          ? { ...group, hiddenMembers: ["app-docs"] }
+          : group.name === "Bones"
+            ? { ...group, memberColors: { app: "#2b5fd9", "app-docs": "#d9a747" } }
+            : group,
       ),
       "repository",
       projects(),
@@ -346,7 +351,7 @@ describe("makeUsageWork", () => {
       0,
     );
     expect(byRepository.members.slice(0, 2)).toEqual([
-      { key: "app", group: "Bones", name: "app" },
+      { key: "app", group: "Bones", name: "app", color: "#2b5fd9" },
       { key: "app-docs", group: "Docs", name: "docs", hidden: true },
     ]);
 

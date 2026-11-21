@@ -11301,6 +11301,8 @@
   "1d1e9cda847bd398": "Hubbens hanteringsnyckel tas bort från den här servern. Dess konton försvinner från vyn Gränser; själva hubben påverkas inte. Lägg till den igen med URL och nyckel för att få tillbaka dem.",
   "c9bee4f93481b77a": "Ta bort hubb",
   "71a3218d0f03f59b": "Visa {member} i sin typ av arbete",
+  "88c20bf6447b209d": "Färg för {member} på användningssidan",
+  "6d49999f19231b80": "Återställ",
   "77657af141324051": "Grupp",
   "a119c06a9cceeca6": "Grupper",
   "fbcf6391a7283102": "Användningssidan kan dela upp användningen efter dessa typer av arbete. Användning i ett projekt utan grupp, eller utanför projekt, räknas som Övrigt.",

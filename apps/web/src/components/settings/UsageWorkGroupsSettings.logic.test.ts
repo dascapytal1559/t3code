@@ -7,12 +7,14 @@ import {
   folderEntries,
   folderMemberKey,
   groupOfProject,
+  memberColor,
   memberShown,
   newGroupName,
   removeGroup,
   setGroupOpens,
   setGroupShared,
   setGroupShowsOnly,
+  setMemberColor,
   setMemberShown,
   unsavedWorkGroups,
   usableFolder,
@@ -48,9 +50,21 @@ describe("usage work groups", () => {
     expect(hidden.map((group) => group.hiddenMembers)).toEqual([[trader], ["folder:/work/main"]]);
     expect(memberShown(hidden, trader)).toBe(false);
     expect(memberShown(setMemberShown(hidden, trader, true), trader)).toBe(true);
-    // A member that moves starts shown, wherever it goes.
-    const moved = assignFolder(assignProject(hidden, trader, "Tooling"), "/work/main", "Trading");
+    // A member that moves starts shown, wherever it goes, and keeps its own colour.
+    const folder = folderMemberKey("/work/main");
+    const colored = setMemberColor(setMemberColor(hidden, trader, "#1b4ed8"), folder, "#d9a747");
+    expect(colored.map((group) => group.memberColors)).toEqual([
+      { [trader]: "#1b4ed8" },
+      { [folder]: "#d9a747" },
+    ]);
+    const moved = assignFolder(assignProject(colored, trader, "Tooling"), "/work/main", "Trading");
     expect(moved.map((group) => group.hiddenMembers)).toEqual([undefined, undefined]);
+    expect(moved.map((group) => group.memberColors)).toEqual([
+      { [folder]: "#d9a747" },
+      { [trader]: "#1b4ed8" },
+    ]);
+    expect(memberColor(setMemberColor(moved, trader, null), trader)).toBeNull();
+    expect(assignProject(moved, trader, null)[1]!.memberColors).toBeUndefined();
     expect(setGroupOpens(groups, "Trading", false)[0]).toEqual({
       name: "Trading",
       projectIds: [trader],

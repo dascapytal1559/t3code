@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { usageSplitHex } from "./usageSplitPalette.ts";
+import { usageSplitColorOfHex, usageSplitHex } from "./usageSplitPalette.ts";
 
 const ground = { foreground: "#000000", background: "#ffffff" };
 
@@ -16,5 +16,12 @@ describe("usageSplitHex", () => {
     expect(usageSplitHex({ ink: 0 }, false, ground)).toBe("#ffffff");
     expect(usageSplitHex({ ink: 100 }, false, ground)).toBe("#000000");
     expect(usageSplitHex({ ink: 50 }, false, ground)).toBe("#636363");
+  });
+
+  it("draws a member's own hex colour as given in light mode, and lighter in dark mode", () => {
+    for (const hex of ["#1b4ed8", "#d9a747", "#a84c21"]) {
+      expect(usageSplitHex(usageSplitColorOfHex(hex), false, ground)).toBe(hex);
+    }
+    expect(usageSplitHex(usageSplitColorOfHex("#1b4ed8"), true, ground)).toBe("#3169f4");
   });
 });

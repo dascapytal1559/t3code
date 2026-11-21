@@ -474,12 +474,16 @@ export function makeUsageWork(options: UsageWorkOptions) {
         ? !group.shownMembers.includes(key)
         : group?.hiddenMembers?.includes(key) === true;
     };
-    const member = (key: string, group: string, name: string): UsageWorkMember => ({
-      key,
-      group,
-      name,
-      ...(isHidden(key, group) ? { hidden: true as const } : {}),
-    });
+    const member = (key: string, group: string, name: string): UsageWorkMember => {
+      const color = groupByName.get(group)?.memberColors?.[key];
+      return {
+        key,
+        group,
+        name,
+        ...(isHidden(key, group) ? { hidden: true as const } : {}),
+        ...(color === undefined ? {} : { color }),
+      };
+    };
     const members: UsageWorkMember[] = [];
     for (const project of projects) {
       const group = groupByProject.get(project.id);

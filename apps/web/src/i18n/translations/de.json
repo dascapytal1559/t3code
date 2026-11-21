@@ -11294,6 +11294,8 @@
   "1d1e9cda847bd398": "Der Verwaltungsschlüssel des Hubs wird von diesem Server gelöscht. Seine Konten verschwinden aus der Limits-Ansicht; der Hub selbst bleibt unberührt. Füge ihn mit URL und Schlüssel erneut hinzu, um sie zurückzuholen.",
   "c9bee4f93481b77a": "Hub entfernen",
   "71a3218d0f03f59b": "{member} in seiner Arbeitsart anzeigen",
+  "88c20bf6447b209d": "Farbe von {member} auf der Nutzungsseite",
+  "6d49999f19231b80": "Zurücksetzen",
   "77657af141324051": "Gruppe",
   "a119c06a9cceeca6": "Gruppen",
   "fbcf6391a7283102": "Die Nutzungsseite kann die Nutzung nach diesen Arbeitsarten aufteilen. Nutzung in einem Projekt ohne Gruppe oder außerhalb eines Projekts zählt als Sonstiges.",

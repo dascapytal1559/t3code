@@ -19,6 +19,7 @@ import {
   folderEntries,
   folderMemberKey,
   groupOfProject,
+  memberColor,
   memberShown,
   newGroupName,
   removeGroup,
@@ -26,6 +27,7 @@ import {
   setGroupOpens,
   setGroupShowsOnly,
   setGroupShared,
+  setMemberColor,
   setMemberShown,
   unsavedWorkGroups,
   usableFolder,
@@ -65,22 +67,30 @@ export function UsageWorkGroupsSettings({
       { onFailed: () => setSent((current) => (current === next ? null : current)) },
     );
   };
-  // A member gets a Shown switch when its group opens into members on the Usage page.
+  // A member gets a Shown switch and a colour when its group opens into members on the Usage page.
   const opensFor = (groupName: string | null) => {
     const group = groups.find((entry) => entry.name === groupName);
     return group !== undefined && group.shared !== true && group.opensIntoMembers !== false;
   };
-  const shownSwitch = (member: string, name: string) => (
-    <label className="flex items-center gap-2 text-xs text-muted-foreground">
-      <T>Shown</T>
-      <Switch
-        size="sm"
-        checked={memberShown(groups, member)}
-        disabled={readOnly}
-        aria-label={gt("Show {member} in its kind of work", { member: name })}
-        onCheckedChange={(checked) => save(setMemberShown(groups, member, Boolean(checked)))}
+  const memberControls = (member: string, name: string) => (
+    <>
+      <MemberColorInput
+        color={memberColor(groups, member)}
+        readOnly={readOnly}
+        label={gt("Color of {member} on the Usage page", { member: name })}
+        onChange={(color) => save(setMemberColor(groups, member, color))}
       />
-    </label>
+      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+        <T>Shown</T>
+        <Switch
+          size="sm"
+          checked={memberShown(groups, member)}
+          disabled={readOnly}
+          aria-label={gt("Show {member} in its kind of work", { member: name })}
+          onCheckedChange={(checked) => save(setMemberShown(groups, member, Boolean(checked)))}
+        />
+      </label>
+    </>
   );
 
   return (
@@ -246,7 +256,7 @@ export function UsageWorkGroupsSettings({
           control={
             <div className="flex items-center gap-2">
               {opensFor(entry.group)
-                ? shownSwitch(folderMemberKey(entry.folder), entry.folder)
+                ? memberControls(folderMemberKey(entry.folder), entry.folder)
                 : null}
               <GroupSelect
                 groups={groups}
@@ -277,7 +287,7 @@ export function UsageWorkGroupsSettings({
             description={<span className="break-all">{project.workspaceRoot}</span>}
             control={
               <div className="flex items-center gap-3">
-                {opensFor(current) ? shownSwitch(project.id, project.title) : null}
+                {opensFor(current) ? memberControls(project.id, project.title) : null}
                 <GroupSelect
                   groups={groups}
                   value={current}
@@ -292,6 +302,48 @@ export function UsageWorkGroupsSettings({
         );
       })}
     </SettingsSection>
+  );
+}
+
+/**
+ * A member's own colour, or a faded swatch while it takes the group's palette; the picker saves
+ * once it closes, not on every step of a drag.
+ */
+function MemberColorInput({
+  color,
+  readOnly,
+  label,
+  onChange,
+}: {
+  readonly color: string | null;
+  readonly readOnly: boolean;
+  readonly label: string;
+  readonly onChange: (color: string | null) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      <input
+        key={color ?? ""}
+        type="color"
+        aria-label={label}
+        disabled={readOnly}
+        defaultValue={color ?? "#808080"}
+        className={`size-5 cursor-pointer rounded border-0 bg-transparent p-0 disabled:cursor-default ${color === null ? "opacity-40" : ""}`}
+        ref={(node) => {
+          if (node === null) return;
+          const commit = () => {
+            if (node.value !== color) onChange(node.value);
+          };
+          node.addEventListener("change", commit);
+          return () => node.removeEventListener("change", commit);
+        }}
+      />
+      {color === null || readOnly ? null : (
+        <Button size="xs" variant="ghost" onClick={() => onChange(null)}>
+          <T>Reset</T>
+        </Button>
+      )}
+    </div>
   );
 }
 

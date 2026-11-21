@@ -20,11 +20,12 @@ export function groupOfProject(
 }
 
 /**
- * A group with `member` off both its member lists, so a member that moves starts shown in a group
- * that hides and hidden in one that shows only its list. A show list stays, even empty.
+ * A group with `member` off both its member lists and without its colour, so a member that moves
+ * starts shown in a group that hides and hidden in one that shows only its list. A show list
+ * stays, even empty.
  */
 function forget(group: UsageWorkGroup, member: string): UsageWorkGroup {
-  const { hiddenMembers = [], shownMembers, ...rest } = group;
+  const { hiddenMembers = [], shownMembers, ...rest } = withColor(group, member, null);
   const hidden = hiddenMembers.filter((key) => key !== member);
   return {
     ...rest,
@@ -35,22 +36,32 @@ function forget(group: UsageWorkGroup, member: string): UsageWorkGroup {
   };
 }
 
+function withColor(group: UsageWorkGroup, member: string, color: string | null): UsageWorkGroup {
+  const { memberColors = {}, ...rest } = group;
+  const { [member]: _old, ...others } = memberColors;
+  const colors = color === null ? others : { ...others, [member]: color };
+  return Object.keys(colors).length === 0 ? rest : { ...rest, memberColors: colors };
+}
+
 /** The members a group holds, as the server keys them. */
 const membersOf = (group: UsageWorkGroup) => [
   ...group.projectIds,
   ...(group.folders ?? []).map((folder) => folderMemberKey(folder)),
 ];
 
-/** Moves a project into one group, or into none (Other) with null. */
+/** Moves a project into one group, or into none (Other) with null; its own colour goes with it. */
 export function assignProject(
   groups: readonly UsageWorkGroup[],
   projectId: ProjectId,
   groupName: string | null,
 ): readonly UsageWorkGroup[] {
+  const color = memberColor(groups, projectId);
   return groups.map((group) => {
     const projectIds = group.projectIds.filter((id) => id !== projectId);
     const kept = { ...forget(group, projectId), projectIds };
-    return group.name === groupName ? { ...kept, projectIds: [...projectIds, projectId] } : kept;
+    return group.name === groupName
+      ? withColor({ ...kept, projectIds: [...projectIds, projectId] }, projectId, color)
+      : kept;
   });
 }
 
@@ -94,6 +105,22 @@ export function setMemberShown(
           hiddenMembers: [...(group.hiddenMembers ?? []).filter((key) => key !== member), member],
         };
   });
+}
+
+/** A member's own colour in the group that holds it, or null when it takes the group's palette. */
+export function memberColor(groups: readonly UsageWorkGroup[], member: string): string | null {
+  return groups.find((group) => membersOf(group).includes(member))?.memberColors?.[member] ?? null;
+}
+
+/** Gives a member its own colour in the group that holds it, or the group's palette with null. */
+export function setMemberColor(
+  groups: readonly UsageWorkGroup[],
+  member: string,
+  color: string | null,
+): readonly UsageWorkGroup[] {
+  return groups.map((group) =>
+    membersOf(group).includes(member) ? withColor(group, member, color) : group,
+  );
 }
 
 /** Whether a member has a row of its own: on its group's show list, or off its hide list. */
@@ -146,17 +173,20 @@ export function usableFolder(folder: string): string | null {
   return trimmed.startsWith("/") || trimmed === "~" || trimmed.startsWith("~/") ? trimmed : null;
 }
 
-/** Moves a folder entry into one group, or removes it with null. */
+/** Moves a folder entry into one group, or removes it with null; its own colour goes with it. */
 export function assignFolder(
   groups: readonly UsageWorkGroup[],
   folder: string,
   groupName: string | null,
 ): readonly UsageWorkGroup[] {
+  const member = folderMemberKey(folder);
+  const color = memberColor(groups, member);
   return groups.map((group) => {
-    const { folders: current = [], ...rest } = forget(group, folderMemberKey(folder));
+    const { folders: current = [], ...rest } = forget(group, member);
     const others = current.filter((entry) => entry !== folder);
-    const folders = group.name === groupName ? [...others, folder] : others;
-    return folders.length === 0 ? rest : { ...rest, folders };
+    if (group.name === groupName)
+      return withColor({ ...rest, folders: [...others, folder] }, member, color);
+    return others.length === 0 ? rest : { ...rest, folders: others };
   });
 }
 
