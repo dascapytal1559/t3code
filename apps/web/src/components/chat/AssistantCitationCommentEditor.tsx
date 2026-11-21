@@ -15,6 +15,7 @@ export function AssistantCitationCommentEditor({
   onSubmit,
   onSubmitAndSend,
   onCancel,
+  onDelete,
   onDraftChange,
   onVoiceSetupOpenChange,
 }: {
@@ -23,6 +24,7 @@ export function AssistantCitationCommentEditor({
   onSubmit: (comment: string) => boolean;
   onSubmitAndSend?: (comment: string) => boolean;
   onCancel: () => void;
+  onDelete?: () => void;
   onDraftChange?: (comment: string) => void;
   onVoiceSetupOpenChange?: (open: boolean) => void;
 }) {
@@ -148,6 +150,19 @@ export function AssistantCitationCommentEditor({
               : gt("Save", { $context: "verb, saves the comment" })}
           </Button>
         </div>
+        {onDelete ? (
+          // Last in the DOM so Tab from the comment reaches Save before it; drawn first, on the left.
+          <Button
+            variant="destructive"
+            size="xs"
+            className="order-first me-auto"
+            aria-label={gt("Delete citation")}
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={onDelete}
+          >
+            <T>Delete</T>
+          </Button>
+        ) : null}
       </div>
     </div>
   );

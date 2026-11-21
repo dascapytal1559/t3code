@@ -458,6 +458,14 @@ const ComposerCitationExtension = Node.create({
   },
 });
 
+/** The chip's last button: its cross when it has one, otherwise its pencil. */
+function lastCitationChipAction(chip: HTMLElement): HTMLElement | null {
+  return (
+    chip.querySelector<HTMLElement>("[data-citation-remove]") ??
+    chip.querySelector<HTMLElement>("[data-citation-comment-trigger]")
+  );
+}
+
 function ComposerCitationNodeView({ node, editor, getPos }: NodeViewProps) {
   const commentContext = use(ComposerCitationCommentContext);
   const citation = node.attrs.citation as Citation;
@@ -544,7 +552,7 @@ function ComposerCitationNodeView({ node, editor, getPos }: NodeViewProps) {
           event.metaKey ||
           event.ctrlKey ||
           !(event.target instanceof HTMLElement) ||
-          event.target.dataset.citationRemove === undefined
+          event.target !== lastCitationChipAction(event.currentTarget)
         ) {
           return;
         }
@@ -565,6 +573,11 @@ function ComposerCitationNodeView({ node, editor, getPos }: NodeViewProps) {
             commentContext.onOpenChange(citeKey, open);
           },
           ...(removeOnCancel ? { onCancel: onRemove } : {}),
+          onDelete: () => {
+            if (!editor.isEditable) return;
+            removeCitation();
+            commentContext.onOpenChange(citeKey, false);
+          },
           onSave: onSaveComment,
           onDraftChange: (comment) => commentContext.onDraftChange(citeKey, comment),
           onSaveAndSend: (comment) => {
@@ -1271,14 +1284,11 @@ function ComposerPromptEditorTiptapInner(
             const citation = $from.nodeBefore;
             if (citation?.type.name === "composer-citation") {
               const chip = view.nodeDOM($from.pos - citation.nodeSize);
-              const removeButton =
-                chip instanceof HTMLElement
-                  ? chip.querySelector<HTMLElement>("[data-citation-remove]")
-                  : null;
-              if (removeButton) {
+              const lastAction = chip instanceof HTMLElement ? lastCitationChipAction(chip) : null;
+              if (lastAction) {
                 event.preventDefault();
                 event.stopPropagation();
-                removeButton.focus();
+                lastAction.focus();
                 return true;
               }
             }

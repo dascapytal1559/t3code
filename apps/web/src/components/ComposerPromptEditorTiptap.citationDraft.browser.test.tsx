@@ -27,19 +27,22 @@ const citation = {
   suffix: "",
 };
 const promptBefore = `See ${serializeAssistantCitation(citation)} `;
+const promptWithComment = `See ${serializeAssistantCitation(withAssistantCitationComment(citation, "check this"))} `;
 
 function Composer({
   question,
   editorRef,
   disabled = false,
   send = "clears",
+  initialPrompt = promptBefore,
 }: {
   question: boolean;
   editorRef: React.RefObject<ComposerPromptEditorHandle | null>;
   disabled?: boolean;
   send?: "clears" | "blocked" | "refusedLater";
+  initialPrompt?: string;
 }) {
-  const [prompt, setPrompt] = useState(promptBefore);
+  const [prompt, setPrompt] = useState(initialPrompt);
   const [answer, setAnswer] = useState("");
   return (
     <>
@@ -96,6 +99,9 @@ it("keeps an unsaved citation comment when a question takes the composer", async
   const comment = page.getByLabelText("Comment on selected text");
   await expect.element(comment).toBeVisible();
   expect(chip()?.getAttribute("data-comment")).toBe("empty");
+  await expect
+    .element(page.getByRole("button", { name: "Delete citation" }))
+    .not.toBeInTheDocument();
   await comment.click();
   await userEvent.keyboard("check this");
 
@@ -103,11 +109,34 @@ it("keeps an unsaved citation comment when a question takes the composer", async
   expect(drafts()?.answer).toBe("");
   await screen.rerender(<Composer question={false} editorRef={editorRef} />);
 
-  expect(drafts()?.prompt).toBe(
-    `See ${serializeAssistantCitation(withAssistantCitationComment(citation, "check this"))} `,
-  );
+  expect(drafts()?.prompt).toBe(promptWithComment);
   await expect.element(page.getByLabelText("Edit citation comment")).toBeInTheDocument();
   expect(chip()?.getAttribute("data-comment")).toBe("present");
+  await expect
+    .element(page.getByRole("button", { name: "Remove citation" }))
+    .not.toBeInTheDocument();
+});
+
+it("deletes a commented citation from its comment editor, and undo brings it back", async () => {
+  const editorRef = createRef<ComposerPromptEditorHandle>();
+  await using screen = await render(
+    <Composer question={false} editorRef={editorRef} initialPrompt={promptWithComment} />,
+  );
+  const prompt = () => screen.container.querySelector("output")?.dataset.prompt;
+
+  // With no cross on the chip, Shift+Tab from the caret after it lands on the pencil.
+  await act(async () => editorRef.current?.focusAt("See ".length + 1));
+  await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+  await expect.element(page.getByLabelText("Edit citation comment")).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
+  await page.getByRole("button", { name: "Delete citation" }).click();
+
+  expect(prompt()).toBe("See ");
+  await expect.element(page.getByLabelText("Comment on selected text")).not.toBeInTheDocument();
+  await expect.element(page.getByTestId("composer-editor")).toHaveFocus();
+  await userEvent.keyboard("{ControlOrMeta>}z{/ControlOrMeta}");
+  expect(prompt()).toBe(promptWithComment);
+  await expect.element(page.getByLabelText("Comment on selected text")).not.toBeInTheDocument();
 });
 
 it("removes a citation and its space with the chip's cross, and undo brings it back", async () => {

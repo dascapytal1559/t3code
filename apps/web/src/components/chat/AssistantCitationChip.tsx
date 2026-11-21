@@ -299,6 +299,7 @@ export function AssistantCitationChip({
     sourceAnchor?: AssistantCitationSourceAnchor | undefined;
     onOpenChange: (open: boolean) => void;
     onCancel?: () => void;
+    onDelete?: () => void;
     onSave: (comment: string) => boolean;
     onSaveAndSend?: (comment: string) => boolean;
     onDraftChange?: (comment: string) => void;
@@ -465,6 +466,9 @@ export function AssistantCitationChip({
                       },
                     }
                   : {})}
+                {...(citation.comment && commentEditor.onDelete
+                  ? { onDelete: commentEditor.onDelete }
+                  : {})}
                 onCancel={() => {
                   if (commentEditor.onCancel) {
                     commentEditor.onCancel();
@@ -477,7 +481,8 @@ export function AssistantCitationChip({
           ) : null}
         </Popover>
       ) : null}
-      {onRemove ? (
+      {/* A chip with a comment is removed from its comment editor, so the comment is not lost to a stray click. */}
+      {onRemove && !citation.comment ? (
         <ContextChipAction
           aria-label={gt("Remove citation")}
           data-citation-remove="true"
