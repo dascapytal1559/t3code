@@ -4,15 +4,11 @@ import {
   inlineCodeFilePathCandidate,
   normalizeMarkdownLinkDestination,
   parseMarkdownFileLink,
-  resolveMarkdownFileLinkTarget,
+  resolveMarkdownFileLink,
   safeDecodeURIComponent,
   splitMarkdownLinkSearchAndHash,
 } from "@t3tools/shared/markdownLinks";
-import {
-  parseFileUrlHref,
-  resolvePathLinkTarget,
-  splitFilePathPosition,
-} from "@t3tools/shared/fileLinks";
+import { parseFileUrlHref, resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 
 import { formatWorkspaceRelativePath } from "./filePathDisplay";
 import { isTerminalLinkActivation } from "./terminal-links";
@@ -110,31 +106,24 @@ export function resolveMarkdownFileLinkMeta(
   cwd?: string,
   documentDir?: string,
 ): MarkdownFileLinkMeta | null {
-  const targetPath = resolveMarkdownFileLinkTarget(href, cwd, documentDir ?? cwd);
-  if (!targetPath) return null;
-  const source = href ? parseMarkdownFileLink(href) : null;
+  const resolved = resolveMarkdownFileLink(href, cwd, documentDir ?? cwd);
+  if (!resolved) return null;
+  const {
+    sourcePath,
+    targetPath,
+    position: { path, ...lines },
+  } = resolved;
   const heading = href ? linkedHeading(href) : null;
-  return {
-    ...buildFileLinkMetaFromTarget(targetPath, cwd),
-    rootFallbackPath: null,
-    ...(source?.endLine !== undefined ? { endLine: source.endLine } : {}),
-    ...(heading !== null && source?.line === undefined ? { heading } : {}),
-    workspaceLookupPath:
-      source !== null && !isAbsolutePath(source.path) && documentDir === undefined
-        ? source.path
-        : null,
-  };
-}
-
-function buildFileLinkMetaFromTarget(targetPath: string, cwd?: string) {
-  const { path, line, column } = splitFilePathPosition(targetPath);
   return {
     filePath: path,
     targetPath,
     displayPath: formatWorkspaceRelativePath(targetPath, cwd),
     workspaceRelativePath: workspaceRelativeFilePath(path, cwd),
     basename: fileBasename(path),
-    ...(line !== undefined ? { line } : {}),
-    ...(column !== undefined ? { column } : {}),
+    ...lines,
+    rootFallbackPath: null,
+    ...(heading !== null && lines.line === undefined ? { heading } : {}),
+    workspaceLookupPath:
+      !isAbsolutePath(sourcePath) && documentDir === undefined ? sourcePath : null,
   };
 }
