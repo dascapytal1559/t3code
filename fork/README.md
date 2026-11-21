@@ -2515,6 +2515,24 @@ in `ChatView.tsx`; one mount each in `FilePreviewPanel.tsx` and
 Upstream: partly: citing assistant replies, and line comments from the source
 view ([#3115](https://github.com/pingdotgg/t3code/pull/3115)), are upstream's.
 
+## Citation chips
+
+A citation chip in the composer without a comment looks muted and has a red
+cross that removes it in one click. A chip with a comment has no cross, so a
+stray click cannot lose the comment; its comment editor has a red Delete
+button instead, on the left of the footer. Both go through the editor's own
+delete, so undo brings the citation back with its comment, and they take one
+neighbouring space with the chip. Shift+Tab from the caret after a chip lands
+on its last button: the cross, or the pencil on a commented chip.
+
+Code: `removeCitation` and `lastCitationChipAction` in
+`apps/web/src/components/ComposerPromptEditorTiptap.tsx`; the `onRemove` prop,
+the muted ink and the cross in `AssistantCitationChip.tsx`; the `onDelete` prop
+and Delete button in `AssistantCitationCommentEditor.tsx`; and the removal
+sentence in `docs/user/composer.md`.
+
+Upstream: none.
+
 ## File tabs name their folder
 
 A file tab in the side panel shows the file's folder, dimmed, before its name
