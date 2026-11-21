@@ -202,9 +202,12 @@ thread or FirstMate task behind it, such as one you start in a terminal, counts 
 Sessions T3 runs itself are unaffected. Registration needs no running server and never delays or
 fails a session.
 
-The hook is `apps/server/scripts/session-register-hook.sh` in the T3 Code source. It takes the
-tool's name and the register folder. In the examples, replace `<hook>` with its full path and
-`<register>` with the folder, for example `$HOME/.t3/userdata/session-register`.
+The hook is a small shell script that the desktop app and the `t3` package do not include.
+Download `session-register-hook.sh` from the `apps/server/scripts` folder of the T3 Code repository
+your server runs, save it somewhere it will stay, such as `~/.t3/session-register-hook.sh`, and
+make it executable (`chmod +x`). It takes the tool's name and the register folder. In the
+examples, replace `<hook>` with its full path and `<register>` with the folder, for example
+`$HOME/.t3/userdata/session-register`.
 
 - **Claude Code:** add it to `~/.claude/settings.json`, and to the `settings.json` of each profile
   you run with `CLAUDE_CONFIG_DIR`:
