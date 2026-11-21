@@ -51,6 +51,7 @@ export function UsageLimitRecoveryCard({
     Date.parse(thread.snoozedUntil) > Date.parse(resetAt)
       ? thread.snoozedUntil
       : resetAt;
+  const displayPassed = useDeadlinePassed(displayAt === null ? null : Date.parse(displayAt));
   const [copied, setCopied] = useState(false);
   const [actionPending, setActionPending] = useState(false);
   const code = thread.runtime?.lastErrorCode;
@@ -64,23 +65,27 @@ export function UsageLimitRecoveryCard({
     !runId
   )
     return null;
-  const resetDate = displayAt
-    ? new Date(displayAt).toLocaleString(undefined, {
+  const resumes = canSchedule && scheduled;
+  const resumesUpcoming = resumes && !displayPassed;
+  const shownAt = resumesUpcoming ? displayAt : resetAt;
+  const resetDate = shownAt
+    ? new Date(shownAt).toLocaleString(undefined, {
         month: "short",
         day: "numeric",
         hour: "numeric",
         minute: "2-digit",
       })
     : null;
-  const resumes = canSchedule && scheduled;
   const resetText =
     !displayAt || resetDate === null
       ? null
-      : isIndefiniteSnooze(displayAt)
+      : resumesUpcoming && isIndefiniteSnooze(displayAt)
         ? gt("Resumes when you wake it.")
-        : resumes
+        : resumesUpcoming
           ? gt("Resumes {date}.", { date: resetDate })
-          : gt("Resets {date}.", { date: resetDate });
+          : resetPassed
+            ? gt("Reset {date}.", { date: resetDate })
+            : gt("Resets {date}.", { date: resetDate });
   const snoozed =
     limitRecoveryOwnsSnooze({
       runId,
@@ -172,12 +177,14 @@ export function UsageLimitRecoveryCard({
                 )
             : chatGptLimit
               ? (resetText ?? gt("Review your usage settings in ChatGPT."))
-              : displayAt && isIndefiniteSnooze(displayAt)
+              : resumesUpcoming && displayAt && isIndefiniteSnooze(displayAt)
                 ? gt("Usage limit reached. Resumes when you wake it.")
                 : resetDate !== null
-                  ? resumes
+                  ? resumesUpcoming
                     ? gt("Usage limit reached. Resumes {date}.", { date: resetDate })
-                    : gt("Usage limit reached. Resets {date}.", { date: resetDate })
+                    : resetPassed
+                      ? gt("Usage limit reached. Reset {date}.", { date: resetDate })
+                      : gt("Usage limit reached. Resets {date}.", { date: resetDate })
                   : gt(
                       "Usage limit reached. The provider did not report a reset time. Retry manually when your limit is available.",
                     )}
@@ -196,7 +203,13 @@ export function UsageLimitRecoveryCard({
             {canSchedule ? (
               <>
                 <RecoveryAction
-                  label={scheduled ? gt("Cancel auto-resume") : gt("Resume at reset")}
+                  label={
+                    scheduled
+                      ? gt("Cancel auto-resume")
+                      : resetPassed
+                        ? gt("Resume now")
+                        : gt("Resume at reset")
+                  }
                   disabled={pending}
                   onPress={() => void toggle("resume")}
                 />
