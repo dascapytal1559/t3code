@@ -2036,6 +2036,7 @@ export const layerWsRpc = (
                         {
                           managesProviders:
                             currentSession.scopes.includes(AuthProvidersManageScope),
+                          origin: clientOrigin,
                         },
                       )
                   ).pipe(Effect.provide(intakeContext)),

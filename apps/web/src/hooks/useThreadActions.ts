@@ -6,11 +6,7 @@ import {
   scopedThreadKey,
 } from "@t3tools/client-runtime/environment";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import {
-  canSnooze,
-  effectiveSnoozed,
-  threadWokeAt,
-} from "@t3tools/client-runtime/state/thread-settled";
+import { canSnooze, threadWokeAt } from "@t3tools/client-runtime/state/thread-settled";
 import {
   AuthOrchestrationOperateScope,
   AuthSourceControlWriteScope,
@@ -37,7 +33,6 @@ import { orchestrationEnvironment } from "../state/orchestration";
 import { projectEnvironment } from "../state/projects";
 import { threadEnvironment } from "../state/threads";
 import { vcsEnvironment } from "../state/vcs";
-import { useTellCoordinator } from "./useTellCoordinator";
 import { refreshArchivedThreadsForEnvironment } from "../lib/archivedThreadsState";
 import { releaseComposerDraftUploads } from "../lib/composerDraftUploads";
 import { announce } from "../lib/announce";
@@ -305,7 +300,6 @@ export function useThreadActions() {
   const unsnoozeThreadMutation = useOrchestrationCommand(threadEnvironment.unsnooze, {
     reportFailure: false,
   });
-  const tellCoordinator = useTellCoordinator();
   const markThreadUnread = useMarkThreadUnread();
   const createProjectFromThread = useAtomCommand(projectEnvironment.createFromThread, {
     reportFailure: false,
@@ -669,7 +663,6 @@ export function useThreadActions() {
         ...(restoreUnsettledAt === undefined ? {} : { restoreUnsettledAt }),
       },
     });
-    if (result._tag === "Success") tellCoordinator(target, { kind: "unsettled" });
     return result;
   };
 
@@ -699,15 +692,8 @@ export function useThreadActions() {
   };
 
   const pinThread = async (target: ScopedThreadRef, opts: { orderKey?: string } = {}) => {
-    const thread = readThreadShell(target);
-    const now = new Date().toISOString();
     const result = await sendPin(target, opts);
-    if (result._tag !== "Success") return result;
-    announce(m(msg("Pinned 1 thread")));
-    if (thread?.settledOverride === "settled") tellCoordinator(target, { kind: "unsettled" });
-    else if (thread && effectiveSnoozed(thread, { now })) {
-      tellCoordinator(target, { kind: "unsnoozed" });
-    }
+    if (result._tag === "Success") announce(m(msg("Pinned 1 thread")));
     return result;
   };
 
@@ -774,7 +760,6 @@ export function useThreadActions() {
     if (wokeAt !== null) {
       markThreadVisited(scopedThreadKey(target), wokeAt);
     }
-    tellCoordinator(target, { kind: "settled" });
     showThreadUndoNotice({
       action: "Settled",
       claim: action,
@@ -854,7 +839,6 @@ export function useThreadActions() {
       environmentId: target.environmentId,
       input: { threadId: target.threadId, reason: "user" },
     });
-    if (result._tag === "Success") tellCoordinator(target, { kind: "unsnoozed" });
     return result;
   };
 
@@ -890,7 +874,6 @@ export function useThreadActions() {
       action.finish();
       return result;
     }
-    tellCoordinator(target, { kind: "snoozed", snoozedUntil });
     showThreadUndoNotice({
       action: "Snoozed",
       claim: action,
@@ -914,14 +897,10 @@ export function useThreadActions() {
           case "reorderActive":
             return reorderActiveThread(target, step.orderKey);
           case "snooze": {
-            const result = await snoozeThreadMutation({
+            return snoozeThreadMutation({
               environmentId: target.environmentId,
               input: { threadId: target.threadId, snoozedUntil: step.snoozedUntil },
             });
-            if (result._tag === "Success") {
-              tellCoordinator(target, { kind: "snoozed", snoozedUntil: step.snoozedUntil });
-            }
-            return result;
           }
         }
       },

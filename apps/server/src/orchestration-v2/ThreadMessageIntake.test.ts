@@ -9,14 +9,19 @@ import {
   CommandId,
   EventId,
   GuestMessageId,
+  INDEFINITE_SNOOZE_UNTIL,
   MessageId,
+  ProjectId,
+  ProviderInstanceId,
   RunId,
   RuntimeRequestId,
   ThreadId,
   TurnItemId,
+  type OrchestrationClientOrigin,
   type OrchestrationV2Command,
   type OrchestrationV2ServerCommand,
   type OrchestrationV2StoredEvent,
+  type OrchestrationV2ThreadShell,
   type UserInputAttachments,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -36,8 +41,12 @@ import {
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 import * as ThreadMessageIntake from "./ThreadMessageIntake.ts";
 
-const dispatchCommand = (command: OrchestrationV2Command, sender = { managesProviders: true }) =>
-  ThreadMessageIntake.dispatchCommand(command, sender);
+const dispatchCommand = (
+  command: OrchestrationV2Command,
+  sender: { readonly managesProviders: boolean; readonly origin?: OrchestrationClientOrigin } = {
+    managesProviders: true,
+  },
+) => ThreadMessageIntake.dispatchCommand(command, sender);
 
 const layerIntakeTest = ServerConfig.layerTest(process.cwd(), {
   prefix: "t3-question-intake-",
@@ -543,5 +552,167 @@ it.effect("a queued /logout edit without provider management must keep an attach
     ]);
     expect(captured[1]).not.toHaveProperty("attachments");
     expect(captured[2]).not.toHaveProperty("attachments");
+  }).pipe(Effect.provide(layerIntakeTest)),
+);
+
+const crewShell = (
+  id: string,
+  fields: Partial<OrchestrationV2ThreadShell> = {},
+): OrchestrationV2ThreadShell => {
+  const threadId = ThreadId.make(id);
+  return {
+    id: threadId,
+    projectId: ProjectId.make("project-1"),
+    title: id,
+    providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+    modelSelection: { instanceId: ProviderInstanceId.make("claudeAgent"), model: "opus" },
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    branch: null,
+    worktreePath: null,
+    activeProviderThreadId: null,
+    lineage: { rootThreadId: threadId, parentThreadId: null, relationshipToParent: null },
+    forkedFrom: null,
+    createdBy: "user",
+    creationSource: "web",
+    activeRunId: null,
+    latestRunId: null,
+    status: "idle",
+    pendingRuntimeRequest: null,
+    latestVisibleMessage: null,
+    latestUserMessageAt: null,
+    hasActionableProposedPlan: false,
+    itemCount: 0,
+    visibleItemCount: 0,
+    createdAt: NOW,
+    updatedAt: NOW,
+    archivedAt: null,
+    settledOverride: null,
+    settledAt: null,
+    lastVisitedAt: null,
+    deletedAt: null,
+    ...fields,
+  };
+};
+
+it.effect.each<
+  readonly [
+    string,
+    OrchestrationV2Command,
+    Partial<OrchestrationV2ThreadShell>,
+    { readonly replayed?: true },
+    string | null,
+  ]
+>([
+  [
+    "a settle",
+    { type: "thread.settle", commandId: CommandId.make("cmd"), threadId: ThreadId.make("worker") },
+    {},
+    {},
+    "**Settled · worker**\nkept-thread: worker\nthread-action: settled",
+  ],
+  [
+    "a snooze",
+    {
+      type: "thread.snooze",
+      commandId: CommandId.make("cmd"),
+      threadId: ThreadId.make("worker"),
+      snoozedUntil: "2026-11-17T09:00:00.000+10:00",
+    },
+    {},
+    {},
+    "**Snoozed · worker**\nkept-thread: worker\nthread-action: snoozed until 2026-11-16T23:00:00Z",
+  ],
+  [
+    "an indefinite snooze",
+    {
+      type: "thread.snooze",
+      commandId: CommandId.make("cmd"),
+      threadId: ThreadId.make("worker"),
+      snoozedUntil: INDEFINITE_SNOOZE_UNTIL,
+    },
+    {},
+    {},
+    "**Snoozed · worker**\nkept-thread: worker\nthread-action: snoozed",
+  ],
+  [
+    "an un-settle",
+    {
+      type: "thread.unsettle",
+      commandId: CommandId.make("cmd"),
+      threadId: ThreadId.make("worker"),
+      reason: "user",
+    },
+    {},
+    {},
+    "**Un-settled · worker**\nkept-thread: worker\nthread-action: unsettled",
+  ],
+  [
+    "a pin of a snoozed thread",
+    { type: "thread.pin", commandId: CommandId.make("cmd"), threadId: ThreadId.make("worker") },
+    { snoozedUntil: DateTime.makeUnsafe("2026-11-17T00:00:00.000Z") },
+    {},
+    "**Un-snoozed · worker**\nkept-thread: worker\nthread-action: unsnoozed",
+  ],
+  [
+    "a pin of an awake thread",
+    { type: "thread.pin", commandId: CommandId.make("cmd"), threadId: ThreadId.make("worker") },
+    {},
+    {},
+    null,
+  ],
+  [
+    "a retried settle",
+    { type: "thread.settle", commandId: CommandId.make("cmd"), threadId: ThreadId.make("worker") },
+    {},
+    { replayed: true },
+    null,
+  ],
+  [
+    "a settle of a thread that is not crew",
+    { type: "thread.settle", commandId: CommandId.make("cmd"), threadId: ThreadId.make("worker") },
+    { crewOf: undefined },
+    {},
+    null,
+  ],
+])("tells a crew thread's coordinator of %s from a client", ([, command, worker, outcome, note]) =>
+  Effect.gen(function* () {
+    const captured: OrchestrationV2ServerCommand[] = [];
+    const shells = [
+      crewShell("worker", { crewOf: ThreadId.make("firstmate"), ...worker }),
+      crewShell("firstmate", { coordinator: true }),
+    ];
+    const layer = Layer.mock(ThreadManagementService.ThreadManagementService)({
+      getThreadShell: (threadId) =>
+        Effect.succeed(shells.find((shell) => shell.id === threadId) ?? null),
+      dispatch: (dispatched) => {
+        captured.push(dispatched);
+        return Effect.succeed({ sequence: captured.length, storedEvents: [], ...outcome });
+      },
+    });
+    yield* dispatchCommand(command, {
+      managesProviders: true,
+      origin: { surface: "mobile", deviceType: "mobile" },
+    }).pipe(Effect.provide(layer));
+    expect(captured[0]).toBe(command);
+    expect(captured.slice(1)).toEqual(
+      note === null
+        ? []
+        : [
+            {
+              type: "message.dispatch",
+              commandId: CommandId.make("command:crew-action:cmd"),
+              threadId: ThreadId.make("firstmate"),
+              messageId: MessageId.make("message:crew-action:cmd"),
+              text: note,
+              attachments: [],
+              dispatchMode: { type: "queue_after_active" },
+              createdBy: "user",
+              creationSource: "mobile",
+              origin: { surface: "mobile", deviceType: "mobile" },
+              crewNote: { threadId: ThreadId.make("worker"), kind: "action" },
+            },
+          ],
+    );
   }).pipe(Effect.provide(layerIntakeTest)),
 );

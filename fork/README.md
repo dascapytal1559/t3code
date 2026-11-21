@@ -371,8 +371,8 @@ and what agents claim.
   and `t3_thread_send_attachments` store it on the message only when the
   sender's segment was started by a prompt typed in that turn or is a
   voice-journal claim (`reroots`), so only typed input moves work. `schedule_task` stores the creating turn's origin in the fork
-  table `usage_scheduled_task_origins`, and an edit from a typed turn rebinds
-  it. `t3_restart_request` binds when given `fromThread` and keeps the value on
+  table `usage_scheduled_task_bindings`, and an edit from a typed turn adds a
+  binding that counts the task's runs from then on; earlier runs keep theirs. `t3_restart_request` binds like the others and keeps the value on
   the request; the restart note carries it, and each restart continuation
   carries where its cut turn counted (the request's value instead when that
   turn only counted as upkeep, or to no device, in a thread with no origin of
@@ -1258,10 +1258,10 @@ and `readTops` in `Sidebar.shiftGuard.ts`, which skips sticky rows.
 
 When the captain settles, un-settles, snoozes or wakes a crew thread (the
 membership the [message box](#reply-box-goes-to-firstmate)
-uses), the client posts one ordinary user message to its coordinator, sent the
-way that box sends: queued behind a running turn, or starting one when the
-coordinator is idle; the worker gets nothing. FirstMate keeps its records of
-the workers in step that way. The message reads:
+uses), the server posts one ordinary user message to its coordinator once the
+client's command commits, sent the way that box sends: queued behind a running
+turn, or starting one when the coordinator is idle; the worker gets nothing.
+FirstMate keeps its records of the workers in step that way. The message reads:
 
 ```
 **Settled · <worker thread title>**
@@ -1272,21 +1272,22 @@ thread-action: settled
 The other headings and action lines are `**Un-settled · …**` with
 `unsettled`, `**Snoozed · …**` with `snoozed until <ISO 8601 UTC, seconds>`
 (just `snoozed` when indefinite), and `**Un-snoozed · …**` with `unsnoozed`.
-Every client path sends it: the menus, a multi-selection (one message per
-thread), `Mod+Shift+S`, the chat's Un-settle and Wake now, dragging a thread
-out of Settled or Snoozed, and Undo, which sends the reverse action. Only the
-client's own actions send it, so a settle, snooze or archive made over MCP
-(FirstMate's own) or by the server's sweeps (auto-settle, a snooze waking on
-time or on new activity) never echoes back. Threads that are not crew, and
-FirstMate's own thread, send nothing. A failed send shows "Could not tell
-FirstMate"; the settle or snooze itself stands. Mobile is not covered: the
-captain's phone runs the App Store app.
+Every client command sends it, from any client, the phone's included: settle,
+un-settle, snooze and wake, and a pin, which un-settles or wakes the thread it
+promotes. So the menus, a multi-selection (one message per thread, as
+FirstMate's reader takes one worker per message), `Mod+Shift+S`, the chat's
+Un-settle and Wake now, dragging a thread out of Settled or Snoozed, and Undo
+all send it. Only client commands send it, so a settle, snooze or archive made
+over MCP (FirstMate's own) or by the server's sweeps (auto-settle, a snooze
+waking on time or on new activity) never echoes back, and neither does waking
+a snooze that usage-limit recovery set, whose start sent nothing either.
+Threads that are not crew, and FirstMate's own thread, send nothing. A failed
+send is only logged; the settle or snooze itself stands, and a retried command
+sends no second note.
 
-Code: `useTellCoordinator` in `apps/web/src/hooks/useTellCoordinator.ts`,
-called from `settleThread`, `unsettleThread`, `snoozeThread`, `unsnoozeThread`
-and the Undo snooze step in `useThreadActions.ts`, and from the chat's
-Un-settle and Wake in `useThreadLifecycle.tsx`; the message is
-`formatCrewThreadAction` in `apps/web/src/components/chat/CrewReply.logic.ts`.
+Code: `dispatchWithCrewActionNote` in
+`apps/server/src/orchestration-v2/CrewActionNote.ts`, called from the client
+intake (`ThreadMessageIntake.dispatchCommand`).
 
 FirstMate half, in the FirstMate fork:
 [Reply on a worker's thread](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#reply-on-a-workers-thread).
@@ -1724,8 +1725,8 @@ caller, like `t3_objectives_set`; status needs only orchestration access.
   (`reason`: trimmed, 1 to 500 characters, such as `install build 0.1.8`), or
   replaces its reason, cause and origin when one is pending. `causedBy` is the
   prompt whose work the restart installs, checked like `t3_thread_launch`'s;
-  `fromThread` names the thread of that work instead, and T3 stores where it
-  counts by value (see [Phone vs computer split](#phone-vs-computer-split)). `requestedBy` is
+  the caller's own thread, or `fromThread` from a caller outside threads, names
+  the thread of that work instead, and T3 stores where it counts by value (see [Phone vs computer split](#phone-vs-computer-split)). `requestedBy` is
   the caller thread's title or the MCP client's label. Returns the status below.
 - `t3_restart_status` `{}` returns `{ pending, reason, requestedAt, causedBy,
   activeTurns, drained, serverStartedAt }`. `activeTurns` counts threads with a

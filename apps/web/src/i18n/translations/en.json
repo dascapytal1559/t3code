@@ -2842,7 +2842,6 @@
   "d51dbcd93da79694": "T3 Code could not open a new thread.",
   "eb9ecb0cb72121a0": "This machine cannot start threads without a project.",
   "32e2dbf6abe8c748": "Starting triage…",
-  "6c770921ca33cebf": "Could not tell FirstMate",
   "ce5c66ae967fd7c8": "Thread actions unavailable",
   "d4f0043ab9348e2c": "This thread has not loaded yet.",
   "8523f86d3c21edf3": "This environment's server does not support settling yet. Update the server to use Settle.",

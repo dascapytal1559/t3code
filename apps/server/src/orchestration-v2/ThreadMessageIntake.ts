@@ -3,6 +3,7 @@ import { appendUserInputAttachmentPaths } from "../provider/userInputAttachments
 import {
   AuthProvidersManageScope,
   type ChatAttachment,
+  type OrchestrationClientOrigin,
   type OrchestrationV2Command,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -15,6 +16,7 @@ import * as Orchestrator from "./Orchestrator.ts";
 
 import * as AttachmentClaims from "./AttachmentClaims.ts";
 import { isProviderSignOutPrompt } from "./CommandPolicy.ts";
+import { dispatchWithCrewActionNote, isCrewActionCommand } from "./CrewActionNote.ts";
 import * as ThreadLaunch from "./ThreadLaunchService.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
 
@@ -129,7 +131,7 @@ export const withQueuedAttachmentsOnSignOutText = Effect.fn(
  */
 export const dispatchCommand = Effect.fn("ThreadMessageIntake.dispatchCommand")(function* (
   incoming: OrchestrationV2Command,
-  sender: { readonly managesProviders: boolean },
+  sender: { readonly managesProviders: boolean; readonly origin?: OrchestrationClientOrigin },
 ) {
   const command =
     incoming.type === "message.dispatch"
@@ -202,6 +204,8 @@ export const dispatchCommand = Effect.fn("ThreadMessageIntake.dispatchCommand")(
         ),
       );
   }
+  if (isCrewActionCommand(command))
+    return yield* dispatchWithCrewActionNote(command, sender.origin);
   if (
     command.type !== "message.dispatch" &&
     (command.type !== "queued-run.edit" || command.attachments === undefined)
