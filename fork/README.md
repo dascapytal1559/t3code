@@ -241,6 +241,9 @@ jumps to the left; the fork keeps accounts where the providers tab puts them.
 Both keep one order for every window row, so columns stay aligned. The rule is
 `sortByProvidersTab` and `LimitAccount.providerOrder` in
 `packages/shared/src/usageLimits.ts`; syncs must carry it.
+`collectProviderUsageLimits` takes upstream's `model` (which hub accounts serve
+the thread's model) before the fork's `providerInstances`, so each caller passes
+both, `null` for the model where it has none.
 
 Upstream: none.
 
@@ -1312,7 +1315,9 @@ until someone wakes it, or until whatever already wakes a snoozed thread wakes
 it: a new message, a question or approval it raises, a failure, or pinning.
 It sorts after timed snoozes and shows the alarm clock with no countdown (the
 mobile row reads "Snoozed"); its chat says "Snoozed until you wake it", and a
-usage-limit resume armed on it says it resumes when you wake it. Only
+usage-limit resume armed on it says it resumes when you wake it (checked
+before upstream's past-tense "Reset" copy, in `UsageLimitRecoveryBanner.tsx` and
+the mobile `UsageLimitRecoveryCard.tsx`). Only
 fork-built clients offer Indefinitely; stock clients show such a thread with a
 countdown of millions of days.
 
@@ -2019,7 +2024,10 @@ takes instructions only, because it runs inside the server process. The other
 providers take both. `t3_thread_configure` reads them back with the effective
 runtime mode, and `orchestrator_capabilities` reports `threadEnvironment`,
 `threadInstructions` and an ACP registry instance's `agentId`. Code:
-`apps/server/src/orchestration-v2/RuntimePolicy.ts`. Antigravity's driver
+`apps/server/src/orchestration-v2/RuntimePolicy.ts`. On Codex the
+instructions are their own `additionalContext` entry, beside upstream's
+`t3_code_workspace` entry for a project's tracked folders; on OpenCode they
+follow upstream's runtime instructions in the system prompt. Antigravity's driver
 also gets T3's own thread and MCP variables from upstream (#36495); the
 thread's variables go under them (`AntigravityDriver.ts`).
 
@@ -2104,6 +2112,8 @@ result then carries `settledBy` (`run_ended`, `timeout` or `pending_request`)
 and, for a pending request, `pendingRequests` in the shape
 `t3_pending_request` `list` returns. Callers without the flag see no change.
 Clients detect it by the field in the tool's `tools/list` input schema.
+Upstream's typed results add `untilOutput` and `output` to the same wait; both
+sets of fields are kept.
 Code: `apps/server/src/orchestration-v2/ThreadManagementService.ts`
 (`waitForThread`). Open upstream PR
 https://github.com/pingdotgg/t3code/pull/24712 adds a similar return on a
