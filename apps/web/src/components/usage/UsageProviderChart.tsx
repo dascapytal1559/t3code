@@ -692,6 +692,25 @@ function ChartBars({
 }
 
 /** Stacked bars of usage per period, one band per series, the first series on top. */
+/** The chart's fixed frame: the plot and its y-axis labels over the x-axis labels. */
+export function UsageChartFrame({
+  plot,
+  yAxis,
+  xAxis,
+}: {
+  readonly plot: ReactNode;
+  readonly yAxis: ReactNode;
+  readonly xAxis: ReactNode;
+}) {
+  return (
+    <div className="grid h-80 grid-cols-[minmax(0,1fr)_auto] grid-rows-[minmax(0,1fr)_auto] gap-x-2 gap-y-1">
+      {plot}
+      {yAxis}
+      {xAxis}
+    </div>
+  );
+}
+
 export function UsageStackedChart({
   series,
   valueAt,
@@ -796,79 +815,83 @@ export function UsageStackedChart({
     // the plot takes the rest. It fills a taller column and never shrinks below h-56.
     // The chart keeps one height; the annotation toggle and the annotations go under it.
     <div className="flex min-w-0 flex-col gap-2">
-      <div className="grid h-80 grid-cols-[minmax(0,1fr)_auto] grid-rows-[minmax(0,1fr)_auto] gap-x-2 gap-y-1">
-        <div ref={plotRef} className="relative">
-          <UsageChartPlot
-            periods={periods}
-            columns={columns}
-            series={series}
-            format={format}
-            formatTooltipPeriod={formatTooltipPeriod}
-          >
-            {tickRows.map((row) => (
-              <div
-                key={row.key}
-                className="absolute inset-x-0 h-px bg-border"
-                style={{ top: `${(row.y / VIEW_HEIGHT) * 100}%` }}
-              />
-            ))}
-            {outgoing === null ? null : (
-              <div key={transition?.id} data-chart-layer="outgoing" className="absolute inset-0">
-                <ChartBars
-                  bars={outgoing}
-                  widthPercent={widthPercent}
-                  dim={false}
-                  layered={layered}
+      <UsageChartFrame
+        plot={
+          <div ref={plotRef} className="relative">
+            <UsageChartPlot
+              periods={periods}
+              columns={columns}
+              series={series}
+              format={format}
+              formatTooltipPeriod={formatTooltipPeriod}
+            >
+              {tickRows.map((row) => (
+                <div
+                  key={row.key}
+                  className="absolute inset-x-0 h-px bg-border"
+                  style={{ top: `${(row.y / VIEW_HEIGHT) * 100}%` }}
                 />
+              ))}
+              {outgoing === null ? null : (
+                <div key={transition?.id} data-chart-layer="outgoing" className="absolute inset-0">
+                  <ChartBars
+                    bars={outgoing}
+                    widthPercent={widthPercent}
+                    dim={false}
+                    layered={layered}
+                  />
+                </div>
+              )}
+              <div data-chart-layer="current" className="absolute inset-0">
+                <ChartBars bars={bars} widthPercent={widthPercent} dim={dim} layered={layered} />
               </div>
-            )}
-            <div data-chart-layer="current" className="absolute inset-0">
-              <ChartBars bars={bars} widthPercent={widthPercent} dim={dim} layered={layered} />
+            </UsageChartPlot>
+          </div>
+        }
+        yAxis={
+          <div aria-hidden className="relative text-3xs text-muted-foreground tabular-nums">
+            {/* Sizes the column to the widest label; the shown labels sit on their ticks. */}
+            <div className="invisible grid h-0 overflow-hidden">
+              {scale.labeled
+                ? scale.ticks.map((tick) => <span key={tick}>{tickLabel(tick)}</span>)
+                : null}
             </div>
-          </UsageChartPlot>
-        </div>
-        <div aria-hidden className="relative text-3xs text-muted-foreground tabular-nums">
-          {/* Sizes the column to the widest label; the shown labels sit on their ticks. */}
-          <div className="invisible grid h-0 overflow-hidden">
             {scale.labeled
-              ? scale.ticks.map((tick) => <span key={tick}>{tickLabel(tick)}</span>)
+              ? tickRows.map((row) => (
+                  <span
+                    key={row.key}
+                    className="absolute right-0 -translate-y-1/2 whitespace-nowrap"
+                    style={{ top: `${(row.y / VIEW_HEIGHT) * 100}%` }}
+                  >
+                    {tickLabel(row.tick)}
+                  </span>
+                ))
               : null}
           </div>
-          {scale.labeled
-            ? tickRows.map((row) => (
-                <span
-                  key={row.key}
-                  className="absolute right-0 -translate-y-1/2 whitespace-nowrap"
-                  style={{ top: `${(row.y / VIEW_HEIGHT) * 100}%` }}
-                >
-                  {tickLabel(row.tick)}
+        }
+        xAxis={
+          <div
+            aria-hidden
+            className="relative h-4 text-3xs whitespace-nowrap text-muted-foreground uppercase"
+          >
+            {axisLabelIndices(periods.length).map((index) => {
+              // Past a week the edge bars hug the plot's sides, so their labels align to the sides.
+              const pinned = periods.length > 7;
+              const style =
+                pinned && index === 0
+                  ? { left: 0 }
+                  : pinned && index === periods.length - 1
+                    ? { right: 0 }
+                    : { left: `${((index + 0.5) / periods.length) * 100}%`, translate: "-50% 0" };
+              return (
+                <span key={periods[index]} className="absolute" style={style}>
+                  {formatPeriod(periods[index] ?? "")}
                 </span>
-              ))
-            : null}
-        </div>
-
-        <div
-          aria-hidden
-          className="relative h-4 text-3xs whitespace-nowrap text-muted-foreground uppercase"
-        >
-          {axisLabelIndices(periods.length).map((index) => {
-            // Past a week the edge bars hug the plot's sides, so their labels align to the sides.
-            const pinned = periods.length > 7;
-            const style =
-              pinned && index === 0
-                ? { left: 0 }
-                : pinned && index === periods.length - 1
-                  ? { right: 0 }
-                  : { left: `${((index + 0.5) / periods.length) * 100}%`, translate: "-50% 0" };
-            return (
-              <span key={periods[index]} className="absolute" style={style}>
-                {formatPeriod(periods[index] ?? "")}
-              </span>
-            );
-          })}
-        </div>
-        <div />
-      </div>
+              );
+            })}
+          </div>
+        }
+      />
       {annotationToggle === undefined ? null : <div className="flex">{annotationToggle}</div>}
       {annotations.length === 0 ? null : (
         // The same columns as the chart: the y-axis labels size the right one.

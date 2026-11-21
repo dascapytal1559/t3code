@@ -18,7 +18,14 @@ import {
   SlidersHorizontalIcon,
 } from "lucide-react";
 import { T, useGT, useLocale, useMessages, Var } from "gt-react";
-import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { settlePromise } from "@t3tools/client-runtime/state/runtime";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Cause from "effect/Cause";
@@ -81,6 +88,7 @@ import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { UsageLimitsSection } from "./UsageLimits";
 import { UsagePriceOverrides } from "./UsagePriceOverrides";
 import {
+  UsageChartFrame,
   UsageStackedChart,
   usageChartCaption,
   type ChartSeries,
@@ -99,7 +107,7 @@ import {
   type BoxModel,
   type UsageBreakdown,
 } from "./usageSplits";
-import { UsageBreakdownBox, type BoxOpening } from "./UsageBreakdownBox";
+import { UsageBreakdownBox, UsageBreakdownBoxSkeleton, type BoxOpening } from "./UsageBreakdownBox";
 import { keepStation, reducedMotion, regrow } from "./usageMotion";
 import { collectUsageAnnotations, placeUsageAnnotations } from "./usageAnnotations";
 import { SpeedPremium, UsageModelDialog } from "./UsageModelDialog";
@@ -590,7 +598,7 @@ export function UsagePage() {
                 now={limitsNow}
               />
             ) : shown === null ? (
-              <UsageSkeleton />
+              <UsageSkeleton open={breakdown} />
             ) : !canReadDiagnostics ? (
               <div className="space-y-2 py-12 text-center text-sm text-muted-foreground">
                 {selectedEnvironments.map((environment) => (
@@ -971,145 +979,137 @@ function UsageOverview({
           {message}
         </p>
       ))}
-      {/* Chart left over 8 of 12 columns, the total and the breakdown boxes right over 4, 40px
-          apart. Below lg it is one column: the total, the chart, then the boxes. The total's row
-          keeps its own height, so the boxes start under it whichever card is open. */}
-      <section className="grid items-start gap-x-6 gap-y-5 lg:grid-cols-12 lg:grid-rows-[auto_1fr]">
-        <div className="flex min-w-0 flex-col gap-1 lg:col-span-4 lg:col-start-9 lg:row-start-1">
-          <p
-            className={cn(
-              "text-4xl font-semibold text-foreground tabular-nums",
-              figureClass(loadingPartial),
-            )}
-          >
-            {metric === "cost"
-              ? formatUsdShort(merged.costUsd, locale)
-              : formatTokens(merged.totalTokens)}
-          </p>
-          <p className="inline-flex items-center gap-1 text-xs text-muted-foreground tabular-nums">
-            <span>
-              <span className={figureClass(loadingPartial)}>
-                {metric === "cost"
-                  ? gt(
-                      "{count, plural, one {{sessions} session · {tokens} tokens} other {{sessions} sessions · {tokens} tokens}}",
-                      {
-                        count: merged.sessions,
-                        sessions: formatCount(merged.sessions, locale),
-                        tokens: formatTokens(merged.totalTokens),
-                      },
-                    )
-                  : sessionsLabel}
-              </span>
-              {metric === "cost" && ` · ${gt("API estimate")}`}
-            </span>
-            {metric === "cost" && merged.costQuality.unpricedShare > 0 && (
-              <Popover>
-                <PopoverTrigger
-                  openOnHover
-                  render={<InlineButton tone="muted" />}
-                  aria-label={gt("Unpriced usage details")}
-                >
-                  <InfoIcon className="size-3" aria-hidden />
-                </PopoverTrigger>
-                <PopoverPopup side="top" tooltipStyle>
-                  <T>
-                    API estimate excludes{" "}
-                    <Var>{formatPercent(merged.costQuality.unpricedShare)}</Var> unpriced records.
-                  </T>
-                </PopoverPopup>
-              </Popover>
-            )}
-          </p>
-          {showChatGptSharing ? (
-            <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
-              <span>
-                <T>ChatGPT shared usage</T>
-              </span>
-              <ChatGptUsageButton size="xs" />
-            </div>
-          ) : null}
-        </div>
-
-        <div className="flex min-w-0 flex-col gap-3 lg:col-span-8 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:me-4">
-          <div className="flex min-w-0 items-center gap-1">
-            <h2 className="truncate text-sm font-medium text-foreground">
-              {usageChartTitle(metric, shownHourly, days.length, m)}
-            </h2>
-          </div>
-          {!chartShown ? (
-            <p className="flex h-80 items-center justify-center text-sm text-muted-foreground">
-              <T>No activity in this window.</T>
-            </p>
-          ) : (
-            <UsageStackedChart
-              series={chartSeries}
-              valueAt={chartValueAt}
-              caption={usageChartCaption(metric, shownHourly ? "hour" : "day", split)}
-              days={days}
-              hours={hours}
-              metric={metric}
-              referenceTime={shownWindow.untilTime}
-              resolution={shownHourly ? "hour" : "day"}
-              timeZone={shownWindow.timeZone}
-              hour12={hour12}
-              annotations={chartAnnotations}
-              {...(annotations.length === 0
-                ? {}
-                : {
-                    annotationToggle: (
-                      <ToggleButton
-                        aria-label={gt("Chart annotations")}
-                        title={
-                          showAnnotations
-                            ? gt("Hide chart annotations")
-                            : gt("Show chart annotations")
-                        }
-                        pressed={showAnnotations}
-                        onPressedChange={onShowAnnotationsChange}
-                        size="micro"
-                        variant="ghost"
-                      >
-                        <MilestoneIcon aria-hidden />
-                      </ToggleButton>
-                    ),
-                  })}
-              transition={transition}
-              onTransitionEnd={(id) =>
-                setTransition((current) => (current?.id === id ? null : current))
-              }
-            />
-          )}
-        </div>
-
-        <div className="flex min-w-0 flex-col gap-1 lg:col-span-4 lg:col-start-9 lg:row-start-2">
-          {BREAKDOWN_ORDER.map((kind) => (
-            <div
-              key={kind}
-              // The open card sits as far from the bars around it as the bars sit from each other.
-              className={kind === split ? "my-2.75 first:mt-0 last:mb-0" : undefined}
-              ref={(element) => {
-                if (element === null) boxRefs.current.delete(kind);
-                else boxRefs.current.set(kind, element);
-              }}
+      <UsageOverviewGrid
+        open={split}
+        total={
+          <>
+            <p
+              className={cn(
+                "text-4xl font-semibold text-foreground tabular-nums",
+                figureClass(loadingPartial),
+              )}
             >
-              <UsageBreakdownBox
-                model={models[kind]}
-                title={m(BREAKDOWN_TITLES[metric][kind])}
-                open={kind === split}
-                metric={metric}
-                total={total}
-                format={format}
-                openParents={openSetOf(kind)}
-                onToggleParent={(group) => toggleParent(kind, group)}
-                onOpen={(at) => openBox(kind, at)}
-                opening={opening?.kind === kind ? opening.at : null}
-                loading={loadingPartial}
-                {...(kind === "provider" ? { extras: providerExtras } : {})}
-              />
+              {metric === "cost"
+                ? formatUsdShort(merged.costUsd, locale)
+                : formatTokens(merged.totalTokens)}
+            </p>
+            <p className="inline-flex items-center gap-1 text-xs text-muted-foreground tabular-nums">
+              <span>
+                <span className={figureClass(loadingPartial)}>
+                  {metric === "cost"
+                    ? gt(
+                        "{count, plural, one {{sessions} session · {tokens} tokens} other {{sessions} sessions · {tokens} tokens}}",
+                        {
+                          count: merged.sessions,
+                          sessions: formatCount(merged.sessions, locale),
+                          tokens: formatTokens(merged.totalTokens),
+                        },
+                      )
+                    : sessionsLabel}
+                </span>
+                {metric === "cost" && ` · ${gt("API estimate")}`}
+              </span>
+              {metric === "cost" && merged.costQuality.unpricedShare > 0 && (
+                <Popover>
+                  <PopoverTrigger
+                    openOnHover
+                    render={<InlineButton tone="muted" />}
+                    aria-label={gt("Unpriced usage details")}
+                  >
+                    <InfoIcon className="size-3" aria-hidden />
+                  </PopoverTrigger>
+                  <PopoverPopup side="top" tooltipStyle>
+                    <T>
+                      API estimate excludes{" "}
+                      <Var>{formatPercent(merged.costQuality.unpricedShare)}</Var> unpriced records.
+                    </T>
+                  </PopoverPopup>
+                </Popover>
+              )}
+            </p>
+            {showChatGptSharing ? (
+              <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span>
+                  <T>ChatGPT shared usage</T>
+                </span>
+                <ChatGptUsageButton size="xs" />
+              </div>
+            ) : null}
+          </>
+        }
+        chart={
+          <>
+            <div className="flex min-w-0 items-center gap-1">
+              <h2 className="truncate text-sm font-medium text-foreground">
+                {usageChartTitle(metric, shownHourly, days.length, m)}
+              </h2>
             </div>
-          ))}
-        </div>
-      </section>
+            {!chartShown ? (
+              <p className="flex h-80 items-center justify-center text-sm text-muted-foreground">
+                <T>No activity in this window.</T>
+              </p>
+            ) : (
+              <UsageStackedChart
+                series={chartSeries}
+                valueAt={chartValueAt}
+                caption={usageChartCaption(metric, shownHourly ? "hour" : "day", split)}
+                days={days}
+                hours={hours}
+                metric={metric}
+                referenceTime={shownWindow.untilTime}
+                resolution={shownHourly ? "hour" : "day"}
+                timeZone={shownWindow.timeZone}
+                hour12={hour12}
+                annotations={chartAnnotations}
+                {...(annotations.length === 0
+                  ? {}
+                  : {
+                      annotationToggle: (
+                        <ToggleButton
+                          aria-label={gt("Chart annotations")}
+                          title={
+                            showAnnotations
+                              ? gt("Hide chart annotations")
+                              : gt("Show chart annotations")
+                          }
+                          pressed={showAnnotations}
+                          onPressedChange={onShowAnnotationsChange}
+                          size="micro"
+                          variant="ghost"
+                        >
+                          <MilestoneIcon aria-hidden />
+                        </ToggleButton>
+                      ),
+                    })}
+                transition={transition}
+                onTransitionEnd={(id) =>
+                  setTransition((current) => (current?.id === id ? null : current))
+                }
+              />
+            )}
+          </>
+        }
+        boxRef={(kind, element) => {
+          if (element === null) boxRefs.current.delete(kind);
+          else boxRefs.current.set(kind, element);
+        }}
+        renderBox={(kind) => (
+          <UsageBreakdownBox
+            model={models[kind]}
+            title={m(BREAKDOWN_TITLES[metric][kind])}
+            open={kind === split}
+            metric={metric}
+            total={total}
+            format={format}
+            openParents={openSetOf(kind)}
+            onToggleParent={(group) => toggleParent(kind, group)}
+            onOpen={(at) => openBox(kind, at)}
+            opening={opening?.kind === kind ? opening.at : null}
+            loading={loadingPartial}
+            {...(kind === "provider" ? { extras: providerExtras } : {})}
+          />
+        )}
+      />
 
       {metric === "cost" && merged.totalTokens > 0 ? (
         <section
@@ -1407,46 +1407,79 @@ function UsageProviderFilter({
   );
 }
 
-function UsageSkeleton() {
+/**
+ * Chart left over 8 of 12 columns, the total and the breakdown boxes right over 4, 40px apart.
+ * Below lg it is one column: the total, the chart, then the boxes. The total's row keeps its own
+ * height, so the boxes start under it whichever card is open. The skeleton draws in it too.
+ */
+function UsageOverviewGrid({
+  total,
+  chart,
+  open,
+  renderBox,
+  boxRef,
+}: {
+  readonly total: ReactNode;
+  readonly chart: ReactNode;
+  readonly open: UsageBreakdown;
+  readonly renderBox: (kind: UsageBreakdown) => ReactNode;
+  readonly boxRef?: (kind: UsageBreakdown, element: HTMLElement | null) => void;
+}) {
   return (
-    <>
-      <section className="grid gap-6 lg:grid-cols-[minmax(0,18rem)_minmax(0,1fr)]">
-        <div className="flex flex-col gap-5">
-          <div className="flex flex-col gap-1">
-            <Skeleton className="h-10 w-36" />
-            <Skeleton className="h-4 w-32" />
+    <section className="grid items-start gap-x-6 gap-y-5 lg:grid-cols-12 lg:grid-rows-[auto_1fr]">
+      <div className="flex min-w-0 flex-col gap-1 lg:col-span-4 lg:col-start-9 lg:row-start-1">
+        {total}
+      </div>
+      <div className="flex min-w-0 flex-col gap-3 lg:col-span-8 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:me-4">
+        {chart}
+      </div>
+      <div className="flex min-w-0 flex-col gap-1 lg:col-span-4 lg:col-start-9 lg:row-start-2">
+        {BREAKDOWN_ORDER.map((kind) => (
+          <div
+            key={kind}
+            // The open card sits as far from the bars around it as the bars sit from each other.
+            className={kind === open ? "my-2.75 first:mt-0 last:mb-0" : undefined}
+            ref={boxRef === undefined ? undefined : (element) => boxRef(kind, element)}
+          >
+            {renderBox(kind)}
           </div>
-          {PROVIDER_ORDER.map((provider) => (
-            <div key={provider} className="flex flex-col gap-1 ps-6">
-              <div className="flex min-h-5 items-center justify-between gap-4">
-                <span className="flex items-center gap-2">
-                  <Skeleton shape="pill" className="size-2 shrink-0" />
-                  <Skeleton shape="pill" className="size-4 shrink-0" />
-                  <Skeleton className="h-3.5 w-20" />
-                </span>
-                <Skeleton className="h-3.5 w-14" />
-              </div>
-              <Skeleton className="h-4 w-36" />
-            </div>
-          ))}
-        </div>
+        ))}
+      </div>
+    </section>
+  );
+}
 
-        <div className="flex flex-col gap-3">
-          <Skeleton className="h-5 w-24" />
-          <div className="flex flex-col gap-1">
-            <Skeleton className="ml-16 h-56" />
-            <Skeleton className="ml-16 h-4" />
-          </div>
-        </div>
-      </section>
-
-      <section className="grid gap-x-12 gap-y-8 lg:grid-cols-2">
-        <div className="flex flex-col gap-2.5">
-          <Skeleton className="h-5 w-28" />
-          <Skeleton className="h-2" />
-          <Skeleton className="h-4 w-72" />
-        </div>
-      </section>
-    </>
+function UsageSkeleton({ open }: { readonly open: UsageBreakdown }) {
+  return (
+    <UsageOverviewGrid
+      open={open}
+      total={
+        <>
+          <span className="flex h-10 items-center">
+            <Skeleton className="h-8 w-32" />
+          </span>
+          <span className="flex h-4 items-center">
+            <Skeleton className="h-3 w-52" />
+          </span>
+        </>
+      }
+      chart={
+        <>
+          <span className="flex h-5 items-center">
+            <Skeleton className="h-3.5 w-36" />
+          </span>
+          <UsageChartFrame
+            plot={<Skeleton shape="card" />}
+            yAxis={<span className="w-10" />}
+            xAxis={
+              <span className="flex h-4 items-center">
+                <Skeleton className="h-2.5 w-full" />
+              </span>
+            }
+          />
+        </>
+      }
+      renderBox={(kind) => <UsageBreakdownBoxSkeleton open={kind === open} />}
+    />
   );
 }

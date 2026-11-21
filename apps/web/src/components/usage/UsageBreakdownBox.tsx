@@ -4,6 +4,7 @@ import { useMessages } from "gt-react";
 import { useEffectEvent, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "../../lib/utils";
+import { Skeleton } from "../ui/skeleton";
 import { emphasisColor, emphasisPositions, isTopLeague } from "./usageEmphasis";
 import {
   burst,
@@ -43,6 +44,12 @@ export interface BoxOpening {
 
 const valueOf = (band: BoxBand, metric: "cost" | "tokens") =>
   metric === "cost" ? band.costUsd : band.totalTokens;
+
+// Shared with the skeleton so its shape follows the box's.
+const FOLDED_PADDING = "py-1.25";
+const CARD = "relative flex flex-col gap-2.5 rounded-xl border border-border bg-card p-3.5";
+const ROWS =
+  "grid grid-cols-[0.5rem_minmax(0,1fr)_auto_2.75rem] content-start items-center gap-x-2 gap-y-1 text-xs tabular-nums";
 
 /** A band under this share of the bar would be a sliver under a pixel; the rows still list it. */
 const SLIVER = 0.002;
@@ -295,7 +302,10 @@ export function UsageBreakdownBox({
         type="button"
         aria-label={title}
         aria-expanded={false}
-        className="group/box block w-full cursor-pointer rounded-md py-1.25 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        className={cn(
+          "group/box block w-full cursor-pointer rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+          FOLDED_PADDING,
+        )}
         onClick={(event) => {
           const rect = event.currentTarget.getBoundingClientRect();
           const bar =
@@ -380,16 +390,9 @@ export function UsageBreakdownBox({
   };
 
   return (
-    <section
-      ref={cardRef}
-      aria-label={title}
-      className="relative flex flex-col gap-2.5 rounded-xl border border-border bg-card p-3.5"
-    >
+    <section ref={cardRef} aria-label={title} className={CARD}>
       <ShareBar bands={barBands} metric={metric} />
-      <div
-        ref={rowsRef}
-        className="grid grid-cols-[0.5rem_minmax(0,1fr)_auto_2.75rem] content-start items-center gap-x-2 gap-y-1 text-xs tabular-nums"
-      >
+      <div ref={rowsRef} className={ROWS}>
         {model.groups.map((group, groupIndex) => {
           const rowExtras = extras?.[group.key];
           const dot = (
@@ -472,5 +475,45 @@ export function UsageBreakdownBox({
         })}
       </div>
     </section>
+  );
+}
+
+const SKELETON_NAME_WIDTHS = ["w-20", "w-16", "w-24", "w-14"];
+
+/** The box while usage loads: a bare bar, or the card with a few placeholder rows. */
+export function UsageBreakdownBoxSkeleton({ open }: { readonly open: boolean }) {
+  if (!open) {
+    return (
+      <div className={FOLDED_PADDING}>
+        <Skeleton className="h-2" />
+      </div>
+    );
+  }
+  return (
+    <div className={CARD}>
+      <Skeleton className="h-2" />
+      <div className={ROWS}>
+        {SKELETON_NAME_WIDTHS.map((width, index) => {
+          // Rows after the first stand apart as the box's parent rows do.
+          const cell = cn("flex h-4 items-center", index > 0 && "mt-1");
+          return (
+            <div key={width} className="contents">
+              <span className={cell}>
+                <Skeleton className="size-2" />
+              </span>
+              <span className={cn(cell, width)}>
+                <Skeleton className="h-3 w-full" />
+              </span>
+              <span className={cell}>
+                <Skeleton className="h-3 w-10" />
+              </span>
+              <span className={cn(cell, "justify-end")}>
+                <Skeleton className="h-3 w-7" />
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
