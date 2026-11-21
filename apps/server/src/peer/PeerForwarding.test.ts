@@ -4,6 +4,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   EnvironmentId,
+  MessageId,
   type OrchestrationV2Run,
   type OrchestrationV2ThreadShell,
   type SourceControlCloneRepositoryInput,
@@ -92,6 +93,7 @@ const boxThreads = (seen: Ref.Ref<Seen>, linkSession: Ref.Ref<string>) => {
   const run = (status: OrchestrationV2Run["status"]) =>
     ({
       id: boxRun,
+      userMessageId: MessageId.make("message:box-auto"),
       ordinal: 1,
       status,
       modelSelection: base.modelSelection,
