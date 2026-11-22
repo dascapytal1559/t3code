@@ -134,6 +134,13 @@ const PROCESSES: readonly { key: UsageProcessBand; label: string; color: string 
     color: css(PROCESS_SPLIT_COLORS.routines),
   },
   {
+    key: "incident",
+    label: msg("Incidents", {
+      $context: "usage process: handling production alerts and the fixes patched for them",
+    }),
+    color: css(PROCESS_SPLIT_COLORS.incident),
+  },
+  {
     key: "other",
     label: msg("Direct", { $context: "usage process: usage that is neither journal nor routine" }),
     color: css(PROCESS_SPLIT_COLORS.other),
@@ -253,7 +260,7 @@ export function deviceBox(
   };
 }
 
-/** The process box: journal, routines and direct. */
+/** The process box: journal, routines, incidents and direct. */
 export function processBox(
   usage: MergedUsage,
   metric: "cost" | "tokens",

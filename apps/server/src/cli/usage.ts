@@ -42,6 +42,7 @@ const REASON_LABELS: Record<UsageOriginReasonUsage["reason"], string> = {
   inherited: "inherited",
   journal: "journal",
   upkeep: "upkeep",
+  incident: "incident response",
   terminal: "terminal session",
   unregisteredSession: "unregistered session",
   unmatchedRegistration: "registered, no thread matched",

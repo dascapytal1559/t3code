@@ -346,14 +346,17 @@ describe("UsageAggregator", () => {
       rates,
       // Upkeep counts by how it started, like any other computer work. A journal typed on the
       // phone is journal work; only declared upkeep is a routine, a coordinator's own is other.
+      // Declared incident response is its own process, on the computer like any agent's work.
       attributeOrigin: (item) =>
         item.sessionId === "phone"
           ? { origin: "phone", basis: "stamp", reason: "journal" }
-          : item.sessionId === "upkeep"
-            ? { origin: "computer", basis: "default", reason: "upkeep", via: "agent" }
-            : item.sessionId === "early"
-              ? { origin: "computer", basis: "beforeOrigins", reason: "beforeStamps" }
-              : { origin: "computer", basis: "claim", reason: "upkeep" },
+          : item.sessionId === "alert"
+            ? { origin: "computer", basis: "claim", reason: "incident", via: "agent" }
+            : item.sessionId === "upkeep"
+              ? { origin: "computer", basis: "default", reason: "upkeep", via: "agent" }
+              : item.sessionId === "early"
+                ? { origin: "computer", basis: "beforeOrigins", reason: "beforeStamps" }
+                : { origin: "computer", basis: "claim", reason: "upkeep" },
       // Tooling opens into its members; Trading does not.
       attributeWork: (item, filePath) =>
         item.cwd === "/repos/app"
@@ -372,6 +375,7 @@ describe("UsageAggregator", () => {
       ],
       [record({ sessionId: "upkeep", dedupeKey: "k1", timestampMs: day7 }), "/claude/other.jsonl"],
       [record({ sessionId: "laptop", timestampMs: day7 }), "/claude/other.jsonl"],
+      [record({ sessionId: "alert", timestampMs: day7 }), "/claude/other.jsonl"],
       [
         record({ sessionId: "early", cwd: "/repos/app", timestampMs: at("2026-08-02T00:00:00Z") }),
         undefined,
@@ -387,19 +391,26 @@ describe("UsageAggregator", () => {
       part.cachedInputTokens +
       part.cacheCreationTokens +
       part.outputTokens;
-    const cost = day!.costUsd / 3;
+    const cost = day!.costUsd / 4;
     const amount = [tokens, expect.closeTo(cost, 6)];
     // A bucket all in one band names it alone.
     expect(early).toMatchObject({ devices: "unlabelled", work: "Tooling" });
     // A bucket all other sends no process split.
     expect(early?.processes).toBeUndefined();
-    expect(day?.processes).toEqual({ journal: amount, other: amount, routines: amount });
+    expect(day?.processes).toEqual({
+      journal: amount,
+      other: amount,
+      routines: amount,
+      incident: amount,
+    });
+    const twice = [2 * tokens, expect.closeTo(2 * cost, 6)];
+    // The incident is agent work on the computer, so the device split counts it there as usual.
     expect(day?.devices).toEqual({
       phoneDirect: amount,
-      computerOrchestrated: amount,
+      computerOrchestrated: twice,
       computerDirect: amount,
     });
-    expect(day?.work).toEqual({ Tooling: amount, Trading: amount, "": amount });
+    expect(day?.work).toEqual({ Tooling: amount, Trading: amount, "": twice });
     // Only usage in a group that opens into members is split by member, always with its amount.
     expect(day?.workMembers).toEqual({ app: amount });
     expect(Object.keys(early?.workMembers ?? {})).toEqual(["app"]);

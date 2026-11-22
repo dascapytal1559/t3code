@@ -249,6 +249,22 @@ export const LAUNCHED_JOURNAL: DeviceOriginKey = {
   reason: "journal",
 };
 
+/**
+ * Incident response FirstMate declares by a launch label or a claim: handling a production alert,
+ * or a fix it patches on its own. Alert handling runs on the computer.
+ */
+export const DECLARED_INCIDENT: DeviceOriginKey = {
+  origin: "computer",
+  basis: "claim",
+  reason: "incident",
+};
+
+/** A claim declaring a process: its device, with how that work counts. */
+export const declaredClaim = (key: DeviceOriginKey): UsageClaims.UsageClaimValue => ({
+  device: key.origin,
+  bound: { basis: key.basis, reason: key.reason },
+});
+
 /** Where a usage record came from: this machine's transcripts, an archive, or a provider account. */
 export type UsageRecordSource = "live" | "archive" | "account";
 

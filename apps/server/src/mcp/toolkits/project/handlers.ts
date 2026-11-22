@@ -247,18 +247,20 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
             message:
               "scratch:true picks its own project and folder; omit projectId and workspaceStrategy.",
           });
-        if (input.upkeep === true && input.journal === true)
+        // FirstMate's labels: upkeep and incidents count to the computer, a journal's work to the phone.
+        const labels = (
+          [
+            ["upkeep", input.upkeep, UsageOrigins.LAUNCHED_UPKEEP],
+            ["journal", input.journal, UsageOrigins.LAUNCHED_JOURNAL],
+            ["incident", input.incident, UsageOrigins.DECLARED_INCIDENT],
+          ] as const
+        ).flatMap(([name, set, origin]) => (set === true ? [{ name, origin }] : []));
+        if (labels.length > 1)
           return yield* new OrchestratorMcpFailure({
             code: "invalid_request",
-            message: "upkeep and journal are two labels; give one.",
+            message: `${labels.map(({ name }) => name).join(" and ")} are separate labels; give one.`,
           });
-        // FirstMate's labels: its upkeep counts to the computer, a journal's work to the phone.
-        const label =
-          input.upkeep === true
-            ? { name: "upkeep", origin: UsageOrigins.LAUNCHED_UPKEEP }
-            : input.journal === true
-              ? { name: "journal", origin: UsageOrigins.LAUNCHED_JOURNAL }
-              : undefined;
+        const label = labels[0];
         if (label !== undefined && (input.fromThread !== undefined || input.causedBy !== undefined))
           return yield* new OrchestratorMcpFailure({
             code: "invalid_request",

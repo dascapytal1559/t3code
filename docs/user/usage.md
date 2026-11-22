@@ -108,7 +108,9 @@ it count as **Computer** · **Direct**.
 
 **By process** shows what FirstMate was doing: **Journal** is filing your voice journals and the
 work launched from a journal's items; **Routines** is the upkeep FirstMate launches for a routine,
-such as the bedtime routine's tool updates and nightly reviews; **Direct** is everything else,
+such as the bedtime routine's tool updates and nightly reviews; **Incidents** is FirstMate handling
+production alerts (acknowledging, checking feeds, reading logs, closing or escalating) and the fixes
+it patches on its own, while a fix you approve or make yourself stays **Direct**; **Direct** is everything else,
 including FirstMate's own wakes and checks. A journal you type into FirstMate yourself still counts
 to the device you typed on, as journal work. Usage from before FirstMate labelled its journals is
 **Direct**.

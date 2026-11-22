@@ -191,7 +191,7 @@ and opened rows (`usagePagePreferences.ts`).
 Some boxes draw a mirror chart, one side rising from a centre line and the
 other hanging below it (`lowerGroups` in `UsagePage.tsx`): device and kind of
 work when they have exactly two rows, the larger above; process with Direct
-above and Journal and Routines below; direction with Input above and Output
+above and Journal, Routines and Incidents below; direction with Input above and Output
 below. Each mirrors only when both sides have usage; the other boxes stack.
 
 A kind of work opens into its projects and folders. Members it hides
@@ -217,9 +217,12 @@ provider rows and type bar become the provider and direction boxes; keep upstrea
 own figures in them.
 
 The process box splits usage into Journal (reason `journal`), Routines (`upkeep`
-a claim or launch declared, basis `claim`) and Direct, in amber: everything
-else, FirstMate's own wakes included (`usageProcessOf` in
-`packages/contracts/src/usage.ts`, each bucket's `processes`).
+a claim or launch declared, basis `claim`), Incidents (reason `incident`:
+FirstMate's handling of production alerts, and fixes it patched on its own; a
+fix the captain approved or actioned stays Direct) and Direct, in amber:
+everything else, FirstMate's own wakes included (`usageProcessOf` in
+`packages/contracts/src/usage.ts`, each bucket's `processes`). Incidents is a
+process only: its usage counts to the computer like any other agent work.
 
 ![The Usage page's Tokens tab with the Tokens by process box open, made-up data: the chart stacks each day's Journal, Routines and Other, the label and grey colour Direct had before, with the model table under the chart](media/usage-process-split.png)
 
@@ -366,8 +369,9 @@ and what agents claim.
   process set up on the computer runs, such as the bedtime routine) binds
   nothing and stores `computer`, basis `claim`, reason `upkeep`, also over a
   link; `journal: true` (work from a voice journal's items) stores `phone`,
-  basis `claim`, reason `journal` the same way. Either is refused beside
-  `fromThread`, `causedBy` or the other. `t3_thread_send`
+  basis `claim`, reason `journal` the same way, and `incident: true`
+  (incident response) stores `computer`, basis `claim`, reason `incident`.
+  Each is refused beside `fromThread`, `causedBy` or another label. `t3_thread_send`
   and `t3_thread_send_attachments` store it on the message only when the
   sender's segment was started by a prompt typed in that turn or is a
   voice-journal claim (`reroots`), so only typed input moves work. `schedule_task` stores the creating turn's origin in the fork
@@ -379,7 +383,7 @@ and what agents claim.
   its own). A value the server bound (`creationSource` `server`) labels its own
   turn and moves no work. Every stored origin keeps `root`, the typed prompt
   (`threadId`, `messageId`) that decided it, copied unchanged as work inherits;
-  rules (a journal, upkeep, a terminal) have none, and Usage never adds tokens
+  rules (a journal, upkeep, an incident, a terminal) have none, and Usage never adds tokens
   up by it. A value bound from a thread also keeps `boundAt`, the moment of
   that thread's work it was read at (a `fromThread` claim keeps it in
   `bound_json`); values stored before it have none. The calling thread is the MCP caller's own thread; a caller
@@ -406,7 +410,10 @@ and what agents claim.
   thread's work counts, so a wake about a task follows the task after it is
   re-rooted; refused when that is no device; stored as the device plus
   `bound_json`, its basis and reason) or `device` (counts straight to `phone`
-  or `computer`, basis `claim`: FirstMate marks voice-journal work `phone`).
+  or `computer`, basis `claim`: FirstMate marks voice-journal work `phone`) or
+  `process: "incident"` (FirstMate's incident response: an alert's wake, or a
+  fix it patches unasked; stored as `computer` plus `bound_json` basis `claim`,
+  reason `incident`, so work the turn causes inherits it as journal work does).
   A session claim may take `from` (an ISO time), for a session resumed for
   different work, such as FirstMate's supervision engine: a record counts to
   the session's latest claim started by then, and a record before every start
@@ -416,7 +423,8 @@ and what agents claim.
   with `kept`, so a wake drain never overwrites a journal claim), and
   `causedBy: null` removes it. A claimed turn counts there unless its own
   prompt already traces; a journal claim on such a turn keeps its device but
-  makes its reason `journal`.
+  makes its reason `journal`. An incident claim does not: a prompt the
+  captain typed in that turn stays typed, so work he actions himself is Direct.
 - A pinned coordinator's turn (FirstMate's thread, or a secondmate's) that
   no claim names and no person typed (a wake, a background command's update,
   a server prompt, a turn with no prompt) is its upkeep: it counts to the
@@ -509,7 +517,7 @@ and what agents claim.
   session with no born label at all (a terminal session T3 never registered)
   are counted apart, as `unbornRecords`, not as differences.
 - Every settled record also carries a `reason`, kept on the server: `typed`,
-  `inherited`, `journal`, `upkeep` or `terminal` when there is device
+  `inherited`, `journal`, `upkeep`, `incident` or `terminal` when there is device
   evidence, else what is missing (`unregisteredSession`,
   `unmatchedRegistration` for a registered session whose thread or task
   matched no turn, `unnamedTurn`, `noCause`, `untracedCause`, `noPrompt`,
@@ -625,7 +633,8 @@ made-up values:
   cannot read its T3 prompts. `started` is `direct` when the device's own
   prompt started the work, `orchestrated` (with `via`) when an agent sent it.
   `basis` and `reason` are as in [Phone vs computer split](#phone-vs-computer-split);
-  `process` is the process box's band, `journal`, `routines` or `other` (Direct).
+  `process` is the process box's band, `journal`, `routines`, `incident` or
+  `other` (Direct).
 - `callId` names the model call the same way in every export, whichever
   transcript T3 read it from: a forked conversation, a deleted old file or a
   reader change can move a call to another `sessionId` or `at`, but not to

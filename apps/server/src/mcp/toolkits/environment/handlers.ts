@@ -207,7 +207,18 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
     }),
   ),
   t3_usage_claim: McpToolAccess.writesEnvironment(
-    ({ sessionId, from, directory, threadId, runId, causedBy, fromThread, device, ifUnclaimed }) =>
+    ({
+      sessionId,
+      from,
+      directory,
+      threadId,
+      runId,
+      causedBy,
+      fromThread,
+      device,
+      process: declared,
+      ifUnclaimed,
+    }) =>
       Effect.gen(function* () {
         const { threads } = yield* access;
         const path = yield* Path.Path;
@@ -245,9 +256,13 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
           return yield* invalidRequest("threadId goes with runId, and only with runId.");
         if (target.kind === "directory" && !path.isAbsolute(target.directory))
           return yield* invalidRequest("directory must be an absolute path.");
-        const values = [causedBy, fromThread, device].filter((value) => value !== undefined);
+        const values = [causedBy, fromThread, device, declared].filter(
+          (value) => value !== undefined,
+        );
         if (values.length !== 1)
-          return yield* invalidRequest("Give exactly one of causedBy, fromThread or device.");
+          return yield* invalidRequest(
+            "Give exactly one of causedBy, fromThread, device or process.",
+          );
         if (causedBy === null && ifUnclaimed === true)
           return yield* invalidRequest("ifUnclaimed goes only with a claim, not a removal.");
         if (runId !== undefined && threadId !== undefined) {
@@ -271,11 +286,13 @@ export const layer = McpToolAccess.toLayer(EnvironmentToolkit, {
                   value:
                     device !== undefined
                       ? { device }
-                      : fromThread !== undefined
-                        ? yield* boundClaim(threads, fromThread)
-                        : causedBy === null || causedBy === undefined
-                          ? null
-                          : { causedBy: yield* verifyCause(threads, causedBy) },
+                      : declared !== undefined
+                        ? UsageOrigins.declaredClaim(UsageOrigins.DECLARED_INCIDENT)
+                        : fromThread !== undefined
+                          ? yield* boundClaim(threads, fromThread)
+                          : causedBy === null || causedBy === undefined
+                            ? null
+                            : { causedBy: yield* verifyCause(threads, causedBy) },
                   ifUnclaimed: ifUnclaimed === true,
                 })
                 .pipe(Effect.mapError(unavailable));

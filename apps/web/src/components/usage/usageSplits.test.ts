@@ -1,13 +1,21 @@
 import type { MergedUsage, SplitAmount } from "@t3tools/shared/usageMerge";
 import { describe, expect, it } from "vite-plus/test";
 
-import { chartBands, deviceBox, foldMembers, openedBarBands } from "./usageSplits";
+import { chartBands, deviceBox, foldMembers, openedBarBands, processBox } from "./usageSplits";
 
 const amount = (totalTokens: number, costUsd: number): SplitAmount => ({ totalTokens, costUsd });
 const day = "2026-11-19";
 
-// Only what the device box reads of merged usage.
+const processes = new Map([
+  ["journal", amount(20, 2)],
+  ["routines", amount(40, 4)],
+  ["incident", amount(90, 9)],
+  ["other", amount(140, 14)],
+]);
+
+// Only what the device and process boxes read of merged usage.
 const usage = {
+  processes: { totals: processes, daily: new Map([[day, processes]]), hourly: new Map() },
   devices: {
     totals: new Map([
       ["phoneDirect", amount(10, 1)],
@@ -50,6 +58,18 @@ describe("breakdown boxes", () => {
       "computerDirect",
       "phone",
     ]);
+  });
+
+  it("shows incidents as a fourth process, beside journal, routines and direct", () => {
+    const box = processBox(usage, "tokens", false);
+    expect(box.groups.map((group) => [group.key, group.totalTokens])).toEqual([
+      ["other", 140],
+      ["incident", 90],
+      ["routines", 40],
+      ["journal", 20],
+    ]);
+    expect(new Set(box.groups.map((group) => group.color)).size).toBe(4);
+    expect(box.valueAt(day, "incident", "cost")).toBe(9);
   });
 
   it("sums the members a kind of work hides into a remainder with no row, or keeps it whole", () => {
