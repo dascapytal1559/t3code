@@ -38,7 +38,7 @@ function Workspace({
   sheet?: boolean;
 }) {
   const [row, setRow] = useState<HTMLDivElement | null>(null);
-  const { shown, panelWidthRef } = useRightPanelWindow({
+  const { shown, keptWidth, panelWidthRef } = useRightPanelWindow({
     open,
     row,
     scopeKey,
@@ -48,6 +48,9 @@ function Workspace({
     <div style={{ width: windowWidth, overflow: "clip", position: "relative" }}>
       <div ref={setRow} data-testid="row" style={{ display: "flex", height: 10 }}>
         <div data-testid="chat" style={{ flex: 1, minWidth: 0 }} />
+        {keptWidth !== null ? (
+          <div data-testid="kept" style={{ width: keptWidth, flexShrink: 0 }} />
+        ) : null}
         {shown && !sheet ? <Panel row={row} panelWidth={panelWidthRef} /> : null}
       </div>
       {shown && sheet ? <div data-testid="sheet" style={{ position: "absolute" }} /> : null}
@@ -195,6 +198,8 @@ describe("useRightPanelWindow", () => {
       await screen.rerender(<Workspace open={false} windowWidth={1000} />);
       expect(desktop.requests.map(({ open }) => open)).toEqual([true, false]);
       await expect.element(screen.getByTestId("panel")).not.toBeInTheDocument();
+      // No width is kept for a panel the window never grew for.
+      expect(widthOf(chat)).toBe(1000);
 
       // The page was already sized ahead: the panel follows the viewport out and back.
       await screen.rerender(<Workspace open={false} windowWidth={1540} />);
@@ -250,10 +255,18 @@ describe("useRightPanelWindow", () => {
       await act(() => desktop.requests[2]!.answer("resized"));
       expect(widthOf(chat)).toBe(1000);
 
-      // A thread without the panel drops it at once, and the window still sheds its width.
+      // A thread without the panel drops it at once, but its width stays out of the layout
+      // until the window has taken it back: the chat has no frame at the wide size.
       await screen.rerender(<Workspace open={false} windowWidth={1640} scopeKey="other" />);
       await expect.element(screen.getByTestId("panel")).not.toBeInTheDocument();
       expect(desktop.requests[3]).toMatchObject({ open: false, width: 640 });
+      expect(widthOf(chat)).toBe(1000);
+      await screen.rerender(<Workspace open={false} windowWidth={1000} scopeKey="other" />);
+      await act(() => desktop.resize(1000));
+      await expect.element(screen.getByTestId("kept")).not.toBeInTheDocument();
+      expect(widthOf(chat)).toBe(1000);
+      await act(() => desktop.requests[3]!.answer("resized"));
+      expect(widthOf(chat)).toBe(1000);
     });
   });
 
@@ -297,6 +310,30 @@ describe("useRightPanelWindow", () => {
       await screen.unmount();
       await act(() => Promise.resolve());
       expect(desktop.requests.map(({ open }) => open)).toEqual([true, true, false]);
+    });
+  });
+
+  it("a view without the panel replacing one with it keeps the panel's width until the window takes it", async () => {
+    await withCleanStorage(async () => {
+      using desktop = fakeDesktopWindow(1000);
+      // The hook only needs React and the desktop bridge; no navigation is involved.
+      await using screen = await render(<Workspace key="a" open={false} windowWidth={1000} />, {
+        router: false,
+      });
+      await screen.rerender(<Workspace key="a" open windowWidth={1000} />);
+      await screen.rerender(<Workspace key="a" open windowWidth={1540} />);
+      await act(() => desktop.resize(1540));
+      await act(() => desktop.requests[0]!.answer("resized"));
+
+      // A new thread's view takes the place of the one whose panel is open.
+      await screen.rerender(<Workspace key="b" open={false} windowWidth={1540} />);
+      await act(() => Promise.resolve());
+      expect(desktop.requests.at(-1)).toMatchObject({ open: false, width: 540 });
+      expect(widthOf(screen.getByTestId("chat").element())).toBe(1000);
+      await screen.rerender(<Workspace key="b" open={false} windowWidth={1000} />);
+      await act(() => desktop.resize(1000));
+      await expect.element(screen.getByTestId("kept")).not.toBeInTheDocument();
+      expect(widthOf(screen.getByTestId("chat").element())).toBe(1000);
     });
   });
 

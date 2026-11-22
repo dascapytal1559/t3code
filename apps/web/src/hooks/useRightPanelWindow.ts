@@ -19,25 +19,38 @@ type DesktopBridge = NonNullable<Window["desktopBridge"]>;
  */
 export function useRightPanelWindow(input: {
   readonly open: boolean;
-  /** A change of thread swaps the whole view, so its panel closes without waiting. */
+  /** The thread the view shows. Another thread's panel goes at once; its width does not. */
   readonly scopeKey: string | null;
   readonly row: HTMLElement | null;
   readonly widthStorageKey: string;
 }): {
   /** Whether the layout shows the panel. */
   readonly shown: boolean;
+  /**
+   * The width of a panel that is gone from this layout while the window still has it: the
+   * last thread's panel, or one whose view went away. The layout leaves that width empty
+   * until the resize that takes it back, so the chat has no frame at the wide size.
+   */
+  readonly keptWidth: number | null;
   /** Fork: the panel's handle, so closing takes off the width the panel has then. */
   readonly panelWidthRef: (handle: PanelWidthHandle | null) => void;
 } {
   const { open, scopeKey } = input;
   const bridge = typeof window === "undefined" ? undefined : window.desktopBridge;
-  const [layout, setLayout] = useState({ shown: open && bridge === undefined, scopeKey });
+  const [layout, setLayout] = useState<{
+    readonly shown: boolean;
+    readonly scopeKey: string | null;
+    readonly keptWidth: number | null;
+    /** This view just left a thread whose panel it showed, for one without. */
+    readonly leftPanel: boolean;
+  }>({ shown: open && bridge === undefined, scopeKey, keptWidth: null, leftPanel: false });
   let shown = bridge === undefined ? open : layout.shown;
   if (bridge !== undefined && layout.scopeKey !== scopeKey) {
     // The window already grown for the last thread's panel shows this one's at once.
     shown = layout.shown && open;
-    setLayout({ shown, scopeKey });
+    setLayout({ ...layout, shown, scopeKey, leftPanel: layout.shown && !open });
   }
+  const keptWidth = bridge === undefined || shown ? null : layout.keptWidth;
   // What the window was last asked for; null until the first request.
   const sentOpen = useRef<boolean | null>(null);
   const stopFollowing = useRef<(() => void) | null>(null);
@@ -50,8 +63,9 @@ export function useRightPanelWindow(input: {
   const closingPanelWidth = useStableCallback(
     () => lastPanelWidth.current?.keepPanelWidth() ?? readPreviewPanelWidth(input.widthStorageKey),
   );
+  const showsPanel = useStableCallback(() => shown);
   const show = useStableCallback((next: boolean, resized: boolean) => {
-    if (next === shown) return;
+    if (next === shown && keptWidth === null) return;
     const { row } = input;
     // The panel takes what the window gave it, or the chat gave up, and the chat keeps the
     // rest. A window found already grown keeps the widths saved while it was.
@@ -61,7 +75,9 @@ export function useRightPanelWindow(input: {
     // A resize has to change the layout before that frame is painted.
     flushSync(() =>
       setLayout((current) =>
-        current.scopeKey === scopeKey ? { ...current, shown: next } : current,
+        current.scopeKey === scopeKey
+          ? { ...current, shown: next, keptWidth: null, leftPanel: false }
+          : current,
       ),
     );
   });
@@ -70,13 +86,18 @@ export function useRightPanelWindow(input: {
     if (bridge === undefined) return;
     // A view taking over a window grown for the last one asks again; the window answers
     // once it is as asked, at once if it already is.
-    const takenOver = sentOpen.current === null && takeOverGrowth();
-    if (!takenOver && sentOpen.current === open) return;
-    const firstRequest = sentOpen.current === null && !takenOver;
+    const takenOver = sentOpen.current === null ? takeOverGrowth() : null;
+    if (takenOver === null && sentOpen.current === open) return;
+    const firstRequest = sentOpen.current === null && takenOver === null;
     sentOpen.current = open;
     if (!open && firstRequest) return;
     stopFollowing.current?.();
     const width = open ? readPreviewPanelWidth(input.widthStorageKey) : closingPanelWidth();
+    // The page is still at the grown size for a panel this layout no longer shows. Its
+    // width stays out of the layout until the resize that narrows the page.
+    if (!open && (layout.leftPanel || takenOver?.shown === true)) {
+      setLayout((current) => ({ ...current, keptWidth: width }));
+    }
     stopFollowing.current = followWindow(bridge, { open, width }, show);
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- asks the native window to resize for the panel, and follows its resizes
@@ -88,11 +109,11 @@ export function useRightPanelWindow(input: {
       stopFollowing.current = null;
       if (sentOpen.current !== true || bridge === undefined) return;
       sentOpen.current = null;
-      releaseGrowthSoon(bridge, closingPanelWidth());
+      releaseGrowthSoon(bridge, closingPanelWidth(), showsPanel());
     },
-    [bridge, closingPanelWidth],
+    [bridge, closingPanelWidth, showsPanel],
   );
-  return { shown, panelWidthRef };
+  return { shown, keptWidth, panelWidthRef };
 }
 
 const noop = () => {};
@@ -102,10 +123,10 @@ const noop = () => {};
  * view mounting in the same commit (a remount, or StrictMode's replay) takes it over
  * instead of the window shrinking and growing again.
  */
-let pendingRelease: { cancelled: boolean } | null = null;
+let pendingRelease: { cancelled: boolean; readonly shown: boolean } | null = null;
 
-function releaseGrowthSoon(bridge: DesktopBridge, panelWidth: number) {
-  const release = { cancelled: false };
+function releaseGrowthSoon(bridge: DesktopBridge, panelWidth: number, shown: boolean) {
+  const release = { cancelled: false, shown };
   pendingRelease = release;
   queueMicrotask(() => {
     if (release.cancelled) return;
@@ -114,11 +135,13 @@ function releaseGrowthSoon(bridge: DesktopBridge, panelWidth: number) {
   });
 }
 
-function takeOverGrowth(): boolean {
-  if (pendingRelease === null) return false;
-  pendingRelease.cancelled = true;
+/** The growth of a view that just went away, with whether its layout showed the panel. */
+function takeOverGrowth(): { readonly shown: boolean } | null {
+  const release = pendingRelease;
+  if (release === null) return null;
+  release.cancelled = true;
   pendingRelease = null;
-  return true;
+  return release;
 }
 
 /**

@@ -1935,7 +1935,7 @@ then back off. Upstream's panel shares the window, so the window never moves or
 resizes on its own. The fork changes that on purpose: the window is kept at a
 chosen width, and opening a document used to squeeze the chat to make room.
 
-![The desktop app with a README open in the right panel: the window grew by the panel's width, and the sidebar and chat kept theirs](media/window-grows-for-panel.jpg)
+![The desktop app with a README open in the right panel: the window grew by the panel's width, the sidebar and chat kept theirs, and the layout toggles stayed at the chat header's right end](media/window-grows-for-panel.jpg)
 
 - The chat column keeps its width and the panel takes the rest of the row, on
   desktop and in the browser alike, so a window resize or a sidebar toggle
@@ -1953,6 +1953,20 @@ chosen width, and opening a document used to squeeze the chat to make room.
   width, and the panel is never laid out inside the old window. A window
   narrow enough for the sheet layout opens the same way, inline once it has
   grown; the sheet shows only when the window cannot grow.
+- Leaving the panel's thread follows the same rule. Another thread, or a new
+  one, takes the view at once without the panel, and the panel's width stays
+  empty beside it until the resize that narrows the page. The thread arriving
+  is laid out at its own width from its first frame, never across the grown
+  window.
+- The layout toggles (thread details, terminal, right panel) stay at the chat
+  header's right end whether the panel is open or not, so the button that
+  opened the panel is under the pointer to close it. Upstream keeps them at
+  the window's top right corner, which moves when the window grows: they left
+  the chat header a frame before the window grew and came back a frame after
+  it shrank. With them in place, what the small window shows of the grown page
+  is the closed layout, so opening and closing are one step each. Only the
+  maximize control sits at the panel's far end. A maximized panel and the
+  sheet layout keep upstream's placement.
 - Nothing is held, timed, animated or faded. The window answers a request once
   it has its bounds and the page has drawn at them (a one-second cap covers a
   page that cannot draw), and the answer settles the layout on what was asked;
@@ -1963,12 +1977,16 @@ chosen width, and opening a document used to squeeze the chat to make room.
   be done (another platform, DevTools docked beside the page, a Chromium that
   names the view differently) the window resizes first and the page follows,
   which shows the blank strip for as long as the page takes to draw.
-- For the frame between the page drawing and the window growing (about 17 ms)
-  the old window already shows the grown layout: the chat header's layout
-  buttons take their open look that much early. A surface's first open after
-  launch loads its code and data only once it is mounted, as upstream's lazy
-  surfaces do, so that one time the window grows with the panel's tabs drawn
-  and its body fills in a moment later.
+- Two frames are left, neither the page's layout. For the frame between the
+  page drawing and the window growing (about 15 ms), and the one between the
+  window shrinking and the page redrawing, only the right panel toggle's own
+  highlight is early or late. And on most closes macOS shows the panel's area
+  blank for one or two refreshes (6 to 12 ms) before the window's outline
+  follows: the window's own frame, which holding the page at its size,
+  flushing the resize or wrapping it in one transaction did not change.
+- A surface's first open after launch loads its code and data only once it is
+  mounted, as upstream's lazy surfaces do, so that one time the window grows
+  with the panel's tabs drawn and its body fills in a moment later.
 - Near the screen's right edge the window moves left only as far as it must
   and moves back on close. A screen too narrow for the full width grows as far
   as it can and the chat gives way for the rest. Full screen and maximized
@@ -1977,7 +1995,8 @@ chosen width, and opening a document used to squeeze the chat to make room.
   off with the panel. The window's saved size leaves the panel's width at
   opening out, so a restart with the panel open grows once.
 - The window follows whether the panel is showing, so switching between a
-  thread with the panel open and one without resizes it.
+  thread with the panel open and one without resizes it. Usage and Settings
+  leave the window as it is.
 - The growth is converted from CSS pixels to screen points, so it matches the
   panel at any app zoom.
 
@@ -1986,8 +2005,11 @@ the order of page and window, with its tests),
 `apps/desktop/src/window/PanelPageView.ts` (the page sized ahead of the window,
 and the frame it draws), the `setRightPanelOpen` bridge method,
 `apps/web/src/hooks/useRightPanelWindow.ts` (the layout following the page's
-resizes), and `apps/web/src/hooks/usePreviewPanelInlineSize.ts` (the kept chat
-width), each web hook with its browser test.
+resizes, and the width kept for a panel just left), and
+`apps/web/src/hooks/usePreviewPanelInlineSize.ts` (the kept chat width), each
+web hook with its browser test; `ChatHeaderLayoutControls` in
+`apps/web/src/components/chat/PanelLayoutControls.tsx` and its use in
+`ChatView.tsx` (the toggles at the chat header's right end).
 
 Upstream: none.
 
