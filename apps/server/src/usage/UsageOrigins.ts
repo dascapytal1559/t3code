@@ -1037,7 +1037,8 @@ const scheduledOriginAt = (
   createdAtMs: number | null,
 ): UsageOriginKey | undefined => {
   if (taskId === null || createdAtMs === null) return undefined;
-  return origins.get(taskId)?.findLast((binding) => binding.boundAtMs <= createdAtMs)?.key;
+  const bindings = origins.get(taskId);
+  return (bindings?.findLast((binding) => binding.boundAtMs <= createdAtMs) ?? bindings?.[0])?.key;
 };
 
 const messageOf = (row: MessageColumns, scheduledOrigins: ScheduledOrigins): CausalMessage => {

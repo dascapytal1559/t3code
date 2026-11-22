@@ -1472,13 +1472,32 @@ describe("UsageOrigins born labelled", () => {
           creationSource: "mcp",
           scheduledTaskId: "task-daily",
         });
+        // A run older than its task's first stored binding counts to that binding.
+        yield* seedThread({ id: "weekly", createdAt: iso("07:30") });
+        yield* run("weekly", 1, "weekly", "07:30", "07:40", {
+          createdBy: "agent",
+          creationSource: "mcp",
+          scheduledTaskId: "task-weekly",
+        });
+        yield* origins.bindScheduledTask("task-weekly", launch.key);
         const rebound = new UsageOriginIndex(yield* origins.read(time("00:00"), time("23:59")));
         assert.deepStrictEqual(
-          ["07:01", "09:01"].map((clock) => {
-            const key = rebound.lookup({ sessionId: "daily-session", timestampMs: time(clock) });
-            return `${clock} ${key.origin} ${key.reason}`;
+          [
+            ["daily", "07:01"],
+            ["daily", "09:01"],
+            ["weekly", "07:31"],
+          ].map(([threadId, clock]) => {
+            const key = rebound.lookup({
+              sessionId: `${threadId}-session`,
+              timestampMs: time(clock!),
+            });
+            return `${threadId} ${clock} ${key.origin} ${key.reason}`;
           }),
-          ["07:01 phone inherited", "09:01 computer inherited"],
+          [
+            "daily 07:01 phone inherited",
+            "daily 09:01 computer inherited",
+            "weekly 07:31 phone inherited",
+          ],
         );
         // Deleting the scheduled task leaves its past runs counted where they were.
         const sql = yield* SqlClient.SqlClient;

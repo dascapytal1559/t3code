@@ -131,7 +131,8 @@ In **Settings → Providers → Kinds of work**:
 - **Members**, per group, lets the group open into its projects and folders. It is on unless you
   turn it off; a shared group never opens.
 - **Shown**, per project or folder, gives it a row of its own when its group opens. The projects
-  and folders you hide still count to the group, together, as one **Others** row.
+  and folders you hide get no row, but still count to the group's total and show as an unlabelled
+  grey end of its bar when it opens.
 - The colour swatch, per project or folder, gives its row a colour of its own on the Usage page;
   **Reset** returns it to the group's palette. The colour moves with the member to another group.
 - **Only shown**, per group, gives rows only to the members you mark **Shown**, so a group of many

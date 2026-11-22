@@ -196,8 +196,9 @@ below. Each mirrors only when both sides have usage; the other boxes stack.
 
 A kind of work opens into its projects and folders. Members it hides
 (`hiddenMembers`), or all but the ones it lists when **Only shown** is on in
-Settings (`shownMembers`), count to the group but fold into one Others row
-(`foldMembers` in `usageSplits.ts`).
+Settings (`shownMembers`), get no row but still count to the group's total,
+and show as an unlabelled grey end of its bar when it opens (`foldMembers` and
+`openedBarBands` in `usageSplits.ts`).
 
 The mobile app has no boxes: a Provider, Kind of work, Device or Process choice
 under the period splits the chart and lists the bands largest first, as web's
