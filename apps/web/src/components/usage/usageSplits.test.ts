@@ -1,7 +1,7 @@
 import type { MergedUsage, SplitAmount } from "@t3tools/shared/usageMerge";
 import { describe, expect, it } from "vite-plus/test";
 
-import { chartBands, deviceBox, foldMembers } from "./usageSplits";
+import { chartBands, deviceBox, foldMembers, openedBarBands } from "./usageSplits";
 
 const amount = (totalTokens: number, costUsd: number): SplitAmount => ({ totalTokens, costUsd });
 const day = "2026-11-19";
@@ -52,7 +52,7 @@ describe("breakdown boxes", () => {
     ]);
   });
 
-  it("folds the members a kind of work hides into one Others row, or keeps it whole", () => {
+  it("sums the members a kind of work hides into a remainder with no row, or keeps it whole", () => {
     const member = (key: string, totalTokens: number, hidden?: true) => ({
       key,
       totalTokens,
@@ -67,9 +67,33 @@ describe("breakdown boxes", () => {
     ];
     const folded = foldMembers(bones);
     expect(folded.shown.map((entry) => entry.key)).toEqual(["t3", "fm"]);
-    expect(folded.others).toEqual({ totalTokens: 3, costUsd: 6 });
-    // Showing every member leaves no Others row; showing none keeps the group whole.
-    expect(foldMembers([member("t3", 5), member("fm", 3)]).others).toBeNull();
-    expect(foldMembers([member("pilot", 2, true)])).toEqual({ shown: [], others: null });
+    expect(folded.remainder).toEqual({ totalTokens: 3, costUsd: 6 });
+    // Showing every member leaves no remainder; showing none keeps the group whole.
+    expect(foldMembers([member("t3", 5), member("fm", 3)]).remainder).toBeNull();
+    expect(foldMembers([member("pilot", 2, true)])).toEqual({ shown: [], remainder: null });
+  });
+
+  it("ends an opened parent's bar with its hidden members as an unlabelled grey segment", () => {
+    const child = {
+      key: "t3",
+      label: "t3",
+      named: true,
+      color: "red",
+      totalTokens: 5,
+      costUsd: 10,
+    };
+    const bones = {
+      ...child,
+      key: "Bones",
+      totalTokens: 8,
+      costUsd: 16,
+      children: [child],
+    };
+    expect(openedBarBands(bones)).toEqual([child]);
+    const withRemainder = openedBarBands({ ...bones, remainder: amount(3, 6) });
+    expect(withRemainder.map((band) => [band.key, band.label, band.totalTokens])).toEqual([
+      ["t3", "t3", 5],
+      ["remainder:Bones", "", 3],
+    ]);
   });
 });

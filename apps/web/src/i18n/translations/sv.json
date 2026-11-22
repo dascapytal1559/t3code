@@ -12267,7 +12267,6 @@
   "86654a396dcc79d7": "Direkt",
   "a6eba429f8e798d6": "Övrigt",
   "7ed139eb264765b8": "Utan cache",
-  "4c0a2fa1f01d3dd9": "Övriga",
   "8367779e149f723b": "Begäran till den primära miljön misslyckades under {operation} (HTTP {status}).",
   "c5cd027743a2b5a6": "Ogiltig parkopplingstoken. Kontrollera token och försök igen.",
   "0e4b49c8203aae81": "Tidsgränsen överskreds i väntan på en autentiserad session efter uppstart.",

@@ -19,7 +19,13 @@ import {
   unfold,
   type TreeRow,
 } from "./usageMotion";
-import { opensIntoChildren, type BoxBand, type BoxGroup, type BoxModel } from "./usageSplits";
+import {
+  openedBarBands,
+  opensIntoChildren,
+  type BoxBand,
+  type BoxGroup,
+  type BoxModel,
+} from "./usageSplits";
 
 /** A provider row's extras: its mark, and the switch that leaves it out of the totals. */
 export interface BoxRowExtras {
@@ -165,7 +171,7 @@ export function UsageBreakdownBox({
   const isOpen = (group: BoxGroup) => openParents.has(group.key) && opensIntoChildren(group);
   const barBands = model.groups
     .filter((group) => extras?.[group.key]?.excluded !== true)
-    .flatMap((group) => (open && isOpen(group) ? group.children : [group]));
+    .flatMap((group) => (open && isOpen(group) ? openedBarBands(group) : [group]));
 
   // Only a new opening plays; the model changing under an open card does not.
   const playOpening = useEffectEvent((at: BoxOpening) => {
