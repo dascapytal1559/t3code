@@ -377,7 +377,8 @@ and what agents claim.
   sender's segment was started by a prompt typed in that turn or is a
   voice-journal claim (`reroots`), so only typed input moves work. `schedule_task` stores the creating turn's origin in the fork
   table `usage_scheduled_task_bindings`, and an edit from a typed turn adds a
-  binding that counts the task's runs from then on; earlier runs keep theirs. `t3_restart_request` binds like the others and keeps the value on
+  binding that counts the task's runs from then on; earlier runs keep theirs,
+  and a run older than the first binding counts to it. `t3_restart_request` binds like the others and keeps the value on
   the request; the restart note carries it, and each restart continuation
   carries where its cut turn counted (the request's value instead when that
   turn only counted as upkeep, or to no device, in a thread with no origin of
@@ -1488,8 +1489,9 @@ and a number clears once the thread has been quiet that many minutes, on any
 provider. `null` turns it off. It suits a standing agent such as the life log,
 whose messages stand alone, or a search thread that needs no earlier context
 after a few minutes. Crew, secondmate and delegated threads stay out even then,
-since their context is another agent's work, and FirstMate's own thread keeps
-its rule whatever its project says. Every other thread keeps upstream's
+since their context is another agent's work, and so do forks, side chats and
+subagents, which hold their parent's context only in the session a clear would
+drop; FirstMate's own thread keeps its rule whatever its project says. Every other thread keeps upstream's
 behaviour. For a Claude thread this relies on Compact idle threads being set to
 Never.
 
@@ -1509,7 +1511,8 @@ its fresh start is far smaller. Cold after quiet means no run on the thread has
 started or ended for that many minutes. Either way it applies only when the run
 stays on the same provider. A message from any client or over MCP, T3's restart
 note and a scheduled task begin an exchange. These continue the old session
-instead: a steer, anything while a run is active or a question or approval is
+instead: a steer (also one a provider declined or a restart requeued, which
+keeps its follow-up mark on the queued run), anything while a run is active or a question or approval is
 pending, `/compact`, `/logout` and `/goal`, every other wake (background work, a
 delegated task or a pull request watch reporting in, and any wake the old
 session buffered), the continuations after a restart, a usage limit or a manual
@@ -1584,10 +1587,17 @@ Everything it trims comes after that shared prefix, and keeping it shared is the
 whole constraint: the tool block comes first in every request, so any change to
 it means the first request reads nothing from cache and writes all of it. So:
 
-- It passes `strictMcpConfig` with the folder's `.mcp.json` as `--mcp-config` (a
-  path, so the folder's credentials stay out of argv), which drops the user's
-  servers, plugins' servers and the claude.ai connectors. Servers listed there
-  load whether or not the user approved them for the folder.
+- It passes `strictMcpConfig` with one MCP config T3 writes under its state
+  directory (`claude-lean-mcp/`, owner-only) as `--mcp-config` (a path, so the
+  folder's credentials stay out of argv): the folder's `.mcp.json` servers but
+  those the user rejected for it (`disabledMcpjsonServers`), then the servers of
+  the user's own `--mcp-config` launch argument, which win a shared name. That
+  drops the user's other servers, plugins' servers and the claude.ai
+  connectors. A folder server the user has not answered yet loads, since an
+  explicit config skips Claude Code's approval prompt. A malformed `.mcp.json`
+  is skipped with a warning.
+- The setting and that config are part of the live process's reuse key, so
+  turning it on or off, or a change to the config, starts a new Claude process.
 - T3's own server stays: two of its tools load up front into the tool block.
 - The skills option keeps three skills, not none: Claude Code writes a hidden
   skill's text into any built-in tool whose description names it (with no
