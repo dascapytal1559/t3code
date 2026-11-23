@@ -1405,6 +1405,9 @@ export const layerMcpTransport = <RA, RE, RR>(registrations: Layer.Layer<RA, RE,
   McpServer.layerHttp({
     name: "T3 Code",
     version: packageJson.version,
+    // Codex shows this as the tool group's description, cut at 250 characters.
+    instructions:
+      "T3 Code's own controls for threads, projects, previews, and devices. Use these tools instead of clicking or taking screenshots of T3 Code's window.",
     path: MCP_HTTP_PATH,
     protocols: mcpProtocols,
     allowSessionTermination: true,

@@ -1076,6 +1076,14 @@ it.effect("terminates HTTP MCP sessions with DELETE", () =>
       const sessionId = initializeResponse.headers["mcp-session-id"];
       expect(initializeResponse.status).toBe(200);
       expect(sessionId).not.toBeNull();
+      // Codex uses `instructions` as the tool group's description and cuts it at 250 characters.
+      const { instructions } = (
+        (yield* initializeResponse.json) as {
+          result: { instructions?: string };
+        }
+      ).result;
+      expect(instructions).toContain("instead of clicking");
+      expect(instructions!.length).toBeLessThanOrEqual(250);
 
       const missingSessionResponse = yield* httpClient.del("/mcp");
       expect(missingSessionResponse.status).toBe(400);
