@@ -59,6 +59,8 @@ export interface BoxBand {
 /** A parent row: a band of its own, and the children it opens into. */
 export interface BoxGroup extends BoxBand {
   readonly children: readonly BoxBand[];
+  /** What the members this parent hides add up to: in no row, but in the parent's bar. */
+  readonly remainder?: SplitAmount;
 }
 
 export interface BoxModel {
@@ -132,6 +134,13 @@ const PROCESSES: readonly { key: UsageProcessBand; label: string; color: string 
     color: css(PROCESS_SPLIT_COLORS.routines),
   },
   {
+    key: "incident",
+    label: msg("Incidents", {
+      $context: "usage process: handling production alerts and the fixes patched for them",
+    }),
+    color: css(PROCESS_SPLIT_COLORS.incident),
+  },
+  {
     key: "other",
     label: msg("Direct", { $context: "usage process: usage that is neither journal nor routine" }),
     color: css(PROCESS_SPLIT_COLORS.other),
@@ -166,27 +175,42 @@ const value = (band: { totalTokens: number; costUsd: number }, metric: "cost" | 
 
 const leaf = (band: BoxBand): BoxGroup => ({ ...band, children: [] });
 
-/** The members a kind of work hides, folded into one Others row: their key's prefix. */
-const OTHERS_PREFIX = "others:";
-const OTHERS_LABEL = msg("Others", { $context: "usage kind of work: its members without a row" });
-
 /**
- * A kind of work's member rows: the members it shows, and the rest summed into one Others row.
- * A group that shows none opens into nothing, and stays one row.
+ * A kind of work's member rows: the members it shows, and what the rest add up to. That has no
+ * row, but the parent's bar keeps it. A group that shows none opens into nothing, and stays one row.
  */
 export function foldMembers<M extends { readonly hidden?: boolean | undefined } & SplitAmount>(
   members: readonly M[],
-): { readonly shown: readonly M[]; readonly others: SplitAmount | null } {
+): { readonly shown: readonly M[]; readonly remainder: SplitAmount | null } {
   const shown = members.filter((member) => member.hidden !== true);
-  const folded = members.filter((member) => member.hidden === true);
-  const others = {
-    totalTokens: folded.reduce((sum, member) => sum + member.totalTokens, 0),
-    costUsd: folded.reduce((sum, member) => sum + member.costUsd, 0),
+  const hidden = members.filter((member) => member.hidden === true);
+  const remainder = {
+    totalTokens: hidden.reduce((sum, member) => sum + member.totalTokens, 0),
+    costUsd: hidden.reduce((sum, member) => sum + member.costUsd, 0),
   };
   return {
     shown: shown.length === 0 ? [] : shown,
-    others: shown.length === 0 || folded.length === 0 ? null : others,
+    remainder: shown.length === 0 || hidden.length === 0 ? null : remainder,
   };
+}
+
+/**
+ * The share bar's segments for an opened parent: its children, then what its hidden members add up
+ * to as an unlabelled grey remainder, so the bar still adds up to the parent.
+ */
+export function openedBarBands(group: BoxGroup): readonly BoxBand[] {
+  return group.remainder === undefined
+    ? group.children
+    : [
+        ...group.children,
+        {
+          key: `remainder:${group.key}`,
+          label: "",
+          named: true,
+          color: OTHER_WORK_CSS,
+          ...group.remainder,
+        },
+      ];
 }
 
 /** Largest first by the metric, rows and each parent's children alike; ties keep their order. */
@@ -236,7 +260,7 @@ export function deviceBox(
   };
 }
 
-/** The process box: journal, routines and direct. */
+/** The process box: journal, routines, incidents and direct. */
 export function processBox(
   usage: MergedUsage,
   metric: "cost" | "tokens",
@@ -256,8 +280,7 @@ export function processBox(
 }
 
 /**
- * The kind-of-work box: groups, Other among them, each opening into the members its settings show
- * and one Others row for the rest.
+ * The kind-of-work box: groups, Other among them, each opening into the members its settings show.
  */
 export function workBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: boolean): BoxModel {
   const split = usageSplitBands(usage, "work", metric, hourly);
@@ -276,31 +299,19 @@ export function workBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: b
       color: palette?.color ?? OTHER_WORK_CSS,
       totalTokens: band.totalTokens,
       costUsd: band.costUsd,
-      children: [
-        ...folded.shown.map((member, index) => ({
-          key: member.key,
-          label: member.name,
-          named: true,
-          // Members past the palette's three repeat its hues; the group's members are few.
-          color:
-            member.color === undefined
-              ? (palette?.members[index % palette.members.length] ?? OTHER_WORK_CSS)
-              : css(usageSplitColorOfHex(member.color)),
-          totalTokens: member.totalTokens,
-          costUsd: member.costUsd,
-        })),
-        ...(folded.others === null
-          ? []
-          : [
-              {
-                key: `${OTHERS_PREFIX}${band.key}`,
-                label: OTHERS_LABEL,
-                named: false,
-                color: OTHER_WORK_CSS,
-                ...folded.others,
-              },
-            ]),
-      ],
+      ...(folded.remainder === null ? {} : { remainder: folded.remainder }),
+      children: folded.shown.map((member, index) => ({
+        key: member.key,
+        label: member.name,
+        named: true,
+        // Members past the palette's three repeat its hues; the group's members are few.
+        color:
+          member.color === undefined
+            ? (palette?.members[index % palette.members.length] ?? OTHER_WORK_CSS)
+            : css(usageSplitColorOfHex(member.color)),
+        totalTokens: member.totalTokens,
+        costUsd: member.costUsd,
+      })),
     };
   });
   return {
@@ -308,12 +319,6 @@ export function workBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: b
     groups: largestFirst(groups, metric),
     valueAt: (period, key, by) => {
       if (split.bands.some((band) => band.key === key)) return split.valueAt(period, key, by);
-      if (key.startsWith(OTHERS_PREFIX)) {
-        const members = memberSplits.get(key.slice(OTHERS_PREFIX.length));
-        return (members?.members ?? [])
-          .filter((member) => member.hidden === true)
-          .reduce((sum, member) => sum + (members?.valueAt(period, member.key, by) ?? 0), 0);
-      }
       for (const members of memberSplits.values()) {
         if (members.members.some((member) => member.key === key)) {
           return members.valueAt(period, key, by);

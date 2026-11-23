@@ -40,6 +40,9 @@ const PROCESS_LABEL: Record<UsageProcessBand, string> = {
     $context: "usage process: filing voice journals and their items' work",
   }),
   routines: msg("Routines", { $context: "usage process: upkeep such as the bedtime routine" }),
+  incident: msg("Incidents", {
+    $context: "usage process: handling production alerts and the fixes patched for them",
+  }),
   other: msg("Direct", {
     $context: "usage process: usage that is neither journal nor routine",
   }),

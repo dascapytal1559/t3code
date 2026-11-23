@@ -337,6 +337,7 @@ it.effect(
         readonly causedBy?: { readonly threadId: ThreadId; readonly messageId: MessageId } | null;
         readonly fromThread?: { readonly threadId: ThreadId };
         readonly device?: "phone" | "computer";
+        readonly process?: "incident";
         readonly ifUnclaimed?: boolean;
       }) =>
         toolkit.handle("t3_usage_claim", params).pipe(
@@ -354,7 +355,8 @@ it.effect(
         [{ sessionId: "pipeline", directory: "/runs/one", causedBy: madeUp }, "exactly one"],
         [{ directory: "runs/one", causedBy: madeUp }, "absolute"],
         [{ sessionId: "pipeline", causedBy: madeUp }, "causedBy"],
-        [{ sessionId: "pipeline" }, "exactly one of causedBy, fromThread or device"],
+        [{ sessionId: "pipeline" }, "exactly one of causedBy, fromThread, device or process"],
+        [{ sessionId: "pipeline", device: "computer", process: "incident" }, "exactly one of"],
         [{ sessionId: "pipeline", fromThread: { threadId: madeUp.threadId } }, "was not found"],
         [{ sessionId: "pipeline", fromThread: { threadId: lostTask } }, "counts to no device"],
         [{ sessionId: "pipeline", causedBy: madeUp, device: "phone" }, "exactly one of causedBy"],
@@ -409,9 +411,28 @@ it.effect(
         },
       ]);
       yield* claim({ threadId, runId: wakeRun, causedBy: null });
+
+      // An alert's wake, declared incident response: the computer, counted as incident work.
+      expect(yield* claim({ threadId, runId: wakeRun, process: "incident" })).toEqual({
+        threadId,
+        runId: wakeRun,
+        causedBy: null,
+        device: "computer",
+        reason: "incident",
+      });
+      expect(yield* claims.read).toEqual([
+        {
+          kind: "run",
+          target: wakeRun,
+          causeMessageId: null,
+          device: "computer",
+          bound: { basis: "claim", reason: "incident" },
+        },
+      ]);
+      yield* claim({ threadId, runId: wakeRun, causedBy: null });
       // Every change to the running turn's claim rewrites its born labels, removals too; a kept
       // claim changes nothing.
-      expect(renamedRuns).toEqual([wakeRun, wakeRun, wakeRun, wakeRun]);
+      expect(renamedRuns).toEqual([wakeRun, wakeRun, wakeRun, wakeRun, wakeRun, wakeRun]);
 
       const prompt = { threadId, messageId: MessageId.make("message:prompt") };
       yield* claims.claim({

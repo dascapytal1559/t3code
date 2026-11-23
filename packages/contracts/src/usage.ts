@@ -82,10 +82,11 @@ export type UsageDeviceBand = typeof UsageDeviceBand.Type;
 
 /**
  * The process band of usage: `journal` (filing a voice journal and work launched from its items),
- * `routines` (FirstMate's declared upkeep, such as the bedtime routine) or `other`, FirstMate's own
- * supervision turns included. `usageProcessOf` reads it from a settled origin.
+ * `routines` (FirstMate's declared upkeep, such as the bedtime routine), `incident` (FirstMate's
+ * declared handling of production alerts and the fixes it patches on its own) or `other`,
+ * FirstMate's own supervision turns included. `usageProcessOf` reads it from a settled origin.
  */
-export const UsageProcessBand = Schema.Literals(["journal", "routines", "other"]);
+export const UsageProcessBand = Schema.Literals(["journal", "routines", "incident", "other"]);
 export type UsageProcessBand = typeof UsageProcessBand.Type;
 
 export const UsageBucket = Schema.Struct({
@@ -166,16 +167,17 @@ export const UsageOriginVia = Schema.Literals(["agent", "crew"]);
 export type UsageOriginVia = typeof UsageOriginVia.Type;
 
 /**
- * Why usage counts where it does. Device evidence: `typed`, `inherited` (its recorded causes reach
- * a typed prompt), `journal` and `upkeep` (a claim or launch label named the phone or computer; a
- * journal claim on a typed turn keeps the typed device), `terminal`. Every
- * other reason names what is missing, and that usage counts to the computer by default.
+ * Why usage counts where it does. Device evidence: `typed`, `inherited` (causes reach a typed
+ * prompt), `journal`, `upkeep` and `incident` (a claim or launch label named it; a journal claim on
+ * a typed turn keeps the typed device), `terminal`. Every other reason names what is missing, and
+ * that usage counts to the computer by default.
  */
 export const UsageOriginReason = Schema.Literals([
   "typed",
   "inherited",
   "journal",
   "upkeep",
+  "incident",
   "terminal",
   "unregisteredSession",
   "unmatchedRegistration",
@@ -198,6 +200,7 @@ const DEVICE_EVIDENCE: ReadonlySet<UsageOriginReason> = new Set([
   "inherited",
   "journal",
   "upkeep",
+  "incident",
   "terminal",
 ]);
 
@@ -206,8 +209,9 @@ export const usageOriginCountsByDefault = (reason: UsageOriginReason): boolean =
   !DEVICE_EVIDENCE.has(reason);
 
 /**
- * A journal label is journal; upkeep a claim or launch declared (basis `claim`) is routines. A
- * coordinator's unnamed turn is upkeep by its prompt's basis instead, so supervision stays other.
+ * A journal or incident label is its own band; upkeep a claim or launch declared (basis `claim`)
+ * is routines. A coordinator's unnamed turn is upkeep by its prompt's basis instead, so
+ * supervision stays other.
  */
 export const usageProcessOf = (origin: {
   readonly reason: UsageOriginReason;
@@ -215,9 +219,11 @@ export const usageProcessOf = (origin: {
 }): UsageProcessBand =>
   origin.reason === "journal"
     ? "journal"
-    : origin.reason === "upkeep" && origin.basis === "claim"
-      ? "routines"
-      : "other";
+    : origin.reason === "incident"
+      ? "incident"
+      : origin.reason === "upkeep" && origin.basis === "claim"
+        ? "routines"
+        : "other";
 
 /** The kind of usage claim that decided where usage counts. */
 export const UsageOriginClaimKind = Schema.Literals(["run", "session", "directory"]);

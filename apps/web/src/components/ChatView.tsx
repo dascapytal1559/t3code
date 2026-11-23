@@ -325,6 +325,7 @@ import { useRemoteOpenState } from "~/remoteOpen";
 import { shouldShowOpenInPicker } from "./chat/OpenInPicker.logic";
 import { useOpenFavoriteEditorShortcut } from "./chat/OpenInPickerShortcut";
 import {
+  ChatHeaderLayoutControls,
   PanelLayoutControls,
   type PanelLayoutControlsProps,
   RightPanelMaximizeControl,
@@ -1199,7 +1200,13 @@ export default function ChatView(props: ChatViewProps) {
   // An embedded side chat has no panel; a stale maximized flag would hide its own column.
   const rightPanelMaximized =
     !embedded && canMaximizeRightPanel && rightPanelState.maximized === true;
-  const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUsePlanSidebarSheet;
+  // Fork: a desktop window grows for the panel, so its top right corner moves. The layout
+  // toggles stay at the chat header's right end instead, and never depend on rightPanelOpen:
+  // what the two window sizes share has to be drawn the same open or closed.
+  const controlsStayWithChat =
+    isElectron && rightPanelGrowsWindow && !shouldUsePlanSidebarSheet && !rightPanelMaximized;
+  const inlineRightPanelOwnsTitleBar =
+    rightPanelOpen && !shouldUsePlanSidebarSheet && !controlsStayWithChat;
   const [threadPanelPopoverHandle] = useState(PopoverCreateHandle);
   const [chatCanvasStore] = useState(createChatCanvasStore);
 
@@ -3521,7 +3528,7 @@ export default function ChatView(props: ChatViewProps) {
       maximized={rightPanelMaximized}
       onToggleMaximized={toggleRightPanelMaximizedStable}
     >
-      {panelToggleControls}
+      {controlsStayWithChat ? null : panelToggleControls}
     </WorkspaceTitlebarControls>
   );
   const workspaceFileDropHandlers = makeWorkspaceFileDropHandlers({
@@ -3576,7 +3583,12 @@ export default function ChatView(props: ChatViewProps) {
                 className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
               />
             ) : null}
-            {!rightPanelControlsAtRoot && !rightPanelControlsInPanel ? panelLayoutControls : null}
+            {controlsStayWithChat ? (
+              <ChatHeaderLayoutControls>{panelToggleControls}</ChatHeaderLayoutControls>
+            ) : null}
+            {!controlsStayWithChat && !rightPanelControlsAtRoot && !rightPanelControlsInPanel
+              ? panelLayoutControls
+              : null}
             {inlineRightPanelOwnsTitleBar ? threadPanelHeaderControl : null}
             <ChatHeader
               activeThreadEnvironmentId={activeThread.environmentId}
@@ -4241,12 +4253,17 @@ export default function ChatView(props: ChatViewProps) {
         )}
       </div>
 
+      {/* Fork: the width of a panel just left, kept empty until the window takes it back. */}
+      {rightPanelWindow.keptWidth !== null ? (
+        <div aria-hidden className="shrink-0" style={{ width: rightPanelWindow.keptWidth }} />
+      ) : null}
       {rightPanelPresent && activeThreadRef && !embedded ? (
         <ChatRightPanel
           sheet={shouldUsePlanSidebarSheet}
           workspaceLayoutElement={workspaceLayoutElement}
           widthStorageKey={rightPanelWidthStorageKey}
           panelWidthRef={rightPanelWindow.panelWidthRef}
+          maximizeOnlyAtCorner={controlsStayWithChat}
           sheetAnimationDurationMs={panelAnimationsActive ? panelAnimationDurationMs : 0}
           onCloseSheet={closePreviewPanelStable}
           open={rightPanelOpen}

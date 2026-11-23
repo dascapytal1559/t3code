@@ -197,6 +197,25 @@ export function ThreadPanelHeaderControl(props: PanelLayoutControlsProps) {
   );
 }
 
+/**
+ * Fork: the layout toggles at the chat header's right end. A desktop window that grows for
+ * the right panel keeps them here open or closed, so the header never changes with the panel.
+ */
+export function ChatHeaderLayoutControls(props: { readonly children: ReactNode }) {
+  const mobileSidebarSheetMounted = useMobileSidebarSheetMounted();
+  return (
+    <div
+      className={cn(
+        "pointer-events-none absolute top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] z-50 mr-px flex h-[var(--workspace-topbar-height)] items-center gap-1 [-webkit-app-region:no-drag]",
+        mobileSidebarSheetMounted && "hidden",
+      )}
+      data-workspace-titlebar-controls
+    >
+      <div className="pointer-events-auto flex h-full items-center">{props.children}</div>
+    </div>
+  );
+}
+
 /** The window's top-right panel controls, with the maximize toggle while the panel is open. */
 export function WorkspaceTitlebarControls(props: {
   readonly showMaximizeControl: boolean;
@@ -259,7 +278,10 @@ export function WorkspaceTitlebarControls(props: {
           />
         </span>
       ) : null}
-      <div className="pointer-events-auto flex h-full items-center">{props.children}</div>
+      {/* Fork: with the toggles in the chat header nothing follows the maximize control. */}
+      {props.children === null ? null : (
+        <div className="pointer-events-auto flex h-full items-center">{props.children}</div>
+      )}
     </div>
   );
 }

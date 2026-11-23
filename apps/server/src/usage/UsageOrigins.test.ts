@@ -19,6 +19,8 @@ import * as UsageSessionRegister from "./UsageSessionRegister.ts";
 import { encodeJson, seedMessage, seedRun, seedThread } from "./usageOriginsTestSeed.ts";
 import {
   classifyMessageOrigin,
+  DECLARED_INCIDENT,
+  declaredClaim,
   layer as usageOriginsLayer,
   LAUNCHED_UPKEEP,
   MAX_CAUSE_DEPTH,
@@ -780,6 +782,51 @@ describe("UsageOrigins.read", () => {
         target: { kind: "run", runId: "run-fm-later" },
         value: { causedBy: cause },
       });
+      // An alert's wake claimed as incident response, the worker it launched, and a prompt typed
+      // on the computer in a turn claimed the same way, which stays typed.
+      yield* seedRun({
+        id: "fm-alert",
+        ordinal: 7,
+        threadId: "firstmate",
+        sessionId: "fm-session",
+        startedAt: "2026-08-07T05:30:00.000Z",
+        message: backgroundUpdate,
+      });
+      yield* seedRun({
+        id: "fm-typed-incident",
+        ordinal: 8,
+        threadId: "firstmate",
+        sessionId: "fm-session",
+        startedAt: "2026-08-07T05:40:00.000Z",
+        message: {
+          createdBy: "user",
+          creationSource: "web",
+          origin: { surface: "web", deviceType: "desktop" },
+        },
+      });
+      for (const runId of ["run-fm-alert", "run-fm-typed-incident"]) {
+        yield* claims.claim({
+          target: { kind: "run", runId },
+          value: declaredClaim(DECLARED_INCIDENT),
+        });
+      }
+      yield* seedThread({
+        id: "fm-fix",
+        crewOf: "firstmate",
+        causedBy: { threadId: "firstmate", messageId: "message-fm-alert" },
+      });
+      yield* seedRun({
+        id: "fm-fix-brief",
+        ordinal: 1,
+        threadId: "fm-fix",
+        sessionId: "fm-fix-session",
+        startedAt: "2026-08-07T05:31:00.000Z",
+        message: {
+          createdBy: "agent",
+          creationSource: "mcp",
+          origin: { surface: "mcp", deviceType: "bot" },
+        },
+      });
       // An unstamped scheduled prompt claimed for the computer, and the worker it launched.
       yield* seedThread({ id: "scheduled" });
       yield* seedRun({
@@ -1029,6 +1076,26 @@ describe("UsageOrigins.read", () => {
         basis: "notification",
         reason: "unnamedTurn",
       });
+      const incident = {
+        origin: "computer",
+        basis: "claim",
+        reason: "incident",
+        claim: "run",
+      } as const;
+      assert.deepStrictEqual(at("fm-session", "2026-08-07T05:31:00Z"), {
+        ...incident,
+        via: "agent",
+      });
+      assert.deepStrictEqual(at("fm-fix-session", "2026-08-07T05:32:00Z"), {
+        ...incident,
+        via: "crew",
+        cause: true,
+      });
+      assert.deepStrictEqual(at("fm-session", "2026-08-07T05:41:00Z"), {
+        origin: "computer",
+        basis: "stamp",
+        reason: "typed",
+      });
       assert.deepStrictEqual(at("scheduled-session", "2026-08-07T05:01:00Z"), {
         ...upkeep,
         via: "agent",
@@ -1080,9 +1147,12 @@ describe("UsageOrigins.read", () => {
         [
           "agent/notification/-",
           "computer/claim/agent",
+          "computer/claim/agent",
+          "computer/claim/crew",
           "computer/claim/crew",
           "computer/notification/agent",
           "computer/notification/crew",
+          "computer/stamp/-",
           "computer/stamp/-",
           "computer/stamp/-",
           "computer/stamp/-",
@@ -1402,13 +1472,32 @@ describe("UsageOrigins born labelled", () => {
           creationSource: "mcp",
           scheduledTaskId: "task-daily",
         });
+        // A run older than its task's first stored binding counts to that binding.
+        yield* seedThread({ id: "weekly", createdAt: iso("07:30") });
+        yield* run("weekly", 1, "weekly", "07:30", "07:40", {
+          createdBy: "agent",
+          creationSource: "mcp",
+          scheduledTaskId: "task-weekly",
+        });
+        yield* origins.bindScheduledTask("task-weekly", launch.key);
         const rebound = new UsageOriginIndex(yield* origins.read(time("00:00"), time("23:59")));
         assert.deepStrictEqual(
-          ["07:01", "09:01"].map((clock) => {
-            const key = rebound.lookup({ sessionId: "daily-session", timestampMs: time(clock) });
-            return `${clock} ${key.origin} ${key.reason}`;
+          [
+            ["daily", "07:01"],
+            ["daily", "09:01"],
+            ["weekly", "07:31"],
+          ].map(([threadId, clock]) => {
+            const key = rebound.lookup({
+              sessionId: `${threadId}-session`,
+              timestampMs: time(clock!),
+            });
+            return `${threadId} ${clock} ${key.origin} ${key.reason}`;
           }),
-          ["07:01 phone inherited", "09:01 computer inherited"],
+          [
+            "daily 07:01 phone inherited",
+            "daily 09:01 computer inherited",
+            "weekly 07:31 phone inherited",
+          ],
         );
         // Deleting the scheduled task leaves its past runs counted where they were.
         const sql = yield* SqlClient.SqlClient;

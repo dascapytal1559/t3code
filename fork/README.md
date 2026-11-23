@@ -191,13 +191,14 @@ and opened rows (`usagePagePreferences.ts`).
 Some boxes draw a mirror chart, one side rising from a centre line and the
 other hanging below it (`lowerGroups` in `UsagePage.tsx`): device and kind of
 work when they have exactly two rows, the larger above; process with Direct
-above and Journal and Routines below; direction with Input above and Output
+above and Journal, Routines and Incidents below; direction with Input above and Output
 below. Each mirrors only when both sides have usage; the other boxes stack.
 
 A kind of work opens into its projects and folders. Members it hides
 (`hiddenMembers`), or all but the ones it lists when **Only shown** is on in
-Settings (`shownMembers`), count to the group but fold into one Others row
-(`foldMembers` in `usageSplits.ts`).
+Settings (`shownMembers`), get no row but still count to the group's total,
+and show as an unlabelled grey end of its bar when it opens (`foldMembers` and
+`openedBarBands` in `usageSplits.ts`).
 
 The mobile app has no boxes: a Provider, Kind of work, Device or Process choice
 under the period splits the chart and lists the bands largest first, as web's
@@ -217,9 +218,12 @@ provider rows and type bar become the provider and direction boxes; keep upstrea
 own figures in them.
 
 The process box splits usage into Journal (reason `journal`), Routines (`upkeep`
-a claim or launch declared, basis `claim`) and Direct, in amber: everything
-else, FirstMate's own wakes included (`usageProcessOf` in
-`packages/contracts/src/usage.ts`, each bucket's `processes`).
+a claim or launch declared, basis `claim`), Incidents (reason `incident`:
+FirstMate's handling of production alerts, and fixes it patched on its own; a
+fix the captain approved or actioned stays Direct) and Direct, in amber:
+everything else, FirstMate's own wakes included (`usageProcessOf` in
+`packages/contracts/src/usage.ts`, each bucket's `processes`). Incidents is a
+process only: its usage counts to the computer like any other agent work.
 
 ![The Usage page's Tokens tab with the Tokens by process box open, made-up data: the chart stacks each day's Journal, Routines and Other, the label and grey colour Direct had before, with the model table under the chart](media/usage-process-split.png)
 
@@ -369,20 +373,22 @@ and what agents claim.
   process set up on the computer runs, such as the bedtime routine) binds
   nothing and stores `computer`, basis `claim`, reason `upkeep`, also over a
   link; `journal: true` (work from a voice journal's items) stores `phone`,
-  basis `claim`, reason `journal` the same way. Either is refused beside
-  `fromThread`, `causedBy` or the other. `t3_thread_send`
+  basis `claim`, reason `journal` the same way, and `incident: true`
+  (incident response) stores `computer`, basis `claim`, reason `incident`.
+  Each is refused beside `fromThread`, `causedBy` or another label. `t3_thread_send`
   and `t3_thread_send_attachments` store it on the message only when the
   sender's segment was started by a prompt typed in that turn or is a
   voice-journal claim (`reroots`), so only typed input moves work. `schedule_task` stores the creating turn's origin in the fork
   table `usage_scheduled_task_bindings`, and an edit from a typed turn adds a
-  binding that counts the task's runs from then on; earlier runs keep theirs. `t3_restart_request` binds like the others and keeps the value on
+  binding that counts the task's runs from then on; earlier runs keep theirs,
+  and a run older than the first binding counts to it. `t3_restart_request` binds like the others and keeps the value on
   the request; the restart note carries it, and each restart continuation
   carries where its cut turn counted (the request's value instead when that
   turn only counted as upkeep, or to no device, in a thread with no origin of
   its own). A value the server bound (`creationSource` `server`) labels its own
   turn and moves no work. Every stored origin keeps `root`, the typed prompt
   (`threadId`, `messageId`) that decided it, copied unchanged as work inherits;
-  rules (a journal, upkeep, a terminal) have none, and Usage never adds tokens
+  rules (a journal, upkeep, an incident, a terminal) have none, and Usage never adds tokens
   up by it. A value bound from a thread also keeps `boundAt`, the moment of
   that thread's work it was read at (a `fromThread` claim keeps it in
   `bound_json`); values stored before it have none. The calling thread is the MCP caller's own thread; a caller
@@ -409,7 +415,10 @@ and what agents claim.
   thread's work counts, so a wake about a task follows the task after it is
   re-rooted; refused when that is no device; stored as the device plus
   `bound_json`, its basis and reason) or `device` (counts straight to `phone`
-  or `computer`, basis `claim`: FirstMate marks voice-journal work `phone`).
+  or `computer`, basis `claim`: FirstMate marks voice-journal work `phone`) or
+  `process: "incident"` (FirstMate's incident response: an alert's wake, or a
+  fix it patches unasked; stored as `computer` plus `bound_json` basis `claim`,
+  reason `incident`, so work the turn causes inherits it as journal work does).
   A session claim may take `from` (an ISO time), for a session resumed for
   different work, such as FirstMate's supervision engine: a record counts to
   the session's latest claim started by then, and a record before every start
@@ -419,7 +428,8 @@ and what agents claim.
   with `kept`, so a wake drain never overwrites a journal claim), and
   `causedBy: null` removes it. A claimed turn counts there unless its own
   prompt already traces; a journal claim on such a turn keeps its device but
-  makes its reason `journal`.
+  makes its reason `journal`. An incident claim does not: a prompt the
+  captain typed in that turn stays typed, so work he actions himself is Direct.
 - A pinned coordinator's turn (FirstMate's thread, or a secondmate's) that
   no claim names and no person typed (a wake, a background command's update,
   a server prompt, a turn with no prompt) is its upkeep: it counts to the
@@ -512,7 +522,7 @@ and what agents claim.
   session with no born label at all (a terminal session T3 never registered)
   are counted apart, as `unbornRecords`, not as differences.
 - Every settled record also carries a `reason`, kept on the server: `typed`,
-  `inherited`, `journal`, `upkeep` or `terminal` when there is device
+  `inherited`, `journal`, `upkeep`, `incident` or `terminal` when there is device
   evidence, else what is missing (`unregisteredSession`,
   `unmatchedRegistration` for a registered session whose thread or task
   matched no turn, `unnamedTurn`, `noCause`, `untracedCause`, `noPrompt`,
@@ -628,7 +638,8 @@ made-up values:
   cannot read its T3 prompts. `started` is `direct` when the device's own
   prompt started the work, `orchestrated` (with `via`) when an agent sent it.
   `basis` and `reason` are as in [Phone vs computer split](#phone-vs-computer-split);
-  `process` is the process box's band, `journal`, `routines` or `other` (Direct).
+  `process` is the process box's band, `journal`, `routines`, `incident` or
+  `other` (Direct).
 - `callId` names the model call the same way in every export, whichever
   transcript T3 read it from: a forked conversation, a deleted old file or a
   reader change can move a call to another `sessionId` or `at`, but not to
@@ -1483,8 +1494,9 @@ and a number clears once the thread has been quiet that many minutes, on any
 provider. `null` turns it off. It suits a standing agent such as the life log,
 whose messages stand alone, or a search thread that needs no earlier context
 after a few minutes. Crew, secondmate and delegated threads stay out even then,
-since their context is another agent's work, and FirstMate's own thread keeps
-its rule whatever its project says. Every other thread keeps upstream's
+since their context is another agent's work, and so do forks, side chats and
+subagents, which hold their parent's context only in the session a clear would
+drop; FirstMate's own thread keeps its rule whatever its project says. Every other thread keeps upstream's
 behaviour. For a Claude thread this relies on Compact idle threads being set to
 Never.
 
@@ -1504,7 +1516,8 @@ its fresh start is far smaller. Cold after quiet means no run on the thread has
 started or ended for that many minutes. Either way it applies only when the run
 stays on the same provider. A message from any client or over MCP, T3's restart
 note and a scheduled task begin an exchange. These continue the old session
-instead: a steer, anything while a run is active or a question or approval is
+instead: a steer (also one a provider declined or a restart requeued, which
+keeps its follow-up mark on the queued run), anything while a run is active or a question or approval is
 pending, `/compact`, `/logout` and `/goal`, every other wake (background work, a
 delegated task or a pull request watch reporting in, and any wake the old
 session buffered), the continuations after a restart, a usage limit or a manual
@@ -1579,10 +1592,17 @@ Everything it trims comes after that shared prefix, and keeping it shared is the
 whole constraint: the tool block comes first in every request, so any change to
 it means the first request reads nothing from cache and writes all of it. So:
 
-- It passes `strictMcpConfig` with the folder's `.mcp.json` as `--mcp-config` (a
-  path, so the folder's credentials stay out of argv), which drops the user's
-  servers, plugins' servers and the claude.ai connectors. Servers listed there
-  load whether or not the user approved them for the folder.
+- It passes `strictMcpConfig` with one MCP config T3 writes under its state
+  directory (`claude-lean-mcp/`, owner-only) as `--mcp-config` (a path, so the
+  folder's credentials stay out of argv): the folder's `.mcp.json` servers but
+  those the user rejected for it (`disabledMcpjsonServers`), then the servers of
+  the user's own `--mcp-config` launch argument, which win a shared name. That
+  drops the user's other servers, plugins' servers and the claude.ai
+  connectors. A folder server the user has not answered yet loads, since an
+  explicit config skips Claude Code's approval prompt. A malformed `.mcp.json`
+  is skipped with a warning.
+- The setting and that config are part of the live process's reuse key, so
+  turning it on or off, or a change to the config, starts a new Claude process.
 - T3's own server stays: two of its tools load up front into the tool block.
 - The skills option keeps three skills, not none: Claude Code writes a hidden
   skill's text into any built-in tool whose description names it (with no
@@ -1931,7 +1951,7 @@ then back off. Upstream's panel shares the window, so the window never moves or
 resizes on its own. The fork changes that on purpose: the window is kept at a
 chosen width, and opening a document used to squeeze the chat to make room.
 
-![The desktop app with a README open in the right panel: the window grew by the panel's width, and the sidebar and chat kept theirs](media/window-grows-for-panel.jpg)
+![The desktop app with a README open in the right panel: the window grew by the panel's width, the sidebar and chat kept theirs, and the layout toggles stayed at the chat header's right end](media/window-grows-for-panel.jpg)
 
 - The chat column keeps its width and the panel takes the rest of the row, on
   desktop and in the browser alike, so a window resize or a sidebar toggle
@@ -1949,6 +1969,20 @@ chosen width, and opening a document used to squeeze the chat to make room.
   width, and the panel is never laid out inside the old window. A window
   narrow enough for the sheet layout opens the same way, inline once it has
   grown; the sheet shows only when the window cannot grow.
+- Leaving the panel's thread follows the same rule. Another thread, or a new
+  one, takes the view at once without the panel, and the panel's width stays
+  empty beside it until the resize that narrows the page. The thread arriving
+  is laid out at its own width from its first frame, never across the grown
+  window.
+- The layout toggles (thread details, terminal, right panel) stay at the chat
+  header's right end whether the panel is open or not, so the button that
+  opened the panel is under the pointer to close it. Upstream keeps them at
+  the window's top right corner, which moves when the window grows: they left
+  the chat header a frame before the window grew and came back a frame after
+  it shrank. With them in place, what the small window shows of the grown page
+  is the closed layout, so opening and closing are one step each. Only the
+  maximize control sits at the panel's far end. A maximized panel and the
+  sheet layout keep upstream's placement.
 - Nothing is held, timed, animated or faded. The window answers a request once
   it has its bounds and the page has drawn at them (a one-second cap covers a
   page that cannot draw), and the answer settles the layout on what was asked;
@@ -1959,12 +1993,16 @@ chosen width, and opening a document used to squeeze the chat to make room.
   be done (another platform, DevTools docked beside the page, a Chromium that
   names the view differently) the window resizes first and the page follows,
   which shows the blank strip for as long as the page takes to draw.
-- For the frame between the page drawing and the window growing (about 17 ms)
-  the old window already shows the grown layout: the chat header's layout
-  buttons take their open look that much early. A surface's first open after
-  launch loads its code and data only once it is mounted, as upstream's lazy
-  surfaces do, so that one time the window grows with the panel's tabs drawn
-  and its body fills in a moment later.
+- Two frames are left, neither the page's layout. For the frame between the
+  page drawing and the window growing (about 15 ms), and the one between the
+  window shrinking and the page redrawing, only the right panel toggle's own
+  highlight is early or late. And on most closes macOS shows the panel's area
+  blank for one or two refreshes (6 to 12 ms) before the window's outline
+  follows: the window's own frame, which holding the page at its size,
+  flushing the resize or wrapping it in one transaction did not change.
+- A surface's first open after launch loads its code and data only once it is
+  mounted, as upstream's lazy surfaces do, so that one time the window grows
+  with the panel's tabs drawn and its body fills in a moment later.
 - Near the screen's right edge the window moves left only as far as it must
   and moves back on close. A screen too narrow for the full width grows as far
   as it can and the chat gives way for the rest. Full screen and maximized
@@ -1973,7 +2011,8 @@ chosen width, and opening a document used to squeeze the chat to make room.
   off with the panel. The window's saved size leaves the panel's width at
   opening out, so a restart with the panel open grows once.
 - The window follows whether the panel is showing, so switching between a
-  thread with the panel open and one without resizes it.
+  thread with the panel open and one without resizes it. Usage and Settings
+  leave the window as it is.
 - The growth is converted from CSS pixels to screen points, so it matches the
   panel at any app zoom.
 
@@ -1982,8 +2021,11 @@ the order of page and window, with its tests),
 `apps/desktop/src/window/PanelPageView.ts` (the page sized ahead of the window,
 and the frame it draws), the `setRightPanelOpen` bridge method,
 `apps/web/src/hooks/useRightPanelWindow.ts` (the layout following the page's
-resizes), and `apps/web/src/hooks/usePreviewPanelInlineSize.ts` (the kept chat
-width), each web hook with its browser test.
+resizes, and the width kept for a panel just left), and
+`apps/web/src/hooks/usePreviewPanelInlineSize.ts` (the kept chat width), each
+web hook with its browser test; `ChatHeaderLayoutControls` in
+`apps/web/src/components/chat/PanelLayoutControls.tsx` and its use in
+`ChatView.tsx` (the toggles at the chat header's right end).
 
 Upstream: none.
 

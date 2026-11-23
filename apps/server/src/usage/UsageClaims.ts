@@ -23,7 +23,10 @@ export type UsageClaimTarget =
 
 export type UsageClaimDevice = "phone" | "computer";
 
-/** How a device bound by value was read: the basis and reason of the work it was copied from. */
+/**
+ * How a device claimed by value counts: the basis and reason of the thread's work it was copied
+ * from, or of a process the claim declared (incident response).
+ */
 export interface UsageClaimBinding {
   readonly basis: string;
   readonly reason: string;
@@ -36,7 +39,7 @@ export interface UsageClaimBinding {
 
 /**
  * What a claim counts its target to: the prompt that caused it, a device directly, or a device
- * bound by value from a thread's work, with how that work counted.
+ * with how it counts, bound by value from a thread's work or declared.
  */
 export type UsageClaimValue =
   | { readonly causedBy: OrchestrationV2CausedBy }
