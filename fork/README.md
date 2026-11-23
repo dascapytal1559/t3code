@@ -1664,8 +1664,10 @@ Agents under T3 can now raise macOS Automation prompts naming T3 Code (Fork), on
 for each app they try to control. Allow only the apps you want agents to control.
 
 The change is the Apple Events entitlement and `NSAppleEventsUsageDescription` in
-`scripts/build-desktop-artifact.ts`. The fork's re-signing drops the entitlement
-and keeps the usage description, which is enough without the hardened runtime.
+`scripts/build-desktop-artifact.ts`. The entitlement is only written for signed
+passkey builds. The fork's normal build is unsigned, and the local install step
+then signs it with `codesign --force --deep`, which applies no entitlement and
+no hardened runtime. The usage description is what makes the prompts work.
 
 Upstream: does not ship this yet. It comes from open PR
 [pingdotgg/t3code#33869](https://github.com/pingdotgg/t3code/pull/33869). Drop
@@ -2705,7 +2707,8 @@ the very release it contains.
 node scripts/build-desktop-artifact.ts --platform mac --target dmg --arch arm64
 ```
 
-The build is unsigned, so electron-builder ad-hoc signs it. It writes
+The build is unsigned, so electron-builder skips code signing, and the local
+install step signs the app afterwards. The build writes
 `release/T3-Code-<version>-arm64.dmg` and a `.zip`. Leave
 `T3CODE_DESKTOP_UPDATE_REPOSITORY` and `GITHUB_REPOSITORY` unset. With neither
 set, the app has no update feed and cannot update itself into the official
