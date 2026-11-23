@@ -1634,6 +1634,22 @@ can use, and `makeRuntime` in
 
 Upstream: none. Its Antigravity sessions get T3's server alone.
 
+## T3's tools say what they are
+
+T3's MCP server sends one line of `instructions`: these are T3's own controls for
+threads, projects, previews and devices, to use instead of clicking T3's window.
+Codex shows a server's `instructions` as its tool group's description. Without
+them Codex listed T3's tools with no description, and in probes GPT-6.1 Terra
+chose screen control over them.
+
+One string in `layerMcpTransport`
+(`apps/server/src/mcp/McpHttpServer.ts`) is the smallest departure: it uses the
+option `McpServer.layerHttp` already has and changes no tool or schema. A sync
+must keep it under 250 characters, where Codex cuts it off. Other providers that
+read MCP instructions get the same line.
+
+Upstream: none. Its server sets no `instructions`.
+
 ## Bridge
 
 The right panel's "Bridge" tab is the captain's overview beside any chat: their
