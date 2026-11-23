@@ -246,8 +246,9 @@ Both keep one order for every window row, so columns stay aligned. The rule is
 `sortByProvidersTab` and `LimitAccount.providerOrder` in
 `packages/shared/src/usageLimits.ts`; syncs must carry it.
 `collectProviderUsageLimits` takes upstream's `model` (which hub accounts serve
-the thread's model) before the fork's `providerInstances`, so each caller passes
-both, `null` for the model where it has none.
+the thread's model) before the fork's `providerInstances`. Callers that list
+accounts pass both. The thread details card reads one account, so it passes only
+the model.
 
 Upstream: none.
 
@@ -1012,7 +1013,9 @@ Approval, Input, Request, Limited, Failed and Woke still show over it, because a
 label can lag behind a thread that needs the user. A label is stored with the
 thread (`statusLabel`), thread reads report it, forks drop it, and changing it
 does not count as activity. Upstream decoders ignore the field; web and desktop
-show it, and mobile has no crew cards. Code: `resolveCrewStatusLabel` in
+show it, and mobile has no crew cards. "Waiting for captain" reads orange, and
+every other label stays gray. Code: `resolveCrewStatusLabel` and
+`crewStatusLabelColorClass` in
 `apps/web/src/components/sidebar/coordinatorGroup.logic.ts`.
 
 The label, not background work, says whether a crewmate is finished. Crew
@@ -1337,7 +1340,7 @@ It is stored as a wake time no clock reaches, `9999-12-31T23:59:59.000Z`
 the wire command, the database and every upstream "snoozed while the wake is in
 the future" check stay unchanged. Settings › Snooze options still edits only the
 timed presets; Indefinitely is not one of them and always leads the menu
-(`INDEFINITE_SNOOZE_PRESET` in `resolveSnoozePresets`,
+(`indefiniteSnoozePreset` in `resolveSnoozePresets`,
 `packages/client-runtime/src/state/threadSettled.ts`). MCP's
 `t3_thread_organize` with `action: "snooze"` and no `snoozedUntil` snoozes
 indefinitely (upstream refused it), and thread reads report an indefinite
