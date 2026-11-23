@@ -57,6 +57,7 @@ import {
   formatDayShort,
   formatPercent,
   formatTokens,
+  formatUsd,
   formatUsdShort,
   makeWindow,
 } from "@t3tools/shared/usageFormat";
@@ -598,7 +599,7 @@ export function UsagePage() {
                 now={limitsNow}
               />
             ) : shown === null ? (
-              <UsageSkeleton open={breakdown} />
+              <UsageSkeleton open={breakdown} metric={metric === "tokens" ? "tokens" : "cost"} />
             ) : !canReadDiagnostics ? (
               <div className="space-y-2 py-12 text-center text-sm text-muted-foreground">
                 {selectedEnvironments.map((environment) => (
@@ -1449,7 +1450,16 @@ function UsageOverviewGrid({
   );
 }
 
-function UsageSkeleton({ open }: { readonly open: UsageBreakdown }) {
+function UsageSkeleton({
+  open,
+  metric,
+}: {
+  readonly open: UsageBreakdown;
+  readonly metric: "tokens" | "cost";
+}) {
+  const locale = useLocale();
+  // A typical widest tick: the real labels are unknown until the data arrives.
+  const axisLabel = metric === "tokens" ? formatTokens(4e9) : formatUsd(1000, locale);
   return (
     <UsageOverviewGrid
       open={open}
@@ -1469,10 +1479,17 @@ function UsageSkeleton({ open }: { readonly open: UsageBreakdown }) {
             <Skeleton className="h-3.5 w-36" />
           </span>
           <UsageChartFrame
-            plot={<Skeleton shape="card" />}
-            yAxis={<span className="w-10" />}
+            plot={<Skeleton shape="card" className="col-span-2 col-start-1 row-start-1" />}
+            yAxis={
+              <span
+                aria-hidden
+                className="invisible col-start-2 row-start-1 text-3xs whitespace-nowrap tabular-nums"
+              >
+                {axisLabel}
+              </span>
+            }
             xAxis={
-              <span className="flex h-4 items-center">
+              <span className="col-start-1 row-start-2 flex h-4 items-center">
                 <Skeleton className="h-2.5 w-full" />
               </span>
             }
