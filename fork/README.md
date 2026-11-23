@@ -1650,6 +1650,24 @@ read MCP instructions get the same line.
 
 Upstream: none. Its server sets no `instructions`.
 
+## macOS Automation for agents
+
+The macOS app declares Apple Events use, so a Codex agent under T3 can use
+Computer Use. macOS holds T3 responsible for what its agents start. Without the
+declaration it refuses their Apple Events with no prompt, and Computer Use fails
+with `bootstrapTimedOut`.
+
+Agents under T3 can now raise macOS Automation prompts naming T3 Code (Fork), one
+for each app they try to control. Allow only the apps you want agents to control.
+
+The change is the Apple Events entitlement and `NSAppleEventsUsageDescription` in
+`scripts/build-desktop-artifact.ts`. The fork's re-signing drops the entitlement
+and keeps the usage description, which is enough without the hardened runtime.
+
+Upstream: does not ship this yet. It comes from open PR
+[pingdotgg/t3code#33869](https://github.com/pingdotgg/t3code/pull/33869). Drop
+this change when upstream merges an equivalent.
+
 ## Bridge
 
 The right panel's "Bridge" tab is the captain's overview beside any chat: their
