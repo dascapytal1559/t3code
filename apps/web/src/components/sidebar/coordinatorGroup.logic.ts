@@ -92,6 +92,11 @@ export function resolveCrewStatusLabel(input: {
   return calm ? input.statusLabel : null;
 }
 
+/** The colour of a crew label, or null to keep the status slot's gray. */
+export function crewStatusLabelColorClass(label: string): string | null {
+  return label === "Waiting for captain" ? "text-orange-600 dark:text-orange-400" : null;
+}
+
 /**
  * Whether a coordinator card's status slot shows how long ago it started, which says when it is
  * due for a fresh session. Busy and needs-the-user statuses keep the slot, as on crew cards.

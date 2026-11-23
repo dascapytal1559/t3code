@@ -125,7 +125,11 @@ import {
   CrewTreeGutter,
   type CrewTreePlace,
 } from "./SidebarCrewTree";
-import { resolveCrewStatusLabel, showsCoordinatorAge } from "./coordinatorGroup.logic";
+import {
+  crewStatusLabelColorClass,
+  resolveCrewStatusLabel,
+  showsCoordinatorAge,
+} from "./coordinatorGroup.logic";
 import { useCrewRowMotion } from "./crewMotion/useCrewRowMotion";
 import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
@@ -1708,7 +1712,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                     )}
                   >
                     {crewStatusLabel !== null ? (
-                      <span className="inline-flex max-w-32 items-center gap-1 font-medium">
+                      <span
+                        className={cn(
+                          "inline-flex max-w-32 items-center gap-1 font-medium",
+                          crewStatusLabelColorClass(crewStatusLabel),
+                        )}
+                      >
                         <span className="min-w-0 truncate">{crewStatusLabel}</span>
                         {/* FirstMate's validation run can take a while, so it counts like Working. */}
                         {crewStatusLabel === "Testing" ? (

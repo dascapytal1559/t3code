@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   coordinatorGroupSlot,
   crewCoordinatorOf,
+  crewStatusLabelColorClass,
   isCrewOf,
   resolveAppCoordinatorGroup,
   resolveCoordinatorGroup,
@@ -238,6 +239,19 @@ describe("resolveCrewStatusLabel", () => {
   it("never hides a woke card", () => {
     expect(resolveCrewStatusLabel({ ...card, isWoke: true })).toBeNull();
   });
+});
+
+describe("crewStatusLabelColorClass", () => {
+  it("colours only the exact captain label orange", () => {
+    expect(crewStatusLabelColorClass("Waiting for captain")).toContain("text-orange-");
+  });
+
+  it.each(["Waiting", "Queued", "Testing", "waiting for captain", "Waiting for captain soon"])(
+    "keeps %s gray",
+    (label) => {
+      expect(crewStatusLabelColorClass(label)).toBeNull();
+    },
+  );
 });
 
 describe("showsCoordinatorAge", () => {
