@@ -1235,13 +1235,13 @@ export function PullRequestsPage() {
       )}
       data-workspace-titlebar-controls
     >
+      {panelToggleControls}
       {rightPanelState.isOpen ? (
         <RightPanelMaximizeControl
           maximized={rightPanelMaximized}
           onToggle={toggleRightPanelMaximized}
         />
       ) : null}
-      {panelToggleControls}
     </div>
   );
   const listError = listQuery.error

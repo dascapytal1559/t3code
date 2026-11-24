@@ -257,6 +257,10 @@ export function WorkspaceTitlebarControls(props: {
       )}
       data-workspace-titlebar-controls
     >
+      {/* Fork: with the toggles in the chat header the maximize control stands alone. */}
+      {props.children === null ? null : (
+        <div className="pointer-events-auto flex h-full items-center">{props.children}</div>
+      )}
       {props.showMaximizeControl ? (
         <span
           aria-hidden={!props.rightPanelOpen}
@@ -278,10 +282,6 @@ export function WorkspaceTitlebarControls(props: {
           />
         </span>
       ) : null}
-      {/* Fork: with the toggles in the chat header nothing follows the maximize control. */}
-      {props.children === null ? null : (
-        <div className="pointer-events-auto flex h-full items-center">{props.children}</div>
-      )}
     </div>
   );
 }

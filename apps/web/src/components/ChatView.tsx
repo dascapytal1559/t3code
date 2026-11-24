@@ -4330,11 +4330,11 @@ export default function ChatView(props: ChatViewProps) {
           layoutControls={
             rightPanelOpen ? (
               <div className="mr-px flex items-center gap-1">
+                {panelToggleControls}
                 <RightPanelMaximizeControl
                   maximized={rightPanelMaximized}
                   onToggle={toggleRightPanelMaximizedStable}
                 />
-                {panelToggleControls}
               </div>
             ) : null
           }
