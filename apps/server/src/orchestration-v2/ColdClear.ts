@@ -209,7 +209,7 @@ export function sessionRotationNote(reason: SessionRotationReason): {
       reason === "requested"
         ? "T3 started a new session for this thread at the user's request."
         : "T3 started a new session for this thread because the previous one's prompt cache had expired.",
-      "No action needed: reply with one line.",
+      "This turn is your session start: if your startup summary shows anything waiting under WAKE QUEUE, run `bin/fm-wake-drain.sh` now, handle what it shows, and run the acknowledgement it prints. Then reply briefly.",
     ].join(" "),
   };
 }

@@ -15,6 +15,7 @@ import * as DateTime from "effect/DateTime";
 
 import {
   coldClearRule,
+  sessionRotationNote,
   startsFreshWhenCold,
   type ColdClearInput,
   type ColdClearRecords,
@@ -332,5 +333,18 @@ describe("startsFreshWhenCold", () => {
         { nowMs: NOW_MS, rule: QUIET_RULE },
       ),
     ).toBe(false);
+  });
+});
+
+describe("sessionRotationNote", () => {
+  it.each([
+    ["requested", "at the user's request."],
+    ["cache_expired", "because the previous one's prompt cache had expired."],
+  ] as const)("makes the %s rotation FirstMate's session start", (reason, why) => {
+    const { summary, text } = sessionRotationNote(reason);
+    expect(summary).toBe("T3 started a new session");
+    expect(text).toBe(
+      `T3 started a new session for this thread ${why} This turn is your session start: if your startup summary shows anything waiting under WAKE QUEUE, run \`bin/fm-wake-drain.sh\` now, handle what it shows, and run the acknowledgement it prints. Then reply briefly.`,
+    );
   });
 });

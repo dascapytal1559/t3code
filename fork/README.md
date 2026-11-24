@@ -1551,7 +1551,11 @@ there. After every run ends, and at server start, it waits until the same rule
 would hold (`coldAtMs`) on an idle thread, then sends `thread.session.rotate`.
 That command becomes a short system note, "T3 started a new session for this
 thread…", that starts the run through the same rule, so one function still
-decides. It is dropped without a turn if the thread has turned busy (a run, a
+decides. The rotation ends the old process, and FirstMate's worker monitoring
+with it, so the note makes this turn FirstMate's real session start: if its
+startup summary shows anything waiting under WAKE QUEUE, it runs
+`bin/fm-wake-drain.sh`, handles what that shows and acknowledges it, then
+replies briefly. It is dropped without a turn if the thread has turned busy (a run, a
 queued message, a question, a fork or merge-back, or a pending restart) or the
 rule no longer holds, for example because the old session has background work.
 The clock does not arm again after the note's own run, however large the fresh
