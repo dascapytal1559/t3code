@@ -681,12 +681,16 @@ describe("OrchestratorMcpService", () => {
                     status: "pending",
                     responseCapability: { type: pendingRequest },
                   },
-                  {
-                    id: approvalId,
-                    kind: "command",
-                    status: "pending",
-                    responseCapability: { type: "live", supportsFeedback: true },
-                  },
+                  ...(pendingRequest === "live"
+                    ? [
+                        {
+                          id: approvalId,
+                          kind: "command",
+                          status: "pending",
+                          responseCapability: { type: "live", supportsFeedback: true },
+                        },
+                      ]
+                    : []),
                 ],
           nodes: [],
           turnItems: pendingRequest

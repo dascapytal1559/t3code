@@ -89,12 +89,13 @@ it("a FirstMate worker shows no composer: a box that sends to FirstMate, Stop an
     ]),
   );
 
-  // Every fixture records branch "main"; only the card outside FirstMate's group shows it.
+  // Every fixture has a branch; only the card outside FirstMate's group shows its meta line.
   const cardText = (threadId: ThreadId) =>
     document.querySelector(`[data-thread-item="${ENVIRONMENT_ID}:${threadId}"]`)?.textContent;
-  await vi.waitFor(() => expect(cardText(plain.id)).toContain("main"));
-  expect(cardText(crew.id)).not.toContain("main");
-  expect(cardText(coordinator.id)).not.toContain("main");
+  const environmentLabel = "Render scenarios";
+  await vi.waitFor(() => expect(cardText(plain.id)).toContain(environmentLabel));
+  expect(cardText(crew.id)).not.toContain(environmentLabel);
+  expect(cardText(coordinator.id)).not.toContain(environmentLabel);
 
   const live = runningRun(crew.id, "crew-live", 2, "crew-live-user");
   await act(() => emitThreadEvent(crew.id, { type: "run.created", payload: live }));

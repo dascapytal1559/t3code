@@ -434,7 +434,7 @@ describe("resolveSnoozePresets", () => {
       formatTime,
       presets: [{ kind: "at", day: "monday", time: "18:00" }] as const,
     };
-    const [preset] = resolveSnoozePresets(localDate(2026, 4, 8, 20), options);
+    const [, preset] = resolveSnoozePresets(localDate(2026, 4, 8, 20), options);
 
     expect(preset?.whenLabel).toMatch(/^Mo\.? 18:00$/);
   });
