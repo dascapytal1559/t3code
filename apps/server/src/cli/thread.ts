@@ -35,6 +35,7 @@ import { mcpToolSession, type McpToolSession } from "../mcp/AcpMcpStdioBridge.ts
 import { expandHomePath } from "../os-jank.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import { readLiveServerRuntimeState } from "../serverRuntimeState.ts";
+import { unsetInheritedRepositoryEnv } from "../vcs/VcsProcess.ts";
 import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
 
 /**
@@ -343,9 +344,15 @@ const listAllProjects = Effect.fn("cli.thread.listAllProjects")(function* (tools
 /** The checkouts of the git repository at `directory`, or none outside a repository. */
 const listGitCheckouts = Effect.fn("cli.thread.listGitCheckouts")(function* (directory: string) {
   const processRunner = yield* ProcessRunner.ProcessRunner;
+  const env = unsetInheritedRepositoryEnv(process.env, yield* HostProcess.Platform);
   const list = (args: ReadonlyArray<string>) =>
     processRunner
-      .run({ command: "git", args: ["worktree", "list", "--porcelain", ...args], cwd: directory })
+      .run({
+        command: "git",
+        args: ["worktree", "list", "--porcelain", ...args],
+        cwd: directory,
+        env,
+      })
       .pipe(
         Effect.option,
         Effect.map((result) =>
@@ -441,7 +448,7 @@ const readTimeline = Effect.fn("cli.thread.readTimeline")(function* (
   view: "messages" | "activity",
 ) {
   const items: Array<OrchestratorMcpThreadTimelineItem> = [];
-  let afterPosition: number | undefined;
+  let afterPosition: number | null = -1;
   let page: OrchestratorMcpThreadReadResult;
   do {
     page = yield* tools.call(
@@ -452,13 +459,13 @@ const readTimeline = Effect.fn("cli.thread.readTimeline")(function* (
         limit: READ_PAGE_LIMIT,
         maxCharsPerItem: READ_ITEM_MAX_CHARS,
         runLimit: 1,
-        ...(afterPosition === undefined ? {} : { afterPosition }),
+        afterPosition,
       },
       OrchestratorMcpThreadReadResult,
     );
     items.push(...page.items);
-    afterPosition = page.nextPosition ?? undefined;
-  } while (page.hasMore && afterPosition !== undefined);
+    afterPosition = page.nextPosition;
+  } while (page.hasMore && afterPosition !== null);
   return { thread: page.thread, items };
 });
 
@@ -498,7 +505,7 @@ export const readLatestMessages = Effect.fn("cli.thread.readLatestMessages")(fun
           limit: READ_PAGE_LIMIT,
           maxCharsPerItem: READ_ITEM_MAX_CHARS,
           runLimit: 1,
-          ...(afterPosition < 0 ? {} : { afterPosition }),
+          afterPosition,
         },
         OrchestratorMcpThreadReadResult,
       );
@@ -950,7 +957,7 @@ const threadStartCommand = Command.make("start", {
   ),
   option: Flag.String("option").pipe(
     Flag.withDescription(
-      "Model option as id=value, such as effort=high. Repeat for more. Needs --provider and --model.",
+      "Model option as id=value (Codex: reasoningEffort=high; Claude: effort=high). Ids depend on the model. Repeat for more. Needs --provider and --model.",
     ),
     Flag.atLeast(0),
   ),

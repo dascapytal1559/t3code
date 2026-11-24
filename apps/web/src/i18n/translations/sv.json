@@ -497,7 +497,6 @@
   "bc24c300d53d61c5": "{host} svarade inte på någon sparad rutt.",
   "b0dd3cd876937ca8": "Anslutningsprofilen {connectionId} är inte tillgänglig.",
   "5ce46783e79ca9d1": "Autentiseringsuppgiften för anslutningen {connectionId} är inte tillgänglig.",
-  "0bda0cac7f5acc20": "Den anslutna miljön {actual} matchar inte {expected}.",
   "ea0d3e4e51d5706f": "Miljöns autentiseringsuppgift är ogiltig.",
   "7283ebfd16d09677": "Miljöns autentiseringsuppgift ger inte den åtkomst som krävs.",
   "d3e9a9cb543b4b7b": "Miljön avvisade autentiseringsbegäran.",
@@ -3306,13 +3305,9 @@
   "b90e87f4b7125237": "Detaljer",
   "16dc67f5429d8bae": "Bakgrundsarbete",
   "2188eee8f81b0f51": "Öppna subagent",
-  "3b03fc47eba632b4": "{count, plural, one {{formattedCount} ändrad fil} other {{formattedCount} ändrade filer}}",
   "ec9e0be8ec693302": "Fäll ihop alla mappar",
   "b791dd86f7991cc0": "Fäll ut alla mappar",
-  "afaf1bc8535e0adf": "Öppna diff",
-  "d31b3c7be099ca82": "{count, plural, one {{formattedCount} fil till i hela diffen} other {{formattedCount} filer till i hela diffen}}",
   "55b936e3014e16c8": "Öppna diff",
-  "452dc9eaa945693b": "Öppna hela diffen",
   "28bb7ce40dfd349a": "Terminalutdata kan inte läggas till i ett svar på en fråga.",
   "801cb8edea94b8f6": "Svara på eller stäng frågan först och lägg sedan till det i chatten.",
   "aa5507f20d94d5a9": "Uppdatera servern för att skicka filer med svar på frågor",
@@ -3613,8 +3608,6 @@
   "478e3b4551be4db3": "Visa extraherad text",
   "e7205ebfead1aafc": "Expanderad videoförhandsvisning",
   "1bda77e861bb472f": "Expanderad bildförhandsvisning",
-  "eebe5b17e3c19a1c": "Tillbaka, stäng videoförhandsvisningen",
-  "58fd0009a6eb7258": "Tillbaka, stäng bildförhandsvisningen",
   "47bae54b5f532ff3": "Föregående media",
   "fb9434aad2b5c0bb": "Bilden kunde inte läsas in.",
   "26aee5d4e97bfb28": "Bilden är inte tillgänglig. Filen kan ha flyttats eller tagits bort.",
@@ -4392,7 +4385,6 @@
   "991cc9fb37606c91": "(tomt svar)",
   "36e4b8d2db087296": "Forka från det här svaret",
   "c92a0bab54261695": "Svara på det här svaret",
-  "405a3e88ee6e62b3": "Den här omgångens ändringar i det här repot kan inte listas.",
   "f6958f38dc87c712": "Forka från det här svaret",
   "72f8e14b1246d224": "Svara på det här svaret",
   "01d7728e893c281d": "Hoppa till meddelande: {text}",
@@ -6624,27 +6616,6 @@
   "be3d1766bad18693": "Kontroller: {summary}",
   "425e4a3d6c5c2867": "{count, plural, one {{count} misslyckades} other {{count} misslyckades}}",
   "cb116c139cdace98": "Inga kontroller rapporterade",
-  "d84d09b4818c50b7": [
-    {
-      "t": "span",
-      "i": 1,
-      "c": [
-        {
-          "i": 2,
-          "k": "_gt_value_2",
-          "v": "v"
-        },
-        "/",
-        {
-          "i": 3,
-          "k": "_gt_value_3",
-          "v": "v"
-        }
-      ]
-    },
-    " ",
-    "kontroller"
-  ],
   "60b56e201607c7ec": "Kontrolldetaljerna är inaktuella. Uppdatera pull requesten för att uppdatera dem.",
   "e74cd4e960cbb5e5": "Oförändrade rader är inte tillgängliga i en fil med bortklippta rader.",
   "38d6169e04a9a4ce": "Fler kommentarer kunde inte läsas in",
@@ -12126,7 +12097,6 @@
   "f938bb483eb3d189": "startar om sist",
   "9bca02be2b4d612a": "inte ansluten",
   "2dcc418b6a13b83c": "behöver uppdateras manuellt",
-  "5c8ebc36f84dee7a": "behöver en nyare skrivbordsapp",
   "fa8faa732a2688ef": "på kanalen {channel}",
   "9b961309baafa09d": "ingen behörighet",
   "9bafb2622c22d145": "uppdateras redan",
@@ -12997,5 +12967,47 @@
   "fa475f43ea6c1f38": "Completed task",
   "83736ce9bdbec17b": "Open task",
   "146ec104ee0a63b5": "Egenskaper",
-  "169c47b517da71bc": "Bild"
+  "169c47b517da71bc": "Bild",
+  "b39d1428ec8b23f5": "Den här adressen kör nu en annan T3 Code-installation ({actual}, inte {expected}). Ta bort anslutningen och lägg till den igen.",
+  "1cbfbcad9f0d04fe": "Återupptar sessionen för {provider}",
+  "70bdebaa3d291d3b": "Tråden är inte tillgänglig",
+  "a351ebbdcf1a3f7a": "Den här tråden finns i en miljö som den här appen inte är ansluten till.",
+  "4f3982f640dfed5b": "Den här länken lägger till en backend i den här webbläsaren. Fortsätt bara om du litar på den.",
+  "41b32a424841adb7": "Den här parkopplingslänken har en ogiltig backend-värd.",
+  "c142c3f3bed15f8d": "Lägga till den här backenden?",
+  "984c25ffcae69300": "Lägg till backend",
+  "fb633d54edaeb4b1": "Stäng videoförhandsvisningen",
+  "62d0c453f5803180": "Stäng bildförhandsvisningen",
+  "fd63b391898889f9": "{count, plural, one {{count} väntar på åtgärd} other {{count} väntar på åtgärd}}",
+  "43a18c0bc37988f4": "Nya commits har pushats. En merge eller granskning gäller fortfarande {sha}.",
+  "c930a7ffa49054f0": "Läs in nya commits",
+  "7d7f65967cc821e3": "Bredd för HTML-förhandsvisning",
+  "70ce0af7f78d5957": "Låter HTML-förhandsvisningar i en chatt bli bredare än meddelandena, som förblir centrerade.",
+  "f2b119bf02ae2558": "Återställ bredd för HTML-förhandsvisning till standard",
+  "6287212fed0deec6": "Samma som chatten",
+  "dc8e85ea0364649c": "Samma som chatten (standard)",
+  "9d5c7430a7ff76cf": "bred full bredd inbäddad sida rendera diagram instrumentpanel artefakt centrerad",
+  "f13e08bd3614112e": "uppdatera T3 Code på den datorn",
+  "3c3348c36a2695af": "byt uppdateringsspår på den datorn",
+  "e65649675cb4cbaa": "avstängd",
+  "a1e7c08d9ef315c7": "läses fortfarande in",
+  "8a883c4fbc127b68": "Aktiverar automatisk merge för stacken...",
+  "5fb2a26ae31e8983": "Kunde inte aktivera automatisk merge för stacken",
+  "986d0dcbf4dd0098": "Automatisk merge för stacken aktiverad",
+  "f3ed1f63c8a3eef2": "{host} mergar stacken till och med #{number} när kraven är uppfyllda.",
+  "bd536a0a1754f6cb": "Kunde inte avbryta automatisk merge för stacken",
+  "bb90ac3b2f3a72d5": "Värden vägrade avbryta den automatiska mergen. Uppdatera och försök igen.",
+  "9c28753c777c37b7": "{count, plural, one {Merga {count} {term, select, mr {merge request} cr {ändringsbegäran} other {pull request}} automatiskt?} other {Merga {count} {term, select, mr {merge requests} cr {ändringsbegäranden} other {pull requests}} automatiskt?}}",
+  "a86b49982e18784d": "Merga #{number} och dess omergade lager under in i {base} med {method} när vart och ett uppfyller kraven på {host}. Det kan ske direkt.",
+  "b1afda5c964deee4": [
+    "Merga stacken automatiskt (",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    ")"
+  ],
+  "33d18dda74f6d7b3": "Avbryt automatisk merge för stacken",
+  "012c67c7f1a99e33": "Merga stacken automatiskt"
 }

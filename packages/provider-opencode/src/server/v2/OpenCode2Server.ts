@@ -6,7 +6,9 @@ import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as P from "effect/Predicate";
+import * as PubSub from "effect/PubSub";
 import * as Redacted from "effect/Redacted";
+import * as Stream from "effect/Stream";
 import * as HttpClientError from "effect/http/HttpClientError";
 
 import * as OpenCodeRuntime from "../OpenCodeRuntime.ts";
@@ -33,6 +35,8 @@ export class OpenCode2Server extends Context.Service<
     readonly shellEnvironment: Readonly<Record<string, string>> | undefined;
     /** Drops a configured server's verified connection, so the next use reads its version again. */
     readonly forget: Effect.Effect<void>;
+    /** Each newly verified connection; borrowing a running server publishes nothing. */
+    readonly connections: Stream.Stream<OpenCode2Connection>;
   }
 >()("@t3tools/provider-opencode/server/v2/OpenCode2Server") {}
 
@@ -144,11 +148,16 @@ export const make = Effect.fn("OpenCode2Server.make")(function* (input: {
     return { ...api, url, version, external } satisfies OpenCode2Connection;
   });
   let latest: OpenCode2Connection | undefined;
+  const verified = yield* Effect.acquireRelease(
+    PubSub.unbounded<OpenCode2Connection>(),
+    PubSub.shutdown,
+  );
+  const connections = Stream.fromPubSub(verified);
   const remember = (connection: OpenCode2Connection) =>
-    Effect.sync(() => {
+    Effect.suspend(() => {
       latest = connection;
-      return connection.version;
-    });
+      return PubSub.publish(verified, connection);
+    }).pipe(Effect.as(connection.version));
 
   const serverUrl = input.serverUrl.trim();
   if (serverUrl.length > 0) {
@@ -165,6 +174,7 @@ export const make = Effect.fn("OpenCode2Server.make")(function* (input: {
       forget: Effect.sync(() => {
         latest = undefined;
       }),
+      connections,
     });
   }
 
@@ -185,5 +195,6 @@ export const make = Effect.fn("OpenCode2Server.make")(function* (input: {
     }),
     shellEnvironment: shellEnvironment(input.environment),
     forget: Effect.void,
+    connections,
   });
 });

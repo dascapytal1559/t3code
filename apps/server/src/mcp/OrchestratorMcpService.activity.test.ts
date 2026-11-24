@@ -318,6 +318,8 @@ it("readThread preserves caller access errors and prefers activity-run status ov
 it("readThread pages cut-off text without splitting an emoji across pages", async () => {
   const text = "a😀bc";
   const itemId = TurnItemId.make("turn-item-mcp-reasoning");
+  const webhookToolItemId = TurnItemId.make("turn-item-mcp-webhook-tool");
+  const webhookToken = "wJalrXUtnFEMI_K7MDENG-bPxRfiCYEXAMPLEKEY1234";
   const projection = {
     thread: baseThread({
       threadId: parentThreadId,
@@ -356,6 +358,27 @@ it("readThread pages cut-off text without splitting an emoji across pages", asyn
       sourceItemId: TurnItemId.make(`turn-item-mcp-${index}`),
       item: { ...row.item, text: "x".repeat(600) },
     })),
+    {
+      ...row,
+      position: 12,
+      sourceItemId: webhookToolItemId,
+      item: {
+        ...row.item,
+        type: "dynamic_tool",
+        toolName: "schedule_task",
+        input: {
+          prompt: "Triage {{body.action}}",
+          schedule: {
+            type: "webhook",
+            signature: { header: "x-hub-signature-256", encoding: "hex", prefix: "", secret: "s3" },
+          },
+        },
+        output: {
+          webhookUrl: `https://relay.test/v1/hooks/0123456789abcdef/task-1/${webhookToken}`,
+          path: `/api/hooks/task-1/${webhookToken}`,
+        },
+      },
+    },
   ];
 
   const layer = layerOrchestratorService.pipe(
@@ -436,6 +459,18 @@ it("readThread pages cut-off text without splitting an emoji across pages", asyn
     });
     expect(first.items).toHaveLength(10);
     expect(first).toMatchObject({ nextPosition: 9, hasMore: true });
+
+    const webhookTool = yield* service.readThread(makeScope(), {
+      threadId: parentThreadId,
+      view: "activity",
+      itemId: webhookToolItemId,
+      maxCharsPerItem: 2_000,
+    });
+    const webhookToolText = webhookTool.items[0]?.text ?? "";
+    expect(webhookToolText).toContain("/v1/hooks/0123456789abcdef/task-1/[withheld]");
+    expect(webhookToolText).toContain("/api/hooks/task-1/[withheld]");
+    expect(webhookToolText).not.toContain(webhookToken);
+    expect(webhookToolText).not.toContain('"s3"');
   }).pipe(Effect.provide(layer), Effect.runPromise);
 });
 
@@ -647,8 +682,15 @@ it("readThread returns the newest items that fit the response budget", async () 
       maxCharsPerItem: 1_500,
     };
     const result = yield* service.readThread(makeScope(), read);
-    // The CLI reads as a client without a cursor and follows only hasMore.
-    const first = yield* service.readThread({ ...makeScope(), thread: undefined }, read);
+    // An outside MCP client, such as claude.ai, reads without a thread or a link.
+    const outside = yield* service.readThread(
+      {
+        ...makeScope(),
+        thread: undefined,
+        client: { sessionId: "session-1", label: "claude.ai", access: "read-only" },
+      },
+      read,
+    );
     const fromStart = yield* service.readThread(makeScope(), { ...read, afterPosition: -1 });
     const linked = yield* service.readThread(
       {
@@ -666,7 +708,7 @@ it("readThread returns the newest items that fit the response budget", async () 
 
     expect(pageOptions).toEqual([
       { beforePosition: Number.POSITIVE_INFINITY, limit: 100, view: "activity" },
-      { limit: 100, view: "activity" },
+      { beforePosition: Number.POSITIVE_INFINITY, limit: 100, view: "activity" },
       { afterPosition: -1, limit: 100, view: "activity" },
       { beforePosition: Number.POSITIVE_INFINITY, limit: 100, view: "activity" },
     ]);
@@ -676,10 +718,13 @@ it("readThread returns the newest items that fit the response budget", async () 
     expect(result.items.at(-1)?.position).toBe(99);
     expect(result.earlierPosition).toBe(result.items[0]?.position);
     expect(result.hasMore).toBe(false);
-    expect(first.items[0]?.position).toBe(0);
-    expect(first.hasMore).toBe(true);
-    expect(first.nextPosition).toBe(first.items.at(-1)?.position);
+    expect(outside.items.at(-1)?.position).toBe(99);
+    expect(outside.earlierPosition).toBe(outside.items[0]?.position);
+    expect(outside.hasMore).toBe(false);
+    // The t3 thread CLI pages forward from here, following only hasMore.
     expect(fromStart.items[0]?.position).toBe(0);
+    expect(fromStart.hasMore).toBe(true);
+    expect(fromStart.nextPosition).toBe(fromStart.items.at(-1)?.position);
     expect(linked.items.at(-1)?.position).toBe(99);
     expect(linked.earlierPosition).toBe(linked.items[0]?.position);
     expect(linked.hasMore).toBe(false);

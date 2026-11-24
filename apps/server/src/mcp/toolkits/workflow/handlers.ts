@@ -41,8 +41,7 @@ export const layer = McpToolAccess.toLayer(WorkflowToolkit, {
         return yield* workflows.get(runId).pipe(Effect.mapError(refused));
       }),
     ),
-    // Fork: a workflow's agents can run above the caller's mode, so every write needs full access.
-    McpToolAccess.writesEnvironment((input) =>
+    McpToolAccess.writesOwnerWork("start or change workflow runs, or read hook paths", (input) =>
       Effect.gen(function* () {
         const workflows = yield* Workflows.Workflows;
         // A hook's path holds its secret, and posting to it starts a run.
