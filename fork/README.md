@@ -2035,7 +2035,9 @@ chosen width, and opening a document used to squeeze the chat to make room.
   it shrank. With them in place, what the small window shows of the grown page
   is the closed layout, so opening and closing are one step each. Only the
   maximize control sits at the panel's far end. A maximized panel and the
-  sheet layout keep upstream's placement.
+  sheet layout keep upstream's placement, except that the maximize control
+  comes after the other toggles, not before them, there and on the pull
+  requests page.
 - Nothing is held, timed, animated or faded. The window answers a request once
   it has its bounds and the page has drawn at them (a one-second cap covers a
   page that cannot draw), and the answer settles the layout on what was asked;
@@ -2660,9 +2662,22 @@ file type gets this, not only Markdown, since all files share the one tab.
 Upstream keeps tabs compact with the name alone and the name again on hover.
 Code: `fileTabParentFolder` and the file branch of `RightPanelTab` in
 `apps/web/src/components/RightPanelTabs.tsx`; file tabs are wider than other
-tabs (`max-w-52` instead of `max-w-36`) to make room.
+tabs (`max-w-56` instead of `max-w-40`) to make room.
 
 ![Three README.md tabs in the side panel; two show their folder dimmed before the name, and the one at the project's top folder shows the name alone](media/file-tab-folders.png)
+
+Upstream: none.
+
+## Chrome-style panel tabs
+
+The side panel's tab strip sits on a recessed tint, and the active tab takes
+the content's background with rounded top corners that flare into the view
+below, so with several files open the one showing is obvious. Inactive tabs
+sit flush on the strip with muted labels and a hairline between them. Upstream
+marks the active tab with a faint grey pill. Tab behaviour is unchanged. Code:
+`ACTIVE_TAB_CLASS` and `INACTIVE_TAB_CLASS` in
+`apps/web/src/components/RightPanelTabs.tsx`, and the `--panel-tab-strip`
+token and `panel-tab-flare` utility in `apps/web/src/index.css`.
 
 Upstream: none.
 

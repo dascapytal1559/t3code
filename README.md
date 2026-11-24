@@ -64,6 +64,7 @@ Every difference from upstream, in the order [fork/README.md](fork/README.md) de
 - [Cite from a Markdown file](fork/README.md#cite-from-a-markdown-file): select text in a Markdown file and Cite it into the chat.
 - [Citation chips](fork/README.md#citation-chips): a citation without a comment looks muted and goes in one click.
 - [File tabs name their folder](fork/README.md#file-tabs-name-their-folder): `reports/README.md`, so same-named files tell apart.
+- [Chrome-style panel tabs](fork/README.md#chrome-style-panel-tabs): the active side-panel tab stands out from a recessed strip.
 - [Closing a tab goes back](fork/README.md#closing-a-tab-goes-back): closing a side-panel tab shows the tab you viewed before it.
 - [Mouse Back and Forward do nothing](fork/README.md#mouse-back-and-forward-do-nothing): the mouse thumb buttons take no action in the app, so they stay free for your own bindings.
 
