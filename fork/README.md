@@ -1842,8 +1842,10 @@ and `ws.ts`. In `Orchestrator.ts`: the request state and `requestRestart`,
 stops queue) and `prepared-run.release`; the steer-promotion refusal;
 `withQueueHold` at the release sites (unattended release, user send,
 preparation retry, Stop, queue resume). The recovery kinds in
-`ProjectionStore.ts`, the hold strip in `ProviderRuntimeRecoveryService.ts`,
-the startup release in `serverRuntimeStartup.ts`, the tools in
+`ProjectionStore.ts` (also listed in `apps/server/scripts/migrate-dev-db.ts`,
+so a copied dev database drops threads a restart would resume), the hold strip
+in `ProviderRuntimeRecoveryService.ts`, the startup release in
+`serverRuntimeStartup.ts`, the tools in
 `mcp/toolkits/environment/` with rows in `t3McpToolPresentation.ts` and the
 larger `agentContextBudget.json`; on the web, `useRestartPendingBanner.tsx`
 (a notice in the composer's banner stack, above the message box),
@@ -2392,23 +2394,6 @@ telemetry, so with telemetry off a report you approve stays on this machine,
 marked not sent.
 
 Upstream: none. It sends telemetry unless you opt out.
-
-## Workflows need full access
-
-Every action that changes a workflow through the `t3_workflow` MCP tool needs a
-full-access caller: start, signal, resume, cancel, reading its webhook URLs, and
-writing its store. Upstream lets any client above read-only do these, but a
-workflow's agent steps launch at the workflow's or project's mode, which can be
-above the client's, so a client approved for `auto` could start full-access
-agents, answer a workflow's questions, and keep a webhook URL after it is revoked.
-The `t3 workflow` command signs in at full access and is unaffected. Workflows
-stay off unless Settings > Labs turns them on.
-
-Code: `McpToolAccess.writesEnvironment` in
-`apps/server/src/mcp/toolkits/workflow/handlers.ts`.
-
-Upstream: has the gap as of v0.1.12-nightly.20261123.5138. Drop this guard when
-upstream makes these actions respect the caller's mode.
 
 ## Links that work
 
