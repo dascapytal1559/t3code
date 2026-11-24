@@ -160,6 +160,12 @@ export const T3_CLI_COMMANDS: ReadonlyArray<string> = [
   "t3 thread show",
   "t3 feedback",
   "t3 feedback list",
+  // Fork: `t3 usage` (Usage export, labels and claims).
+  "t3 usage",
+  "t3 usage close",
+  "t3 usage export",
+  "t3 usage reasons",
+  "t3 usage relabel",
   "t3 workflow",
   "t3 workflow start",
   "t3 workflow list",

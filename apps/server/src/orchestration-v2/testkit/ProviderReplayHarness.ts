@@ -587,6 +587,9 @@ export function layerWithRegistry<Error>(
         cancelDelegatedTask: orchestrator.cancelDelegatedTask,
         delegatedTaskResultPending: orchestrator.delegatedTaskResultPending,
         streamStoredEventsFrom: orchestrator.streamStoredEventsFrom,
+        // Fork: restart continuation also reads the restart and notes a cut nothing resumed.
+        restartedFor: orchestrator.restartedFor,
+        noteUnresumedRestartCut: orchestrator.noteUnresumedRestartCut,
       });
     }),
   ).pipe(Layer.provide(layerOrchestratorProvided));

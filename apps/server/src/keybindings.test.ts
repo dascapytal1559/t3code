@@ -15,6 +15,9 @@ import * as Keybindings from "./keybindings.ts";
 import * as SharedKeybindings from "@t3tools/shared/keybindings";
 import { KeybindingsConfigError, MAX_KEYBINDINGS_COUNT } from "@t3tools/contracts";
 
+// Fork: Usage's half-year, year and breakdown shortcuts sit among the defaults these limits count.
+const FORK_EXTRA_DEFAULT_KEYBINDINGS = 4;
+
 const KeybindingsConfigJson = Schema.fromJsonString(KeybindingsConfig);
 const encodeKeybindingsConfigJson = Schema.encodeEffect(KeybindingsConfigJson);
 const decodeKeybindingsConfigJson = Schema.decodeUnknownEffect(KeybindingsConfigJson);
@@ -535,7 +538,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
       const keybindings = yield* Keybindings.Keybindings;
       yield* writeKeybindingsConfig(
         keybindingsConfigPath,
-        Array.from({ length: 210 }, (_, index) => ({
+        Array.from({ length: 210 - FORK_EXTRA_DEFAULT_KEYBINDINGS }, (_, index) => ({
           key: "mod+alt+f1",
           command: `script.filler-${index}.run` as const,
         })),
@@ -568,7 +571,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         const keybindings = yield* Keybindings.Keybindings;
         yield* writeKeybindingsConfig(
           keybindingsConfigPath,
-          Array.from({ length: 209 }, (_, index) => ({
+          Array.from({ length: 209 - FORK_EXTRA_DEFAULT_KEYBINDINGS }, (_, index) => ({
             key: "mod+alt+f1",
             command: `script.filler-${index}.run` as const,
           })),
