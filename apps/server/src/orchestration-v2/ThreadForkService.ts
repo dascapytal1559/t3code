@@ -104,6 +104,7 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
       }
       // The coordinator pin (one per project), the crew link, its card label, the remote
       // parent's delegation and where its launch counted name the source thread's role only.
+      // Nor is a fork a step of the run its source was one of.
       const {
         coordinator: _coordinator,
         crewOf: _crewOf,
@@ -113,6 +114,7 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
         delegatedFrom: _delegatedFrom,
         causedBy: _causedBy,
         usageOrigin: _usageOrigin,
+        workflowRun: _workflowRun,
         ...inherited
       } = input.sourceProjection.thread;
       const targetThread: OrchestrationV2AppThread = {

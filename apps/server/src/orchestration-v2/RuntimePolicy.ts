@@ -104,22 +104,6 @@ const threadConfigOf = (thread: OrchestrationV2AppThread) => ({
   ...(thread.instructions === undefined ? {} : { instructions: thread.instructions }),
 });
 
-export const layer: Layer.Layer<RuntimePolicyV2> = Layer.succeed(RuntimePolicyV2, {
-  resolve: Effect.fn("RuntimePolicyV2.resolve")(function (input) {
-    return Effect.succeed({
-      runtimeMode: input.thread.runtimeMode,
-      interactionMode: input.thread.interactionMode,
-      cwd: input.thread.worktreePath,
-      ...threadConfigOf(input.thread),
-    });
-  }),
-  assertThreadConfigSupported: Effect.fn("RuntimePolicyV2.assertThreadConfigSupported")(
-    function () {
-      return Effect.void;
-    },
-  ),
-});
-
 /** The mode an instance actually runs: one it does not list falls back to approval-required. */
 export function providerRuntimeMode(
   runtimeMode: RuntimeMode,

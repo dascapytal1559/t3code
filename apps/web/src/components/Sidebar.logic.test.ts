@@ -7,6 +7,8 @@ import { describe, expect, it } from "vite-plus/test";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import {
+  ADD_PROJECT_SCOPE_ITEM_VALUE,
+  filterSidebarProjectScopeItems,
   shouldCreateNewThreadInCurrentProject,
   resolveScopedNewThreadProjectRef,
   deleteSelectedThreadEntries,
@@ -1860,12 +1862,11 @@ describe("shouldCreateNewThreadInCurrentProject", () => {
 });
 
 describe("isThreadMetaLineEmpty", () => {
-  const row = { inFirstMateGroup: false, branch: null, showsScratchMachine: false, hasDiff: false };
+  const row = { inFirstMateGroup: false, branch: null, hasDiff: false };
 
-  it("keeps a meta line for a branch, scratch machine or diff, except in FirstMate's group", () => {
+  it("keeps a meta line for a branch or diff, except in FirstMate's group", () => {
     expect(isThreadMetaLineEmpty(row)).toBe(true);
     expect(isThreadMetaLineEmpty({ ...row, branch: "main" })).toBe(false);
-    expect(isThreadMetaLineEmpty({ ...row, showsScratchMachine: true })).toBe(false);
     expect(isThreadMetaLineEmpty({ ...row, hasDiff: true })).toBe(false);
     expect(isThreadMetaLineEmpty({ ...row, inFirstMateGroup: true, branch: "main" })).toBe(true);
   });
@@ -1931,5 +1932,24 @@ describe("resolveScopedNewThreadProjectRef", () => {
         viewed: viewedWeb,
       }),
     ).toBeNull();
+  });
+});
+
+describe("filterSidebarProjectScopeItems", () => {
+  it("hides Add project and All projects while searching", () => {
+    const items = [
+      { value: ADD_PROJECT_SCOPE_ITEM_VALUE, label: "Add project" },
+      { value: "all", label: "All projects" },
+      { value: "p1", label: "project" },
+    ];
+    const filter = (query: string) =>
+      filterSidebarProjectScopeItems({
+        items,
+        query,
+        matches: (item, q) => item.label.includes(q),
+      }).map((item) => item.value);
+
+    expect(filter("")).toEqual([ADD_PROJECT_SCOPE_ITEM_VALUE, "all", "p1"]);
+    expect(filter("project")).toEqual(["p1"]);
   });
 });

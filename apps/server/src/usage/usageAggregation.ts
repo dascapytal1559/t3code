@@ -177,6 +177,22 @@ type MutableOriginReasonUsage = {
   -readonly [K in keyof UsageOriginReasonUsage]: UsageOriginReasonUsage[K];
 };
 
+export function usageTimestampFilter(
+  options: Pick<
+    AggregateOptions,
+    "timeZone" | "sinceDay" | "untilDay" | "sinceTimeMs" | "untilTimeMs"
+  >,
+) {
+  const toDay = makeDayFormatter(options.timeZone);
+  return (timestampMs: number) => {
+    if (options.sinceTimeMs !== undefined && options.untilTimeMs !== undefined) {
+      return timestampMs >= options.sinceTimeMs && timestampMs < options.untilTimeMs;
+    }
+    const day = toDay(timestampMs);
+    return day >= options.sinceDay && day <= options.untilDay;
+  };
+}
+
 export function resolveModelAliases(
   aliases: Readonly<Record<string, string>>,
 ): ReadonlyMap<string, string> {

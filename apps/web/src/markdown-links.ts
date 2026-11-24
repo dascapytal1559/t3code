@@ -50,10 +50,38 @@ export function isLocalEditorFileHref(href: string): boolean {
   }
 }
 
+// Every message resolves its links and code spans more than once while rendering.
+const MAX_MEMOIZED = 4_000;
+const inlineCodeMetas = new Map<string, MarkdownFileLinkMeta | null>();
+const linkMetas = new Map<string, MarkdownFileLinkMeta | null>();
+
+function memoized(
+  cache: Map<string, MarkdownFileLinkMeta | null>,
+  key: string,
+  resolve: () => MarkdownFileLinkMeta | null,
+): MarkdownFileLinkMeta | null {
+  const cached = cache.get(key);
+  if (cached !== undefined) return cached;
+  if (cache.size >= MAX_MEMOIZED) cache.clear();
+  const meta = resolve();
+  cache.set(key, meta);
+  return meta;
+}
+
 export function resolveInlineCodeFileLinkMeta(
   codeText: string,
   cwd?: string,
   documentDir?: string,
+): MarkdownFileLinkMeta | null {
+  return memoized(inlineCodeMetas, `${cwd ?? ""}\u0000${documentDir ?? ""}\u0000${codeText}`, () =>
+    resolveInlineCodeFileLinkMetaUncached(codeText, cwd, documentDir),
+  );
+}
+
+function resolveInlineCodeFileLinkMetaUncached(
+  codeText: string,
+  cwd: string | undefined,
+  documentDir: string | undefined,
 ): MarkdownFileLinkMeta | null {
   const candidate = inlineCodeFilePathCandidate(codeText);
   if (candidate === null) return null;
@@ -105,6 +133,17 @@ export function resolveMarkdownFileLinkMeta(
   href: string | undefined,
   cwd?: string,
   documentDir?: string,
+): MarkdownFileLinkMeta | null {
+  if (href === undefined) return null;
+  return memoized(linkMetas, `${cwd ?? ""}\u0000${documentDir ?? ""}\u0000${href}`, () =>
+    resolveMarkdownFileLinkMetaUncached(href, cwd, documentDir),
+  );
+}
+
+function resolveMarkdownFileLinkMetaUncached(
+  href: string | undefined,
+  cwd: string | undefined,
+  documentDir: string | undefined,
 ): MarkdownFileLinkMeta | null {
   const resolved = resolveMarkdownFileLink(href, cwd, documentDir ?? cwd);
   if (!resolved) return null;

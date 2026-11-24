@@ -1238,6 +1238,8 @@ export function pullRequestMatchesSearchQuery(
   return normalizedQuery.split(" ").every((token) => haystack.includes(token));
 }
 
+export const ADD_PROJECT_SCOPE_ITEM_VALUE = "add-project";
+
 export function filterSidebarProjectScopeItems<TItem extends { readonly value: string }>(input: {
   items: readonly TItem[];
   query: string;
@@ -1245,7 +1247,12 @@ export function filterSidebarProjectScopeItems<TItem extends { readonly value: s
 }): readonly TItem[] {
   const query = input.query.trim();
   if (query.length === 0) return input.items;
-  return input.items.filter((item) => item.value !== "all" && input.matches(item, query));
+  return input.items.filter(
+    (item) =>
+      item.value !== "all" &&
+      item.value !== ADD_PROJECT_SCOPE_ITEM_VALUE &&
+      input.matches(item, query),
+  );
 }
 
 interface SidebarProjectScopeMenuState {
@@ -1560,8 +1567,7 @@ export function sortScopedProjectsForSidebar<
 export function isThreadMetaLineEmpty(input: {
   inFirstMateGroup: boolean;
   branch: string | null;
-  showsScratchMachine: boolean;
   hasDiff: boolean;
 }): boolean {
-  return input.inFirstMateGroup || (!input.branch && !input.showsScratchMachine && !input.hasDiff);
+  return input.inFirstMateGroup || (!input.branch && !input.hasDiff);
 }
