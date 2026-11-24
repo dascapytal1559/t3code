@@ -7,7 +7,7 @@ the [FirstMate fork](https://github.com/dascapytal1559/firstmate/blob/main/FORK.
 links to that half. The front page lists every feature section in this order. Keep this
 list current. Pictures live in `fork/media/` and show made-up data. Fork text on
 screen goes through upstream's translation calls, as
-[Translating the UI](../docs/internals/i18n.md) describes, or lint fails. The
+[Translating the UI](../docs/internals/14_i18n.md) describes, or lint fails. The
 fork's keys show English in the other languages until someone translates them.
 Earlier fork work is archived on the local branch
 `archive/fork-legacy-2026-10-19` and is out of scope for syncs; take from it
@@ -50,7 +50,7 @@ Four things are still shared with the official app:
 
 On macOS the SOCKS tunnel the app opens for another environment's `localhost`
 tabs has no owner check, so any local process can use it while it runs. This is
-upstream's documented gap (`docs/internals/remote.md`); it never starts for the
+upstream's documented gap (`docs/internals/05_remote.md`); it never starts for the
 local environment. The same holds for a port forward the user starts from a
 thread's **Servers** list or **Forwarded ports** in the command palette: it
 listens on `127.0.0.1` until stopped, and any local process or web page can
@@ -904,6 +904,12 @@ controls. Upstream closed that PR on 17 Nov 2026 as not something it wants to
 take on, so the setting stays the fork's. If upstream ships an equivalent, drop
 this copy and keep upstream's.
 
+Upstream's own default is now shorter: since #41174 it releases an idle session
+after 2 minutes, or 30 for a provider that cannot resume natively. The fork
+keeps this one setting for every provider, still 30 minutes by default, so that
+shorter release does not apply here. Upstream's issue #41474 reports that the
+2-minute release can kill a Claude `/compact`.
+
 Upstream: none. This is the server half of
 [#25624](https://github.com/pingdotgg/t3code/pull/25624), by an outside
 contributor, which upstream closed unmerged on 17 Nov 2026.
@@ -1669,9 +1675,9 @@ passkey builds. The fork's normal build is unsigned, and the local install step
 then signs it with `codesign --force --deep`, which applies no entitlement and
 no hardened runtime. The usage description is what makes the prompts work.
 
-Upstream: does not ship this yet. It comes from open PR
-[pingdotgg/t3code#33869](https://github.com/pingdotgg/t3code/pull/33869). Drop
-this change when upstream merges an equivalent.
+Upstream: the same change, merged as
+[#33869](https://github.com/pingdotgg/t3code/pull/33869). The fork no longer
+carries a difference here.
 
 ## Bridge
 
@@ -1858,8 +1864,10 @@ sidebar card outside the FirstMate group is one line: the project's icon (the
 dashed speech bubble for a No project thread), then the title (or the project's
 agent name), then the status or age. Upstream's card has a project line over a
 title line. The card shows neither the model nor the account; the hover card
-keeps both. A card with a branch, machine
-label or diff keeps that meta line under the title. Otherwise its PR and
+keeps both. A card with a branch or diff keeps a meta line under the title,
+which names the environment, as upstream's rows now do instead of the branch.
+Upstream gives every row that line; the fork keeps a card with neither on one
+line, so a No project thread shows no machine label. Otherwise its PR and
 terminal badges sit on the title line, which truncates before them, the same
 as folder multi-line rows (`isThreadMetaLineEmpty` in
 `apps/web/src/components/Sidebar.logic.ts`). The hover card and the
@@ -2375,7 +2383,28 @@ and the mobile app's crash reports have their own settings.
 FirstMate half, in the FirstMate fork:
 [Telemetry warning](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#telemetry-warning).
 
+Upstream's agent feedback (Settings > Labs) sends its reports through this same
+telemetry, so with telemetry off a report you approve stays on this machine,
+marked not sent.
+
 Upstream: none. It sends telemetry unless you opt out.
+
+## Workflows need full access
+
+Every action that changes a workflow through the `t3_workflow` MCP tool needs a
+full-access caller: start, signal, resume, cancel, reading its webhook URLs, and
+writing its store. Upstream lets any client above read-only do these, but a
+workflow's agent steps launch at the workflow's or project's mode, which can be
+above the client's, so a client approved for `auto` could start full-access
+agents, answer a workflow's questions, and keep a webhook URL after it is revoked.
+The `t3 workflow` command signs in at full access and is unaffected. Workflows
+stay off unless Settings > Labs turns them on.
+
+Code: `McpToolAccess.writesEnvironment` in
+`apps/server/src/mcp/toolkits/workflow/handlers.ts`.
+
+Upstream: has the gap as of v0.1.12-nightly.20261123.5138. Drop this guard when
+upstream makes these actions respect the caller's mode.
 
 ## Links that work
 
@@ -2405,7 +2434,8 @@ shows the path beside the document.
 - `notes.md#setup` opens the file at that heading (`revealHeading` on the file
   tab); upstream drops the heading. `[x](notes.md:3)` opens at line 3; upstream's
   sanitizer read `notes.md:` as a scheme and dropped the link
-  (`rehypeKeepFileLineLinks` in `packages/shared/src/markdownPipeline.ts`).
+  (`rehypeKeepFileLineLinks` in `packages/shared/src/markdownHast.ts`, run by
+  `apps/web/src/markdown/wordsHast.ts`).
 - `scripts/../clips/a.mp4` and `clips/a.mp4` are one tab: joined paths drop `.`
   and `..` (`resolvePathLinkTarget` in `packages/shared/src/fileLinks.ts`).
 - A video or audio file plays in the side panel. "Open in default app" opens a
@@ -2572,7 +2602,13 @@ Cite button and right-click menu.
   quotes the Markdown as written. The rendered view quotes the text as shown
   and maps each end of the selection back to its source line by matching
   words; when that fails, or the end is in a block drawn by its own renderer
-  (a code block, a table), it takes the lines of the whole block.
+  (a code block, a table), it takes the lines of the whole block. Upstream's
+  Words renderer positions only list items, code, links and images, so a block
+  takes its lines from the source piece that renders it; a paragraph directly
+  above a list shares that piece's lines until the word match narrows them.
+- A file over 128 KB renders in upstream's virtualized pieces, whose line numbers
+  are not the file's. There the rendered view offers no Cite and a link cannot
+  jump to a heading. The live editor, for files it can open, still does both.
 - The right-click menu replaces the browser's only when the click lands on the
   selected text. It offers Cite and Copy, plus Cut in the editor; Paste, spell
   suggestions and Look Up are not in it. Tab in the editor still indents.
@@ -2586,7 +2622,7 @@ Cite button and right-click menu.
 
 Code: `apps/web/src/components/files/FileSelectionCite.tsx` (both views'
 selection readers and the menu), `fileCitation.ts` (line mapping) and
-`rehypeSourceLines.ts`. Shared files it touches, for syncs: `FileCitation` and
+`apps/web/src/markdown/sourceLines.ts`. Shared files it touches, for syncs: `FileCitation` and
 `Citation` in `packages/contracts/src/assistantCitations.ts`; the file link
 format, `<file_citations>` and `parseCitationHref` in
 `packages/shared/src/assistantCitations.ts` (`parseAssistantCitationHref` now
