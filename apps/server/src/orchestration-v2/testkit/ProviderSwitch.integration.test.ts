@@ -5409,6 +5409,8 @@ describe("orchestration v2 provider switching", () => {
           yield* orchestrator.dispatch(coldCacheMessage(key, "alpha", "web"));
           yield* worker.drain();
           yield* waitForIdle(threadId);
+          // The run completes before its checkpoint capture; let the capture finish first.
+          yield* worker.drain();
           const firstSession = (yield* orchestrator.getThreadProjection(threadId))
             .providerSessions[0]!;
           yield* orchestrator.dispatch(rotateSession(key, "rotate", reason));

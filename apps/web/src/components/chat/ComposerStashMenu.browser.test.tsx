@@ -135,5 +135,7 @@ it("leaves IME composition keys in the composer alone while the stash is open", 
   await using _control = await render(<Composer />);
   await focus(editor().element());
   await press("{Enter}");
-  await expect.element(editor()).toHaveValue("first prompt");
+  await expect
+    .element(editor())
+    .toHaveValue("[notes.md](t3-context://v1/file/file_first) first prompt");
 });
