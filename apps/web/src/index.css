@@ -287,6 +287,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --color-message-action: var(--message-action);
   --color-message-action-foreground: var(--message-action-foreground);
   --color-message-action-hover: var(--message-action-hover);
+  --color-panel-tab-strip: var(--panel-tab-strip);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--contrast-sidebar-foreground);
   --color-sidebar-muted-foreground: var(--contrast-sidebar-muted-foreground);
@@ -533,6 +534,32 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
     100% calc(var(--workspace-titlebar-scroll-fade-height) + 1px),
     100% calc(100% - var(--workspace-titlebar-scroll-fade-height)),
     var(--app-scrollbar-width) 100%;
+}
+
+/* Chrome-style inverted corners at an active tab's foot, flaring it into the
+   content below. Sized to the tab's rounded-t-lg so the curves meet. */
+@utility panel-tab-flare {
+  &::after {
+    content: "";
+    pointer-events: none;
+    position: absolute;
+    inset-inline: calc(var(--radius) * -1);
+    bottom: 0;
+    height: var(--radius);
+    background:
+      radial-gradient(
+          circle at 0 0,
+          transparent calc(var(--radius) - 0.5px),
+          var(--background) var(--radius)
+        )
+        left bottom / var(--radius) var(--radius) no-repeat,
+      radial-gradient(
+          circle at 100% 0,
+          transparent calc(var(--radius) - 0.5px),
+          var(--background) var(--radius)
+        )
+        right bottom / var(--radius) var(--radius) no-repeat;
+  }
 }
 
 /* Virtualizers own their native scroll element, so they cannot use ScrollArea's
@@ -1151,6 +1178,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --toolbar-control: var(--popover);
   --toolbar-control-foreground: var(--foreground);
   --toolbar-control-hover: var(--accent);
+  /* Recessed strip behind the right panel's tabs; the active tab takes --background. */
+  --panel-tab-strip: color-mix(in srgb, var(--foreground) 8%, var(--background));
   --surface-raised: color-mix(in srgb, var(--card) 20%, transparent);
   --foreground: var(--color-zinc-900);
   --card: var(--color-white);

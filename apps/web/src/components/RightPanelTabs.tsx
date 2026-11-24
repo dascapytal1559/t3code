@@ -992,6 +992,12 @@ function preventTabMiddleButtonDefault(event: ReactMouseEvent) {
   event.preventDefault();
 }
 
+// Chrome-style: the active tab takes the content background and flares into it; inactive
+// tabs sit on the recessed strip, split by a hairline hidden beside the active or hovered tab.
+const ACTIVE_TAB_CLASS = "z-1 bg-background text-foreground panel-tab-flare";
+const INACTIVE_TAB_CLASS =
+  "text-muted-foreground hover:bg-background/50 hover:text-foreground before:absolute before:top-1/2 before:left-0 before:h-4 before:w-px before:-translate-y-1/2 before:bg-border before:content-[''] first:before:hidden hover:before:hidden [[data-active-tab=true]+&]:before:hidden [:hover+&]:before:hidden";
+
 // Stable handlers and per-tab values let the compiler reuse tabs across parent renders.
 function RightPanelTab(
   props: RightPanelTabHandlers & {
@@ -1166,13 +1172,11 @@ function RightPanelTab(
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
-        "cursor-pointer group/tab flex h-6 shrink-0 items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs",
-        parentFolder === null ? "max-w-36" : "max-w-52",
+        "cursor-pointer group/tab relative flex h-8 shrink-0 items-center gap-0.5 rounded-t-lg pr-3 pl-2.5 text-xs",
+        parentFolder === null ? "max-w-40" : "max-w-56",
         props.ownsDesktopTitleBar && "[-webkit-app-region:no-drag]",
-        props.active
-          ? "bg-accent text-foreground"
-          : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-        isDragging && "relative z-10",
+        props.active ? ACTIVE_TAB_CLASS : INACTIVE_TAB_CLASS,
+        isDragging && "z-10",
       )}
     >
       {content}
@@ -1553,7 +1557,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     >
       <div
         className={cn(
-          "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 pl-2",
+          "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 bg-panel-tab-strip",
           props.mode !== "inline" || props.layoutControls
             ? "pr-3"
             : props.maximizeOnlyAtCorner
@@ -1576,7 +1580,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           )}
           data-right-panel-tab-list
         >
-          <div className="flex h-full w-max min-w-full items-center gap-1">
+          <div className="flex h-full w-max min-w-full items-end px-2">
             <SortableTabList surfaces={props.surfaces} onMove={props.onMoveSurface}>
               {props.surfaces.map((surface) => {
                 const previewTabId = previewTabIdOf(surface, props.previewSessions);
@@ -1629,7 +1633,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   render={
                     <Button
                       aria-label={gt("Add panel surface")}
-                      className="shrink-0"
+                      className="ml-1 shrink-0 self-center"
                       size="icon-xs"
                       variant="ghost-muted"
                     />
