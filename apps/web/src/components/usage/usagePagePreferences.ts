@@ -15,7 +15,9 @@ const UsagePagePreferencesSchema = Schema.Struct({
   /** Chart annotations show unless switched off. */
   showAnnotations: Schema.optional(Schema.Boolean),
   /** The open breakdown box, which the chart splits by; by provider when absent. */
-  breakdown: Schema.optional(Schema.Literals(["provider", "device", "process", "work", "type"])),
+  breakdown: Schema.optional(
+    Schema.Literals(["provider", "device", "process", "work", "type", "speed"]),
+  ),
   /** Parent rows left open, by box: devices and kinds of work open into their children. */
   openParents: Schema.optional(Schema.Record(Schema.String, Schema.Array(Schema.String))),
 });

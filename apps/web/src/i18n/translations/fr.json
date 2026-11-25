@@ -12885,19 +12885,6 @@
   "e4f9fde741cf9454": "Annotations du graphique",
   "99a1fdbb7032fd69": "Masquer les annotations du graphique",
   "89bd2c9246f813b2": "Afficher les annotations du graphique",
-  "9516acfe827ed15a": [
-    "Cache savings",
-    " ",
-    {
-      "t": "span",
-      "i": 1,
-      "c": {
-        "i": 2,
-        "k": "_gt_value_2",
-        "v": "v"
-      }
-    }
-  ],
   "17ee6ea68b2d5f26": "Jetons traités par heure par appareil",
   "cbcace2378d535cf": "Coût par heure par appareil",
   "5b0884c21cbf3dc2": "Jetons traités par jour par appareil",
@@ -13003,5 +12990,10 @@
     ")"
   ],
   "33d18dda74f6d7b3": "Annuler la fusion automatique de la pile",
-  "012c67c7f1a99e33": "Fusion automatique de la pile"
+  "012c67c7f1a99e33": "Fusion automatique de la pile",
+  "fc8baa931e357c0c": "Coût horaire par vitesse",
+  "7b14f8db56f5a3ba": "Coût quotidien par vitesse",
+  "e5591a3cf178de72": "Standard",
+  "572171fafbc3eb3a": "Rapide",
+  "0ad63660b28729a3": "Ultrarapide"
 }

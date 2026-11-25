@@ -145,6 +145,7 @@ export function UsageBreakdownBox({
   onOpen,
   opening,
   extras,
+  footer,
   loading,
 }: {
   readonly model: BoxModel;
@@ -160,6 +161,8 @@ export function UsageBreakdownBox({
   readonly onOpen: (opening: Omit<BoxOpening, "id">) => void;
   readonly opening: BoxOpening | null;
   readonly extras?: Readonly<Record<string, BoxRowExtras>>;
+  /** A line under the open card's rows. */
+  readonly footer?: ReactNode;
   readonly loading: boolean;
 }) {
   const m = useMessages();
@@ -480,6 +483,7 @@ export function UsageBreakdownBox({
           ];
         })}
       </div>
+      {footer === undefined ? null : <div className={figures}>{footer}</div>}
     </section>
   );
 }

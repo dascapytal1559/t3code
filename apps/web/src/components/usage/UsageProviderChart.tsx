@@ -585,7 +585,7 @@ export function UsageProviderChart({
   );
 }
 
-export type UsageChartSplit = "provider" | "device" | "process" | "work" | "type";
+export type UsageChartSplit = "provider" | "device" | "process" | "work" | "type" | "speed";
 
 /** The screen-reader caption of a chart's table, as a message. */
 export function usageChartCaption(
@@ -636,6 +636,9 @@ export function usageChartCaption(
         : tokens
           ? msg("Daily processed tokens by direction")
           : msg("Daily cost by direction");
+    // Speed splits cost only.
+    case "speed":
+      return hourly ? msg("Hourly cost by speed") : msg("Daily cost by speed");
   }
 }
 

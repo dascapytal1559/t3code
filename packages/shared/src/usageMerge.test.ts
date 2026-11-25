@@ -546,6 +546,16 @@ describe("mergeUsage", () => {
     expect(
       types.bands.reduce((sum, band) => sum + types.valueAt(day.day, band.key, "tokens"), 0),
     ).toBe(day.totalTokens);
+    // By speed: each day's speeds add up to its cost.
+    const speeds = usageSplitBands(merged, "speed", "cost", false);
+    expect(speeds.bands.map((band) => [band.key, band.costUsd])).toEqual([
+      ["standard", 9],
+      ["fast", 6],
+    ]);
+    expect(speeds.valueAt(day.day, "fast", "cost")).toBe(6);
+    expect(
+      speeds.bands.reduce((sum, band) => sum + speeds.valueAt(day.day, band.key, "cost"), 0),
+    ).toBe(day.costUsd);
     expect(merged.models.map(({ model, unpricedTokens }) => [model, unpricedTokens])).toEqual([
       ["claude-fable-5", 0],
       ["unknown-model", 1160],

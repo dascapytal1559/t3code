@@ -131,7 +131,12 @@ export interface MergedUsage {
   readonly workMemberInfo: readonly UsageWorkMember[];
   /** Usage by token type: tokens by type, cost by its priced category; unsplit cost is `other`. */
   readonly types: MergedSplit<UsageTypeBand>;
+  /** Cost by speed; tokens all count as standard, since buckets price speeds but do not count them. */
+  readonly speeds: MergedSplit<UsageSpeedBand>;
 }
+
+/** The speed a model ran at, as the Usage page splits cost by it. */
+export type UsageSpeedBand = "standard" | "fast" | "ultrafast";
 
 /** A token type the Usage page splits by; `other` holds cost no category accounts for. */
 export type UsageTypeBand = "input" | "cacheRead" | "output" | "cacheWrite" | "other";
@@ -475,6 +480,7 @@ const EMPTY_MERGED: MergedUsage = {
   workMembers: { totals: new Map(), daily: new Map(), hourly: new Map() },
   workMemberInfo: [],
   types: { totals: new Map(), daily: new Map(), hourly: new Map() },
+  speeds: { totals: new Map(), daily: new Map(), hourly: new Map() },
 };
 
 export function mergeUsage(
@@ -569,6 +575,7 @@ export function mergeUsage(
   // A member split covers only part of a bucket; the rest lands on "" and is never read.
   const workMembers = new SplitAccumulator<string>("", (key) => key);
   const types = new SplitAccumulator<UsageTypeBand>("other", (key) => key as UsageTypeBand);
+  const speeds = new SplitAccumulator<UsageSpeedBand>("standard", (key) => key as UsageSpeedBand);
 
   for (const environment of current) {
     const groupOfMember = new Map(
@@ -622,6 +629,11 @@ export function mergeUsage(
           output: [bucket.totals.outputTokens, category?.output ?? 0],
           cacheWrite: [bucket.totals.cacheCreationTokens, category?.cacheWrite ?? 0],
         },
+        tokens,
+      );
+      speeds.add(
+        bucket,
+        { fast: [0, bucket.fastCostUsd ?? 0], ultrafast: [0, bucket.ultrafastCostUsd ?? 0] },
         tokens,
       );
 
@@ -831,6 +843,7 @@ export function mergeUsage(
     workMembers,
     workMemberInfo,
     types,
+    speeds,
   };
 }
 
@@ -866,6 +879,8 @@ function deviceSplitOf(usage: MergedUsage): MergedSplit<MergedDeviceBand> {
   };
 }
 
+const USAGE_SPEED_BANDS: readonly UsageSpeedBand[] = ["standard", "fast", "ultrafast"];
+
 const USAGE_TYPE_BANDS: readonly UsageTypeBand[] = [
   "input",
   "cacheRead",
@@ -884,7 +899,7 @@ function spreadWork(usage: MergedUsage, hourly: boolean) {
 
 export function usageSplitBands(
   usage: MergedUsage,
-  split: "device" | "process" | "work" | "type",
+  split: "device" | "process" | "work" | "type" | "speed",
   metric: "cost" | "tokens",
   hourly: boolean,
 ): UsageSplitBands {
@@ -895,12 +910,18 @@ export function usageSplitBands(
         ? usage.processes
         : split === "type"
           ? usage.types
-          : usage.work;
+          : split === "speed"
+            ? usage.speeds
+            : usage.work;
   const spread = split === "work" ? spreadWork(usage, hourly) : null;
   const periods = spread?.periods ?? (hourly ? merged.hourly : merged.daily);
   const totals = spread?.totals ?? merged.totals;
   const catchAll =
-    split === "device" ? null : split === "type" || split === "process" ? "other" : OTHER_WORK;
+    split === "device" || split === "speed"
+      ? null
+      : split === "type" || split === "process"
+        ? "other"
+        : OTHER_WORK;
   const keys =
     split === "device"
       ? USAGE_DEVICE_BANDS
@@ -908,14 +929,16 @@ export function usageSplitBands(
         ? USAGE_PROCESS_BANDS
         : split === "type"
           ? USAGE_TYPE_BANDS
-          : [
-              ...usage.workGroups,
-              // Groups only another server names, then the usage in no group.
-              ...[...merged.totals.keys()].filter(
-                (key) => key !== OTHER_WORK && !usage.workGroups.includes(key),
-              ),
-              OTHER_WORK,
-            ];
+          : split === "speed"
+            ? USAGE_SPEED_BANDS
+            : [
+                ...usage.workGroups,
+                // Groups only another server names, then the usage in no group.
+                ...[...merged.totals.keys()].filter(
+                  (key) => key !== OTHER_WORK && !usage.workGroups.includes(key),
+                ),
+                OTHER_WORK,
+              ];
   const value = (amount: SplitAmount) => (metric === "cost" ? amount.costUsd : amount.totalTokens);
   const bands = keys
     .map((key, index) => {

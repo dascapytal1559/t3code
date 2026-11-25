@@ -97,11 +97,13 @@ import {
 } from "./UsageProviderChart";
 import {
   BREAKDOWN_ORDER,
-  BREAKDOWN_TITLES,
+  breakdownTitle,
   chartBands,
   deviceBox,
   processBox,
   providerBox,
+  shownBreakdowns,
+  speedBox,
   typeBox,
   workBox,
   type BoxGroup,
@@ -112,8 +114,6 @@ import { UsageBreakdownBox, UsageBreakdownBoxSkeleton, type BoxOpening } from ".
 import { keepStation, reducedMotion, regrow } from "./usageMotion";
 import { collectUsageAnnotations, placeUsageAnnotations } from "./usageAnnotations";
 import { SpeedPremium, UsageModelDialog } from "./UsageModelDialog";
-import { UsageShareBar } from "./UsageShareBar";
-import { speedCostSegments } from "./usageBreakdown";
 import {
   METRIC_OPTIONS,
   WINDOW_OPTIONS,
@@ -689,7 +689,7 @@ function UsageOverview({
   hours,
   showingKept,
   metric,
-  breakdown: split,
+  breakdown,
   onBreakdownChange,
   openParents,
   onToggleOpenParent,
@@ -792,7 +792,11 @@ function UsageOverview({
     process: processBox(merged, metric, shownHourly),
     work: workBox(merged, metric, shownHourly),
     type: typeBox(merged, metric, shownHourly),
+    speed: speedBox(merged, shownHourly),
   };
+  const kinds = shownBreakdowns(metric, merged.speedCost.fast + merged.speedCost.ultrafast);
+  // A breakdown this view does not show, such as speed in the token view, leaves the chart by provider.
+  const split = kinds.includes(breakdown) ? breakdown : "provider";
   const openSetOf = (kind: UsageBreakdown): ReadonlySet<string> => new Set(openParents[kind] ?? []);
   const seriesOf = (kind: UsageBreakdown): readonly ChartSeries[] => {
     const model = models[kind];
@@ -887,10 +891,7 @@ function UsageOverview({
       command === "usage.breakdown.previous" ? -1 : command === "usage.breakdown.next" ? 1 : 0;
     if (step === 0) return;
     event.preventDefault();
-    const next =
-      BREAKDOWN_ORDER[
-        (BREAKDOWN_ORDER.indexOf(split) + step + BREAKDOWN_ORDER.length) % BREAKDOWN_ORDER.length
-      ]!;
+    const next = kinds[(kinds.indexOf(split) + step + kinds.length) % kinds.length]!;
     const bar = barOf(next)?.getBoundingClientRect();
     openBox(next, {
       clickAt: 0.5,
@@ -917,8 +918,8 @@ function UsageOverview({
     if (before === null || reducedMotion()) return;
     const barTop = barTopOf(before.kind);
     const hold = before.barTop === null || barTop === null ? 0 : before.barTop - barTop;
-    const openedAt = BREAKDOWN_ORDER.indexOf(before.kind);
-    const closedAt = BREAKDOWN_ORDER.indexOf(before.closed);
+    const openedAt = kinds.indexOf(before.kind);
+    const closedAt = kinds.indexOf(before.closed);
     // Measured before anything moves: where the folded bar now sits in its box, against where the
     // card's bar sat in it.
     const closedBox = boxRefs.current.get(before.closed);
@@ -933,7 +934,7 @@ function UsageOverview({
         : before.closedBar.top -
           closedTop -
           (closedBar.getBoundingClientRect().top - closedBox.getBoundingClientRect().top);
-    BREAKDOWN_ORDER.forEach((kind, index) => {
+    kinds.forEach((kind, index) => {
       const element = boxRefs.current.get(kind);
       const top = before.tops.get(kind);
       if (element === undefined || top === undefined) return;
@@ -982,51 +983,60 @@ function UsageOverview({
       ))}
       <UsageOverviewGrid
         open={split}
+        kinds={kinds}
         total={
           <>
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <p
+                className={cn(
+                  "text-4xl font-semibold text-foreground tabular-nums",
+                  figureClass(loadingPartial),
+                )}
+              >
+                {metric === "cost"
+                  ? formatUsdShort(merged.costUsd, locale)
+                  : formatTokens(merged.totalTokens)}
+              </p>
+              {metric === "cost" && (
+                <p className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                  {gt("API estimate")}
+                  {merged.costQuality.unpricedShare > 0 && (
+                    <Popover>
+                      <PopoverTrigger
+                        openOnHover
+                        render={<InlineButton tone="muted" />}
+                        aria-label={gt("Unpriced usage details")}
+                      >
+                        <InfoIcon className="size-3" aria-hidden />
+                      </PopoverTrigger>
+                      <PopoverPopup side="top" tooltipStyle>
+                        <T>
+                          API estimate excludes{" "}
+                          <Var>{formatPercent(merged.costQuality.unpricedShare)}</Var> unpriced
+                          records.
+                        </T>
+                      </PopoverPopup>
+                    </Popover>
+                  )}
+                </p>
+              )}
+            </div>
             <p
               className={cn(
-                "text-4xl font-semibold text-foreground tabular-nums",
+                "text-xs text-muted-foreground tabular-nums",
                 figureClass(loadingPartial),
               )}
             >
               {metric === "cost"
-                ? formatUsdShort(merged.costUsd, locale)
-                : formatTokens(merged.totalTokens)}
-            </p>
-            <p className="inline-flex items-center gap-1 text-xs text-muted-foreground tabular-nums">
-              <span>
-                <span className={figureClass(loadingPartial)}>
-                  {metric === "cost"
-                    ? gt(
-                        "{count, plural, one {{sessions} session · {tokens} tokens} other {{sessions} sessions · {tokens} tokens}}",
-                        {
-                          count: merged.sessions,
-                          sessions: formatCount(merged.sessions, locale),
-                          tokens: formatTokens(merged.totalTokens),
-                        },
-                      )
-                    : sessionsLabel}
-                </span>
-                {metric === "cost" && ` · ${gt("API estimate")}`}
-              </span>
-              {metric === "cost" && merged.costQuality.unpricedShare > 0 && (
-                <Popover>
-                  <PopoverTrigger
-                    openOnHover
-                    render={<InlineButton tone="muted" />}
-                    aria-label={gt("Unpriced usage details")}
-                  >
-                    <InfoIcon className="size-3" aria-hidden />
-                  </PopoverTrigger>
-                  <PopoverPopup side="top" tooltipStyle>
-                    <T>
-                      API estimate excludes{" "}
-                      <Var>{formatPercent(merged.costQuality.unpricedShare)}</Var> unpriced records.
-                    </T>
-                  </PopoverPopup>
-                </Popover>
-              )}
+                ? gt(
+                    "{count, plural, one {{sessions} session · {tokens} tokens} other {{sessions} sessions · {tokens} tokens}}",
+                    {
+                      count: merged.sessions,
+                      sessions: formatCount(merged.sessions, locale),
+                      tokens: formatTokens(merged.totalTokens),
+                    },
+                  )
+                : sessionsLabel}
             </p>
             {showChatGptSharing ? (
               <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
@@ -1097,7 +1107,7 @@ function UsageOverview({
         renderBox={(kind) => (
           <UsageBreakdownBox
             model={models[kind]}
-            title={m(BREAKDOWN_TITLES[metric][kind])}
+            title={m(breakdownTitle(metric, kind))}
             open={kind === split}
             metric={metric}
             total={total}
@@ -1108,32 +1118,12 @@ function UsageOverview({
             opening={opening?.kind === kind ? opening.at : null}
             loading={loadingPartial}
             {...(kind === "provider" ? { extras: providerExtras } : {})}
+            {...(kind === "speed" && merged.speedCost.premium > 0
+              ? { footer: <SpeedPremium premiumUsd={merged.speedCost.premium} /> }
+              : {})}
           />
         )}
       />
-
-      {metric === "cost" && merged.totalTokens > 0 ? (
-        <section
-          className={cn("grid gap-x-12 gap-y-8 lg:grid-cols-2", figureClass(loadingPartial))}
-        >
-          <p className="text-xs text-muted-foreground">
-            <T>
-              Cache savings{" "}
-              <span className="text-foreground tabular-nums">
-                <Var>{formatUsdShort(merged.costQuality.cacheSavingsUsd, locale)}</Var>
-              </span>
-            </T>
-          </p>
-          {merged.speedCost.fast + merged.speedCost.ultrafast > 0 ? (
-            <UsageShareBar
-              label={gt("Cost by speed")}
-              segments={speedCostSegments(merged.speedCost)}
-              format={(value: number) => formatUsdShort(value, locale)}
-              aside={<SpeedPremium premiumUsd={merged.speedCost.premium} />}
-            />
-          ) : null}
-        </section>
-      ) : null}
     </div>
   );
 }
@@ -1417,12 +1407,14 @@ function UsageOverviewGrid({
   total,
   chart,
   open,
+  kinds,
   renderBox,
   boxRef,
 }: {
   readonly total: ReactNode;
   readonly chart: ReactNode;
   readonly open: UsageBreakdown;
+  readonly kinds: readonly UsageBreakdown[];
   readonly renderBox: (kind: UsageBreakdown) => ReactNode;
   readonly boxRef?: (kind: UsageBreakdown, element: HTMLElement | null) => void;
 }) {
@@ -1435,7 +1427,7 @@ function UsageOverviewGrid({
         {chart}
       </div>
       <div className="flex min-w-0 flex-col gap-1 lg:col-span-4 lg:col-start-9 lg:row-start-2">
-        {BREAKDOWN_ORDER.map((kind) => (
+        {kinds.map((kind) => (
           <div
             key={kind}
             // The open card sits as far from the bars around it as the bars sit from each other.
@@ -1463,6 +1455,8 @@ function UsageSkeleton({
   return (
     <UsageOverviewGrid
       open={open}
+      // Whether speed shows is unknown until usage arrives; the skeleton leaves it out unless open.
+      kinds={BREAKDOWN_ORDER.filter((kind) => kind !== "speed" || kind === open)}
       total={
         <>
           <span className="flex h-10 items-center">

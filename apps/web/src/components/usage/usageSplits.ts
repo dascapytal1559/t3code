@@ -15,21 +15,42 @@ import {
   type MergedDeviceBand,
   type MergedUsage,
   type SplitAmount,
+  type UsageSpeedBand,
   type UsageTypeBand,
 } from "@t3tools/shared/usageMerge";
 import { msg } from "gt-react";
 
 /** The breakdown boxes beside the Usage chart, in page order; the open one is the chart's split. */
-export type UsageBreakdown = "provider" | "device" | "process" | "work" | "type";
+export type UsageBreakdown = "provider" | "device" | "process" | "work" | "type" | "speed";
 export const BREAKDOWN_ORDER: readonly UsageBreakdown[] = [
   "provider",
   "work",
   "device",
   "process",
   "type",
+  "speed",
 ];
 
-export const BREAKDOWN_TITLES = {
+/**
+ * The boxes a view shows, in page order. Speed is cost only, since usage prices each speed but does
+ * not count its tokens, and shows only when some usage ran faster than standard.
+ */
+export function shownBreakdowns(
+  metric: "cost" | "tokens",
+  fasterCostUsd: number,
+): readonly UsageBreakdown[] {
+  return BREAKDOWN_ORDER.filter(
+    (kind) => kind !== "speed" || (metric === "cost" && fasterCostUsd > 0),
+  );
+}
+
+export function breakdownTitle(metric: "cost" | "tokens", kind: UsageBreakdown): string {
+  return kind === "speed" ? COST_BY_SPEED : BREAKDOWN_TITLES[metric][kind];
+}
+
+const COST_BY_SPEED = msg("Cost by speed");
+
+const BREAKDOWN_TITLES = {
   tokens: {
     provider: msg("Tokens by provider"),
     device: msg("Tokens by device"),
@@ -44,7 +65,7 @@ export const BREAKDOWN_TITLES = {
     work: msg("Cost by kind of work"),
     type: msg("Cost by direction"),
   },
-} as const satisfies Record<"tokens" | "cost", Record<UsageBreakdown, string>>;
+} as const satisfies Record<"tokens" | "cost", Record<Exclude<UsageBreakdown, "speed">, string>>;
 
 /** One row of a box: a leaf band, or a parent's child. `label` is a message unless `named`. */
 export interface BoxBand {
@@ -364,6 +385,24 @@ export function typeBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: b
         ? inputKeys.reduce((sum, child) => sum + split.valueAt(period, child, by), 0)
         : split.valueAt(period, key, by),
   };
+}
+
+const SPEEDS: readonly { key: UsageSpeedBand; label: string; color: string }[] = [
+  { key: "standard", label: msg("Standard", { $context: "model speed tier" }), color: ink(34) },
+  { key: "fast", label: msg("Fast", { $context: "model speed tier" }), color: ink(66) },
+  { key: "ultrafast", label: msg("Ultrafast", { $context: "model speed tier" }), color: ink(100) },
+];
+
+/** The speed box: standard, fast and ultrafast, by cost. */
+export function speedBox(usage: MergedUsage, hourly: boolean): BoxModel {
+  const split = usageSplitBands(usage, "speed", "cost", hourly);
+  const groups = SPEEDS.flatMap((speed) => {
+    const band = split.bands.find((entry) => entry.key === speed.key);
+    return band === undefined || band.costUsd <= 0
+      ? []
+      : [leaf({ ...speed, named: false, totalTokens: band.totalTokens, costUsd: band.costUsd })];
+  });
+  return { kind: "speed", groups: largestFirst(groups, "cost"), valueAt: split.valueAt };
 }
 
 /** The provider box: one row per provider, ranked as the page ranks them. */

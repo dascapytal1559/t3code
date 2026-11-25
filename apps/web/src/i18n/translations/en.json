@@ -12894,19 +12894,6 @@
   "e4f9fde741cf9454": "Chart annotations",
   "99a1fdbb7032fd69": "Hide chart annotations",
   "89bd2c9246f813b2": "Show chart annotations",
-  "9516acfe827ed15a": [
-    "Cache savings",
-    " ",
-    {
-      "t": "span",
-      "i": 1,
-      "c": {
-        "i": 2,
-        "k": "_gt_value_2",
-        "v": "v"
-      }
-    }
-  ],
   "17ee6ea68b2d5f26": "Hourly processed tokens by device",
   "cbcace2378d535cf": "Hourly cost by device",
   "5b0884c21cbf3dc2": "Daily processed tokens by device",
@@ -13012,5 +12999,10 @@
     ")"
   ],
   "33d18dda74f6d7b3": "Cancel stack auto-merge",
-  "012c67c7f1a99e33": "Auto-merge stack"
+  "012c67c7f1a99e33": "Auto-merge stack",
+  "fc8baa931e357c0c": "Hourly cost by speed",
+  "7b14f8db56f5a3ba": "Daily cost by speed",
+  "e5591a3cf178de72": "Standard",
+  "572171fafbc3eb3a": "Fast",
+  "0ad63660b28729a3": "Ultrafast"
 }

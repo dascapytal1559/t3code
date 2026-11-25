@@ -7,6 +7,8 @@ import {
   foldMembers,
   openedBarBands,
   processBox,
+  shownBreakdowns,
+  speedBox,
   workBox,
 } from "./usageSplits";
 
@@ -46,6 +48,35 @@ const usage = {
 } as unknown as MergedUsage;
 
 describe("breakdown boxes", () => {
+  it("splits cost by speed, shown after direction only in the cost view and only with faster usage", () => {
+    const speeds = new Map([
+      ["standard", amount(900, 30)],
+      ["fast", amount(0, 12)],
+    ]);
+    const box = speedBox(
+      {
+        speeds: { totals: speeds, daily: new Map([[day, speeds]]), hourly: new Map() },
+      } as unknown as MergedUsage,
+      false,
+    );
+
+    expect(box.groups.map((group) => [group.key, group.costUsd])).toEqual([
+      ["standard", 30],
+      ["fast", 12],
+    ]);
+    expect(box.valueAt(day, "fast", "cost")).toBe(12);
+    expect(shownBreakdowns("cost", 12)).toEqual([
+      "provider",
+      "work",
+      "device",
+      "process",
+      "type",
+      "speed",
+    ]);
+    expect(shownBreakdowns("cost", 0)).not.toContain("speed");
+    expect(shownBreakdowns("tokens", 12)).not.toContain("speed");
+  });
+
   it("lists rows and children largest first, and draws an opened parent's children", () => {
     const box = deviceBox(usage, "tokens", false);
 

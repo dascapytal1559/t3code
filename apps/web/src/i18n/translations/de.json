@@ -12885,19 +12885,6 @@
   "e4f9fde741cf9454": "Diagrammanmerkungen",
   "99a1fdbb7032fd69": "Diagrammanmerkungen ausblenden",
   "89bd2c9246f813b2": "Diagrammanmerkungen einblenden",
-  "9516acfe827ed15a": [
-    "Cache savings",
-    " ",
-    {
-      "t": "span",
-      "i": 1,
-      "c": {
-        "i": 2,
-        "k": "_gt_value_2",
-        "v": "v"
-      }
-    }
-  ],
   "17ee6ea68b2d5f26": "Verarbeitete Tokens pro Stunde nach Gerät",
   "cbcace2378d535cf": "Kosten pro Stunde nach Gerät",
   "5b0884c21cbf3dc2": "Verarbeitete Tokens pro Tag nach Gerät",
@@ -13003,5 +12990,10 @@
     ")"
   ],
   "33d18dda74f6d7b3": "Auto-Merge für Stack abbrechen",
-  "012c67c7f1a99e33": "Auto-Merge für Stack"
+  "012c67c7f1a99e33": "Auto-Merge für Stack",
+  "fc8baa931e357c0c": "Stündliche Kosten nach Geschwindigkeit",
+  "7b14f8db56f5a3ba": "Tägliche Kosten nach Geschwindigkeit",
+  "e5591a3cf178de72": "Standard",
+  "572171fafbc3eb3a": "Schnell",
+  "0ad63660b28729a3": "Ultraschnell"
 }

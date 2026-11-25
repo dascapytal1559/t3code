@@ -12880,19 +12880,6 @@
   "e4f9fde741cf9454": "Anotaciones del gráfico",
   "99a1fdbb7032fd69": "Ocultar las anotaciones del gráfico",
   "89bd2c9246f813b2": "Mostrar las anotaciones del gráfico",
-  "9516acfe827ed15a": [
-    "Cache savings",
-    " ",
-    {
-      "t": "span",
-      "i": 1,
-      "c": {
-        "i": 2,
-        "k": "_gt_value_2",
-        "v": "v"
-      }
-    }
-  ],
   "17ee6ea68b2d5f26": "Tokens procesados por hora por dispositivo",
   "cbcace2378d535cf": "Coste por hora por dispositivo",
   "5b0884c21cbf3dc2": "Tokens procesados por día por dispositivo",
@@ -12998,5 +12985,10 @@
     ")"
   ],
   "33d18dda74f6d7b3": "Cancelar la fusión automática de la pila",
-  "012c67c7f1a99e33": "Fusión automática de la pila"
+  "012c67c7f1a99e33": "Fusión automática de la pila",
+  "fc8baa931e357c0c": "Coste por hora según velocidad",
+  "7b14f8db56f5a3ba": "Coste diario según velocidad",
+  "e5591a3cf178de72": "Estándar",
+  "572171fafbc3eb3a": "Rápida",
+  "0ad63660b28729a3": "Ultrarrápida"
 }

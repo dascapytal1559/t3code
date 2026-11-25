@@ -12892,19 +12892,6 @@
   "e4f9fde741cf9454": "Diagramanteckningar",
   "99a1fdbb7032fd69": "Dölj diagramanteckningar",
   "89bd2c9246f813b2": "Visa diagramanteckningar",
-  "9516acfe827ed15a": [
-    "Cache savings",
-    " ",
-    {
-      "t": "span",
-      "i": 1,
-      "c": {
-        "i": 2,
-        "k": "_gt_value_2",
-        "v": "v"
-      }
-    }
-  ],
   "17ee6ea68b2d5f26": "Bearbetade tokens per timme efter enhet",
   "cbcace2378d535cf": "Kostnad per timme efter enhet",
   "5b0884c21cbf3dc2": "Bearbetade tokens per dag efter enhet",
@@ -13010,5 +12997,10 @@
     ")"
   ],
   "33d18dda74f6d7b3": "Avbryt automatisk merge för stacken",
-  "012c67c7f1a99e33": "Merga stacken automatiskt"
+  "012c67c7f1a99e33": "Merga stacken automatiskt",
+  "fc8baa931e357c0c": "Kostnad per timme efter hastighet",
+  "7b14f8db56f5a3ba": "Kostnad per dag efter hastighet",
+  "e5591a3cf178de72": "Standard",
+  "572171fafbc3eb3a": "Snabb",
+  "0ad63660b28729a3": "Ultrasnabb"
 }
