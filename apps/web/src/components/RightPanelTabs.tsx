@@ -999,10 +999,9 @@ const ACTIVE_TAB_CLASS = "z-1 bg-background text-foreground panel-tab-flare";
 const INACTIVE_TAB_CLASS =
   "text-muted-foreground hover:bg-background/50 hover:text-foreground before:absolute before:top-1/2 before:left-0 before:h-4 before:w-px before:-translate-y-1/2 before:bg-border before:content-[''] first:before:hidden hover:before:hidden [[data-active-tab=true]+&]:before:hidden [:hover+&]:before:hidden";
 
-// 40px tabs in the 52px strip leave 12px above, matching the 12px over the label inside.
-// A shorter title bar (window controls overlay can be 40px) keeps at least 8px above.
-const TAB_HEIGHT_CLASS =
-  "h-[min(--spacing(10),calc(var(--workspace-topbar-height)-var(--spacing)*2))]";
+// Tabs span the whole title bar so their centred labels share the centre line of the
+// toolbar controls, which centre on the same height, while still meeting the content.
+const TAB_HEIGHT_CLASS = "h-(--workspace-topbar-height)";
 
 // Stable handlers and per-tab values let the compiler reuse tabs across parent renders.
 function RightPanelTab(
@@ -1644,7 +1643,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   render={
                     <Button
                       aria-label={gt("Add panel surface")}
-                      className="mb-2 ml-1 shrink-0 self-end"
+                      className="ml-1 shrink-0 self-center"
                       size="icon-xs"
                       variant="ghost-muted"
                     />
