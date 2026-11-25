@@ -1597,6 +1597,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             ? "[contain-intrinsic-size:auto_60px]"
             : "[contain-intrinsic-size:auto_78px]",
         props.crewTree !== undefined && cn("relative", CREW_TREE_INDENT_CLASS_NAME),
+        props.crewTreeRoot && "relative",
         // Joins this row's guide line to the next one's across the list gap.
         props.crewTree === "branch" && "-mb-px",
         sortable?.isDragging && "relative z-20",
@@ -1624,7 +1625,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               aria-current={accessibility.current}
               data-testid="sidebar-row-card"
               aria-busy={isRegeneratingTitle || undefined}
-              className={rowSurfaceClassName}
+              className={cn(rowSurfaceClassName, "peer/sidebar-row")}
               onClick={handleClick}
               onDoubleClick={handleDoubleClick}
               onKeyDown={handleKeyDown}
@@ -1632,18 +1633,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             />
           }
         >
-          {props.crewTreeRoot ? (
-            // Runs down the card's bottom padding on the guide line; a filled card, hover
-            // included, never shows the line inside it.
-            <span
-              aria-hidden
-              className={cn(
-                CREW_TREE_TRUNK_CLASS_NAME,
-                "bottom-0 h-(--sidebar-content-inset)",
-                surfaceFilled ? "hidden" : "group-hover/sidebar-row:hidden",
-              )}
-            />
-          ) : null}
           <div
             className={cn(
               "relative z-10 h-[4.875rem] px-(--sidebar-row-content-inset) py-(--sidebar-content-inset)",
@@ -1851,6 +1840,19 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         </TooltipTrigger>
         {detailsTooltip}
       </Tooltip>
+      {props.crewTreeRoot ? (
+        // Runs down the card's bottom padding on the guide line. It is the card's sibling so a
+        // receding card's opacity cannot fade it; a filled card, hover included, never shows it.
+        <span
+          aria-hidden
+          data-testid="sidebar-crew-tree-root-line"
+          className={cn(
+            CREW_TREE_TRUNK_CLASS_NAME,
+            "bottom-0.5 h-(--sidebar-content-inset)",
+            surfaceFilled ? "hidden" : "peer-hover/sidebar-row:hidden",
+          )}
+        />
+      ) : null}
     </li>
   );
 });

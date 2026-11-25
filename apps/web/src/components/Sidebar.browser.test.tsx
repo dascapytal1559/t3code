@@ -11,6 +11,7 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  RunId,
   ThreadId,
   type ScopedThreadRef,
   type ServerProvider,
@@ -464,6 +465,77 @@ describe("sidebar thread cards", () => {
       expect(row.querySelector('[aria-label="Snooze thread"]')).toBeNull();
       expect(row.querySelector('[aria-label="Settle thread"]')).toBeNull();
     }
+  });
+
+  // regression: the guide line inside a working coordinator's card faded with the receding card
+  it("draws the crew guide line inside a working coordinator's card like the line outside it", async () => {
+    using stack = new DisposableStack();
+    const style = document.createElement("style");
+    style.textContent = appCss;
+    document.head.append(style);
+    stack.defer(() => style.remove());
+    const environmentId = EnvironmentId.make("local");
+    providerState.providers = new Map();
+    providerState.serverConfigs = new Map([
+      [environmentId, { settings: { providerInstances: {} } }],
+    ]);
+    const home = project("firstmate");
+    vi.mocked(useProjects).mockReturnValue([home]);
+    vi.mocked(useQuietThreadShells).mockReturnValue([
+      {
+        ...makeThreadFixture({
+          environmentId,
+          id: ThreadId.make("firstmate"),
+          projectId: home.id,
+          title: "Firstmate",
+          runtime: {
+            status: "running",
+            activeRunId: RunId.make("run-1"),
+            providerInstanceId: ProviderInstanceId.make("codex"),
+            providerName: "codex",
+            lastError: null,
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        }),
+        coordinator: true,
+      },
+      {
+        ...makeThreadFixture({
+          environmentId,
+          id: ThreadId.make("probe"),
+          projectId: home.id,
+          title: "Media archive probe",
+        }),
+        crewOf: ThreadId.make("firstmate"),
+      },
+    ]);
+    vi.mocked(useThreadRouteTarget).mockReturnValue({ kind: "none" } as never);
+    localStorage.setItem("t3code:sidebar:crew-expanded", "true");
+    stack.defer(() => localStorage.removeItem("t3code:sidebar:crew-expanded"));
+    await using screen = await render(
+      <SidebarProvider>
+        <Sidebar routeReveal={{ observedKey: null, pendingKey: null }} />
+      </SidebarProvider>,
+    );
+
+    await expect.element(screen.getByText("Media archive probe").first()).toBeInTheDocument();
+    const card = document.querySelector<HTMLElement>(
+      '[data-crew-coordinator] [data-testid="sidebar-row-card"]',
+    )!;
+    const rootLine = document.querySelector<HTMLElement>(
+      '[data-testid="sidebar-crew-tree-root-line"]',
+    )!;
+    const crewLine = document.querySelector<HTMLElement>(
+      '[data-testid="sidebar-crew-tree-line"] [data-crew-tree-part="elbow"]',
+    )!;
+    const opacity = (element: Element | null): number =>
+      element === null
+        ? 1
+        : Number(getComputedStyle(element).opacity) * opacity(element.parentElement);
+    expect(getComputedStyle(card).opacity).toBe("0.7");
+    expect(opacity(rootLine)).toBe(opacity(crewLine));
+    expect(rootLine.getBoundingClientRect().left).toBe(crewLine.getBoundingClientRect().left);
+    expect(rootLine.getBoundingClientRect().bottom).toBe(card.getBoundingClientRect().bottom);
   });
 });
 

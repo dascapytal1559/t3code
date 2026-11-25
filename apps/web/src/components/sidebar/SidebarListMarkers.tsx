@@ -149,7 +149,7 @@ export function SidebarCrewToggle(props: {
       >
         {props.expanded ? (
           // Bridges the list gap from the coordinator card's bottom edge to the first crewmate
-          // row; the card draws the line inside itself.
+          // row; the coordinator's row draws the line down the card's bottom padding.
           <span aria-hidden className={cn(CREW_TREE_TRUNK_CLASS_NAME, "top-0 h-[3px]")} />
         ) : (
           <>
