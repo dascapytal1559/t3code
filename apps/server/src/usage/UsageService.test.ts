@@ -2147,6 +2147,8 @@ describe("UsageService", () => {
           const records = yield* service.readRecords(window);
 
           assert.deepStrictEqual(summary.workGroups, ["Tooling", "Trading"]);
+          // Only a group with its own colour names one.
+          assert.deepStrictEqual(summary.workGroupColors, { Tooling: "#4a8a2c" });
           // One bucket: both transcripts share a day, model and transcript directory.
           const [bucket] = summary.buckets;
           assert.deepStrictEqual(
@@ -2184,7 +2186,11 @@ describe("UsageService", () => {
               settings: {
                 ...settings,
                 usageWorkGroups: [
-                  { name: "Tooling", projectIds: [ProjectId.make("project-app")] },
+                  {
+                    name: "Tooling",
+                    projectIds: [ProjectId.make("project-app")],
+                    color: "#4a8a2c",
+                  },
                   { name: "Trading", projectIds: [] },
                 ],
               },

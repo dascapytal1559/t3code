@@ -11,6 +11,8 @@ import {
   memberShown,
   newGroupName,
   removeGroup,
+  renameGroup,
+  setGroupColor,
   setGroupOpens,
   setGroupShared,
   setGroupShowsOnly,
@@ -92,6 +94,20 @@ describe("usage work groups", () => {
       projectIds: [trader, app],
       hiddenMembers: [trader],
     });
+  });
+
+  it("gives a group its own colour, keeps it through a rename, and takes the palette's again with null", () => {
+    const green = setGroupColor(groups, "Trading", "#4a8a2c");
+    expect(green).toEqual([
+      { name: "Trading", projectIds: [trader], color: "#4a8a2c" },
+      { name: "Tooling", projectIds: [] },
+    ]);
+    expect(renameGroup(green, "Trading", "Work")[0]).toEqual({
+      name: "Work",
+      projectIds: [trader],
+      color: "#4a8a2c",
+    });
+    expect(setGroupColor(green, "Trading", null)).toEqual(groups);
   });
 
   it("refuses blank and duplicate names, ignoring case, but lets a group keep its own", () => {

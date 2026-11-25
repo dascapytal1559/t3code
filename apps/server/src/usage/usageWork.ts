@@ -77,6 +77,12 @@ const folderMemberKey = (entry: string) => `folder:${entry}`;
 const opensIntoMembers = (group: UsageWorkGroup) =>
   group.shared !== true && group.opensIntoMembers !== false;
 
+/** The groups' own colours by name, for the summary's `workGroupColors`. */
+export const workGroupColorsOf = (groups: readonly UsageWorkGroup[]) =>
+  Object.fromEntries(
+    groups.flatMap((group) => (group.color === undefined ? [] : [[group.name, group.color]])),
+  );
+
 /** What clients spread over the other groups: shared groups' names, `""` for Other. */
 export const sharedWorkOf = (groups: readonly UsageWorkGroup[], shareOther: boolean) => [
   ...groups.flatMap((group) => (group.shared === true ? [group.name] : [])),

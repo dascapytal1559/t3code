@@ -3,9 +3,9 @@ import {
   DEVICE_SPLIT_COLORS,
   OTHER_WORK_COLOR,
   PROCESS_SPLIT_COLORS,
-  WORK_GROUP_PALETTE,
   darkLightness,
   usageSplitColorOfHex,
+  workGroupColors,
   type UsageSplitColor,
 } from "@t3tools/client-runtime/usage-split-palette";
 import {
@@ -147,10 +147,6 @@ const PROCESSES: readonly { key: UsageProcessBand; label: string; color: string 
   },
 ];
 
-const GROUP_PALETTE = WORK_GROUP_PALETTE.map((group) => ({
-  color: css(group.color),
-  members: group.members.map(css),
-}));
 const OTHER_WORK_CSS = css(OTHER_WORK_COLOR);
 
 export const OTHER_WORK_LABEL = msg("Other", { $context: "usage kind of work: usage in no group" });
@@ -227,8 +223,10 @@ export function deviceBox(
   hourly: boolean,
 ): BoxModel {
   const split = usageSplitBands(usage, "device", metric, hourly);
-  const amountOf = (key: string) =>
-    split.bands.find((band) => band.key === key) ?? { totalTokens: 0, costUsd: 0 };
+  const amountOf = (key: string) => {
+    const band = split.bands.find((entry) => entry.key === key);
+    return { totalTokens: band?.totalTokens ?? 0, costUsd: band?.costUsd ?? 0 };
+  };
   const groups = DEVICE_GROUPS.map((group): BoxGroup => {
     const children = group.children.map((child) => ({
       ...child,
@@ -286,8 +284,7 @@ export function workBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: b
   const split = usageSplitBands(usage, "work", metric, hourly);
   const memberSplits = new Map<string, ReturnType<typeof usageMemberBands>>();
   const groups = split.bands.map((band): BoxGroup => {
-    const palette =
-      band.groupIndex === null ? null : GROUP_PALETTE[band.groupIndex % GROUP_PALETTE.length]!;
+    const palette = band.groupIndex === null ? null : workGroupColors(band.groupIndex, band.color);
     const members =
       band.key === OTHER_WORK ? null : usageMemberBands(usage, band.key, metric, hourly);
     if (members !== null) memberSplits.set(band.key, members);
@@ -296,7 +293,7 @@ export function workBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: b
       key: band.key,
       label: band.key === OTHER_WORK ? OTHER_WORK_LABEL : band.key,
       named: band.key !== OTHER_WORK,
-      color: palette?.color ?? OTHER_WORK_CSS,
+      color: palette === null ? OTHER_WORK_CSS : css(palette.color),
       totalTokens: band.totalTokens,
       costUsd: band.costUsd,
       ...(folded.remainder === null ? {} : { remainder: folded.remainder }),
@@ -307,7 +304,9 @@ export function workBox(usage: MergedUsage, metric: "cost" | "tokens", hourly: b
         // Members past the palette's three repeat its hues; the group's members are few.
         color:
           member.color === undefined
-            ? (palette?.members[index % palette.members.length] ?? OTHER_WORK_CSS)
+            ? palette === null
+              ? OTHER_WORK_CSS
+              : css(palette.members[index % palette.members.length]!)
             : css(usageSplitColorOfHex(member.color)),
         totalTokens: member.totalTokens,
         costUsd: member.costUsd,

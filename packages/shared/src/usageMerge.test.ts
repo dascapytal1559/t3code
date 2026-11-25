@@ -591,12 +591,14 @@ describe("mergeUsage", () => {
               [mac],
             ),
             workGroups: ["Trading", "Tooling", "Projects"],
+            workGroupColors: { Trading: "#4a8a2c" },
             workMembers: [{ key: "folder:~/notes", group: "Trading", name: "notes" }],
           }),
         ),
         // The same directory read again counts once; an older server's buckets carry no split.
         environment("mac-again", {
           ...summary([bucket({ sourcePath: mac.homePath })], [mac]),
+          workGroupColors: { Trading: "#7a5432", Tooling: "#7a5432" },
           workMembers: [{ key: "folder:~/notes", group: "Tooling", name: "notes" }],
         }),
         environment(
@@ -645,11 +647,12 @@ describe("mergeUsage", () => {
     ]);
 
     const bands = usageSplitBands(merged, "work", "cost", false);
-    // Largest first, Other last; a group keeps its place in the servers' order for its colour.
-    expect(bands.bands.map(({ key, groupIndex }) => [key, groupIndex])).toEqual([
-      ["Trading", 0],
-      ["Tooling", 1],
-      ["", null],
+    // Largest first, Other last; a group keeps its place in the servers' order for its colour,
+    // and its own colour from the first server that gives one.
+    expect(bands.bands.map(({ key, groupIndex, color }) => [key, groupIndex, color])).toEqual([
+      ["Trading", 0, "#4a8a2c"],
+      ["Tooling", 1, "#7a5432"],
+      ["", null, undefined],
     ]);
     expect(bands.valueAt("2026-08-07", "Tooling", "tokens")).toBe(1000);
     // Nothing is shared unless a server says so.

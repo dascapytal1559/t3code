@@ -118,6 +118,8 @@ export interface MergedUsage {
   readonly work: MergedSplit<string>;
   /** The servers' group names in their settings order, first server first. */
   readonly workGroups: readonly string[];
+  /** Kinds of work's own `#rrggbb` colours by name, first server first. */
+  readonly workGroupColors: ReadonlyMap<string, string>;
   /** Kinds of work any server spreads over the other groups; `OTHER_WORK` for Other. */
   readonly sharedWork: readonly string[];
   /**
@@ -468,6 +470,7 @@ const EMPTY_MERGED: MergedUsage = {
   processes: { totals: new Map(), daily: new Map(), hourly: new Map() },
   work: { totals: new Map(), daily: new Map(), hourly: new Map() },
   workGroups: [],
+  workGroupColors: new Map(),
   sharedWork: [],
   workMembers: { totals: new Map(), daily: new Map(), hourly: new Map() },
   workMemberInfo: [],
@@ -769,6 +772,12 @@ export function mergeUsage(
     if (!memberInfo.has(key)) memberInfo.set(key, member);
   }
   const workMemberInfo = [...memberInfo.values()];
+  const workGroupColors = new Map<string, string>();
+  for (const environment of current) {
+    for (const [group, color] of Object.entries(environment.summary.workGroupColors ?? {})) {
+      if (!workGroupColors.has(group)) workGroupColors.set(group, color);
+    }
+  }
 
   return {
     costUsd,
@@ -815,6 +824,7 @@ export function mergeUsage(
     workGroups: [
       ...new Set(current.flatMap((environment) => environment.summary.workGroups ?? [])),
     ],
+    workGroupColors,
     sharedWork: [
       ...new Set(current.flatMap((environment) => environment.summary.sharedWork ?? [])),
     ],
@@ -829,6 +839,8 @@ export interface UsageSplitBand extends SplitAmount {
   readonly key: string;
   /** A group's place in the servers' group order, for its colour; null for devices and Other. */
   readonly groupIndex: number | null;
+  /** A group's own colour, as `#rrggbb`; without one it takes the palette's by `groupIndex`. */
+  readonly color?: string | undefined;
 }
 
 export interface UsageSplitBands {
@@ -906,11 +918,15 @@ export function usageSplitBands(
             ];
   const value = (amount: SplitAmount) => (metric === "cost" ? amount.costUsd : amount.totalTokens);
   const bands = keys
-    .map((key, index) => ({
-      key,
-      groupIndex: split === "work" && key !== OTHER_WORK ? index : null,
-      ...(totals.get(key) ?? NO_AMOUNT),
-    }))
+    .map((key, index) => {
+      const color = split === "work" ? usage.workGroupColors.get(key) : undefined;
+      return {
+        key,
+        groupIndex: split === "work" && key !== OTHER_WORK ? index : null,
+        ...(color === undefined ? {} : { color }),
+        ...(totals.get(key) ?? NO_AMOUNT),
+      };
+    })
     .filter((band) => band.totalTokens > 0 || band.costUsd > 0)
     // Copied first: Hermes lacks toSorted.
     .slice()

@@ -3,8 +3,8 @@ import {
   DEVICE_SPLIT_COLORS,
   OTHER_WORK_COLOR,
   PROCESS_SPLIT_COLORS,
-  WORK_GROUP_PALETTE,
   usageSplitHex,
+  workGroupColors,
   type UsageSplitColor,
 } from "@t3tools/client-runtime/usage-split-palette";
 import { OTHER_WORK, type UsageSplitBand } from "@t3tools/shared/usageMerge";
@@ -68,8 +68,11 @@ export function presentBand(
     };
   }
   if (band.groupIndex !== null) {
-    const palette = WORK_GROUP_PALETTE[band.groupIndex % WORK_GROUP_PALETTE.length]!;
-    return { label: band.key, named: true, color: hex(palette.color) };
+    return {
+      label: band.key,
+      named: true,
+      color: hex(workGroupColors(band.groupIndex, band.color).color),
+    };
   }
   if (band.key === OTHER_WORK) {
     return { label: OTHER_LABEL, named: false, color: hex(OTHER_WORK_COLOR) };

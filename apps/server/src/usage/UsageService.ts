@@ -60,6 +60,7 @@ import {
   groupsPlaceWork,
   makeUsageWork,
   sharedWorkOf,
+  workGroupColorsOf,
   USAGE_SESSION_FOLDERS_FILE_NAME,
   type WorkFolders,
   type WorkWorktree,
@@ -1513,6 +1514,7 @@ export const make = Effect.gen(function* () {
     const readAt = yield* DateTime.now;
     const finishedAtMs = yield* Clock.currentTimeMillis;
     const sharedWork = sharedWorkOf(settings.usageWorkGroups, settings.usageWorkShareOther);
+    const workGroupColors = workGroupColorsOf(settings.usageWorkGroups);
 
     const summary = {
       contractVersion: USAGE_CONTRACT_VERSION,
@@ -1523,6 +1525,7 @@ export const make = Effect.gen(function* () {
       buckets: aggregated.buckets,
       ...(labelOf === null ? {} : { devices: true as const }),
       workGroups: work.groups,
+      ...(Object.keys(workGroupColors).length === 0 ? {} : { workGroupColors }),
       ...(sharedWork.length === 0 ? {} : { sharedWork }),
       ...(work.members.length === 0 ? {} : { workMembers: work.members }),
       sources,

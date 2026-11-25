@@ -37,12 +37,15 @@ export const PROCESS_SPLIT_COLORS = {
   other: hue(80, 0.76, 0.14),
 } as const satisfies Record<UsageProcessBand, UsageSplitColor>;
 
-// Kinds of work take these in settings order, with their members in the neighbouring hues. The
-// first two are a warm stone and a crimson; none reuses the device colours' orange and blue.
-export const WORK_GROUP_PALETTE: readonly {
+export interface WorkGroupColors {
   readonly color: UsageSplitColor;
   readonly members: readonly UsageSplitColor[];
-}[] = [
+}
+
+// Kinds of work without their own colour take these in settings order, with their members in the
+// neighbouring hues. The first two are a warm stone and a crimson; none reuses the device colours'
+// orange and blue.
+export const WORK_GROUP_PALETTE: readonly WorkGroupColors[] = [
   {
     color: hue(60, 0.6, 0.02),
     members: [hue(70, 0.48, 0.035), hue(100, 0.68, 0.045), hue(60, 0.74, 0.02)],
@@ -70,6 +73,30 @@ export const WORK_GROUP_PALETTE: readonly {
 ];
 
 export const OTHER_WORK_COLOR: UsageSplitColor = { ink: 36 };
+
+// A group's own colour gives its members shades as the palette's do: a darker, stronger one a
+// little cooler, a lighter one a little warmer, and a pale one of the same hue.
+const memberShadesOf = (group: UsageSplitColor): readonly UsageSplitColor[] => {
+  if ("ink" in group) return [group];
+  const round = (value: number) => Math.round(value * 1000) / 1000;
+  const shade = (turn: number, lighter: number, strength: number) =>
+    hue(
+      round((group.hue + turn + 360) % 360),
+      round(Math.min(0.9, Math.max(0.2, group.lightness + lighter))),
+      round(group.chroma * strength),
+    );
+  return [shade(-13, -0.08, 1.15), shade(13, 0.08, 1), shade(0, 0.15, 0.65)];
+};
+
+/**
+ * A kind of work's colours: its own `#rrggbb` colour when settings give it one, with member shades
+ * derived from it, else the palette's entry for its place in the settings order.
+ */
+export function workGroupColors(groupIndex: number, color: string | undefined): WorkGroupColors {
+  if (color === undefined) return WORK_GROUP_PALETTE[groupIndex % WORK_GROUP_PALETTE.length]!;
+  const own = usageSplitColorOfHex(color);
+  return { color: own, members: memberShadesOf(own) };
+}
 
 type Lab = readonly [number, number, number];
 

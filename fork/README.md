@@ -585,7 +585,9 @@ it unless a sibling folder of that name is on disk. A shared group, and with
 by their own share (`spreadSharedWork` in `packages/shared/src/usageMerge.ts`),
 so the bars still add up; the export keeps each call's own group. Groups open
 into their members unless turned off, and members can be hidden or given their
-own colour (`memberColors`); the user
+own colour (`memberColors`). A group can take its own colour too (`color`),
+which its members without one take shades of (`workGroupColors` in
+`packages/client-runtime/src/usageSplitPalette.ts`); the user
 guide's [Kinds of work](../docs/user/usage.md#split-the-chart-by-provider-kind-of-work-device-process-or-direction)
 covers the settings.
 
@@ -594,8 +596,8 @@ The groups are server settings (`usageWorkGroups`, `usageWorkShareOther`,
 **Settings → Providers → Kinds of work**
 (`apps/web/src/components/settings/UsageWorkGroupsSettings.tsx`), so every
 client sees the same ones. For syncs, keep those settings keys, the `work` and
-`workMembers` bucket splits and `workGroups`, `sharedWork` and `workMembers`
-on `UsageSummary`, and the member names `usageWork.ts` builds.
+`workMembers` bucket splits and `workGroups`, `workGroupColors`, `sharedWork`
+and `workMembers` on `UsageSummary`, and the member names `usageWork.ts` builds.
 
 Upstream: none.
 

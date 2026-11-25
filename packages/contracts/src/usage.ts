@@ -388,7 +388,7 @@ export const UsageModelSelector = Schema.Struct({
 });
 export type UsageModelSelector = typeof UsageModelSelector.Type;
 
-/** A kind-of-work member's own colour, as `#rrggbb`. */
+/** A kind of work's or member's own colour, as `#rrggbb`. */
 export const UsageMemberColor = Schema.String.check(Schema.isPattern(/^#[0-9a-fA-F]{6}$/));
 export type UsageMemberColor = typeof UsageMemberColor.Type;
 
@@ -410,7 +410,9 @@ export const UsageWorkGroup = Schema.Struct({
    * `hiddenMembers` is not read. Easier than hiding when only a few should show.
    */
   shownMembers: Schema.optionalKey(Schema.Array(Schema.String)),
-  /** Members' own colours on the Usage page; the rest take the group's palette in order. */
+  /** The group's own colour on the Usage page; without one it takes the palette's by its order. */
+  color: Schema.optionalKey(UsageMemberColor),
+  /** Members' own colours on the Usage page; the rest take shades of the group's colour in order. */
   memberColors: Schema.optionalKey(Schema.Record(Schema.String, UsageMemberColor)),
 });
 export type UsageWorkGroup = typeof UsageWorkGroup.Type;
@@ -484,6 +486,8 @@ export const UsageSummary = Schema.Struct({
   devices: Schema.optional(Schema.Literal(true)),
   /** The `usageWorkGroups` names in settings order; absent from servers that predate them. */
   workGroups: Schema.optional(Schema.Array(Schema.String)),
+  /** Kinds of work's own colours by group name; absent when no group has one. */
+  workGroupColors: Schema.optional(Schema.Record(Schema.String, UsageMemberColor)),
   /** Kinds of work clients spread over the other groups: shared group names, `""` for Other. */
   sharedWork: Schema.optional(Schema.Array(Schema.String)),
   /** The members the buckets' `workMembers` split by, with their names; absent with none. */

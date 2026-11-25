@@ -120,6 +120,19 @@ export function setMemberColor(
   );
 }
 
+/** Gives a group its own colour, or the palette's by its order again with null. */
+export function setGroupColor(
+  groups: readonly UsageWorkGroup[],
+  name: string,
+  color: string | null,
+): readonly UsageWorkGroup[] {
+  return groups.map((group) => {
+    if (group.name !== name) return group;
+    const { color: _old, ...rest } = group;
+    return color === null ? rest : { ...rest, color };
+  });
+}
+
 /** Whether a member has a row of its own: on its group's show list, or off its hide list. */
 export function memberShown(groups: readonly UsageWorkGroup[], member: string): boolean {
   const group = groups.find((entry) => membersOf(entry).includes(member));

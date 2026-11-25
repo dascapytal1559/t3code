@@ -128,13 +128,16 @@ cache reads, cache writes and uncached input. In cost, cost no category accounts
 
 In **Settings → Providers → Kinds of work**:
 
+- The colour swatch, per group, gives the group a colour of its own on the Usage page, and its
+  projects and folders without their own colour take shades of it; **Reset** returns the group to
+  the palette's colour for its place in the list.
 - **Members**, per group, lets the group open into its projects and folders. It is on unless you
   turn it off; a shared group never opens.
 - **Shown**, per project or folder, gives it a row of its own when its group opens. The projects
   and folders you hide get no row, but still count to the group's total and show as an unlabelled
   grey end of its bar when it opens.
 - The colour swatch, per project or folder, gives its row a colour of its own on the Usage page;
-  **Reset** returns it to the group's palette. The colour moves with the member to another group.
+  **Reset** returns it to its group's shades. The colour moves with the member to another group.
 - **Only shown**, per group, gives rows only to the members you mark **Shown**, so a group of many
   projects can show just a few; a project you add later starts hidden there. Switching it keeps the
   same rows.

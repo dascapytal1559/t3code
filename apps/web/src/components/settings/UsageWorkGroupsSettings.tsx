@@ -24,6 +24,7 @@ import {
   newGroupName,
   removeGroup,
   renameGroup,
+  setGroupColor,
   setGroupOpens,
   setGroupShowsOnly,
   setGroupShared,
@@ -74,7 +75,7 @@ export function UsageWorkGroupsSettings({
   };
   const memberControls = (member: string, name: string) => (
     <>
-      <MemberColorInput
+      <ColorInput
         color={memberColor(groups, member)}
         readOnly={readOnly}
         label={gt("Color of {member} on the Usage page", { member: name })}
@@ -137,6 +138,12 @@ export function UsageWorkGroupsSettings({
           )}
           control={
             <div className="flex items-center gap-3">
+              <ColorInput
+                color={group.color ?? null}
+                readOnly={readOnly}
+                label={gt("Color of {group} on the Usage page", { group: group.name })}
+                onChange={(color) => save(setGroupColor(groups, group.name, color))}
+              />
               <label className="flex items-center gap-2 text-xs text-muted-foreground">
                 <T>Members</T>
                 <Switch
@@ -306,10 +313,10 @@ export function UsageWorkGroupsSettings({
 }
 
 /**
- * A member's own colour, or a faded swatch while it takes the group's palette; the picker saves
- * once it closes, not on every step of a drag.
+ * A group's or member's own colour, or a faded swatch while it takes the palette's; the picker
+ * saves once it closes, not on every step of a drag.
  */
-function MemberColorInput({
+function ColorInput({
   color,
   readOnly,
   label,
