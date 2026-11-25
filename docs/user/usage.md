@@ -9,8 +9,9 @@ On mobile, choose **Usage** in the workspace navigation.
 ## Understand your usage
 
 **Usage** combines Codex, Claude Code, Grok Build, OpenCode, Antigravity, Pi, Muse Code, and Cursor history
-from your connected environments. It shows token use, cache savings, and estimated API-equivalent
-cost, split by token type and by speed. These estimates are not your subscription bill.
+from your connected environments. It shows token use and estimated API-equivalent cost, split by
+token type and by speed. On mobile it also shows cache savings: what cached input saved against full
+input prices. These estimates are not your subscription bill.
 **Premium** is what Fast and Ultrafast requests cost above standard rates. Cost that cannot be
 split, such as a provider-reported cost for a model without public rates, shows as **Other**.
 
@@ -82,17 +83,20 @@ write it down sooner, run `t3 usage close --through <time>` with the time's offs
 `2026-11-19T15:00:00+11:00` (at least 5 minutes ago); add `--dry-run` first to see what it would
 write.
 
-## Split the chart by provider, kind of work, device, process or direction
+## Split the chart by provider, kind of work, device, process, direction or speed
 
 Beside the chart on **Usage** are five breakdowns of the same window: **by provider**, **by
-kind of work**, **by device**, **by process** and **by direction**. One of them is open as a card, and the chart splits
+kind of work**, **by device**, **by process** and **by direction**. On web and desktop, when some
+usage ran at Fast or Ultrafast, the cost view adds a sixth, **Cost by speed**: Standard, Fast and
+Ultrafast, with the premium the faster speeds cost under its card. It is cost only, so switching to
+Tokens while it is open splits the chart by provider. One of them is open as a card, and the chart splits
 its bars the same way; the others fold down to their colour bar. Click a folded bar to open it in
 the chart. The card lists each part with its figure and share; the chart stacks its largest band over the window
 on top, so every bar stacks the same way. On web and desktop, **by device** and **by kind of work**
 draw as a mirror when they split in two: the larger part above a centre line, the other below.
 **By process** draws **Direct** above the line and the processes below it, and **by direction**
 draws **Input** above and **Output** below. Cost
-and Tokens work in every breakdown, and hovering a bar names
+and Tokens work in every other breakdown, and hovering a bar names
 each band. On a phone the breakdowns sit under the chart. On mobile, choose **Provider**,
 **Kind of work**, **Device** or **Process** under the period.
 

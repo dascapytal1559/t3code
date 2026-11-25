@@ -1771,7 +1771,11 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             </Tooltip>
           </div>
         ) : null}
-        {props.layoutControls}
+        {props.layoutControls ? (
+          <div className={cn("flex shrink-0 items-center", TAB_HEIGHT_CLASS)}>
+            {props.layoutControls}
+          </div>
+        ) : null}
         {ownsDesktopTitleBar && !props.layoutControls ? (
           <span aria-hidden className="hidden w-24 shrink-0 wco:block" />
         ) : null}

@@ -133,10 +133,13 @@ The captain reads the Usage page for where the tokens went, so the Tokens and
 Cost tabs on web and desktop put the figures he compares where the eye can
 compare them:
 
-- **No Totals row.** Upstream's row of five totals repeats the type bar. On
-  the Cost tab, cache savings sits under the chart, beside **Cost by speed**.
+- **No Totals row.** Upstream's row of five totals repeats the type bar. The
+  Cost tab shows no cache savings figure, and **Cost by speed** is a
+  breakdown box after direction (see
+  [Breakdown boxes and the chart split](#breakdown-boxes-and-the-chart-split)).
 - **The other figure rides along.** Under the headline the Tokens tab shows the
-  sessions, and the Cost tab the sessions and the token total.
+  sessions, and the Cost tab the sessions and the token total, with **API
+  estimate** beside the cost total.
 - **Figures fade by size.** The largest figure in a group is at full strength,
   the smallest at 70%, and the rest are placed between by order of magnitude,
   so billions stand apart from millions. On a breakdown box's rows a figure in
@@ -145,9 +148,8 @@ compare them:
   never spans less than one order of magnitude, so three providers of similar
   size all stay bold rather than being stretched apart.
 - **Figures sit in columns.** A breakdown box sets each row's figure and share
-  in columns. Cost by speed prints each part's share and sets the parts two to
-  a line, so every figure, percent sign and colour square is directly above its
-  like.
+  in columns, so every figure, percent sign and colour square is directly above
+  its like.
 - **No model table.** Upstream's Model / Day table under the chart is gone; the
   boxes carry the breakdown.
 - **The chart sits beside the boxes.** The chart takes the left two thirds at a
@@ -157,7 +159,8 @@ compare them:
 - **Whole dollars from $100.** The page's standing dollar figures drop cents
   from $100 up (`formatUsdShort`). The chart's tooltip keeps cents.
 
-The mobile app keeps upstream's layout.
+The mobile app keeps upstream's layout, including its Cache savings stat and
+by-speed list.
 
 For syncs, the fork's parts are: the headline's second line, the grid that
 puts the chart beside the boxes, and the missing Totals section in
@@ -172,12 +175,17 @@ Upstream: none.
 ## Breakdown boxes and the chart split
 
 Beside the Usage chart sit five boxes, by provider, kind of work, device,
-process and direction; the open one is how the chart splits its bars, and a
-box's parent rows open into their parts.
+process and direction, and in the cost view a sixth, Cost by speed; the open
+one is how the chart splits its bars, and a box's parent rows open into their
+parts.
 
 The captain reads the chart for where usage went, so on web and desktop the
-five boxes beside it (`BREAKDOWN_ORDER` in
+boxes beside it (`BREAKDOWN_ORDER` in
 `apps/web/src/components/usage/usageSplits.ts`) are also the chart's legend.
+Cost by speed shows only in the cost view and only when some usage ran faster
+than standard (`shownBreakdowns`), since usage prices each speed but does not
+count its tokens; its card carries the speed premium underneath. A view that
+does not show the open box splits the chart by provider.
 One box is open as a card and the others fold down to their colour bar;
 clicking a folded bar opens that box and splits the chart its way. A card lists
 its rows largest first, and the chart stacks the band largest over the window
@@ -588,7 +596,7 @@ into their members unless turned off, and members can be hidden or given their
 own colour (`memberColors`). A group can take its own colour too (`color`),
 which its members without one take shades of (`workGroupColors` in
 `packages/client-runtime/src/usageSplitPalette.ts`); the user
-guide's [Kinds of work](../docs/user/usage.md#split-the-chart-by-provider-kind-of-work-device-process-or-direction)
+guide's [Kinds of work](../docs/user/usage.md#split-the-chart-by-provider-kind-of-work-device-process-direction-or-speed)
 covers the settings.
 
 The groups are server settings (`usageWorkGroups`, `usageWorkShareOther`,
