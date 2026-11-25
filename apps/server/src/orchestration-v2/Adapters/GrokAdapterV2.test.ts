@@ -397,7 +397,8 @@ describe("Grok launch permission mode", () => {
             ),
             Layer.provide(
               Layer.mock(ProjectStore.ProjectStoreV2)({
-                get: () => Effect.die("the thread has a worktree"),
+                // Fork: the policy reads the project for its lean startup flag; none is found.
+                get: () => Effect.succeedNone,
               }),
             ),
             Layer.provide(
