@@ -999,6 +999,11 @@ const ACTIVE_TAB_CLASS = "z-1 bg-background text-foreground panel-tab-flare";
 const INACTIVE_TAB_CLASS =
   "text-muted-foreground hover:bg-background/50 hover:text-foreground before:absolute before:top-1/2 before:left-0 before:h-4 before:w-px before:-translate-y-1/2 before:bg-border before:content-[''] first:before:hidden hover:before:hidden [[data-active-tab=true]+&]:before:hidden [:hover+&]:before:hidden";
 
+// 40px tabs in the 52px strip leave 12px above, matching the 12px over the label inside.
+// A shorter title bar (window controls overlay can be 40px) keeps at least 8px above.
+const TAB_HEIGHT_CLASS =
+  "h-[min(--spacing(10),calc(var(--workspace-topbar-height)-var(--spacing)*2))]";
+
 // Stable handlers and per-tab values let the compiler reuse tabs across parent renders.
 function RightPanelTab(
   props: RightPanelTabHandlers & {
@@ -1173,7 +1178,8 @@ function RightPanelTab(
       ref={setNodeRef}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
-        "cursor-pointer group/tab relative flex h-8 shrink-0 items-center gap-0.5 rounded-t-lg pr-3 pl-2.5 text-xs",
+        "cursor-pointer group/tab relative flex shrink-0 items-center gap-0.5 rounded-t-lg pr-3 pl-2.5 text-xs",
+        TAB_HEIGHT_CLASS,
         parentFolder === null ? "max-w-40" : "max-w-56",
         props.ownsDesktopTitleBar && "[-webkit-app-region:no-drag]",
         props.active ? ACTIVE_TAB_CLASS : INACTIVE_TAB_CLASS,
@@ -1638,7 +1644,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   render={
                     <Button
                       aria-label={gt("Add panel surface")}
-                      className="ml-1 shrink-0 self-center"
+                      className="mb-2 ml-1 shrink-0 self-end"
                       size="icon-xs"
                       variant="ghost-muted"
                     />

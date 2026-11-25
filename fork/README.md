@@ -2676,10 +2676,14 @@ The side panel's tab strip sits on a recessed tint, and the active tab takes
 the content's background with rounded top corners that flare into the view
 below, so with several files open the one showing is obvious. Inactive tabs
 sit flush on the strip with muted labels and a hairline between them. Upstream
-marks the active tab with a faint grey pill. Tab behaviour is unchanged. Code:
-`ACTIVE_TAB_CLASS` and `INACTIVE_TAB_CLASS` in
-`apps/web/src/components/RightPanelTabs.tsx`, and the `--panel-tab-strip`
-token and `panel-tab-flare` utility in `apps/web/src/index.css`.
+marks the active tab with a faint grey pill. Tab behaviour is unchanged. The
+spacing is even: 12px above the tabs, 12px above and below each label, and the
+row under the tabs (breadcrumbs, search, address bar) centred in its 40px with
+12px above and below its text, where upstream puts that row in the top 28px
+with a 12px gap under it. Code: `ACTIVE_TAB_CLASS`, `INACTIVE_TAB_CLASS` and
+`TAB_HEIGHT_CLASS` in `apps/web/src/components/RightPanelTabs.tsx`, and the
+`--panel-tab-strip` token and `panel-tab-flare` utility in
+`apps/web/src/index.css`.
 
 Upstream: none.
 
