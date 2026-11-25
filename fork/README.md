@@ -1236,7 +1236,8 @@ The captain puts a thread away by settling it, because settling can be undone
 and archiving is something done to a thread rather than by him: "Archive is
 something you do, and what I do is I settle." FirstMate archives a worker's
 thread when it cleans the worker up. So on web and desktop the thread menus
-(the card's context menu, a multi-selection's menu and the chat header's) offer
+(the card's context menu, a multi-selection's menu, the chat header's, and the
+current thread's actions in the command palette) offer
 Settle and Un-settle and no Archive thread, and the sidebar keeps upstream's
 Settled section at its end, where settled threads wait to be found and
 un-settled. Archive stays on MCP (`t3_thread_organize`) and wherever upstream
@@ -1269,7 +1270,8 @@ upstream has no such switch, so removing it returns these files to upstream's
 code), read by
 `partitionSidebarThreads`, `getFallbackThreadIdAfterDelete`, the older-settled
 scopes, the list items and the multi-selection menu in `Sidebar.tsx`,
-`settledOutOfSight` in `CommandPalette.logic.ts`, and both single-thread menus;
+`settledOutOfSight` in `CommandPalette.logic.ts`, and both single-thread menus
+(the command palette's thread actions reuse the header menu's `readMenu`);
 the Archive thread and Auto-settle behavior items left out of
 `buildThreadActionMenuItems` (`threadActionMenu.logic.ts`), with their menu
 handlers in `useThreadActionMenu.ts` and `Sidebar.tsx`, `archiveThread` and
