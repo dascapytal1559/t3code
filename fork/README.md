@@ -2379,8 +2379,10 @@ keeping every image whole, are the fork's.
 
 The fork sends no product analytics and no T3 Connect relay traces unless you
 opt in. `T3CODE_TELEMETRY_ENABLED` governs both and defaults to `false` here
-(upstream defaults it to `true`): `AnalyticsService.ts` and
-`isRelayTracingEnabled` in `packages/shared/src/otelEnvironment.ts`. To turn them
+(upstream defaults it to `true` everywhere but a CI runner): `AnalyticsService.ts`
+and `isRelayTracingEnabled` in `packages/shared/src/otelEnvironment.ts`. On syncs,
+keep upstream's `isCiEnvironment` default out of both; upstream's `DO_NOT_TRACK`
+check stays, and still wins over an opt-in. To turn them
 on, set `T3CODE_TELEMETRY_ENABLED=true` in the server's environment. The desktop
 app starts its server before it reads your login shell, but it remembers this
 variable from the shell and applies it on the next launch
@@ -2397,7 +2399,7 @@ Upstream's agent feedback (Settings > Labs) sends its reports through this same
 telemetry, so with telemetry off a report you approve stays on this machine,
 marked not sent.
 
-Upstream: none. It sends telemetry unless you opt out.
+Upstream: none. It sends telemetry unless you opt out or it runs on a CI runner.
 
 ## Links that work
 

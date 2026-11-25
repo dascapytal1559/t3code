@@ -2,7 +2,14 @@ import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { T, useGT } from "gt-react";
 import { XIcon } from "lucide-react";
 import { useRouter } from "@tanstack/react-router";
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+  type RefObject,
+} from "react";
 
 import { getCommandPaletteOpener } from "../commandPaletteStore";
 import { useNativeTitlebarHeight } from "../lib/windowControlsOverlay";
@@ -22,11 +29,13 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 export function AppRouteModal({
   label,
   short = false,
+  actionsRef,
   children,
 }: {
   label: string;
   /** A page whose content is short caps the modal lower than Settings' 60rem. */
   short?: boolean;
+  actionsRef?: RefObject<DialogPrimitive.Root.Actions | null>;
   children: ReactNode;
 }) {
   const closeAppModal = useCloseAppModal();
@@ -66,10 +75,15 @@ export function AppRouteModal({
   return (
     <DialogPrimitive.Root
       open={open}
+      actionsRef={actionsRef}
       // Portaled layers outside this tree (toasts, Clerk, confirm dialogs) are not backdrop presses.
       disablePointerDismissal
       onOpenChange={(nextOpen, eventDetails) => {
         if (nextOpen) return;
+        // Base UI's dismiss handler fires on held Esc repeats after a nested popup closes.
+        if (eventDetails.reason === "escape-key" && eventDetails.event.repeat) {
+          return eventDetails.cancel();
+        }
         // Esc from a layer outside Base UI (Clerk's modals) is that layer's to handle.
         const target = eventDetails.event.target;
         if (
