@@ -999,9 +999,14 @@ const ACTIVE_TAB_CLASS = "z-1 bg-background text-foreground panel-tab-flare";
 const INACTIVE_TAB_CLASS =
   "text-muted-foreground hover:bg-background/50 hover:text-foreground before:absolute before:top-1/2 before:left-0 before:h-4 before:w-px before:-translate-y-1/2 before:bg-border before:content-[''] first:before:hidden hover:before:hidden [[data-active-tab=true]+&]:before:hidden [:hover+&]:before:hidden";
 
-// Tabs span the whole title bar so their centred labels share the centre line of the
-// toolbar controls, which centre on the same height, while still meeting the content.
-const TAB_HEIGHT_CLASS = "h-(--workspace-topbar-height)";
+// The toolbar controls centre on the title bar's middle. A tab is centred on that same
+// line, so the strip is the title bar's top half plus half a tab: equal space above the
+// tab and below the line, and the active tab still meets the content at the strip's foot.
+const TAB_HEIGHT_VAR_CLASS =
+  "[--panel-tab-height:min(--spacing(9),var(--workspace-topbar-height))]";
+const TAB_STRIP_HEIGHT_CLASS =
+  "h-[calc((var(--workspace-topbar-height)+var(--panel-tab-height))/2)]";
+const TAB_HEIGHT_CLASS = "h-(--panel-tab-height)";
 
 // Stable handlers and per-tab values let the compiler reuse tabs across parent renders.
 function RightPanelTab(
@@ -1567,7 +1572,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     >
       <div
         className={cn(
-          "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 bg-panel-tab-strip",
+          "flex shrink-0 items-end gap-1 bg-panel-tab-strip",
+          TAB_HEIGHT_VAR_CLASS,
+          TAB_STRIP_HEIGHT_CLASS,
           props.mode !== "inline" || props.layoutControls
             ? "pr-3"
             : props.maximizeOnlyAtCorner
@@ -1585,7 +1592,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           hideScrollbars
           scrollFade
           className={cn(
-            "min-w-0 flex-1",
+            "min-w-0 flex-1 self-stretch",
             ownsDesktopTitleBar && tabScrollState.hasOverflow && "[-webkit-app-region:no-drag]",
           )}
           data-right-panel-tab-list
@@ -1643,7 +1650,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   render={
                     <Button
                       aria-label={gt("Add panel surface")}
-                      className="ml-1 shrink-0 self-center"
+                      className="mb-1.5 ml-1 shrink-0 self-end"
                       size="icon-xs"
                       variant="ghost-muted"
                     />
@@ -1714,7 +1721,10 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         </ScrollArea>
         {tabScrollState.hasOverflow ? (
           <div
-            className="flex shrink-0 items-center gap-0.5 [-webkit-app-region:no-drag]"
+            className={cn(
+              "flex shrink-0 items-center gap-0.5 [-webkit-app-region:no-drag]",
+              TAB_HEIGHT_CLASS,
+            )}
             role="group"
             aria-label={gt("Scroll panel tabs")}
           >

@@ -2677,10 +2677,11 @@ the content's background with rounded top corners that flare into the view
 below, so with several files open the one showing is obvious. Inactive tabs
 sit flush on the strip with muted labels and a hairline between them. Upstream
 marks the active tab with a faint grey pill. Tab behaviour is unchanged. Tabs
-run the full height of the title-bar strip, so each label is centred in its tab
-and sits on the centre line of the toolbar controls beside it (back, forward,
-layout, maximize); the window drag area is the strip beside the tabs. The
-row under the tabs (breadcrumbs, search, address bar) is centred in its 40px with
+are 36px tall, centred on the centre line of the toolbar controls beside them
+(back, forward, layout, maximize), with 8px above them. The strip is only as tall
+as its tabs reach, so the content under it starts 8px higher than the 52px title
+bar, and the active tab joins it there; the window drag area is the strip around
+the tabs. The row under the tabs (breadcrumbs, search, address bar) is centred in its 40px with
 12px above and below its text, where upstream puts that row in the top 28px
 with a 12px gap under it. Code: `ACTIVE_TAB_CLASS`, `INACTIVE_TAB_CLASS` and
 `TAB_HEIGHT_CLASS` in `apps/web/src/components/RightPanelTabs.tsx`, and the
