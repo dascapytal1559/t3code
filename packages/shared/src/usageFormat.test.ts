@@ -10,6 +10,7 @@ import {
   makeWindow,
   usageSourceMessages,
 } from "./usageFormat.ts";
+import { usageSourceMessages as localizedUsageSourceMessages } from "./usageFormatCopy.ts";
 
 function malformedSource(count: number, overrides: Partial<UsageSource> = {}): UsageSource {
   return {
@@ -209,5 +210,12 @@ describe("short dollar formatting", () => {
     expect(formatUsdShort(99.996)).toBe("$100");
     expect(formatUsdShort(93.21)).toBe("$93.21");
     expect(formatUsdShort(0)).toBe("$0.00");
+  });
+});
+
+describe("localized usage source messages", () => {
+  it("leaves the skipped-records sentence out in the fork's clients", () => {
+    expect(localizedUsageSourceMessages([malformedSource(1)])).toEqual([]);
+    expect(localizedUsageSourceMessages([malformedSource(2)])).toEqual([]);
   });
 });
