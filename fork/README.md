@@ -87,6 +87,8 @@ draw lines; the 6- and 12-month views and the bars stay the fork's.
 Upstream's "N malformed or inconsistent usage record(s) were skipped" sentence
 is not shown on the Usage page, web or mobile; the server still counts the
 skipped records (`usageSourceMessages` in `packages/shared/src/usageFormatCopy.ts`).
+Upstream's translated singular and plural wording for it (#42974) stays out
+too, so its catalog entry is dropped on syncs.
 
 Upstream: partly ([#28111](https://github.com/pingdotgg/t3code/pull/28111)): it
 keeps usage history as long as you set, but its views stop at 90 days and draw
@@ -2171,6 +2173,12 @@ other than the asking thread may answer one. The resolved request and its
 timeline row record `respondedBy: "agent"`, which web and mobile show as
 "answered by agent". `orchestrator_capabilities` reports `approvalResponses`.
 Code: `apps/server/src/mcp/toolkits/thread/handlers.ts`.
+
+This includes upstream's request to run a repository's push hooks, which T3's
+`pull_request_create` raises for a thread below full access (an
+`mcp-elicitation` approval): upstream says only the person can answer it, and
+here a full-access agent such as FirstMate can too. That gives it nothing new,
+since a full-access agent can already push from its own shell, hooks and all.
 
 FirstMate half, in the FirstMate fork:
 [Approvals at once](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#approvals-at-once).
