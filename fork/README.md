@@ -2184,8 +2184,8 @@ This includes upstream's request to run a repository's push hooks, which T3's
 `mcp-elicitation` approval): upstream says only the person can answer it, and
 here a full-access agent such as FirstMate can too. That gives it nothing new,
 since a full-access agent can already push from its own shell, hooks and all.
-Since 0.1.14 a Claude thread in Auto also asks for what Claude's own Auto
-review leaves open, so those prompts reach FirstMate here too.
+Since upstream's 0.1.14 nightly a Claude thread in Auto also asks for what
+Claude's own Auto review leaves open, so those prompts reach FirstMate here too.
 
 FirstMate half, in the FirstMate fork:
 [Approvals at once](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#approvals-at-once).
@@ -2633,10 +2633,10 @@ Cite button and right-click menu.
   are not the file's. There the rendered view offers no Cite and a link cannot
   jump to a heading. The live editor, for files it can open, still does both.
   A smaller file renders whole, so it can be cited, and gives up two things
-  upstream's pieces do since 0.1.14: its reading position is not kept when you
-  switch files or threads, and Select All then Copy copies the source with `\n`
-  line endings rather than the file's own. Upstream's tests for both run on a
-  file over 128 KB here.
+  upstream's pieces do since its 0.1.14 nightly: its reading position is not
+  kept when you switch files or threads, and Select All then Copy copies the
+  source with `\n` line endings rather than the file's own. Upstream's tests for
+  both run on a file over 128 KB here.
 - The right-click menu replaces the browser's only when the click lands on the
   selected text. It offers Cite and Copy, plus Cut in the editor; Paste, spell
   suggestions and Look Up are not in it. Tab in the editor still indents.
@@ -2729,8 +2729,8 @@ with a 12px gap under it. Code: `ACTIVE_TAB_CLASS`, `INACTIVE_TAB_CLASS` and
 `--panel-tab-strip` token and `panel-tab-flare` utility in
 `apps/web/src/index.css`.
 
-Upstream: partly: since 0.1.14 a click on a tab's own body, outside its label
-and icons, also switches to it.
+Upstream: partly: since its 0.1.14 nightly a click on a tab's own body,
+outside its label and icons, also switches to it.
 
 ## Closing a tab goes back
 
