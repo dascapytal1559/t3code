@@ -205,6 +205,46 @@ const DEVICE_SURFACE: RightPanelSurface = {
   target: { hostId: "host", deviceId: "phone", platform: "ios", name: "Phone" },
 };
 
+describe("tab activation", () => {
+  it("a click anywhere on an inactive tab activates it, and its close button only closes", async () => {
+    const onActivate = vi.fn();
+    const onCloseSurface = vi.fn();
+    const props = panel(BROWSER_SURFACE).props as RightPanelTabsProps;
+    await using screen = await render(
+      <RightPanelTabs {...props} onActivate={onActivate} onCloseSurface={onCloseSurface}>
+        {null}
+      </RightPanelTabs>,
+    );
+    const label = screen.getByRole("button", { name: "Diff", exact: true });
+    const tab = label.element().closest<HTMLElement>("[data-active-tab]")!;
+    const { width, height } = tab.getBoundingClientRect();
+    const labelBox = label.element().getBoundingClientRect();
+    expect(height - labelBox.height).toBeGreaterThan(8);
+
+    for (const position of [
+      { x: width / 2, y: 3 },
+      { x: width / 2, y: height - 3 },
+      { x: width - 4, y: height / 2 },
+      { x: 3, y: height / 2 },
+    ]) {
+      await userEvent.click(tab, { position });
+    }
+    await userEvent.click(label);
+    expect(onActivate).toHaveBeenCalledTimes(5);
+    expect(onActivate.mock.calls.every(([surface]) => surface === DIFF_SURFACE)).toBe(true);
+
+    onActivate.mockClear();
+    label.element().focus();
+    await userEvent.keyboard("{Enter}");
+    expect(onActivate).toHaveBeenCalledExactlyOnceWith(DIFF_SURFACE);
+
+    onActivate.mockClear();
+    await userEvent.click(screen.getByRole("button", { name: "Close Diff" }));
+    expect(onCloseSurface).toHaveBeenCalledExactlyOnceWith(DIFF_SURFACE);
+    expect(onActivate).not.toHaveBeenCalled();
+  });
+});
+
 describe("device tab rename", () => {
   it("keeps the editor open on an Enter that confirms an IME candidate", async () => {
     const onRenameDevice = vi.fn();

@@ -1144,7 +1144,6 @@ function RightPanelTab(
                         state: messages(SIDE_CHAT_STATE_LABELS[sideChatState]),
                       })
                 }
-                onClick={() => onActivate(surface)}
               >
                 {parentFolder === null ? null : (
                   <span className="min-w-0 truncate opacity-60">{parentFolder}/</span>
@@ -1176,6 +1175,9 @@ function RightPanelTab(
       data-active-tab={props.active}
       onMouseDown={preventTabMiddleButtonDefault}
       onMouseUp={preventTabMiddleButtonDefault}
+      // The whole tab activates, not only its label; the label button's own click and
+      // keyboard activation bubble here.
+      onClick={() => onActivate(surface)}
       onAuxClick={(event) => onAuxClick(event, surface)}
       onContextMenu={(event) => onContextMenu(event, surface)}
       {...listeners}

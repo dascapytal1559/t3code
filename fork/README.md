@@ -2696,7 +2696,11 @@ The side panel's tab strip sits on a recessed tint, and the active tab takes
 the content's background with rounded top corners that flare into the view
 below, so with several files open the one showing is obvious. Inactive tabs
 sit flush on the strip with muted labels and a hairline between them. Upstream
-marks the active tab with a faint grey pill. Tab behaviour is unchanged. Tabs
+marks the active tab with a faint grey pill. A click anywhere on a tab
+switches to it; upstream switches only on a click on the label, which in its
+24px tabs is most of the tab but in these is under a fifth of it, so carry
+forward the tab's own `onClick` in `RightPanelTab` and the `stopPropagation`
+in `PanelTabCloseButton` that keeps a close from also switching. Tabs
 are 36px tall, centred on the centre line of the toolbar controls beside them
 (back, forward, layout, maximize), with 8px above them. The strip is only as tall
 as its tabs reach, so the content under it starts 8px higher than the 52px title
