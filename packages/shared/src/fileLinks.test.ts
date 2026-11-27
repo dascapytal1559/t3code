@@ -171,6 +171,9 @@ describe("resolvePathLinkTarget", () => {
       String.raw`\\server\share\a.md`,
     ],
     ["../sources/", "/home/jane/project/scripts", "/home/jane/project/sources/"],
+    ["./note.txt", "/tmp/photos\\", "/tmp/photos\\/note.txt"],
+    ["./note.txt", "/tmp/C:\\files", "/tmp/C:\\files/note.txt"],
+    ["~\\note.txt", "/tmp/C:\\files", "/tmp/C:\\files/~\\note.txt"],
   ])("resolves %s using the connected environment cwd %s", (path, cwd, expected) => {
     expect(resolvePathLinkTarget(path, cwd)).toBe(expected);
   });

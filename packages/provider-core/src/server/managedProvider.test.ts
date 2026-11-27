@@ -741,6 +741,55 @@ describe("makeManagedServerProvider", () => {
     ).pipe(Effect.provide(layerAlwaysRunTest)),
   );
 
+  it.effect("keeps a known update through a recheck of the same installed version", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const advisory = (currentVersion: string, latestVersion: string | null) => ({
+          status: latestVersion === null ? ("unknown" as const) : ("behind_latest" as const),
+          currentVersion,
+          latestVersion,
+          updateCommand: maintenanceCapabilities.update.command,
+          canUpdate: true,
+          checkedAt: null,
+          message: null,
+        });
+        const installedVersion = yield* Ref.make("1.0.0");
+        const enrichments =
+          yield* Queue.unbounded<(snapshot: ServerProvider) => Effect.Effect<void>>();
+        const provider = yield* makeManagedServerProvider<TestSettings>({
+          resolveMaintenance: () => Effect.succeed(maintenanceCapabilities),
+          getSettings: Effect.succeed({ enabled: true }),
+          streamSettings: Stream.empty,
+          haveSettingsChanged: (previous, next) => previous.enabled !== next.enabled,
+          initialSnapshot: () => Effect.succeed(initialSnapshot),
+          // Like a real probe, this reports the installed version but not the latest one.
+          checkProvider: Ref.get(installedVersion).pipe(
+            Effect.map((version) => ({
+              ...refreshedSnapshot,
+              version,
+              versionAdvisory: advisory(version, null),
+            })),
+          ),
+          enrichSnapshot: ({ publishSnapshot }) => Queue.offer(enrichments, publishSnapshot),
+          refreshInterval: "1 hour",
+        });
+        const publishFirstEnrichment = yield* Queue.take(enrichments);
+        yield* publishFirstEnrichment({
+          ...refreshedSnapshot,
+          version: "1.0.0",
+          versionAdvisory: advisory("1.0.0", "2.0.0"),
+        });
+
+        const rechecked = yield* provider.refresh;
+        assert.deepStrictEqual(rechecked.versionAdvisory, advisory("1.0.0", "2.0.0"));
+
+        yield* Ref.set(installedVersion, "2.0.0");
+        const updated = yield* provider.refresh;
+        assert.deepStrictEqual(updated.versionAdvisory, advisory("2.0.0", null));
+      }),
+    ).pipe(Effect.provide(layerAlwaysRunTest)),
+  );
+
   it.effect("ignores stale enrichment callbacks after a newer refresh advances generation", () =>
     Effect.scoped(
       Effect.gen(function* () {

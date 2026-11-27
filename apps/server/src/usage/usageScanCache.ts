@@ -10,7 +10,7 @@ import { CLAUDE_SYNTHETIC_MODEL } from "../provider/Drivers/claudeUsage.ts";
 import { mergeUsageCopies } from "./usageAggregation.ts";
 import { GUARD_LENGTH, type TranscriptParsePosition } from "./usageTranscriptReader.ts";
 
-const USAGE_SCAN_CACHE_VERSION = 19 as const;
+const USAGE_SCAN_CACHE_VERSION = 20 as const;
 const SPEED_COMPATIBLE_SINCE_VERSION = 4;
 // T3 turns began on 28 Oct 2026, so only transcripts written since can trace by working folder.
 const CWD_TRACEABLE_SINCE_MS = Date.parse("2026-10-28T00:00:00Z");
@@ -20,8 +20,9 @@ const CWD_TRACEABLE_SINCE_MS = Date.parse("2026-10-28T00:00:00Z");
  * replace it, dropping saved usage for deleted transcripts. Separate files keep
  * the newer one; older files are removed once it is saved.
  */
-export const SCAN_CACHE_FILE_NAME = "usage-scan-cache-v19.json";
+export const SCAN_CACHE_FILE_NAME = "usage-scan-cache-v20.json";
 export const LEGACY_SCAN_CACHE_FILE_NAMES = [
+  "usage-scan-cache-v19.json",
   "usage-scan-cache-v18.json",
   "usage-scan-cache-v17.json",
   "usage-scan-cache-v16.json",
@@ -70,7 +71,8 @@ type SerializedRecord = readonly [
   rateModelIndex?: number | null,
   unresolvedServiceTierTurnId?: string | null,
   cacheCreation1hTokens?: number,
-  cwdIndex?: number,
+  cwdIndex?: number | null,
+  modelCalls?: number,
 ];
 
 interface SerializedFile {
@@ -141,17 +143,24 @@ function serializeFile(entry: CachedFile, tables: InternTables): SerializedFile 
     record.rateModel === undefined
       ? null
       : intern(tables.models, tables.modelIndex, record.rateModel),
-    ...(record.cwd !== undefined
+    ...(record.modelCalls !== undefined && record.modelCalls > 1
       ? ([
           record.unresolvedServiceTierTurnId ?? null,
           record.cacheCreation1hTokens ?? 0,
-          intern(tables.cwds, tables.cwdIndex, record.cwd),
+          record.cwd === undefined ? null : intern(tables.cwds, tables.cwdIndex, record.cwd),
+          record.modelCalls,
         ] as const)
-      : record.cacheCreation1hTokens !== undefined
-        ? ([record.unresolvedServiceTierTurnId ?? null, record.cacheCreation1hTokens] as const)
-        : record.unresolvedServiceTierTurnId !== undefined
-          ? ([record.unresolvedServiceTierTurnId] as const)
-          : ([] as const)),
+      : record.cwd !== undefined
+        ? ([
+            record.unresolvedServiceTierTurnId ?? null,
+            record.cacheCreation1hTokens ?? 0,
+            intern(tables.cwds, tables.cwdIndex, record.cwd),
+          ] as const)
+        : record.cacheCreation1hTokens !== undefined
+          ? ([record.unresolvedServiceTierTurnId ?? null, record.cacheCreation1hTokens] as const)
+          : record.unresolvedServiceTierTurnId !== undefined
+            ? ([record.unresolvedServiceTierTurnId] as const)
+            : ([] as const)),
   ];
   return {
     s: entry.size,
@@ -250,6 +259,7 @@ export function decodeScanCache(
         unresolvedServiceTierTurnId,
         cacheCreation1h = 0,
         cwdIndex,
+        modelCalls = 1,
       ] = row as SerializedRecord;
       const speed = typeof speedIndex === "number" ? SPEEDS[speedIndex] : undefined;
       const cwd = typeof cwdIndex === "number" ? cwds[cwdIndex] : undefined;
@@ -263,7 +273,10 @@ export function decodeScanCache(
         (unresolvedServiceTierTurnId != null && typeof unresolvedServiceTierTurnId !== "string") ||
         !Number.isFinite(cacheCreation1h) ||
         (rateModelIndex != null && rateModel === undefined) ||
-        (cwdIndex !== undefined && cwd === undefined) ||
+        (cwdIndex != null && cwd === undefined) ||
+        typeof modelCalls !== "number" ||
+        !Number.isFinite(modelCalls) ||
+        modelCalls < 0 ||
         !Number.isFinite(uncached) ||
         !Number.isFinite(cached) ||
         !Number.isFinite(cacheCreation) ||
@@ -278,6 +291,7 @@ export function decodeScanCache(
       // parser cannot remove their previously saved local placeholders.
       if (provider === "claude" && model === CLAUDE_SYNTHETIC_MODEL) continue;
 
+      const calls = Math.trunc(modelCalls);
       records.push({
         provider,
         timestampMs,
@@ -295,6 +309,7 @@ export function decodeScanCache(
         ...(cacheCreation1h > 0 ? { cacheCreation1hTokens: cacheCreation1h } : {}),
         reportedCostUsd: typeof reportedCostUsd === "number" ? reportedCostUsd : null,
         speed,
+        ...(calls > 1 ? { modelCalls: calls } : {}),
         ...(version >= 7 && unresolvedServiceTierTurnId != null
           ? { unresolvedServiceTierTurnId }
           : {}),
@@ -351,17 +366,16 @@ export function decodeScanCache(
     ) {
       continue;
     }
-    // Re-parse incompatible state: v13 Claude 1-hour cache writes; v14 Codex request ledgers; v15
-    // repairs rewound Codex counters (clean v14 entries stay served); the fork's v16 (Claude and
-    // Codex) and v19 (Grok) keep working folders, so files T3 turns could have written re-parse;
-    // v17 is upstream's v16; v18 is upstream's v17, which keys Grok turns by time.
+    // Re-parse incompatible state: v13 Claude 1-hour cache writes; v14 Codex ledgers; v15 rewound
+    // Codex counters (clean v14 entries stay served); the fork's v16 (Claude, Codex) and v19 (Grok)
+    // keep working folders for files T3 turns could have written. Upstream's v16, v17 (time-keyed
+    // Grok turns) and v18 (Grok model calls) are the fork's v17, v18 and v20.
     const legacy =
       (entry.p === "claude" && version < 13) ||
       ((entry.p === "claude" || entry.p === "codex") &&
         version < 16 &&
         entry.m >= CWD_TRACEABLE_SINCE_MS) ||
-      (entry.p === "grok" && version < 19 && entry.m >= CWD_TRACEABLE_SINCE_MS) ||
-      (entry.p === "grok" && version < 18) ||
+      (entry.p === "grok" && version < 20) ||
       (format.state !== undefined &&
         (version < 6 ||
           (entry.p === "codex" && (version < 14 || (version < 15 && malformedCount > 0)))));

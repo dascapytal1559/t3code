@@ -74,15 +74,12 @@ export function formatFilePathPosition(position: FilePathPosition): string {
   return `${position.path}:${position.line}${position.column ? `:${position.column}` : ""}`;
 }
 
-function isWindowsPathStyle(value: string): boolean {
-  return isWindowsAbsolutePath(value) || /[A-Za-z]:\\/.test(value);
-}
-
 export function joinPath(base: string, next: string, separator: "/" | "\\"): string {
-  const cleanBase = base.replace(/[\\/]+$/, "");
   if (separator === "\\") {
+    const cleanBase = base.replace(/[\\/]+$/, "");
     return `${cleanBase}\\${next.replaceAll("/", "\\")}`;
   }
+  const cleanBase = base.replace(/\/+$/, "");
   return `${cleanBase}/${next.replace(/^\/+/, "")}`;
 }
 
@@ -110,14 +107,14 @@ export function resolvePathLinkTarget(rawPath: string, cwd: string): string {
   const { path } = position;
 
   let resolvedPath = path;
-  if (path.startsWith("~/") || (isWindowsPathStyle(cwd) && path.startsWith("~\\"))) {
+  if (path.startsWith("~/") || (isWindowsAbsolutePath(cwd) && path.startsWith("~\\"))) {
     const home = inferHomeFromCwd(cwd);
     if (home) {
-      const separator: "/" | "\\" = isWindowsPathStyle(home) ? "\\" : "/";
+      const separator: "/" | "\\" = isWindowsAbsolutePath(home) ? "\\" : "/";
       resolvedPath = collapseDotSegments(joinPath(home, path.slice(2), separator), separator);
     }
   } else if (!isAbsolutePath(path)) {
-    const separator: "/" | "\\" = isWindowsPathStyle(cwd) ? "\\" : "/";
+    const separator: "/" | "\\" = isWindowsAbsolutePath(cwd) ? "\\" : "/";
     resolvedPath = collapseDotSegments(
       joinPath(cwd, path.replace(/^(?:\.\/)+/, ""), separator),
       separator,

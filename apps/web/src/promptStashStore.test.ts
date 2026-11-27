@@ -67,23 +67,24 @@ describe("promptStashStore", () => {
     expect(usePromptStashStore.getState().takeEntry("citation-stash").entry).toBeNull();
   });
 
-  it("evicts the oldest entry past the cap and returns it", () => {
+  it("refuses a new entry when full instead of discarding the oldest", () => {
     const store = usePromptStashStore.getState();
     for (let index = 0; index < MAX_STASH_ENTRIES; index += 1) {
-      expect(store.stashEntry(makeEntry({ id: `entry-${index}` })).evicted).toBeNull();
+      expect(store.stashEntry(makeEntry({ id: `entry-${index}` })).written).toBe(true);
     }
-    const { evicted } = store.stashEntry(makeEntry({ id: "overflow" }));
-    expect(evicted?.id).toBe("entry-0");
+    const result = store.stashEntry(makeEntry({ id: "overflow" }));
+    expect(result).toEqual({ full: true, written: false, durable: false });
     const entries = usePromptStashStore.getState().entries;
     expect(entries).toHaveLength(MAX_STASH_ENTRIES);
-    expect(entries[0]?.id).toBe("overflow");
+    expect(entries.map((entry) => entry.id)).not.toContain("overflow");
+    expect(entries.map((entry) => entry.id)).toContain("entry-0");
 
-    // A stash whose surrounding step fails is undone, and the oldest entry comes back.
-    store.undoStash("overflow", evicted);
-    const undone = usePromptStashStore.getState().entries;
-    expect(undone).toHaveLength(MAX_STASH_ENTRIES);
-    expect(undone[0]?.id).toBe(`entry-${MAX_STASH_ENTRIES - 1}`);
-    expect(undone.at(-1)?.id).toBe("entry-0");
+    // Fork: a stash whose surrounding step fails is undone, leaving the others in place.
+    store.undoStash(`entry-${MAX_STASH_ENTRIES - 1}`);
+    const undone = usePromptStashStore.getState().entries.map((entry) => entry.id);
+    expect(undone).toHaveLength(MAX_STASH_ENTRIES - 1);
+    expect(undone).not.toContain(`entry-${MAX_STASH_ENTRIES - 1}`);
+    expect(undone).toContain("entry-0");
   });
 
   // regression: #4787 stashed prompts were lost when switching providers

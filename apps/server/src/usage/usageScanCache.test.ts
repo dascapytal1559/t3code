@@ -101,7 +101,20 @@ describe("scan cache round trip", () => {
       mtimeMs: 300,
       provider: "grok",
       records: [
-        record({ provider: "grok", model: "grok-4.5-build", dedupeKey: "s:p:grok-4.5-build" }),
+        record({
+          provider: "grok",
+          model: "grok-4.5-build",
+          modelCalls: 8,
+          dedupeKey: "s:p:grok-4.5-build",
+        }),
+        // Fork: a working folder and a model-call count share a record.
+        record({
+          provider: "grok",
+          model: "grok-4.5-build",
+          modelCalls: 3,
+          cwd: "/wt/grok",
+          dedupeKey: "s:q:grok-4.5-build",
+        }),
         record({ provider: "grok", model: "<synthetic>", dedupeKey: "s:p:<synthetic>" }),
       ],
       tailRecords: [record({ provider: "grok", model: "<synthetic>", dedupeKey: null })],

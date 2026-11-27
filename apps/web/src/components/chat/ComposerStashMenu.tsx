@@ -43,12 +43,10 @@ export function stashEntrySnippet(entry: PromptStashEntry, resolve: MessageResol
     // Never end on a lone high surrogate, the first half of an emoji.
     const last = trimmed.charCodeAt(SNIPPET_MAX_CHARS - 1);
     const end = last >= 0xd800 && last <= 0xdbff ? SNIPPET_MAX_CHARS - 1 : SNIPPET_MAX_CHARS;
-    return `${trimmed.slice(0, end)}…`;
+    return `${trimmed.slice(0, end).trimEnd()}…`;
   }
   const imageCount =
-    (entry.attachments?.length ?? 0) +
-    (entry.droppedImageNames?.length ?? 0) +
-    stashedImageIds(entry).length;
+    (entry.attachments?.length ?? 0) + missingImageCount(entry) + stashedImageIds(entry).length;
   const fileCount = stashedFileCount(entry);
   const attachmentCount = imageCount + fileCount;
   if (attachmentCount === 0) {

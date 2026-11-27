@@ -40,6 +40,8 @@ export class BackgroundPolicy extends Context.Service<
     readonly shouldRunOpportunisticWork: Effect.Effect<boolean>;
     /** The scopes of each client lease that turns visible and focused or used after it was not. */
     readonly foregroundReturns: Stream.Stream<ReadonlyArray<BackgroundScope>>;
+    /** Host power and lock state only, for server-owned work that no client lease asks for. */
+    readonly shouldRunHostWork: Effect.Effect<boolean>;
   }
 >()("t3/background/BackgroundPolicy") {}
 
@@ -276,6 +278,11 @@ export const make = Effect.fn("background.policy.make")(function* () {
     );
   });
 
+  const shouldRunHostWork = Effect.all([
+    hostPowerMonitor.snapshot,
+    backgroundActivitySettings,
+  ]).pipe(Effect.map(([hostPower, settings]) => !isHostConstrained(hostPower, settings)));
+
   const shouldRunOpportunisticWork = Effect.map(
     snapshot,
     (current) => current.shouldRunOpportunisticWork,
@@ -307,6 +314,7 @@ export const make = Effect.fn("background.policy.make")(function* () {
     shouldRunScopeWork,
     shouldRunOpportunisticWork,
     foregroundReturns: Stream.fromPubSub(foregroundReturns),
+    shouldRunHostWork,
   });
 });
 

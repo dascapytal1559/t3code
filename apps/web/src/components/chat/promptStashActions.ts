@@ -19,7 +19,6 @@ import {
 import { asKnownContextRecord } from "~/lib/composerContextRecords";
 import { producerIdFromComposerContextId } from "~/lib/composerContextReferences";
 import { randomUUID } from "~/lib/utils";
-import { toastManager } from "../ui/toast";
 import { m } from "~/i18n/messages";
 
 const isImageAttachment = Schema.is(ChatImageAttachment);
@@ -35,21 +34,6 @@ export function discardStashEntryAttachments(entry: PromptStashEntry): void {
     });
   }
   if ((entry.media?.length ?? 0) > 0) deleteStashMedia(entry.id);
-}
-
-export function settleStashEviction(evicted: PromptStashEntry | null): void {
-  if (!evicted) return;
-  discardStashEntryAttachments(evicted);
-  toastManager.add({
-    type: "warning",
-    title: m(msg("Oldest stashed prompt discarded")),
-    description: m(
-      msg("The stash holds {max} prompts; the oldest was removed to make room.", {
-        max: MAX_STASH_ENTRIES,
-      }),
-    ),
-    data: { hideCopyButton: true },
-  });
 }
 
 export type QueuedMessageStashOutcome =
@@ -148,13 +132,25 @@ export async function stashQueuedMessage(input: {
   }
 
   const store = usePromptStashStore.getState();
-  const { evicted, written, durable } = store.stashEntry({
+  const { full, written, durable } = store.stashEntry({
     id: entryId,
     createdAt: new Date().toISOString(),
     prompt: stripAttachmentOnlyBootstrapPrompt(input.text),
     ...(media.length > 0 ? { media } : {}),
     ...(keptRecords.length > 0 ? { records: keptRecords } : {}),
   });
+  if (full) {
+    deleteStashMedia(entryId);
+    return {
+      ok: false,
+      reason: m(
+        msg(
+          "The stash holds {max} prompts. Restore or delete one to make room. The message is still queued.",
+          { max: MAX_STASH_ENTRIES },
+        ),
+      ),
+    };
+  }
   if (!written) {
     deleteStashMedia(entryId);
     return {
@@ -168,7 +164,7 @@ export async function stashQueuedMessage(input: {
   }
 
   if (!(await input.removeFromQueue())) {
-    if (usePromptStashStore.getState().undoStash(entryId, evicted).durable) {
+    if (usePromptStashStore.getState().undoStash(entryId).durable) {
       deleteStashMedia(entryId);
     }
     return {
@@ -178,7 +174,6 @@ export async function stashQueuedMessage(input: {
       ),
     };
   }
-  settleStashEviction(evicted);
   usePromptStashStore.getState().pulse();
   return { ok: true, durable };
 }

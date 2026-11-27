@@ -18,7 +18,8 @@ export const PROMPT_STASH_STORAGE_KEY = "t3code:prompt-stash:v2";
 const LEGACY_PROMPT_STASH_STORAGE_KEY = "t3code:prompt-stash:v1";
 const PROMPT_STASH_STORAGE_VERSION = 2;
 
-export const MAX_STASH_ENTRIES = 20;
+// A sanity bound; storage quota is the real limit and reports its own failure.
+export const MAX_STASH_ENTRIES = 100;
 
 // Another tab writes an entry's bytes before the entry itself; this comfortably outlasts that gap.
 const STASH_MEDIA_ORPHAN_GRACE_MS = 10 * 60_000;
@@ -122,16 +123,17 @@ function latestEntries(memory: ReadonlyArray<PromptStashEntry>): ReadonlyArray<P
 interface PromptStashStoreState {
   entries: ReadonlyArray<PromptStashEntry>;
   stashEntry: (entry: PromptStashEntry) => {
-    evicted: PromptStashEntry | null;
-    /** False when the write failed outright (e.g. quota); nothing was kept. */
+    /** True when the stash already holds MAX_STASH_ENTRIES; nothing was written. */
+    full: boolean;
+    /** False when the write failed outright (e.g. quota or a full stash); nothing was kept. */
     written: boolean;
     /** False for failed writes or in-memory fallback; the entry will not survive reload. */
     durable: boolean;
   };
   /** durable=false means removal was not persisted and reload would restore the entry. */
   takeEntry: (entryId: string) => { entry: PromptStashEntry | null; durable: boolean };
-  /** Reverses a `stashEntry` whose surrounding step failed, putting back what it evicted. */
-  undoStash: (entryId: string, evicted: PromptStashEntry | null) => { durable: boolean };
+  /** Reverses a `stashEntry` whose surrounding step failed. */
+  undoStash: (entryId: string) => { durable: boolean };
   /** The stash badge replays its one-shot pulse each time this changes. */
   pulseKey: number;
   pulse: () => void;
@@ -141,25 +143,28 @@ export const usePromptStashStore = create<PromptStashStoreState>()((set, get) =>
   entries: [],
   pulseKey: 0,
   pulse: () => set((state) => ({ pulseKey: state.pulseKey + 1 })),
-  undoStash: (entryId, evicted) => {
-    const nextEntries = [
-      ...latestEntries(get().entries).filter((candidate) => candidate.id !== entryId),
-      ...(evicted ? [evicted] : []),
-    ];
+  undoStash: (entryId) => {
+    const nextEntries = latestEntries(get().entries).filter(
+      (candidate) => candidate.id !== entryId,
+    );
     const { durable } = persistEntries(nextEntries);
     set(() => ({ entries: nextEntries }));
     return { durable };
   },
   stashEntry: (entry) => {
-    const nextEntries = [entry, ...latestEntries(get().entries)];
-    const evicted = nextEntries.length > MAX_STASH_ENTRIES ? (nextEntries.pop() ?? null) : null;
+    const currentEntries = latestEntries(get().entries);
+    // Never discard a stashed prompt to make room; the user decides what to remove.
+    if (currentEntries.length >= MAX_STASH_ENTRIES) {
+      return { full: true, written: false, durable: false };
+    }
+    const nextEntries = [entry, ...currentEntries];
     const { written, durable } = persistEntries(nextEntries);
-    // Failed writes must not duplicate the intact composer; eviction also commits only on success.
+    // Failed writes must not duplicate the intact composer.
     if (!written) {
-      return { evicted: null, written: false, durable: false };
+      return { full: false, written: false, durable: false };
     }
     set(() => ({ entries: nextEntries }));
-    return { evicted, written: true, durable };
+    return { full: false, written: true, durable };
   },
   takeEntry: (entryId) => {
     const entries = latestEntries(get().entries);

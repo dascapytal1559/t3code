@@ -890,6 +890,8 @@ export type OrchestrationV2DelegatedCompletionDelivery =
 
 export const OrchestrationV2DelegatedCompletionCohort = Schema.Struct({
   disposition: Schema.Literals(["open", "stopped", "disposed"]),
+  /** Reopened for a follow-up after a Stop; the tasks that Stop interrupted still need the Stop note. */
+  reopenedAfterStop: Schema.optionalKey(Schema.Literal(true)),
   nextGeneration: PositiveInt,
   delivery: Schema.NullOr(OrchestrationV2DelegatedCompletionDelivery),
 });
@@ -965,6 +967,8 @@ export const OrchestrationV2Run = Schema.Struct({
   queueHeld: Schema.optional(Schema.Boolean),
   /** The hold belongs to a pending T3 restart, which releases it; Stop's and failures' do not. */
   restartHold: Schema.optional(Schema.Boolean),
+  /** The sender asked for a separate turn; it is not an ordering barrier for a later auto send. */
+  explicitQueue: Schema.optional(Schema.Literal(true)),
   steerWhenReadyRunId: Schema.optional(RunId),
   /** Fork: the ended run a declined or requeued steer was sent to, so it continues that session. */
   steerFollowUpOfRunId: Schema.optional(RunId),
@@ -1957,7 +1961,7 @@ const OrchestrationV2TurnItemBaseFields = {
 } as const;
 
 export const OrchestrationV2FileSearchResult = Schema.Struct({
-  fileName: TrimmedNonEmptyString,
+  fileName: Schema.NonEmptyString,
   line: Schema.optional(PositiveInt),
   column: Schema.optional(PositiveInt),
   preview: Schema.optional(Schema.String),
@@ -3872,6 +3876,7 @@ export const OrchestrationV2Command = Schema.Union([
     steerFollowUpAfterRunOrdinal: Schema.optional(NonNegativeInt),
     usageLimitRecoveryRequestId: Schema.optional(CommandId),
     deliveryIntent: Schema.optional(Schema.Literals(["auto", "steer", "restart"])),
+    explicitQueue: Schema.optional(Schema.Literal(true)),
     delegatedCompletion: Schema.optional(
       Schema.Struct({
         parentRunId: RunId,

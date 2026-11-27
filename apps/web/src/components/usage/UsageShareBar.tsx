@@ -3,7 +3,7 @@ import { useMessages } from "gt-react";
 import type { ReactNode } from "react";
 
 import { cn } from "../../lib/utils";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { SharedTooltipTrigger } from "../ui/shared-tooltip";
 import { emphasisColor, emphasisPositions } from "./usageEmphasis";
 
 export interface ShareSegment {
@@ -57,19 +57,21 @@ export function UsageShareBar({
       {/* The legend below carries every figure; the bar's tooltips are pointer-only. */}
       <div aria-hidden className="flex h-2 gap-0.5 overflow-hidden rounded-xs">
         {visible.map((segment) => (
-          <Tooltip key={segment.label}>
-            <TooltipTrigger
-              render={
-                <div
-                  className="h-full min-w-1 rounded-xs"
-                  style={{ flex: `${segment.value} 1 0`, backgroundColor: segment.color }}
-                />
-              }
-            />
-            <TooltipPopup>
-              {m(segment.label)} · {format(segment.value)} · {formatPercent(segment.value / total)}
-            </TooltipPopup>
-          </Tooltip>
+          <SharedTooltipTrigger
+            key={segment.label}
+            render={
+              <div
+                className="h-full min-w-1 rounded-xs"
+                style={{ flex: `${segment.value} 1 0`, backgroundColor: segment.color }}
+              />
+            }
+            label={
+              <>
+                {m(segment.label)} · {format(segment.value)} ·{" "}
+                {formatPercent(segment.value / total)}
+              </>
+            }
+          />
         ))}
       </div>
       {/* A fifth segment follows the second line where it fits and wraps under it where it does not. */}

@@ -27,8 +27,8 @@ import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Schema from "effect/Schema";
 import { McpSchema, Tool, Toolkit } from "effect/ai";
 
-import * as ProviderRegistry from "../../../provider/ProviderRegistry.ts";
 import * as ThreadSearch from "../../../orchestration-v2/ThreadSearch.ts";
+import * as ProviderRegistry from "../../../provider/ProviderRegistry.ts";
 import * as ScheduledTaskService from "../../../scheduledTasks/ScheduledTaskService.ts";
 import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 import * as UsageOrigins from "../../../usage/UsageOrigins.ts";

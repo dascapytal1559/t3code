@@ -1,5 +1,5 @@
 const LEADING_FRONTMATTER =
-  /^\uFEFF?---[ \t]*(?:\r\n|\r|\n)(?:[\s\S]*?(?:\r\n|\r|\n))?(?:---|\.\.\.)[ \t]*(?=\r\n|\r|\n|$)/;
+  /^\uFEFF?---[ \t]*(?:\r\n|\r|\n)(?:[\s\S]*?(?:\r\n|\r|\n))??(?:---|\.\.\.)[ \t]*(?=\r\n|\r|\n|$)/;
 
 const BLANK_LINE = /(?:\r\n|\r|\n)[ \t]*(?:\r\n|\r|\n)/;
 const KEY_LINE = /(?:^|\r\n|\r|\n)[^\s:#-][^:\r\n]*:(?:[ \t]|\r|\n|$)/;

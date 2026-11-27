@@ -28,6 +28,12 @@ describe("maskMarkdownFrontmatter", () => {
     expect(markdownFrontmatterLength("---\ntitle: A\n\nsummary: B\n---\n")).toBe(28);
   });
 
+  it("keeps a later horizontal rule when the frontmatter is empty", () => {
+    expect(maskMarkdownFrontmatter("---\n---\n# Title\n\n---\nBody")).toBe(
+      "   \n   \n# Title\n\n---\nBody",
+    );
+  });
+
   it("leaves unterminated or non-leading fences alone", () => {
     expect(maskMarkdownFrontmatter("---\na: 1\n")).toBe("---\na: 1\n");
     expect(maskMarkdownFrontmatter("# A\n---\nb\n---\n")).toBe("# A\n---\nb\n---\n");
