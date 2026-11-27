@@ -1119,7 +1119,8 @@ describe("rendered Markdown select all", () => {
 
   it("copies the whole chunked file with its own line endings", async () => {
     using _settings = setup();
-    const contents = `first\r\r# ${"x\r\r# ".repeat(2_000)}end`;
+    // Fork: only a file over LARGE_MARKDOWN_CHUNK_MAX_CHARS renders in pieces.
+    const contents = `first\r\r# ${"x\r\r# ".repeat(27_000)}end`;
     await using _screen = await render(
       <div style={{ height: 600, display: "flex", flexDirection: "column" }}>
         {markdownPreview(false, contents, "cr.md")}
@@ -1208,7 +1209,9 @@ describe("rendered Markdown scroll position", () => {
   it("restores each file's reading position after the preview remounts", async () => {
     using _settings = setup();
     using _style = withAppCss();
-    const preview = (relativePath: string) => sized(markdownPreview(false, sections, relativePath));
+    // Fork: only a file over LARGE_MARKDOWN_CHUNK_MAX_CHARS renders in pieces, which keep the place.
+    const large = `${sections}\n${"Filler line.\n\n".repeat(10_000)}`;
+    const preview = (relativePath: string) => sized(markdownPreview(false, large, relativePath));
 
     let saved: ReturnType<typeof readingPosition>;
     {

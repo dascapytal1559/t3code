@@ -557,8 +557,13 @@ and what agents claim.
   v16 or v17 cache re-parse once. Grok lines carry no folder, so its reader
   decodes the session's group folder name (or reads the `.cwd` file Grok writes
   for a name over 255 bytes); the fork's v19 re-parses Grok files changed since
-  28 Oct once to add it. On syncs, an upstream cache bump becomes the fork's next
-  number, never upstream's.
+  28 Oct once to add it. Upstream's v18 (a Grok record's model-call count, for
+  per-call context tiers) is the fork's v20: a record keeps its folder at the
+  slot after the 1-hour cache writes and its call count after that, with a null
+  folder when it has none, and Grok files from any older cache re-parse once. On
+  syncs, an upstream cache bump becomes the fork's next number, never upstream's.
+  An archived cache from upstream's own server is read by the fork's numbering,
+  so its versions from 16 on can misread or drop records.
 
 Each usage bucket carries `devices` (optional; the bucket split by device band,
 `UsageDeviceBand` in `packages/contracts/src/usage.ts`), which web's device
@@ -2179,6 +2184,8 @@ This includes upstream's request to run a repository's push hooks, which T3's
 `mcp-elicitation` approval): upstream says only the person can answer it, and
 here a full-access agent such as FirstMate can too. That gives it nothing new,
 since a full-access agent can already push from its own shell, hooks and all.
+Since 0.1.14 a Claude thread in Auto also asks for what Claude's own Auto
+review leaves open, so those prompts reach FirstMate here too.
 
 FirstMate half, in the FirstMate fork:
 [Approvals at once](https://github.com/dascapytal1559/firstmate/blob/main/FORK.md#approvals-at-once).
@@ -2371,8 +2378,8 @@ A bookmark button on each queued message, held by Stop or a pending restart or n
 held at all, moves it into the prompt
 stash with all its images and files and cancels its run. The client downloads
 each attachment from the server, stores the bytes, writes the stash entry, then
-cancels; a failed download or write leaves the message queued, and a refused
-cancel undoes the entry (and any eviction it caused). Guest messages have no
+cancels; a failed download or write, or a full stash, leaves the message
+queued, and a refused cancel undoes the entry. Guest messages have no
 stash, like they have no edit. Web and desktop only: mobile has no prompt stash.
 
 Upstream keeps stashed images as data URLs inside the localStorage entry, shrunk
@@ -2389,6 +2396,9 @@ write stashes nothing; the async "saving N images" step and
 or the stash entry schema need merging onto this model. Upstream fixes to its
 async step (`finalizeEntryImages`, `pendingImageCount`, orphaned counts after a
 reload, cross-tab finalize) have nothing to land on here and are dropped.
+Upstream's rule that a full stash (100 prompts) refuses a new one rather than
+dropping the oldest holds here too, for the composer and a queued message alike;
+bytes already written for the refused entry are deleted.
 
 Upstream: partly: the prompt stash is upstream's; stashing a queued message, and
 keeping every image whole, are the fork's.
@@ -2622,6 +2632,11 @@ Cite button and right-click menu.
 - A file over 128 KB renders in upstream's virtualized pieces, whose line numbers
   are not the file's. There the rendered view offers no Cite and a link cannot
   jump to a heading. The live editor, for files it can open, still does both.
+  A smaller file renders whole, so it can be cited, and gives up two things
+  upstream's pieces do since 0.1.14: its reading position is not kept when you
+  switch files or threads, and Select All then Copy copies the source with `\n`
+  line endings rather than the file's own. Upstream's tests for both run on a
+  file over 128 KB here.
 - The right-click menu replaces the browser's only when the click lands on the
   selected text. It offers Cite and Copy, plus Cut in the editor; Paste, spell
   suggestions and Look Up are not in it. Tab in the editor still indents.
@@ -2699,8 +2714,10 @@ sit flush on the strip with muted labels and a hairline between them. Upstream
 marks the active tab with a faint grey pill. A click anywhere on a tab
 switches to it; upstream switches only on a click on the label, which in its
 24px tabs is most of the tab but in these is under a fifth of it, so carry
-forward the tab's own `onClick` in `RightPanelTab` and the `stopPropagation`
-in `PanelTabCloseButton` that keeps a close from also switching. Tabs
+forward the tab's own `onClick` in `RightPanelTab` (which passes Shift for
+upstream's range selection, so the label button has no click of its own) and
+the `stopPropagation` in `PanelTabCloseButton` that keeps a close from also
+switching. Tabs
 are 36px tall, centred on the centre line of the toolbar controls beside them
 (back, forward, layout, maximize), with 8px above them. The strip is only as tall
 as its tabs reach, so the content under it starts 8px higher than the 52px title
@@ -2712,7 +2729,8 @@ with a 12px gap under it. Code: `ACTIVE_TAB_CLASS`, `INACTIVE_TAB_CLASS` and
 `--panel-tab-strip` token and `panel-tab-flare` utility in
 `apps/web/src/index.css`.
 
-Upstream: none.
+Upstream: partly: since 0.1.14 a click on a tab's own body, outside its label
+and icons, also switches to it.
 
 ## Closing a tab goes back
 
@@ -2730,8 +2748,8 @@ The store keeps each thread's open tabs in the order they were viewed,
 active tab feeds it. It is saved with the panel; state saved before it, or a
 history with no open tab left, falls back to upstream's position rule. Carry
 forward: `previousSurfaceIds`, `lastViewedSurfaceId` and its three callers
-(`closeSurface`, `closeTerminal` when the last pane closes,
-`closeSurfacesToRight`), and `previousSurfaceIdsFrom` in the migration, all in
+(`closeSurfaces`, which closes one tab or a selected range, `closeTerminal` when
+the last pane closes, and `closeSurfacesToRight`), and `previousSurfaceIdsFrom` in the migration, all in
 `apps/web/src/rightPanelStore.ts`.
 
 Upstream: none.

@@ -364,12 +364,13 @@ describe("scan cache round trip", () => {
     });
   });
 
+  // Upstream's Grok model-call count (the fork's v20) re-parses older Grok files of any age.
   it.each([
-    ["claude", 15],
-    ["grok", 18],
+    ["claude", 15, false],
+    ["grok", 18, true],
   ] as const)(
     "re-parses %s transcripts T3 turns could have written before cache v%i kept working folders",
-    (provider, version) => {
+    (provider, version, oldReparses) => {
       const recent = Date.parse("2026-11-01T00:00:00Z");
       const original = cacheWith([
         ["/recent.jsonl", recent, [record({ provider })]],
@@ -384,7 +385,15 @@ describe("scan cache round trip", () => {
         size: -1,
         position: { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null },
       });
-      expect(restored.get("/old.jsonl")).toEqual(original.get("/old.jsonl"));
+      expect(restored.get("/old.jsonl")).toEqual(
+        oldReparses
+          ? {
+              ...original.get("/old.jsonl"),
+              size: -1,
+              position: { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null },
+            }
+          : original.get("/old.jsonl"),
+      );
     },
   );
   // The fork's v17 is upstream's v16, so it predates time-keyed Grok turns too.
