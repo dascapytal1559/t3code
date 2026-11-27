@@ -389,7 +389,10 @@ export const AntigravityDriver: ProviderDriver<
       }).pipe(Effect.provideService(SecureRandom.SecureRandom, random));
       const startCompatible = Effect.fn("AntigravityDriver.startCompatible")(function* () {
         // A launcher can select a different runtime based on the thread's environment.
-        const observeVersion = executable.version === null && threadEnvironment === undefined;
+        const observeVersion =
+          executable.version === null &&
+          threadEnvironment === undefined &&
+          t3Environment === undefined;
         const attempt = observeVersion ? ++nextExternalAttempt : 0;
         const identity = observeVersion
           ? yield* externalExecutableIdentity(executable.executablePath)

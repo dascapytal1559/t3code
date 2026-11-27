@@ -115,10 +115,11 @@ describe("subscription widget snapshots", () => {
     ]);
     expect(JSON.stringify(snapshot)).not.toContain("example.com");
   });
+  // Fork: accounts sit in Providers tab order, then by name, so both AB accounts come first.
   it.each([
     [
       ["AB", "AB2", "AB"],
-      ["AB", "AB2", "AB3"],
+      ["AB", "AB3", "AB2"],
     ],
     [
       ["AB", "AB", "AB2"],

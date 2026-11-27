@@ -1227,6 +1227,8 @@ it("a new thread on a branch with changes opens them from thread details", async
   __setClientSettingsForTests({
     ...DEFAULT_CLIENT_SETTINGS,
     onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+    // Fork: thread details start hidden.
+    threadDetailsDefaultOpen: true,
   });
   const draftId = DraftId.make("draft-43905");
   useComposerDraftStore

@@ -71,6 +71,15 @@ vi.mock("../state/shell", () => ({ environmentShell: { stateValueAtom: () => nul
 vi.mock("@t3tools/client-runtime/state/runtime", () => ({
   isAtomCommandInterrupted: () => false,
 }));
+// Fork: the panel store reads client settings; their real module would load the client runtime.
+vi.mock("./useSettings", async () => {
+  const { DEFAULT_CLIENT_SETTINGS } = await import("@t3tools/contracts");
+  return {
+    getClientSettings: () => DEFAULT_CLIENT_SETTINGS,
+    useClientSettings: <T,>(select: (settings: typeof DEFAULT_CLIENT_SETTINGS) => T) =>
+      select(DEFAULT_CLIENT_SETTINGS),
+  };
+});
 
 function setup(mode: "single" | "all") {
   fixture.allowed = new Set(["environment-a", "environment-b"]);
